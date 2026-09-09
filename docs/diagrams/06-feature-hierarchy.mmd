@@ -1,0 +1,23 @@
+flowchart TD
+    P((Project))
+    P --> C1[Core: Customer]
+    P --> C2[Core: Invoicing]
+    P --> C3[Core: Payment]
+    C1 --> F1A[Family: Onboarding]
+    C1 --> L1[Feature: Edit profile]
+    F1A --> F1A1[Family: KYC]
+    F1A1 --> L2[Feature: Upload ID]
+    F1A --> L3[Feature: Verify email]
+    C2 --> L4[Feature: Create invoice]
+    C2 --> L5[Feature: Send reminder]
+    C3 --> L6[Feature: Charge card]
+    L2 -. "leaf.id = Unspaghettit Feature.id" .-> U[(Unspaghettit featureIds)]
+    L4 -.-> U
+    L6 -.-> U
+    style L1 fill:#c8e6c9,stroke:#2e7d32
+    style L2 fill:#c8e6c9,stroke:#2e7d32
+    style L3 fill:#c8e6c9,stroke:#2e7d32
+    style L4 fill:#c8e6c9,stroke:#2e7d32
+    style L5 fill:#c8e6c9,stroke:#2e7d32
+    style L6 fill:#c8e6c9,stroke:#2e7d32
+    style U fill:#e1f5fe,stroke:#01579b

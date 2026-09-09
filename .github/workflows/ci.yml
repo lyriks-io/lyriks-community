@@ -1,0 +1,55 @@
+# Pull-request and main gate: type-check, the test suite, the open-source
+# boundary, the fixture-only integrity check, then a production build.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-bookworm
+        env:
+          POSTGRES_USER: lyriks
+          POSTGRES_PASSWORD: lyriks_test
+          POSTGRES_DB: lyriks_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lyriks -d lyriks_platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      LYRIKS_PG_URL: postgres://lyriks:lyriks_test@127.0.0.1:5432/lyriks_platform
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: corepack enable && corepack prepare pnpm@10.6.3 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm test
+      - run: pnpm test:socket-origin
+      - run: pnpm test:oss-boundary
+      - run: pnpm test:unspa-integrity
+      - run: pnpm test:dev-editions
+      - run: pnpm build
+      # The MCP gateway (packages/mcp): types, tests, its own open-source boundary, bundle.
+      - run: pnpm check:mcp
+      - run: pnpm test:mcp
+      - run: pnpm build:mcp
+      # No secret in the tree or its history; .gitleaks.toml allows the fabricated test fixtures.
+      - name: Secret scan (gitleaks)
+        run: docker run --rm -v "$PWD:/repo:ro" ghcr.io/gitleaks/gitleaks:v8.24.3 detect --source /repo --config /repo/.gitleaks.toml --redact --no-banner

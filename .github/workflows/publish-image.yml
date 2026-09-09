@@ -1,0 +1,204 @@
+# Build and publish the three Community images to GHCR on every push to main
+# and on v* tags, after the same gate the pull-request workflow runs:
+#   lyriks-platform-community   the platform (Dockerfile)
+#   lyriks-mcp-community        the MCP gateway (packages/mcp/Dockerfile)
+#   lyriks-behavior-community  the behaviour viewer (docker/dashboard.Dockerfile)
+name: publish-image
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  # Manual runs rebuild the exact versions selected by this commit.
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the scanned images to GHCR
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    outputs:
+      engine-version: ${{ steps.engine.outputs.version }}
+    services:
+      postgres:
+        image: postgres:16-bookworm
+        env:
+          POSTGRES_USER: lyriks
+          POSTGRES_PASSWORD: lyriks_test
+          POSTGRES_DB: lyriks_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lyriks -d lyriks_platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      LYRIKS_PG_URL: postgres://lyriks:lyriks_test@127.0.0.1:5432/lyriks_platform
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: corepack enable && corepack prepare pnpm@10.6.3 --activate
+      - run: pnpm install --frozen-lockfile
+      - name: Resolve the tested behavior engine version
+        id: engine
+        run: node -e "require('node:fs').appendFileSync(process.env.GITHUB_OUTPUT, 'version=' + require('unspaghettit/package.json').version + '\n')"
+      - run: pnpm check
+      - run: pnpm test
+      - run: pnpm test:socket-origin
+      - run: pnpm test:oss-boundary
+      - run: pnpm test:unspa-integrity
+      - run: pnpm build
+      - run: pnpm check:mcp
+      - run: pnpm test:mcp
+      - run: pnpm build:mcp
+      - name: Secret scan (full history)
+        run: docker run --rm --network none -v "$PWD:/repo:ro" ghcr.io/gitleaks/gitleaks:v8.24.3 detect --source /repo --config /repo/.gitleaks.toml --redact --no-banner
+      - name: Vulnerability scan (deps + source)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+
+
+  build-and-scan:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: lyriks-platform-community
+            dockerfile: Dockerfile
+          - name: lyriks-mcp-community
+            dockerfile: packages/mcp/Dockerfile
+          - name: lyriks-behavior-community
+            dockerfile: docker/dashboard.Dockerfile
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - name: Resolve lowercase owner
+        run: echo "OWNER_LC=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ env.OWNER_LC }}/${{ matrix.name }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=tag
+            type=sha,format=short
+      - name: Build the release artifact once
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          outputs: type=oci,dest=${{ runner.temp }}/image.tar
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            LYRIKS_BUILD_SHA=${{ github.sha }}
+            LYRIKS_BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+            ${{ matrix.name == 'lyriks-behavior-community' && format('UNSPA_VERSION={0}', needs.test.outputs.engine-version) || '' }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          sbom: true
+          provenance: mode=max
+      - name: Unpack the OCI image for scanning
+        run: |
+          mkdir -p "$RUNNER_TEMP/image"
+          tar -xf "$RUNNER_TEMP/image.tar" -C "$RUNNER_TEMP/image"
+      - name: Scan the final image including OS packages
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.74.0
+          scan-type: image
+          input: ${{ runner.temp }}/image
+          scanners: vuln
+          format: json
+          output: ${{ runner.temp }}/image-vulnerabilities.json
+          ignore-unfixed: false
+          exit-code: '0'
+          timeout: 10m
+      - name: Retain the complete vulnerability report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.name }}-vulnerabilities
+          path: ${{ runner.temp }}/image-vulnerabilities.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Reject fixable high and critical vulnerabilities
+        run: |
+          jq -r '.Results[]?.Vulnerabilities[]? | select((.Severity == "HIGH" or .Severity == "CRITICAL") and ((.FixedVersion // "") != "")) | [.VulnerabilityID, .PkgName, .InstalledVersion, .FixedVersion] | @tsv' "$RUNNER_TEMP/image-vulnerabilities.json"
+          jq -e '[.Results[]?.Vulnerabilities[]? | select((.Severity == "HIGH" or .Severity == "CRITICAL") and ((.FixedVersion // "") != ""))] | length == 0' "$RUNNER_TEMP/image-vulnerabilities.json"
+      - name: Retain the exact scanned image and attestations
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.name }}-oci
+          path: ${{ runner.temp }}/image.tar
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
+
+  # No component is published unless every image passes its scan. Copying the
+  # OCI archive preserves the scanned layers, SBOM and provenance without a rebuild.
+  publish:
+    if: github.event_name != 'workflow_dispatch' || inputs.publish
+    needs: [test, build-and-scan]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [lyriks-platform-community, lyriks-mcp-community, lyriks-behavior-community]
+    steps:
+      - name: Resolve lowercase owner
+        run: echo "OWNER_LC=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ env.OWNER_LC }}/${{ matrix.name }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=tag
+            type=sha,format=short
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.name }}-oci
+          path: ${{ runner.temp }}/release
+      - name: Install the OCI registry copy tool
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends skopeo
+      - name: Authenticate to GHCR
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$REGISTRY_TOKEN" | skopeo login --username "$GITHUB_ACTOR" --password-stdin ghcr.io
+      - name: Publish the scanned image without rebuilding
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          # The archive carries one index entry per tag the build named, each
+          # annotated with that tag; skopeo refuses to guess between them, so
+          # the entry is selected by the tag being published. Every entry
+          # points at the same scanned digest.
+          while IFS= read -r image; do
+            [[ -n "$image" ]] || continue
+            skopeo copy --all --preserve-digests "oci-archive:$RUNNER_TEMP/release/image.tar:${image##*:}" "docker://$image"
+          done <<< "$IMAGE_TAGS"

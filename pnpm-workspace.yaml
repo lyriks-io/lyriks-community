@@ -1,0 +1,16 @@
+allowBuilds:
+  esbuild: true
+  leveldown: true
+minimumReleaseAgeExclude:
+  - unspaghettit@0.4.0
+# pnpm 11 moved the old package.json `pnpm.onlyBuiltDependencies` here. These are
+# the native packages allowed to run install/build scripts (others are ignored).
+onlyBuiltDependencies:
+  - esbuild
+  - leveldown
+# Don't run an implicit install before `pnpm <script>` (pnpm 11's new home for it).
+verifyDepsBeforeRun: false
+
+# The MCP gateway is a workspace package beside the platform.
+packages:
+  - packages/*

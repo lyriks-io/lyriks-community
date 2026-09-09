@@ -1,0 +1,14 @@
+# Secret scanning for the public tree (gitleaks). CI runs it on every push and
+# pull request; run it locally with
+#   docker run --rm -v "$PWD:/repo:ro" ghcr.io/gitleaks/gitleaks:latest detect --source /repo
+title = "Lyriks Community"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fabricated fixtures: a placeholder licence token and test-only JWT secrets."
+paths = [
+  '''src/lib/domain/licensing/license\.test\.ts''',
+  '''packages/mcp/src/tests/security-config\.test\.ts''',
+]

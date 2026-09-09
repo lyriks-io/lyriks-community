@@ -1,0 +1,250 @@
+@import 'tailwindcss';
+
+/*
+ * Self-hosted fonts — vendored woff2 in static/fonts, served by the app itself.
+ * No runtime CDN / external font package, so the app works fully air-gapped.
+ * Variable fonts: one file per subset covers every weight (100–900).
+ */
+@font-face {
+	font-family: 'Inter';
+	font-style: normal;
+	font-weight: 100 900;
+	font-display: swap;
+	src: url('/fonts/inter-latin.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+		U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+	font-family: 'Inter';
+	font-style: normal;
+	font-weight: 100 900;
+	font-display: swap;
+	src: url('/fonts/inter-latin-ext.woff2') format('woff2');
+	unicode-range:
+		U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+		U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+	font-family: 'Space Grotesk';
+	font-style: normal;
+	font-weight: 100 900;
+	font-display: swap;
+	src: url('/fonts/space-grotesk-latin.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+		U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+	font-family: 'Space Grotesk';
+	font-style: normal;
+	font-weight: 100 900;
+	font-display: swap;
+	src: url('/fonts/space-grotesk-latin-ext.woff2') format('woff2');
+	unicode-range:
+		U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+		U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/*
+ * ──────────────────────────────────────────────────────────────────────────
+ *  LYRIKS DESIGN SYSTEM — single source of truth
+ *  Every token below generates Tailwind utilities (bg-*, text-*, border-*,
+ *  rounded-*, shadow-*, font-*). UI primitives in src/lib/ui/design-system
+ *  compose ONLY these tokens — never raw hex values. See DESIGN_SYSTEM.md.
+ * ──────────────────────────────────────────────────────────────────────────
+ */
+@theme {
+	/* ---- Typography -------------------------------------------------------- */
+	--font-sans:
+		'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
+		sans-serif;
+	/* Brand / display face (logo wordmark, headings) — matches the Lyriks logo. */
+	--font-display: 'Space Grotesk', 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+	/* ---- Brand (violet → pink) — the v3 mockup palette (#7C3AED → #EC4899) ---- */
+	--color-brand-50: #f5f3ff;
+	--color-brand-100: #ede9fe;
+	--color-brand-200: #ddd6fe;
+	--color-brand-300: #c4b5fd;
+	--color-brand-400: #a78bfa; /* mockup violet-400 */
+	--color-brand-500: #7c3aed; /* the violet — gradient start */
+	--color-brand-600: #6d28d9; /* mockup violet-600 — hover */
+	--color-brand-700: #5b21b6; /* pressed */
+
+	/* Pink end of the brand gradient (mockup pink-500 #EC4899) */
+	--color-magenta-400: #f472b6;
+	--color-magenta-500: #ec4899;
+
+	/* ---- Accent (selection / form-factor blue, mockup blue-500 #3B82F6) ---- */
+	--color-accent-50: #eff6ff;
+	--color-accent-100: #dbeafe;
+	--color-accent-200: #bfdbfe;
+	--color-accent-400: #60a5fa;
+	--color-accent-500: #3b82f6;
+	--color-accent-600: #2563eb;
+
+	/* ---- Surfaces (mockup lightmode content + dark rail) ------------------- */
+	--color-canvas: #f8fafc; /* app background (mockup .lightmode) */
+	--color-surface: #ffffff; /* cards           */
+	--color-surface-sunken: #f1f5f9; /* inset fields (mockup bg-ink-800) */
+	--color-sidebar: #0b0b14; /* dark rail (mockup ink-900)  */
+	--color-sidebar-soft: #16161f; /* hovered item (mockup ink-800) */
+	--color-sidebar-line: #1f1f2c; /* dividers (mockup ink-700)  */
+
+	/* ---- Ink (text) — slate ramp (mockup lightmode text) ------------------- */
+	--color-ink-900: #0f172a; /* headings        */
+	--color-ink-800: #1e293b; /* strong body     */
+	--color-ink-700: #334155; /* body            */
+	--color-ink-600: #475569; /* secondary       */
+	--color-ink-500: #64748b; /* muted           */
+	--color-ink-400: #6b7280; /* labels / hints — darkened to meet WCAG AA 4.5:1 as text on white/canvas */
+	--color-ink-300: #cbd5e1; /* faint / icons   */
+	--color-ink-200: #e2e8f0; /* disabled / rule */
+	--color-ink-100: #f1f5f9; /* subtle fills    */
+	--color-ink-on-dark: #f1f5f9; /* text on sidebar */
+	--color-ink-on-dark-muted: #94a3b8;
+
+	/* ---- Lines (slate, mockup lightmode borders) --------------------------- */
+	--color-line: #e2e8f0;
+	--color-line-strong: #cbd5e1;
+
+	/* ---- Semantic (status) ------------------------------------------------ */
+	/* Full ramps so utilities like `text-success-600` / `bg-warning-400` and
+	   inline `var(--color-danger-400)` resolve — components reference 50–700
+	   across all four, not just the 50/500 anchors. */
+	/* success — emerald / mint (mockup mint-500 #10B981) */
+	--color-success-50: #ecfdf5;
+	--color-success-100: #d1fae5;
+	--color-success-200: #a7f3d0;
+	--color-success-300: #6ee7b7;
+	--color-success-400: #34d399;
+	--color-success-500: #10b981;
+	--color-success-600: #059669;
+	--color-success-700: #047857;
+
+	/* warning — amber (mockup amber-500 #F59E0B) */
+	--color-warning-50: #fffbeb;
+	--color-warning-100: #fef3c7;
+	--color-warning-200: #fde68a;
+	--color-warning-300: #fcd34d;
+	--color-warning-400: #fbbf24;
+	--color-warning-500: #f59e0b;
+	--color-warning-600: #d97706;
+	--color-warning-700: #b45309;
+
+	/* danger — red (Tailwind red, harmonizes with the mockup's family) */
+	--color-danger-50: #fef2f2;
+	--color-danger-100: #fee2e2;
+	--color-danger-200: #fecaca;
+	--color-danger-300: #fca5a5;
+	--color-danger-400: #f87171;
+	--color-danger-500: #ef4444;
+	--color-danger-600: #dc2626;
+	--color-danger-700: #b91c1c;
+
+	/* ---- Info (status blue, mockup blue family) ---------------------------- */
+	--color-info-50: #eff6ff;
+	--color-info-100: #dbeafe;
+	--color-info-200: #bfdbfe;
+	--color-info-300: #93c5fd;
+	--color-info-400: #60a5fa;
+	--color-info-500: #3b82f6;
+	--color-info-600: #2563eb;
+
+	/* ---- Radii ------------------------------------------------------------ */
+	--radius-field: 0.625rem; /* inputs, tiles   */
+	--radius-card: 1rem; /* section cards   */
+	--radius-pill: 999px;
+
+	/* ---- Elevation -------------------------------------------------------- */
+	--shadow-card: 0 1px 2px rgb(16 16 26 / 0.04), 0 4px 16px rgb(16 16 26 / 0.04);
+	--shadow-pop: 0 8px 28px rgb(16 16 26 / 0.12);
+	/* Visible on light AND colored surfaces: white gap + brand ring (>=3:1, WCAG 2.4.11). */
+	--shadow-focus: 0 0 0 2px #ffffff, 0 0 0 4px var(--color-brand-500);
+	/* Glowing primary button / active nav (mockup: shadow-violet-500/30). */
+	--shadow-brand: 0 10px 30px -8px rgb(124 58 237 / 0.45);
+}
+
+/* The signature Lyriks gradient — the v3 mockup: linear-gradient(135deg, #7C3AED → #EC4899).
+   Top bar, active nav, primary buttons. */
+@utility bg-brand-gradient {
+	background-image: linear-gradient(
+		135deg,
+		var(--color-brand-500) 0%,
+		var(--color-magenta-500) 100%
+	);
+}
+
+@utility gradient-violet {
+	background-image: linear-gradient(
+		135deg,
+		var(--color-brand-500) 0%,
+		var(--color-magenta-500) 100%
+	);
+}
+
+/* Warm accent gradient (mockup .gradient-warm): amber → pink. */
+@utility gradient-warm {
+	background-image: linear-gradient(
+		135deg,
+		var(--color-warning-500) 0%,
+		var(--color-magenta-500) 100%
+	);
+}
+
+/* Dark glass panel (mockup .glass): overlays / menus on dark chrome. */
+@utility glass {
+	background-color: rgb(22 22 31 / 0.7);
+	backdrop-filter: blur(12px);
+	border: 1px solid rgb(255 255 255 / 0.06);
+}
+
+/* Focus-&-flash: a brand ring that blooms and fades when a "Fix now" / anchor
+   jump lands on a deep-linked field. Driven by the `focusField` action in
+   $ui/shell/focus-field.ts; neutralized by the reduced-motion rule below. */
+@keyframes focus-flash {
+	0% {
+		box-shadow: 0 0 0 0 rgb(124 58 237 / 0.55);
+	}
+	100% {
+		box-shadow: 0 0 0 7px rgb(124 58 237 / 0);
+	}
+}
+.focus-flash {
+	animation: focus-flash 1.2s ease-out;
+	border-radius: var(--radius-card);
+}
+
+@layer base {
+	html {
+		font-family: var(--font-sans);
+		-webkit-font-smoothing: antialiased;
+		text-rendering: optimizeLegibility;
+	}
+
+	body {
+		background-color: var(--color-canvas);
+		color: var(--color-ink-700);
+	}
+
+	/* Consistent, on-brand focus ring for every interactive element. */
+	:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+		outline: none;
+		box-shadow: var(--shadow-focus);
+		border-radius: var(--radius-field);
+	}
+
+	/* Respect users who ask for less motion (WCAG 2.3.3): neutralize animations,
+	   transitions and smooth-scroll app-wide without touching per-component code. */
+	@media (prefers-reduced-motion: reduce) {
+		*,
+		*::before,
+		*::after {
+			animation-duration: 0.01ms !important;
+			animation-iteration-count: 1 !important;
+			transition-duration: 0.01ms !important;
+			scroll-behavior: auto !important;
+		}
+	}
+}

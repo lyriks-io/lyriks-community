@@ -1,0 +1,22 @@
+# The public tree is an export of the private repository, where dependencies
+# are updated and tested against the Enterprise overlay as well. Version-update
+# pull requests here would only make the two trees diverge, so none are opened;
+# security alerts still reach the maintainers, and a fix lands with the next
+# export.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0

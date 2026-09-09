@@ -1,0 +1,124 @@
+# Lyriks Community, the whole stack from this repository.
+#
+#   cp .env.example .env            # then set POSTGRES_PASSWORD and LYRIKS_JWT_SECRET
+#   docker compose up -d
+#   open http://localhost:3000      # the first visitor claims the install
+#
+# Six containers: PostgreSQL, the platform (also the realtime relay and a
+# one-shot volume init), the MCP gateway and the behaviour dashboard. Only the
+# platform is published, on the loopback interface; the gateway (/mcp), the
+# dashboard (/behavior) and the relay (/yjs) are reached through it, behind
+# its login. Images come from this repository's own builds on GHCR, pinned to
+# this tree's version; `LYRIKS_REGISTRY=registry.lyriks.io/community
+# LYRIKS_TAG=stable` follows the appliance channel instead, and images you
+# built yourself work with any registry and tag you named them with.
+#
+# Update: `docker compose pull && docker compose up -d`. Back up the
+# `postgres-data` and `unspa-data` volumes yourself; the appliance kit
+# (https://get.lyriks.io) does that, plus rollback and update checks, for you.
+
+name: lyriks-community
+
+x-image: &platform-image ${LYRIKS_REGISTRY:-ghcr.io/lyriks-io}/lyriks-platform-community:${LYRIKS_TAG:-v0.9.22}
+
+services:
+  postgres:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lyriks
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: lyriks_platform
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lyriks -d lyriks_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # The behaviour store is shared by the platform and the dashboard, both
+  # running as uid 1000; the volume is handed to them once.
+  unspa-init:
+    image: *platform-image
+    user: root
+    entrypoint: ["chown", "-R", "1000:1000", "/app/data/unspa"]
+    restart: "no"
+    volumes:
+      - unspa-data:/app/data/unspa
+
+  platform:
+    image: *platform-image
+    restart: unless-stopped
+    depends_on:
+      unspa-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      LYRIKS_EDITION: community
+      LYRIKS_BACK_URL: ""
+      LYRIKS_JWT_SECRET: ${LYRIKS_JWT_SECRET:?set LYRIKS_JWT_SECRET in .env (openssl rand -hex 32)}
+      LYRIKS_AUTH_REQUIRED: "1"
+      LYRIKS_VERSION: ${LYRIKS_TAG:-v0.9.22}
+      LYRIKS_UPDATE_CHECK: "0"
+      LYRIKS_TRUSTED_ORIGINS: ${LYRIKS_PUBLIC_ORIGIN:-http://localhost:3000}
+      LYRIKS_MCP_URL: http://mcp:3055
+      LYRIKS_UNSPA_URL: http://dashboard:3000
+      LYRIKS_YJS_INTERNAL_URL: http://yjs:3002
+      LYRIKS_BACK_DEV_PLAN: free
+      LYRIKS_BUS: memory
+      LYRIKS_PG_URL: postgres://lyriks:${POSTGRES_PASSWORD}@postgres:5432/lyriks_platform
+    volumes:
+      - unspa-data:/app/data/unspa
+    ports:
+      - "${LYRIKS_BIND:-127.0.0.1}:${LYRIKS_HTTP_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # The realtime co-editing relay, from the platform image.
+  yjs:
+    image: *platform-image
+    restart: unless-stopped
+    command: ["node", "node_modules/y-websocket/bin/server.cjs"]
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3002"
+
+  mcp:
+    image: ${LYRIKS_REGISTRY:-ghcr.io/lyriks-io}/lyriks-mcp-community:${LYRIKS_TAG:-v0.9.22}
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      PORT: "3055"
+      LYRIKS_BASE_URL: http://platform:3000
+      MCP_AUTH_REQUIRED: "1"
+      JWT_SECRET: ${LYRIKS_JWT_SECRET:?set LYRIKS_JWT_SECRET in .env (openssl rand -hex 32)}
+      # The origin browsers reach the platform on: the gateway advertises its
+      # OAuth endpoints under it.
+      PUBLIC_BASE_URL: ${LYRIKS_PUBLIC_ORIGIN:-http://localhost:3000}
+
+  dashboard:
+    image: ${LYRIKS_REGISTRY:-ghcr.io/lyriks-io}/lyriks-behavior-community:${LYRIKS_TAG:-v0.9.22}
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      PUBLIC_UNSPA_BASE_PATH: /behavior
+      PUBLIC_UNSPA_HOST_PRODUCT: Lyriks
+      UNSPA_HOST_URL: http://platform:3000
+    volumes:
+      - unspa-data:/app/data/unspa
+    depends_on:
+      unspa-init:
+        condition: service_completed_successfully
+
+volumes:
+  postgres-data:
+  unspa-data:

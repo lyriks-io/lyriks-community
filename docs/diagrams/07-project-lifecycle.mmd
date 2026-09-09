@@ -1,0 +1,15 @@
+stateDiagram-v2
+    [*] --> Draft : project.created
+    Draft --> Authoring : ouvre le wizard
+    state Authoring {
+        [*] --> Steps_01_08 : cadrage amont
+        Steps_01_08 --> Coherence : Step 09
+        Coherence --> Steps_01_08 : gap bloquant
+        Coherence --> SpecsGenerated : readiness >= 80, 0 gap
+        SpecsGenerated --> ContractValidated : Step 10
+    }
+    Authoring --> Generating : push vers outil IA
+    Generating --> Verifying : code livre (Step 11)
+    Verifying --> Authoring : drift bloquant
+    Verifying --> Completed : confidence OK, 0 drift, evidence packagee
+    Completed --> [*] : Ready for staging

@@ -1,0 +1,20 @@
+node_modules
+.svelte-kit
+build
+data
+.git
+.env
+*.log
+.claude
+# …except the published authoring skills, which the server bundle inlines at
+# build time (BundledSkillCatalog) and serves to agents. One `!` line per id in
+# PUBLISHED_SKILL_IDS (src/lib/infrastructure/skills/skill-catalog-build.ts);
+# miss one and the image silently ships a short catalog. Guarded by
+# scripts/check-skill-catalog.mjs (Dockerfile) and skill-catalog-build.test.ts.
+!.claude/skills/lyriks-build
+!.claude/skills/lyriks-design
+!.claude/skills/lyriks-behavior
+!.claude/skills/lyriks-retrospec
+!.claude/skills/lyriks-delivery
+test-results
+secrets

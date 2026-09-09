@@ -1,0 +1,30 @@
+erDiagram
+    PORTFOLIO ||--o{ DOMAIN : organise
+    DOMAIN    ||--o{ PROJECT : contient
+    PROJECT   ||--|| INIT_DRAFT : "Step 01"
+    PROJECT   ||--o{ ROLE : "Step 03"
+    PROJECT   ||--o{ CORE : "Step 04"
+    CORE      ||--o{ FAMILY : groupe
+    FAMILY    ||--o{ FAMILY : sousFamilles
+    FAMILY    ||--o{ FEATURE : feuilles
+    CORE      ||--o{ FEATURE : feuillesDirectes
+    FEATURE   ||--|| UNSPA_FEATURE : binding_1_1
+    CORE      ||--o{ JOURNEY : macroStage
+    ROLE      }o--o{ JOURNEY : acteurs
+    JOURNEY   ||--o{ JOURNEY_STEP : ordonne
+    JOURNEY_STEP ||--o{ STEP_OPERATION : eventsFlow
+    JOURNEY_STEP ||--o{ STEP_DATA_READ : dataConsumed
+    JOURNEY_STEP }o--o| SCREEN : lie
+    STEP_DATA_READ }o--|| DATA_ENTITY : readWrite
+    DATA_ENTITY ||--o{ ENTITY_FIELD : schema
+    DATA_ENTITY }o--|| DATABASE : placeeSur
+    DATABASE  }o--|| HOST : heberge
+    ROLE      }o--o{ PERMISSION_GRANT : accorde
+    PERMISSION_GRANT }o--|| CAPABILITY : sur
+    TECH_CHOICE ||--|| REFERENCE_DOC : docObligatoire
+    PROJECT   ||--o{ CONSTRAINT : nonNegociables
+    PROJECT   ||--|| CONTRACT : "Step 10"
+    CONTRACT  ||--o{ CONTRACT_VERSION : versionne
+    CONTRACT  ||--o{ PUSH_TARGET : cibles
+    PROJECT   ||--o{ DRIFT : "Step 11"
+    PROJECT   ||--|| EVIDENCE_PACK : auditReady

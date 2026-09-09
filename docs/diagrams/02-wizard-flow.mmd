@@ -1,0 +1,19 @@
+flowchart LR
+    A([Idee brute]) --> S01
+    S01["01 Foundation · identity"] -->|"barre min"| S02
+    S02["02 Foundation · definition"] -->|"1 stack, 1 auth, dispo"| S03
+    S03["03 Users & Permissions"] -->|"1 role, chaque cap systeme accordee"| S04
+    S04["04 Features & Prio"] -->|"1 Core, 1 Feature feuille"| S05
+    S05["05 Experience"] -->|"1 journey, 1 step"| S06
+    S06["06 Rules & Edge Cases"] -->|"0 contradiction critique"| S07
+    S07["07 Data & Flows"] -->|"1 entite typee placee sur DB"| S08
+    S08["08 Architecture & Stack"] -->|"1 tech + doc de ref"| S09
+    S09{{"09 Global Coherence<br/>readiness >= 80, 0 gap bloquant"}}
+    S08 --> S09
+    S09 -->|"specs generees"| S10
+    S10["10 AI Generation Contract"] -->|"1 version validee"| S11
+    S11["11 Generation & Evidence"] -->|"confidence >= barre, 0 drift, evidence packagee"| DONE([Project completed])
+    S09 -.->|"non vert : push IA bloque"| BLOCK[(stop)]
+    style S09 fill:#ffe0b2,stroke:#e65100,stroke-width:2px
+    style DONE fill:#c8e6c9,stroke:#2e7d32
+    style BLOCK fill:#ffcdd2,stroke:#c62828

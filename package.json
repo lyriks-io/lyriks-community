@@ -1,0 +1,86 @@
+{
+  "name": "lyriks",
+  "version": "0.9.22",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.6.3",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "dev": "vite dev",
+    "dev:community": "node scripts/dev-edition.mjs community",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "icons:build": "node scripts/build-icon-subset.mjs",
+    "backup": "node scripts/backup.mjs",
+    "restore": "node scripts/restore.mjs",
+    "audit:unspa": "node scripts/audit-unspa-integrity.mjs",
+    "audit:unspa:json": "node scripts/audit-unspa-integrity.mjs --json",
+    "audit:unspa:strict": "node scripts/audit-unspa-integrity.mjs --strict",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:oss-boundary": "node --test scripts/oss-boundary.test.mjs",
+    "test:dev-editions": "node --test scripts/dev-edition.test.mjs",
+    "test:unspa-integrity": "node --test scripts/lib/unspa-integrity.test.mjs",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:ui": "playwright test",
+    "test:socket-origin": "node --test scripts/lib/socket-origin.test.mjs",
+    "dev:mcp": "pnpm --filter @lyriks/mcp dev",
+    "check:mcp": "pnpm --filter @lyriks/mcp typecheck",
+    "test:mcp": "pnpm --filter @lyriks/mcp test && pnpm --filter @lyriks/mcp test:oss-boundary",
+    "build:mcp": "pnpm --filter @lyriks/mcp build"
+  },
+  "devDependencies": {
+    "@iconify-json/lucide": "^1.2.114",
+    "@playwright/test": "^1.61.1",
+    "@sveltejs/adapter-node": "^5.5.4",
+    "@sveltejs/kit": "^2.70.1",
+    "@sveltejs/vite-plugin-svelte": "^7.2.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/bcryptjs": "^3.0.0",
+    "@types/d3-force": "3.0.10",
+    "@types/node": "^26.1.1",
+    "@types/pg": "^8.20.0",
+    "svelte": "^5.55.10",
+    "svelte-check": "^4.4.8",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.14",
+    "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "@iconify/svelte": "^5.2.1",
+    "@modelcontextprotocol/sdk": "^1.20.2",
+    "bcryptjs": "^3.0.3",
+    "d3-force": "3.0.0",
+    "dompurify": "^3.4.13",
+    "highlight.js": "^11.11.1",
+    "jose": "^6.2.10",
+    "marked": "^18.0.7",
+    "mermaid": "^11.16.1",
+    "pg": "^8.22.0",
+    "unspaghettit": "^0.23.0",
+    "y-websocket": "^2.0.4",
+    "yjs": "^13.6.20"
+  },
+  "pnpm": {
+    "overrides": {
+      "hono": "4.12.34",
+      "tsx>esbuild": "0.28.1",
+      "fast-uri": "3.1.6",
+      "ip-address": "10.3.1",
+      "@hono/node-server": "1.19.15",
+      "body-parser@>=2 <2.3": "2.3.0",
+      "qs": "6.16.0"
+    }
+  },
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lyriks-io/lyriks-community.git"
+  },
+  "homepage": "https://lyriks.io"
+}
