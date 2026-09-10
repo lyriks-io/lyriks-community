@@ -6,6 +6,18 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.23] - 2026-09-10
+
+### Fixed
+
+- AI clients stay connected to the MCP gateway across gateway restarts and
+  token expiry. A client registration is now a signed identifier the gateway
+  verifies instead of a record it kept in memory, and the short-lived access
+  token comes with a rotating refresh token bound to the operator's platform
+  session. Before, every restart or update of the appliance forgot the
+  client's registration and the client looped on the authorization page
+  ("invalid client or redirect_uri") in the browser.
+
 ## [0.9.22] - 2026-09-09
 
 ### Changed
