@@ -6,6 +6,23 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.24] - 2026-09-10
+
+### Fixed
+
+- Approving an AI client in the browser no longer fails with "cross-origin
+  request blocked". The consent page hid the referrer from itself, which made
+  browsers send a null Origin on the consent form's own POST, and the gateway
+  then refused it. The page now keeps the referrer for same-origin requests
+  and the gateway also accepts the browser's own same-origin attestation.
+
+### Added
+
+- The appliance smoke test proves AI clients keep their MCP registration: it
+  registers a client and requires a signed registration, checks the
+  authorization page accepts it, and re-checks the client it registered on
+  the previous run after every update or restart.
+
 ## [0.9.23] - 2026-09-10
 
 ### Fixed
