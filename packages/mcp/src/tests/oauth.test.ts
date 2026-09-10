@@ -91,6 +91,23 @@ describe('OAuth consent and restricted credentials', () => {
     expect(success.status).toBe(303)
     expect((await app.request('/mcp/oauth/authorize', post({ consent: f.nonce, decision: 'allow' }))).status).toBe(403)
   })
+  it('accepts consent from a browser that nulled the Origin but attests the same site', async () => {
+    // Referrer-Policy no-referrer made browsers send `Origin: null` on the
+    // consent form's own POST, so 0.7.11 refused every consent it asked for.
+    const f = await flow()
+    expect(f.response.headers.get('referrer-policy')).toBe('same-origin')
+    const attested = (origin: string | undefined, site: string | undefined) => {
+      const headers: Record<string, string> = { 'content-type': 'application/x-www-form-urlencoded', cookie: `lyriks_session=${SESSION}` }
+      if (origin !== undefined) headers.origin = origin
+      if (site !== undefined) headers['sec-fetch-site'] = site
+      return { method: 'POST', headers, body: new URLSearchParams({ consent: f.nonce, decision: 'allow' }) }
+    }
+    const refused: Array<[string | undefined, string | undefined]> = [['null', 'cross-site'], [undefined, 'same-site'], [undefined, undefined], ['https://evil.example', 'same-origin']]
+    for (const [origin, site] of refused) {
+      expect((await app.request('/mcp/oauth/authorize', attested(origin, site))).status).toBe(403)
+    }
+    expect((await app.request('/mcp/oauth/authorize', attested('null', 'same-origin'))).status).toBe(303)
+  })
   it('cancels without a code and preserves state', async () => {
     const f = await flow()
     const response = await app.request('/mcp/oauth/authorize', post({ consent: f.nonce, decision: 'deny' }))

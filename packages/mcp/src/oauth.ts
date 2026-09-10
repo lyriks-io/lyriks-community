@@ -168,16 +168,29 @@ export function registerOAuthRoutes(app: Hono<{ Variables: HonoVariables }>): vo
     const nonce = randomToken()
     pending.set(nonce, { session, subject, clientId, redirectUri, challenge: q.get('code_challenge')!, state, expiresAt: Date.now() + 5 * 60_000 })
     c.header('Cache-Control', 'no-store')
-    c.header('Referrer-Policy', 'no-referrer')
+    // same-origin, not no-referrer: under no-referrer browsers send `Origin: null`
+    // on this page's own consent POST, which the handler below then refused.
+    c.header('Referrer-Policy', 'same-origin')
     c.header('X-Frame-Options', 'DENY')
     c.header('X-Content-Type-Options', 'nosniff')
     c.header('Content-Security-Policy', `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${new URL(redirectUri).origin}; frame-ancestors 'none'; base-uri 'none'`)
     return c.html(page(`Connect ${client.name}?`, `<p>This client will be able to read and change the Lyriks projects your account can access.</p><p>Client callback: <code>${escapeHtml(redirectUri)}</code></p><p>Approve only if you started this connection and trust this client.</p><form method="post" action="/mcp/oauth/authorize"><input type="hidden" name="consent" value="${nonce}"><button name="decision" value="allow">Allow access</button><button name="decision" value="deny">Cancel</button></form>`))
   })
 
+  // The consent POST must come from a browser on this origin. Browsers say so
+  // with the Origin header, but replace it with `null` when the page's referrer
+  // policy hides the referrer (0.7.11 set no-referrer on the consent page
+  // itself and refused every consent it asked for). Sec-Fetch-Site is the
+  // second witness: browsers set it and a cross-site page cannot forge it, so a
+  // nulled or absent Origin is accepted when it attests same-origin.
+  const sameOriginPost = (c: Context): boolean => {
+    const origin = c.req.header('origin')
+    if (origin === new URL(baseUrl()).origin) return true
+    return (origin === undefined || origin === 'null') && c.req.header('sec-fetch-site') === 'same-origin'
+  }
   app.post('/mcp/oauth/authorize', async c => {
     // Same-origin POST plus a single-use, session-bound unpredictable consent nonce.
-    if (c.req.header('origin') !== new URL(baseUrl()).origin) return c.text('cross-origin request blocked', 403)
+    if (!sameOriginPost(c)) return c.text('cross-origin request blocked', 403)
     const form = await c.req.parseBody().catch(() => ({})) as Record<string, unknown>
     const nonce = typeof form.consent === 'string' ? form.consent : ''
     const entry = pending.get(nonce)
