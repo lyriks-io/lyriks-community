@@ -81,11 +81,16 @@ editions. `pnpm test:mcp` runs the suite and `scripts/oss-boundary.test.mjs`.
 
 After signing in, approve the client name and callback only if you started the
 connection. MCP gets a separate one-hour credential, never your browser session
-JWT. Strict mode no longer accepts browser JWTs as MCP bearer tokens. Upgrade
-the platform and gateway together and reconnect existing clients after upgrading.
-The gateway keeps grants in memory, so a restart also requires reconnection.
+JWT. Strict mode no longer accepts browser JWTs as MCP bearer tokens. The client
+also receives a refresh token, bound to your platform session (seven days) and
+rotated on every use, so an expired credential or a gateway restart renews
+silently instead of reopening the browser. Client registrations are signed
+rather than stored, so they survive restarts and upgrades too. A client
+connected before signed registrations existed must be reconnected once: clear
+its Lyriks authentication in the client, then sign in again.
 Every request rechecks the backing session and role with the platform. Clients
-can revoke a grant by posting a form-encoded `token` to `/mcp/oauth/revoke`.
+can revoke a grant by posting a form-encoded `token` (access or refresh) to
+`/mcp/oauth/revoke`.
 
 Changing the Community password or signing out revokes existing operator sessions
 and their MCP access. Already-open sockets are rechecked within 30 seconds.

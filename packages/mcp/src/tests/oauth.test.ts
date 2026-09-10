@@ -54,6 +54,7 @@ describe('OAuth consent and restricted credentials', () => {
       const meta = await (await app.request('/.well-known/oauth-authorization-server' + suffix)).json()
       expect(meta.code_challenge_methods_supported).toEqual(['S256'])
       expect(meta.revocation_endpoint).toBe(`${BASE}/mcp/oauth/revoke`)
+      expect(meta.grant_types_supported).toEqual(['authorization_code', 'refresh_token'])
     }
   })
   it('a new arbitrary client receives a consent screen, never a code on GET', async () => {
@@ -74,6 +75,8 @@ describe('OAuth consent and restricted credentials', () => {
     expect(grant.access_token).toMatch(/^lyriks_mcp_/)
     expect(grant.access_token).not.toBe(SESSION)
     expect(grant.expires_in).toBe(3600)
+    expect(grant.refresh_token).toMatch(/^lyriks_mcp_refresh_/)
+    expect(grant.refresh_token).not.toContain(SESSION)
     expect(response.headers.get('cache-control')).toBe('no-store')
     const probe = await app.request('/probe', { headers: { authorization: `Bearer ${grant.access_token}` } })
     expect(await probe.json()).toEqual({ subject: 'operator', forwardedSession: true })
@@ -100,8 +103,75 @@ describe('OAuth consent and restricted credentials', () => {
     for (const uri of ['javascript:alert(1)', 'data:text/html,hello', 'http://evil.example/cb', 'https://user:pass@client.example/cb', REDIRECT + '#fragment']) {
       expect((await register([uri])).status).toBe(400)
     }
+    expect((await register(Array(3).fill('https://client.example/' + 'a'.repeat(700)))).status).toBe(400)
     expect((await register(['http://127.0.0.1:12345/cb'])).status).toBe(201)
-    expect((await app.request('/mcp/oauth/authorize?redirect_uri=http://127.0.0.1:12345/cb&client_id=unregistered')).status).toBe(400)
+    // An unknown client with a loopback callback: the waiting client learns the outcome and stops.
+    const bounced = await app.request('/mcp/oauth/authorize?redirect_uri=http://127.0.0.1:12345/cb&client_id=unregistered&state=s1')
+    expect(bounced.status).toBe(303)
+    const url = new URL(bounced.headers.get('location')!)
+    expect(url.origin).toBe('http://127.0.0.1:12345')
+    expect(url.searchParams.get('error')).toBe('invalid_client')
+    expect(url.searchParams.get('state')).toBe('s1')
+    expect(url.searchParams.has('code')).toBe(false)
+    // Anywhere else there is nothing to trust: a page for the user, no redirect.
+    const shown = await app.request(`/mcp/oauth/authorize?redirect_uri=${REDIRECT}&client_id=unregistered`)
+    expect(shown.status).toBe(400)
+    expect(shown.headers.get('location')).toBeNull()
+    expect(await shown.text()).toContain('clear its Lyriks authentication')
+  })
+  it('registrations outlive a gateway restart and reject tampering', async () => {
+    const f = await flow()
+    expect(f.clientId).toMatch(/^lyriks_mcp_client_/)
+    const restarted = new Hono<{ Variables: HonoVariables }>()
+    registerOAuthRoutes(restarted)
+    const again = await restarted.request(`/mcp/oauth/authorize?${f.q}`, { headers: { cookie: `lyriks_session=${SESSION}` } })
+    expect(again.status).toBe(200)
+    expect(await again.text()).toContain('Connect test client?')
+    const [payload, signature] = f.clientId.slice('lyriks_mcp_client_'.length).split('.')
+    const forged = Buffer.from(JSON.stringify({ r: ['https://evil.example/cb'], n: 'test client', t: 0 })).toString('base64url')
+    for (const clientId of [`lyriks_mcp_client_${forged}.${signature}`, `lyriks_mcp_client_${payload}.${signature.slice(1)}A`, f.clientId.replace('lyriks_mcp_client_', '')]) {
+      const q = new URLSearchParams(f.q); q.set('client_id', clientId)
+      const response = await app.request(`/mcp/oauth/authorize?${q}`, { headers: { cookie: `lyriks_session=${SESSION}` } })
+      expect(response.status).toBe(400)
+      expect(response.headers.get('location')).toBeNull()
+    }
+    const mismatch = new URLSearchParams(f.q); mismatch.set('redirect_uri', 'https://another.example/cb')
+    expect((await app.request(`/mcp/oauth/authorize?${mismatch}`, { headers: { cookie: `lyriks_session=${SESSION}` } })).status).toBe(400)
+  })
+  it('refreshes silently, rotates, and outlives a gateway restart', async () => {
+    const f = await approved()
+    const first = await (await exchange(f)).json()
+    const refresh = (token: string, on = app, overrides = {}) =>
+      on.request('/mcp/oauth/token', post({ grant_type: 'refresh_token', refresh_token: token, client_id: f.clientId, ...overrides }))
+    for (const overrides of [{ client_id: 'another-client' }, { resource: 'https://another.example/mcp' }, { refresh_token: 'lyriks_mcp_refresh_forged' }, { refresh_token: first.access_token }]) {
+      expect((await refresh(first.refresh_token, app, overrides)).status).toBe(400)
+    }
+    const second = await (await refresh(first.refresh_token)).json()
+    expect(second.access_token).toMatch(/^lyriks_mcp_/)
+    expect(second.access_token).not.toBe(first.access_token)
+    expect(second.refresh_token).not.toBe(first.refresh_token)
+    expect((await app.request('/probe', { headers: { authorization: `Bearer ${second.access_token}` } })).status).toBe(200)
+    expect((await refresh(first.refresh_token)).status).toBe(400)
+    // After the access token expires, the client renews without any browser.
+    vi.useFakeTimers(); vi.advanceTimersByTime(3600_001)
+    expect((await app.request('/probe', { headers: { authorization: `Bearer ${second.access_token}` } })).status).toBe(401)
+    const third = await (await refresh(second.refresh_token)).json()
+    expect((await app.request('/probe', { headers: { authorization: `Bearer ${third.access_token}` } })).status).toBe(200)
+    vi.useRealTimers()
+    // A restarted gateway forgot every access token, and still honours the refresh token.
+    const restarted = new Hono<{ Variables: HonoVariables }>()
+    registerOAuthRoutes(restarted)
+    const fourth = await (await refresh(third.refresh_token, restarted)).json()
+    expect(fourth.access_token).toMatch(/^lyriks_mcp_/)
+    // Revocation and a dead platform session both end the chain.
+    await app.request('/mcp/oauth/revoke', post({ token: fourth.refresh_token }))
+    expect((await refresh(fourth.refresh_token)).status).toBe(400)
+    const fresh = await (await exchange(await approved())).json()
+    session.verify.mockResolvedValue(null)
+    expect((await refresh(fresh.refresh_token)).status).toBe(400)
+    vi.useFakeTimers(); vi.advanceTimersByTime(7 * 24 * 3600_000 + 1)
+    session.verify.mockResolvedValue('operator')
+    expect((await refresh(fresh.refresh_token)).status).toBe(400)
   })
   it('binds the code to PKCE, client, redirect and resource', async () => {
     for (const overrides of [{ code_verifier: 'wrong'.repeat(10) }, { client_id: 'another-client' }, { redirect_uri: 'https://another.example/cb' }, { resource: 'https://another.example/mcp' }]) {
