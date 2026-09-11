@@ -16,7 +16,7 @@ function baseUrl(): string {
 const cors = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' }
 const LIMIT = 1000
 const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '[::1]']
-interface Client { redirectUris: string[]; name: string }
+interface Client { redirectUris: string[]; name: string; registered: boolean }
 interface Authorization {
   session: string; subject: string; clientId: string; redirectUri: string
   challenge: string; state: string; expiresAt: number
@@ -67,18 +67,24 @@ function page(title: string, body: string): string {
 // handed back as the client_id (RFC 7591 leaves the id format to the server).
 // Nothing is stored. The gateway has no database and no volume, so a registry
 // kept in memory vanished with every restart or upgrade, and with it every
-// connected client's client_id: from then on each authorization attempt died
-// in the user's browser ("invalid client"), because MCP clients only register
-// again when a token endpoint answers invalid_client, never from the
-// authorization page. A signed id survives restarts and never expires; the
-// platform session and the consent screen remain the gates that matter.
+// connected client's client_id. A signed id survives restarts and never
+// expires; the platform session and the consent screen remain the gates that
+// matter, and registration itself, being anonymous, vouches for nothing.
+//
+// An id this gateway did not sign (a UUID from before signed ids, an id signed
+// under another secret, a made-up one) is therefore not a reason to turn the
+// user away, and the authorize endpoint never bounces such a client back to
+// its callback with error=invalid_client either: MCP clients only register
+// again when a token endpoint answers invalid_client, so a bounced client
+// retried, one browser window per try, until its cache was deleted by hand.
 const CLIENT_ID_PREFIX = 'lyriks_mcp_client_'
-const UNKNOWN_CLIENT = 'This AI client\'s registration is not valid on this Lyriks install. Reconnect it: clear its Lyriks authentication, then sign in again.'
+const STALE_CLIENT = 'This AI client\'s registration is not valid on this Lyriks install. Register it again, then sign in.'
+const UNKNOWN_CLIENT = 'This AI client\'s registration is not valid on this Lyriks install, and its callback is not on this computer. Reconnect it from scratch: remove this Lyriks server from the AI client, then add it again.'
 function signClient(payload: string): string {
   const key = createHmac('sha256', process.env.JWT_SECRET ?? 'dev-secret').update('lyriks-mcp-client-registration').digest()
   return createHmac('sha256', key).update(payload).digest('base64url')
 }
-function registerClient(client: Client, issuedAt: number): string {
+function registerClient(client: Pick<Client, 'redirectUris' | 'name'>, issuedAt: number): string {
   const payload = Buffer.from(JSON.stringify({ r: client.redirectUris, n: client.name, t: issuedAt })).toString('base64url')
   return `${CLIENT_ID_PREFIX}${payload}.${signClient(payload)}`
 }
@@ -90,8 +96,22 @@ function lookupClient(clientId: string): Client | null {
     const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
     if (!Array.isArray(claims.r) || !claims.r.length || !claims.r.every((uri: unknown) => typeof uri === 'string' && safeRedirect(uri)) ||
       typeof claims.n !== 'string') return null
-    return { redirectUris: claims.r, name: claims.n }
+    return { redirectUris: claims.r, name: claims.n, registered: true }
   } catch { return null }
+}
+// A client this gateway did not register, waiting for the outcome on the
+// user's own machine: adopted as is, under the id it presents. That id is
+// opaque here but travels in the code and the refresh token, so it is kept
+// plain and no longer than a signed one.
+function unregisteredClient(clientId: string, redirectUri: string): Client | null {
+  if (!isLoopback(redirectUri) || !/^[A-Za-z0-9._~-]{1,4096}$/.test(clientId)) return null
+  return { redirectUris: [redirectUri], name: 'an AI client on this computer', registered: false }
+}
+// mcp-remote checks a cached registration before it opens a browser: it calls
+// this page for JSON, and registers again by itself on an invalid_client error.
+function wantsJson(c: Context): boolean {
+  const accept = c.req.header('accept') ?? ''
+  return accept.includes('application/json') && !accept.includes('text/html')
 }
 
 export function wwwAuthenticate(): string {
@@ -139,17 +159,18 @@ export function registerOAuthRoutes(app: Hono<{ Variables: HonoVariables }>): vo
     const clientId = q.get('client_id') ?? ''
     const redirectUri = q.get('redirect_uri') ?? ''
     const state = q.get('state') ?? ''
-    const client = lookupClient(clientId)
+    let client = lookupClient(clientId)
     if (!client) {
-      // An id this gateway did not sign: a registration from before signed ids,
-      // or a forgery. There is no registered callback to trust, so the user is
-      // told on the page; except that a loopback callback is the user's own
-      // machine, where the waiting client should learn the outcome and stop,
-      // rather than hold the flow open while the browser shows an error.
-      if (isLoopback(redirectUri) && state.length <= 2048) {
-        return c.redirect(callback(redirectUri, state, { error: 'invalid_client', error_description: UNKNOWN_CLIENT }), 303)
-      }
-      return c.html(page('Unknown AI client', `<p>${escapeHtml(UNKNOWN_CLIENT)}</p>`), 400)
+      // An id this gateway did not sign. A client checking its cached
+      // registration asks for JSON: the OAuth error is its cue to register
+      // again on its own. A browser sent by a client waiting on this very
+      // machine goes on to sign-in and consent, the gates that matter, with a
+      // consent page that says the client is unregistered. Anywhere else
+      // nothing says where a code would land: the user reads the outcome on
+      // the page, and nothing is redirected.
+      if (wantsJson(c)) return c.json({ error: 'invalid_client', error_description: STALE_CLIENT }, 400, cors)
+      client = unregisteredClient(clientId, redirectUri)
+      if (!client) return c.html(page('Unknown AI client', `<p>${escapeHtml(UNKNOWN_CLIENT)}</p>`), 400)
     }
     if (!client.redirectUris.includes(redirectUri)) {
       return c.html(page('Callback mismatch', '<p>The callback address is not one this AI client registered. Reconnect the client from scratch.</p>'), 400)
@@ -174,7 +195,9 @@ export function registerOAuthRoutes(app: Hono<{ Variables: HonoVariables }>): vo
     c.header('X-Frame-Options', 'DENY')
     c.header('X-Content-Type-Options', 'nosniff')
     c.header('Content-Security-Policy', `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${new URL(redirectUri).origin}; frame-ancestors 'none'; base-uri 'none'`)
-    return c.html(page(`Connect ${client.name}?`, `<p>This client will be able to read and change the Lyriks projects your account can access.</p><p>Client callback: <code>${escapeHtml(redirectUri)}</code></p><p>Approve only if you started this connection and trust this client.</p><form method="post" action="/mcp/oauth/authorize"><input type="hidden" name="consent" value="${nonce}"><button name="decision" value="allow">Allow access</button><button name="decision" value="deny">Cancel</button></form>`))
+    const notice = client.registered ? '' :
+      '<p>This client presented a registration this Lyriks install did not issue (one from an earlier version, for instance). It is waiting for the answer on this computer, so it signs in here like any other client.</p>'
+    return c.html(page(`Connect ${client.name}?`, `${notice}<p>This client will be able to read and change the Lyriks projects your account can access.</p><p>Client callback: <code>${escapeHtml(redirectUri)}</code></p><p>Approve only if you started this connection and trust this client.</p><form method="post" action="/mcp/oauth/authorize"><input type="hidden" name="consent" value="${nonce}"><button name="decision" value="allow">Allow access</button><button name="decision" value="deny">Cancel</button></form>`))
   })
 
   // The consent POST must come from a browser on this origin. Browsers say so

@@ -85,9 +85,15 @@ JWT. Strict mode no longer accepts browser JWTs as MCP bearer tokens. The client
 also receives a refresh token, bound to your platform session (seven days) and
 rotated on every use, so an expired credential or a gateway restart renews
 silently instead of reopening the browser. Client registrations are signed
-rather than stored, so they survive restarts and upgrades too. A client
-connected before signed registrations existed must be reconnected once: clear
-its Lyriks authentication in the client, then sign in again.
+rather than stored, so they survive restarts and upgrades too. A client whose
+registration this install does not recognise (one from before signed
+registrations, for instance) is not turned away: a client that checks its
+registration before opening the browser (mcp-remote does) is told
+`invalid_client` and registers again by itself, and a browser arriving with a
+callback on your own computer signs in and asks for consent like any other
+client, on a consent page that says the client is unregistered. Only a
+callback elsewhere is refused, on a page: remove that server from the AI
+client and add it again.
 Every request rechecks the backing session and role with the platform. Clients
 can revoke a grant by posting a form-encoded `token` (access or refresh) to
 `/mcp/oauth/revoke`.

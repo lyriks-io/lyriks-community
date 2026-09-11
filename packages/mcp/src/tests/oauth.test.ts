@@ -116,25 +116,59 @@ describe('OAuth consent and restricted credentials', () => {
     expect(url.searchParams.get('state')).toBe('test-state')
     expect(url.searchParams.has('code')).toBe(false)
   })
-  it('requires registration for loopback and validates redirect schemes', async () => {
+  it('adopts a stale registration from this computer, tells a machine caller invalid_client, and shows the page elsewhere', async () => {
     for (const uri of ['javascript:alert(1)', 'data:text/html,hello', 'http://evil.example/cb', 'https://user:pass@client.example/cb', REDIRECT + '#fragment']) {
       expect((await register([uri])).status).toBe(400)
     }
     expect((await register(Array(3).fill('https://client.example/' + 'a'.repeat(700)))).status).toBe(400)
     expect((await register(['http://127.0.0.1:12345/cb'])).status).toBe(201)
-    // An unknown client with a loopback callback: the waiting client learns the outcome and stops.
-    const bounced = await app.request('/mcp/oauth/authorize?redirect_uri=http://127.0.0.1:12345/cb&client_id=unregistered&state=s1')
-    expect(bounced.status).toBe(303)
-    const url = new URL(bounced.headers.get('location')!)
-    expect(url.origin).toBe('http://127.0.0.1:12345')
-    expect(url.searchParams.get('error')).toBe('invalid_client')
-    expect(url.searchParams.get('state')).toBe('s1')
-    expect(url.searchParams.has('code')).toBe(false)
-    // Anywhere else there is nothing to trust: a page for the user, no redirect.
-    const shown = await app.request(`/mcp/oauth/authorize?redirect_uri=${REDIRECT}&client_id=unregistered`)
+    // A client from before signed ids (a UUID), waiting on the user's own machine:
+    // sign-in, consent, tokens and refresh as for any other client, nobody clears a cache.
+    const legacy = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d'
+    const loopback = 'http://127.0.0.1:12345/cb'
+    const verifier = randomBytes(32).toString('base64url')
+    const q = new URLSearchParams({ client_id: legacy, redirect_uri: loopback, response_type: 'code', code_challenge_method: 'S256', code_challenge: createHash('sha256').update(verifier).digest('base64url'), state: 's1', scope: 'mcp' })
+    const anonymous = await app.request(`/mcp/oauth/authorize?${q}`)
+    expect(anonymous.status).toBe(302)
+    expect(anonymous.headers.get('location')).toContain(`${BASE}/login?redirect=`)
+    const consent = await app.request(`/mcp/oauth/authorize?${q}`, { headers: { cookie: `lyriks_session=${SESSION}` } })
+    expect(consent.status).toBe(200)
+    const html = await consent.text()
+    expect(html).toContain('Connect an AI client on this computer?')
+    expect(html).toContain('did not issue')
+    expect(html).toContain(loopback)
+    const nonce = /name="consent" value="([^"]+)"/.exec(html)![1]
+    const granted = await app.request('/mcp/oauth/authorize', post({ consent: nonce, decision: 'allow' }))
+    expect(granted.status).toBe(303)
+    const location = new URL(granted.headers.get('location')!)
+    expect(location.origin).toBe('http://127.0.0.1:12345')
+    expect(location.searchParams.get('state')).toBe('s1')
+    expect(location.searchParams.has('error')).toBe(false)
+    const tokens = await app.request('/mcp/oauth/token', post({ grant_type: 'authorization_code', code: location.searchParams.get('code')!, client_id: legacy, redirect_uri: loopback, code_verifier: verifier }))
+    expect(tokens.status).toBe(200)
+    const issued = await tokens.json()
+    expect((await app.request('/probe', { headers: { authorization: `Bearer ${issued.access_token}` } })).status).toBe(200)
+    expect((await app.request('/mcp/oauth/token', post({ grant_type: 'refresh_token', refresh_token: issued.refresh_token, client_id: legacy }))).status).toBe(200)
+    // The same stale id checked by the client itself before it opens a browser (mcp-remote's
+    // preflight asks for JSON): the OAuth error it registers again on, never a redirect.
+    for (const uri of [loopback, REDIRECT]) {
+      const machine = new URLSearchParams(q); machine.set('redirect_uri', uri)
+      const told = await app.request(`/mcp/oauth/authorize?${machine}`, { headers: { accept: 'application/json' } })
+      expect(told.status).toBe(400)
+      expect(told.headers.get('location')).toBeNull()
+      expect(await told.json()).toMatchObject({ error: 'invalid_client' })
+    }
+    // A signed id checked the same way is not told invalid_client: the preflight goes on to the browser.
+    const signed = await flow(loopback)
+    expect((await app.request(`/mcp/oauth/authorize?${signed.q}`, { headers: { accept: 'application/json' } })).status).toBe(302)
+    // Anywhere else there is nothing to trust: a page for the user, no redirect, no consent.
+    const shown = await app.request(`/mcp/oauth/authorize?redirect_uri=${REDIRECT}&client_id=${legacy}`, { headers: { cookie: `lyriks_session=${SESSION}` } })
     expect(shown.status).toBe(400)
     expect(shown.headers.get('location')).toBeNull()
-    expect(await shown.text()).toContain('clear its Lyriks authentication')
+    expect(await shown.text()).toContain('remove this Lyriks server from the AI client')
+    // Nor is an id that is not even id-shaped adopted on a loopback callback.
+    const odd = new URLSearchParams(q); odd.set('client_id', 'not an id <script>')
+    expect((await app.request(`/mcp/oauth/authorize?${odd}`, { headers: { cookie: `lyriks_session=${SESSION}` } })).status).toBe(400)
   })
   it('registrations outlive a gateway restart and reject tampering', async () => {
     const f = await flow()

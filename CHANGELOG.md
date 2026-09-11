@@ -6,6 +6,26 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.25] - 2026-09-11
+
+### Fixed
+
+- An AI client whose MCP registration this install no longer recognises (one
+  issued before 0.9.23, or under another secret) reconnects without anyone
+  deleting its cache by hand. A client that checks its registration before
+  opening the browser (mcp-remote) is told `invalid_client` in the OAuth
+  format and registers again by itself; a browser sent by a client waiting on
+  the user's own computer goes on to the sign-in and the consent like any
+  other client, on a consent page that says the client is unregistered.
+  Bouncing such a client back to its callback with an error, as 0.9.23 did,
+  made it retry, one browser window per try.
+
+### Added
+
+- The appliance smoke test proves both recoveries: a stale registration is
+  told `invalid_client` when the client asks for JSON, and still reaches the
+  sign-in when a browser brings it with a callback on the user's computer.
+
 ## [0.9.24] - 2026-09-10
 
 ### Fixed
