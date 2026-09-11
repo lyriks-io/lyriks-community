@@ -116,7 +116,7 @@ describe('OAuth consent and restricted credentials', () => {
     expect(url.searchParams.get('state')).toBe('test-state')
     expect(url.searchParams.has('code')).toBe(false)
   })
-  it('adopts a stale registration from this computer, tells a machine caller invalid_client, and shows the page elsewhere', async () => {
+  it('adopts a stale registration from this computer whatever the caller asks for, and refuses it elsewhere with JSON or a page', async () => {
     for (const uri of ['javascript:alert(1)', 'data:text/html,hello', 'http://evil.example/cb', 'https://user:pass@client.example/cb', REDIRECT + '#fragment']) {
       expect((await register([uri])).status).toBe(400)
     }
@@ -150,15 +150,18 @@ describe('OAuth consent and restricted credentials', () => {
     expect((await app.request('/probe', { headers: { authorization: `Bearer ${issued.access_token}` } })).status).toBe(200)
     expect((await app.request('/mcp/oauth/token', post({ grant_type: 'refresh_token', refresh_token: issued.refresh_token, client_id: legacy }))).status).toBe(200)
     // The same stale id checked by the client itself before it opens a browser (mcp-remote's
-    // preflight asks for JSON): the OAuth error it registers again on, never a redirect.
-    for (const uri of [loopback, REDIRECT]) {
-      const machine = new URLSearchParams(q); machine.set('redirect_uri', uri)
-      const told = await app.request(`/mcp/oauth/authorize?${machine}`, { headers: { accept: 'application/json' } })
-      expect(told.status).toBe(400)
-      expect(told.headers.get('location')).toBeNull()
-      expect(await told.json()).toMatchObject({ error: 'invalid_client' })
-    }
-    // A signed id checked the same way is not told invalid_client: the preflight goes on to the browser.
+    // preflight asks for JSON) is sent on to the sign-in like a browser: told invalid_client it
+    // would register again but keep waiting on the sign-in it had already started, browser unopened.
+    const checked = await app.request(`/mcp/oauth/authorize?${q}`, { headers: { accept: 'application/json' } })
+    expect(checked.status).toBe(302)
+    expect(checked.headers.get('location')).toContain(`${BASE}/login?redirect=`)
+    // Elsewhere nothing can be adopted, and a machine caller gets the OAuth error, not a page.
+    const web = new URLSearchParams(q); web.set('redirect_uri', REDIRECT)
+    const told = await app.request(`/mcp/oauth/authorize?${web}`, { headers: { accept: 'application/json' } })
+    expect(told.status).toBe(400)
+    expect(told.headers.get('location')).toBeNull()
+    expect(await told.json()).toMatchObject({ error: 'invalid_client' })
+    // A signed id checked the same way goes on to the browser too.
     const signed = await flow(loopback)
     expect((await app.request(`/mcp/oauth/authorize?${signed.q}`, { headers: { accept: 'application/json' } })).status).toBe(302)
     // Anywhere else there is nothing to trust: a page for the user, no redirect, no consent.

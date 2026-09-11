@@ -6,6 +6,18 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.26] - 2026-09-11
+
+### Fixed
+
+- An AI client that checks a stale MCP registration before opening the
+  browser (mcp-remote) is now sent on to the sign-in like a browser when its
+  callback is on the user's computer, and signs in once under the id it
+  holds. 0.9.25 answered `invalid_client` there, on which mcp-remote
+  registered again but kept waiting on the sign-in it had already started,
+  browser unopened, until its next restart. A callback elsewhere still gets
+  the OAuth error.
+
 ## [0.9.25] - 2026-09-11
 
 ### Fixed

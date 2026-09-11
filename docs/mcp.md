@@ -87,13 +87,12 @@ rotated on every use, so an expired credential or a gateway restart renews
 silently instead of reopening the browser. Client registrations are signed
 rather than stored, so they survive restarts and upgrades too. A client whose
 registration this install does not recognise (one from before signed
-registrations, for instance) is not turned away: a client that checks its
-registration before opening the browser (mcp-remote does) is told
-`invalid_client` and registers again by itself, and a browser arriving with a
-callback on your own computer signs in and asks for consent like any other
-client, on a consent page that says the client is unregistered. Only a
-callback elsewhere is refused, on a page: remove that server from the AI
-client and add it again.
+registrations, for instance) is not turned away: with a callback on your own
+computer it signs in and asks for consent like any other client, whatever it
+asked the authorization page for, on a consent page that says the client is
+unregistered. Only a callback elsewhere is refused (`invalid_client` to a
+machine caller, a page to a person): remove that server from the AI client and
+add it again.
 Every request rechecks the backing session and role with the platform. Clients
 can revoke a grant by posting a form-encoded `token` (access or refresh) to
 `/mcp/oauth/revoke`.

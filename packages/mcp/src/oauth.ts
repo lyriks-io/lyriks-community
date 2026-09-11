@@ -107,8 +107,8 @@ function unregisteredClient(clientId: string, redirectUri: string): Client | nul
   if (!isLoopback(redirectUri) || !/^[A-Za-z0-9._~-]{1,4096}$/.test(clientId)) return null
   return { redirectUris: [redirectUri], name: 'an AI client on this computer', registered: false }
 }
-// mcp-remote checks a cached registration before it opens a browser: it calls
-// this page for JSON, and registers again by itself on an invalid_client error.
+// A machine caller (mcp-remote checks a cached registration this way before it
+// opens a browser) gets OAuth errors as JSON rather than as a page.
 function wantsJson(c: Context): boolean {
   const accept = c.req.header('accept') ?? ''
   return accept.includes('application/json') && !accept.includes('text/html')
@@ -161,16 +161,22 @@ export function registerOAuthRoutes(app: Hono<{ Variables: HonoVariables }>): vo
     const state = q.get('state') ?? ''
     let client = lookupClient(clientId)
     if (!client) {
-      // An id this gateway did not sign. A client checking its cached
-      // registration asks for JSON: the OAuth error is its cue to register
-      // again on its own. A browser sent by a client waiting on this very
-      // machine goes on to sign-in and consent, the gates that matter, with a
-      // consent page that says the client is unregistered. Anywhere else
-      // nothing says where a code would land: the user reads the outcome on
-      // the page, and nothing is redirected.
-      if (wantsJson(c)) return c.json({ error: 'invalid_client', error_description: STALE_CLIENT }, 400, cors)
+      // An id this gateway did not sign. A client waiting on this very machine
+      // goes on to sign-in and consent, the gates that matter, with a consent
+      // page that says the client is unregistered; whatever it asked for.
+      // mcp-remote checks a cached registration for JSON before it opens a
+      // browser, and told invalid_client there (0.7.14) it registered again but
+      // then joined the sign-in it had just started under the old id and never
+      // opened a browser until its next restart; sent on like a browser it
+      // opens the browser once, under the old id, which the code and the
+      // refresh token then carry. Anywhere else nothing says where a code
+      // would land: a machine caller gets the OAuth error, a person the page,
+      // and nothing is redirected.
       client = unregisteredClient(clientId, redirectUri)
-      if (!client) return c.html(page('Unknown AI client', `<p>${escapeHtml(UNKNOWN_CLIENT)}</p>`), 400)
+      if (!client) {
+        if (wantsJson(c)) return c.json({ error: 'invalid_client', error_description: STALE_CLIENT }, 400, cors)
+        return c.html(page('Unknown AI client', `<p>${escapeHtml(UNKNOWN_CLIENT)}</p>`), 400)
+      }
     }
     if (!client.redirectUris.includes(redirectUri)) {
       return c.html(page('Callback mismatch', '<p>The callback address is not one this AI client registered. Reconnect the client from scratch.</p>'), 400)
