@@ -68,8 +68,12 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/scripts/backup.mjs ./scripts/backup.mjs
 COPY --from=build /app/scripts/restore.mjs ./scripts/restore.mjs
-# Ship the tools used by the documented PostgreSQL + behavior backup workflow.
+# Ship the tools used by the documented PostgreSQL + behavior backup workflow,
+# and take the Debian security updates published since the pinned base image
+# was built: the base image lags them (libpcre2 and liblzma, September 2026),
+# and the Community publish scan refuses an image with a fixable high finding.
 RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
  && apt-get install -y --no-install-recommends libpq5 liblz4-1 libzstd1 tar \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=postgres-client /usr/lib/postgresql/16/bin/pg_dump /usr/local/bin/pg_dump

@@ -6,6 +6,14 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.28] - 2026-09-17
+
+### Security
+
+- The images apply the Debian security updates published after their base
+  image was built (libpcre2 and liblzma), which the base image does not carry
+  yet.
+
 ## [0.9.27] - 2026-09-17
 
 ### Fixed

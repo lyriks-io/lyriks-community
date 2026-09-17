@@ -28,6 +28,11 @@ ENV NODE_ENV=production \
     LYRIKS_BUILD_SHA=${LYRIKS_BUILD_SHA} \
     LYRIKS_BUILD_DATE=${LYRIKS_BUILD_DATE}
 COPY --from=build --chown=node:node /deploy .
+# Debian security updates published since the pinned base image was built (the
+# publish scan refuses an image with a fixable high finding).
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
 # Package managers are build tools; the running service only needs Node.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-* \
  && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
