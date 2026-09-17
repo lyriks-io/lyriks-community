@@ -1,5 +1,5 @@
 import { resolveAccessToken, revokeAccessToken } from './access-tokens.js'
-import { verifyPlatformSession } from './session.js'
+import { SESSION_UNAVAILABLE, verifyPlatformSession } from './session.js'
 // Strict mode resolves opaque MCP grants and revalidates their backing session
 // with the platform. The session is forwarded internally; it is never returned
 // as the client's credential. Optional development mode retains local JWTs.
@@ -20,6 +20,14 @@ const unauthorized = (c: Context, message: string) =>
     'WWW-Authenticate': wwwAuthenticate(),
   })
 
+// The platform could not say whether the session behind a token is still good.
+// No 401: an MCP client reads it as signed out, discards its tokens and opens a
+// browser window. The token stays valid and the client simply retries.
+const temporarilyUnavailable = (c: Context) =>
+  c.json({ errors: [{ code: 'TEMPORARILY_UNAVAILABLE', message: 'Lyriks cannot check your account right now. Try again in a moment.', field: null }] }, 503, {
+    'Retry-After': '5',
+  })
+
 export async function authenticate(
   c: Context<{ Variables: HonoVariables }>,
   next: Next,
@@ -36,7 +44,9 @@ export async function authenticate(
     try {
       if (authRequired) {
         const grant = resolveAccessToken(token)
-        if (!grant || await verifyPlatformSession(grant.session) !== grant.subject) {
+        const subject = grant ? await verifyPlatformSession(grant.session) : null
+        if (subject === SESSION_UNAVAILABLE) return temporarilyUnavailable(c)
+        if (!grant || subject !== grant.subject) {
           revokeAccessToken(token)
           return unauthorized(c, 'Invalid or expired MCP token')
         }

@@ -1,4 +1,4 @@
-import type { GateDoor, RoleGatePort } from '$application/ports';
+import type { GateDoor, RoleGatePort, RoleVerdict } from '$application/ports';
 
 /**
  * Doors on a single-operator install (auth on, no Back): the one account is the
@@ -13,5 +13,13 @@ export class SingleOperatorRoleGate implements RoleGatePort {
 		_activeWorkspaceId: string | null | undefined
 	): Promise<boolean> {
 		return Boolean(token);
+	}
+
+	async verdict(
+		token: string | null | undefined,
+		_door: GateDoor,
+		_activeWorkspaceId: string | null | undefined
+	): Promise<RoleVerdict> {
+		return token ? 'allowed' : 'denied';
 	}
 }

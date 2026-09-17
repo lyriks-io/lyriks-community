@@ -26,7 +26,8 @@ type CallSpec = {
 type OnSpec = {
   trigger?: string
   navigate?: string
-  setState?: [string, unknown]
+  // [statePath, value]; the schema checks the length (a tuple type would force z.tuple).
+  setState?: readonly unknown[]
   toggle?: string
   increment?: string
   by?: unknown

@@ -1,7 +1,7 @@
 import { env } from '$env/dynamic/private';
 import type { RequestEvent } from '@sveltejs/kit';
 import { SESSION_COOKIE } from '$lib/server/session-cookie.server';
-import { tokenHasRole } from '$lib/server/writer-gate.server';
+import { tokenRoleVerdict } from '$lib/server/writer-gate.server';
 
 /**
  * Serve the MCP gateway on the app's own origin.
@@ -119,6 +119,9 @@ export async function proxyToMcp(
 	});
 }
 
+const ROLE_CHECK_UNAVAILABLE_MESSAGE =
+	'Lyriks cannot check your account right now. Reload this page in a moment; your AI client keeps waiting for the answer.';
+
 const READER_MESSAGE =
 	'MCP access is reserved to designers and above in this workspace. As a viewer, you read your projects in the app.';
 
@@ -137,7 +140,16 @@ async function refuseReader(event: RequestEvent): Promise<Response | null> {
 		);
 		const token = match ? match[1] : '';
 		if (!token) return null;
-		if (await tokenHasRole(token, 'mcp', null)) return null;
+		const verdict = await tokenRoleVerdict(token, 'mcp', null);
+		if (verdict === 'allowed') return null;
+		// A role source that did not answer is not a refusal: the page asks to reload
+		// rather than telling a designer they are a viewer.
+		if (verdict === 'unreachable') {
+			return new Response(ROLE_CHECK_UNAVAILABLE_MESSAGE, {
+				status: 503,
+				headers: { 'content-type': 'text/plain; charset=utf-8', 'retry-after': '5' }
+			});
+		}
 		return new Response(READER_MESSAGE, {
 			status: 403,
 			headers: { 'content-type': 'text/plain; charset=utf-8' }

@@ -451,7 +451,9 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
           z.object({
             trigger: z.enum(['click', 'hover', 'change', 'submit']).optional(),
             navigate: z.string().optional(),
-            setState: z.tuple([z.string(), z.unknown()]).optional(),
+            // An array, not z.tuple: a tuple serializes as draft-07 array-form `items`,
+            // which the Anthropic API rejects, and Claude clients then drop the whole tool.
+            setState: z.array(z.unknown()).length(2).optional().describe('[statePath, value]: set this state path to the value'),
             toggle: z.string().optional(),
             increment: z.string().optional(),
             by: z.unknown().optional(),

@@ -114,7 +114,7 @@ export type {
 } from './system-probes';
 export type { BackSyncOutboxPort, BackSyncPending } from './back-sync-outbox';
 export type { AccessAction, AccessDecision, ProjectAccessPort } from './project-access';
-export type { GateDoor, RoleGatePort } from './role-gate';
+export type { GateDoor, RoleGatePort, RoleVerdict } from './role-gate';
 export type { AuditEvent, AuditLogPort } from './audit-log';
 export type { DraftLockPort } from './draft-lock';
 export type { ProjectLockPort } from './project-lock';

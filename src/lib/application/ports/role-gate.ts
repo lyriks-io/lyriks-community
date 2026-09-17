@@ -17,4 +17,17 @@ export interface RoleGatePort {
 		door: GateDoor,
 		activeWorkspaceId: string | null | undefined
 	): Promise<boolean>;
+	/**
+	 * The same judgement, saying apart a refusal from a source that could not
+	 * answer. Only the MCP session check needs the difference: an MCP client told
+	 * "refused" discards its sign-in and opens a browser window, so a restarting
+	 * or slow back must read as `unreachable`, never as `denied`.
+	 */
+	verdict(
+		token: string | null | undefined,
+		door: GateDoor,
+		activeWorkspaceId: string | null | undefined
+	): Promise<RoleVerdict>;
 }
+
+export type RoleVerdict = 'allowed' | 'denied' | 'unreachable';

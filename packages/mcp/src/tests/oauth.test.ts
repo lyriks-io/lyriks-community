@@ -3,9 +3,11 @@ import { Hono } from 'hono'
 import { createHash, randomBytes } from 'node:crypto'
 import type { HonoVariables } from '../types.js'
 const session = vi.hoisted(() => ({ verify: vi.fn() }))
-vi.mock('../session.js', () => ({ verifyPlatformSession: session.verify }))
+vi.mock('../session.js', async (original) => ({ ...await original<typeof import('../session.js')>(), verifyPlatformSession: session.verify }))
 import { registerOAuthRoutes } from '../oauth.js'
 import { authenticate } from '../auth.js'
+import { SESSION_UNAVAILABLE } from '../session.js'
+import { REUSE_GRACE_MS } from '../access-tokens.js'
 
 const BASE = 'https://studio.test'
 const REDIRECT = 'https://client.example/callback'
@@ -205,7 +207,15 @@ describe('OAuth consent and restricted credentials', () => {
     expect(second.access_token).not.toBe(first.access_token)
     expect(second.refresh_token).not.toBe(first.refresh_token)
     expect((await app.request('/probe', { headers: { authorization: `Bearer ${second.access_token}` } })).status).toBe(200)
+    // Presented again at once, it is another process of the same client on the same token store.
+    vi.useFakeTimers()
+    const sibling = await (await refresh(first.refresh_token)).json()
+    expect((await app.request('/probe', { headers: { authorization: `Bearer ${sibling.access_token}` } })).status).toBe(200)
+    expect((await refresh(first.refresh_token, app, { client_id: 'another-client' })).status).toBe(400)
+    // Past the grace, a reused token is refused.
+    vi.advanceTimersByTime(REUSE_GRACE_MS + 1)
     expect((await refresh(first.refresh_token)).status).toBe(400)
+    vi.useRealTimers()
     // After the access token expires, the client renews without any browser.
     vi.useFakeTimers(); vi.advanceTimersByTime(3600_001)
     expect((await app.request('/probe', { headers: { authorization: `Bearer ${second.access_token}` } })).status).toBe(401)
@@ -254,6 +264,51 @@ describe('OAuth consent and restricted credentials', () => {
     const expiring = (await (await exchange(await approved())).json()).access_token
     vi.useFakeTimers(); vi.advanceTimersByTime(3600_001)
     expect((await app.request('/probe', { headers: { authorization: `Bearer ${expiring}` } })).status).toBe(401)
+  })
+  it('keeps every credential when the platform cannot check the session, and resumes once it answers', async () => {
+    const f = await approved()
+    const first = await (await exchange(f)).json()
+    const probe = (token: string) => app.request('/probe', { headers: { authorization: `Bearer ${token}` } })
+    const refresh = (token: string) => app.request('/mcp/oauth/token', post({ grant_type: 'refresh_token', refresh_token: token, client_id: f.clientId }))
+    session.verify.mockResolvedValue(SESSION_UNAVAILABLE)
+    // A tool call: 503 to retry, not the 401 that sends a client back to the browser.
+    const call = await probe(first.access_token)
+    expect(call.status).toBe(503)
+    expect(call.headers.get('retry-after')).toBe('5')
+    expect(call.headers.get('www-authenticate')).toBeNull()
+    // A renewal: an OAuth error clients do not answer by discarding their tokens.
+    const renewal = await refresh(first.refresh_token)
+    expect(renewal.status).toBe(503)
+    expect(await renewal.json()).toMatchObject({ error: 'temporarily_unavailable' })
+    session.verify.mockResolvedValue('operator')
+    // Neither the access token nor the refresh token was revoked or spent.
+    expect((await probe(first.access_token)).status).toBe(200)
+    const second = await (await refresh(first.refresh_token)).json()
+    expect(second.access_token).toMatch(/^lyriks_mcp_/)
+    // A session the platform does answer for, and says is over, still ends the chain.
+    session.verify.mockResolvedValue(null)
+    expect((await probe(second.access_token)).status).toBe(401)
+    expect((await refresh(second.refresh_token)).status).toBe(400)
+  })
+  it('does not send the user to log in again, nor lose the consent or the code, while the platform cannot answer', async () => {
+    const f = await flow()
+    session.verify.mockResolvedValue(SESSION_UNAVAILABLE)
+    const page = await app.request(`/mcp/oauth/authorize?${f.q}`, { headers: { cookie: `lyriks_session=${SESSION}` } })
+    expect(page.status).toBe(503)
+    expect(page.headers.get('location')).toBeNull()
+    expect(await page.text()).toContain('Lyriks cannot check your account right now.')
+    const consent = await app.request('/mcp/oauth/authorize', post({ consent: f.nonce, decision: 'allow' }))
+    expect(consent.status).toBe(503)
+    session.verify.mockResolvedValue('operator')
+    const resent = await app.request('/mcp/oauth/authorize', post({ consent: f.nonce, decision: 'allow' }))
+    expect(resent.status).toBe(303)
+    const code = new URL(resent.headers.get('location')!).searchParams.get('code')!
+    session.verify.mockResolvedValue(SESSION_UNAVAILABLE)
+    const early = await exchange({ ...f, code })
+    expect(early.status).toBe(503)
+    expect(await early.json()).toMatchObject({ error: 'temporarily_unavailable' })
+    session.verify.mockResolvedValue('operator')
+    expect((await (await exchange({ ...f, code })).json()).access_token).toMatch(/^lyriks_mcp_/)
   })
   it('bounces an anonymous user to the platform login and refuses raw sessions as MCP credentials', async () => {
     const f = await flow()

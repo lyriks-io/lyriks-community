@@ -4,10 +4,10 @@ import type { Context } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { HonoVariables } from './types.js'
-import { verifyPlatformSession } from './session.js'
+import { SESSION_UNAVAILABLE, verifyPlatformSession } from './session.js'
 import {
   issueAccessToken, revokeAccessToken, ACCESS_TOKEN_TTL_SECONDS,
-  issueRefreshToken, redeemRefreshToken, revokeRefreshToken,
+  issueRefreshToken, readRefreshToken, redeemRefreshToken, revokeRefreshToken,
 } from './access-tokens.js'
 
 function baseUrl(): string {
@@ -109,6 +109,19 @@ function unregisteredClient(clientId: string, redirectUri: string): Client | nul
 }
 // A machine caller (mcp-remote checks a cached registration this way before it
 // opens a browser) gets OAuth errors as JSON rather than as a page.
+// The platform could not say whether the browser's session is good (it or the
+// account service restarts, updates or answers too slowly). That concludes
+// nothing: the user is not sent to log in again, and an MCP client is never told
+// its sign-in is over, which would make it discard its tokens and open a browser
+// window per process. Retrying a moment later goes through.
+const CHECK_UNAVAILABLE = 'Lyriks cannot check your account right now.'
+const unavailableHeaders = { 'Retry-After': '5', 'Cache-Control': 'no-store' }
+function unavailablePage(c: Context, next: string): Response {
+  return c.html(page('Lyriks is not answering yet', `<p>${escapeHtml(CHECK_UNAVAILABLE)} ${escapeHtml(next)}</p>`), 503, unavailableHeaders)
+}
+function tokenUnavailable(c: Context): Response {
+  return c.json({ error: 'temporarily_unavailable', error_description: `${CHECK_UNAVAILABLE} Try again in a moment.` }, 503, { ...cors, ...unavailableHeaders })
+}
 function wantsJson(c: Context): boolean {
   const accept = c.req.header('accept') ?? ''
   return accept.includes('application/json') && !accept.includes('text/html')
@@ -189,6 +202,7 @@ export function registerOAuthRoutes(app: Hono<{ Variables: HonoVariables }>): vo
     }
     const session = sessionCookie(c.req.header('cookie') ?? '')
     const subject = await verifyPlatformSession(session)
+    if (subject === SESSION_UNAVAILABLE) return unavailablePage(c, 'Reload this page in a moment; your AI client keeps waiting for the answer.')
     if (!subject) return c.redirect(`${baseUrl()}/login?redirect=${encodeURIComponent(c.req.path + new URL(c.req.url).search)}`)
     prune(pending)
     if (pending.size >= LIMIT) return c.json({ error: 'temporarily_unavailable' }, 429, cors)
@@ -226,7 +240,12 @@ export function registerOAuthRoutes(app: Hono<{ Variables: HonoVariables }>): vo
     const session = sessionCookie(c.req.header('cookie') ?? '')
     if (!entry || entry.expiresAt <= Date.now() || !same(entry.session, session)) return c.text('invalid consent', 403)
     pending.delete(nonce)
-    if (await verifyPlatformSession(session) !== entry.subject) return c.text('session expired', 401)
+    const subject = await verifyPlatformSession(session)
+    if (subject === SESSION_UNAVAILABLE) {
+      pending.set(nonce, entry)
+      return unavailablePage(c, 'Wait a moment, then reload this page to send your answer again.')
+    }
+    if (subject !== entry.subject) return c.text('session expired', 401)
     if (form.decision === 'deny') return c.redirect(callback(entry.redirectUri, entry.state, { error: 'access_denied' }), 303)
     if (form.decision !== 'allow') return c.text('invalid decision', 400)
     prune(codes)
@@ -248,8 +267,12 @@ export function registerOAuthRoutes(app: Hono<{ Variables: HonoVariables }>): vo
     const resourceOk = form.resource === undefined || form.resource === `${baseUrl()}/mcp`
     if (form.grant_type === 'refresh_token') {
       const presented = typeof form.refresh_token === 'string' ? form.refresh_token : ''
-      const grant = resourceOk && clientId ? redeemRefreshToken(presented, clientId) : null
-      if (!grant || await verifyPlatformSession(grant.session) !== grant.subject) return c.json({ error: 'invalid_grant' }, 400, cors)
+      // Checked before it is spent: a platform that cannot answer must not burn it.
+      const held = resourceOk && clientId ? readRefreshToken(presented, clientId) : null
+      const subject = held ? await verifyPlatformSession(held.session) : null
+      if (subject === SESSION_UNAVAILABLE) return tokenUnavailable(c)
+      const grant = held && subject === held.subject ? redeemRefreshToken(presented, clientId) : null
+      if (!grant) return c.json({ error: 'invalid_grant' }, 400, cors)
       return grantResponse(c, grant)
     }
     if (form.grant_type !== 'authorization_code') return c.json({ error: 'unsupported_grant_type' }, 400, cors)
@@ -258,10 +281,15 @@ export function registerOAuthRoutes(app: Hono<{ Variables: HonoVariables }>): vo
     codes.delete(code)
     if (!entry || entry.expiresAt <= Date.now() || entry.clientId !== clientId || entry.redirectUri !== form.redirect_uri ||
       typeof form.code_verifier !== 'string' || !/^[A-Za-z0-9._~-]{43,128}$/.test(form.code_verifier) ||
-      !same(s256(form.code_verifier), entry.challenge) || !resourceOk ||
-      await verifyPlatformSession(entry.session) !== entry.subject) {
+      !same(s256(form.code_verifier), entry.challenge) || !resourceOk) {
       return c.json({ error: 'invalid_grant' }, 400, cors)
     }
+    const subject = await verifyPlatformSession(entry.session)
+    if (subject === SESSION_UNAVAILABLE) {
+      codes.set(code, entry)
+      return tokenUnavailable(c)
+    }
+    if (subject !== entry.subject) return c.json({ error: 'invalid_grant' }, 400, cors)
     return grantResponse(c, entry)
   })
   app.post('/mcp/oauth/revoke', async c => {

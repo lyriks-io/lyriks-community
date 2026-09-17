@@ -55,14 +55,24 @@ export function revokeAccessToken(token: string): void {
 // is in memory, so a rotated-away token could be presented again after a
 // restart; it then yields no more than the live client already holds, and only
 // while the platform session is still valid.
-const spent = new Map<string, number>()
+//
+// A token presented again within REUSE_GRACE_MS of its first use, by the same
+// client, is honoured once more. One AI client often runs several processes on
+// one token store (Claude Desktop: one for chat, one for Cowork and Code); after
+// a gateway restart they all get a 401 at once and renew with the same token.
+// Strict single use answered the second one invalid_grant, which makes a client
+// discard the store they share and open a browser window. Past the grace, or
+// once revoked, a reused token is refused as before.
+interface Spent { expiresAt: number; spentAt: number }
+const spent = new Map<string, Spent>()
 const MAX_SPENT = 50_000
+export const REUSE_GRACE_MS = 30_000
 
 function refreshKey(): Buffer {
   return Buffer.from(hkdfSync('sha256', process.env.JWT_SECRET ?? 'dev-secret', '', 'lyriks-mcp-refresh-token', 32))
 }
 function pruneSpent(): void {
-  for (const [key, expiresAt] of spent) if (expiresAt <= Date.now()) spent.delete(key)
+  for (const [key, entry] of spent) if (entry.expiresAt <= Date.now()) spent.delete(key)
   while (spent.size >= MAX_SPENT) spent.delete(spent.keys().next().value!)
 }
 
@@ -89,14 +99,25 @@ function openRefreshToken(token: string): Grant | null {
   }
 }
 
-/** Single use: a valid token is spent here whatever the caller does with the grant. */
-export function redeemRefreshToken(token: string, clientId: string): Readonly<Grant> | null {
+/**
+ * The grant a refresh token still carries, without spending it: the token
+ * endpoint checks the session behind it first, so a platform that cannot
+ * answer for a moment does not burn the client's only way back in.
+ */
+export function readRefreshToken(token: string, clientId: string): Readonly<Grant> | null {
   const grant = openRefreshToken(token)
   if (!grant || grant.expiresAt <= Date.now() || grant.clientId !== clientId) return null
   pruneSpent()
+  const use = spent.get(digest(token))
+  return !use || Date.now() - use.spentAt <= REUSE_GRACE_MS ? grant : null
+}
+
+/** Spent on first use, whatever the caller does with the grant; honoured again only within REUSE_GRACE_MS. */
+export function redeemRefreshToken(token: string, clientId: string): Readonly<Grant> | null {
+  const grant = readRefreshToken(token, clientId)
+  if (!grant) return null
   const key = digest(token)
-  if (spent.has(key)) return null
-  spent.set(key, grant.expiresAt)
+  if (!spent.has(key)) spent.set(key, { expiresAt: grant.expiresAt, spentAt: Date.now() })
   return grant
 }
 
@@ -104,5 +125,6 @@ export function revokeRefreshToken(token: string): void {
   const grant = openRefreshToken(token)
   if (!grant) return
   pruneSpent()
-  spent.set(digest(token), grant.expiresAt)
+  // Revoked, not used: outside any grace.
+  spent.set(digest(token), { expiresAt: grant.expiresAt, spentAt: 0 })
 }

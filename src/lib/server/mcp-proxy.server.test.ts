@@ -3,9 +3,18 @@ import type { RequestEvent } from '@sveltejs/kit';
 
 const mockEnv = vi.hoisted(() => ({}) as Record<string, string | undefined>);
 vi.mock('$env/dynamic/private', () => ({ env: mockEnv }));
-/** The role gate the composition root hands out: a designer token passes, a viewer's does not. */
+/**
+ * The role gate the composition root hands out: a designer token passes, a viewer's
+ * does not, and `jwt-back-down` meets a back that cannot answer.
+ */
 vi.mock('$composition/container.server', () => ({
-	getServices: () => ({ roleGate: { allows: async (token: string) => token === 'jwt-designer' } })
+	getServices: () => ({
+		roleGate: {
+			allows: async (token: string) => token === 'jwt-designer',
+			verdict: async (token: string) =>
+				token === 'jwt-designer' ? 'allowed' : token === 'jwt-back-down' ? 'unreachable' : 'denied'
+		}
+	})
 }));
 
 import { isMcpPath, proxyToMcp } from './mcp-proxy.server';
@@ -162,6 +171,19 @@ describe('proxyToMcp refuses a reader', () => {
 		);
 		expect(res.status).toBe(403);
 		expect(await res.text()).toContain('designers and above');
+	});
+
+	it('asks to reload, not to be a designer, when the role source cannot answer', async () => {
+		const fetchImpl = world('designer');
+		const res = await proxyToMcp(
+			event('/mcp/oauth/authorize?state=abc', { headers: { cookie: 'lyriks_session=jwt-back-down' } }),
+			'http://mcp:3055',
+			fetchImpl
+		);
+		expect(res.status).toBe(503);
+		expect(res.headers.get('retry-after')).toBe('5');
+		expect(await res.text()).toContain('Reload this page in a moment');
+		expect(fetchImpl).not.toHaveBeenCalled();
 	});
 
 	it('still lets an anonymous browser reach the authorization page (it redirects to /login)', async () => {

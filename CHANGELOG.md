@@ -6,6 +6,23 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.27] - 2026-09-17
+
+### Fixed
+
+- AI clients stay signed in when Lyriks cannot check an account for a
+  moment (a restart, an update, a slow account service). The MCP gateway
+  used to read that as a signed-out user: every client process discarded
+  its tokens and opened a browser window on the login page, two per incident
+  with Claude Desktop, which runs one process for chat and one for Cowork
+  and Code. The session check now answers 503 when it has no verdict; a tool
+  call is retried, a renewal is kept, and the sign-in page asks to reload
+  instead of logging in again. A renewal presented again within 30 seconds
+  by another process of the same client is honoured too.
+- `wire_element` is listed again in Claude clients: one of its fields
+  serialized to a JSON Schema the Anthropic API refuses, which dropped the
+  whole tool.
+
 ## [0.9.26] - 2026-09-11
 
 ### Fixed

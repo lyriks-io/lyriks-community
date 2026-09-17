@@ -1,7 +1,7 @@
 import { authEnforced } from '$lib/server/auth-policy.server';
 import type { RequestEvent } from '@sveltejs/kit';
 import { getServices } from '$composition/container.server';
-import type { GateDoor } from '$application/ports';
+import type { GateDoor, RoleVerdict } from '$application/ports';
 import { SESSION_COOKIE } from '$lib/server/session-cookie.server';
 
 /**
@@ -19,6 +19,19 @@ export async function tokenHasRole(
 ): Promise<boolean> {
 	if (!authEnforced()) return true;
 	return getServices().roleGate.allows(token, door, activeWorkspaceId);
+}
+
+/**
+ * The same judgement, keeping apart a refusal from a role source that could not
+ * answer (see RoleGatePort.verdict). Auth off: allowed.
+ */
+export async function tokenRoleVerdict(
+	token: string | null | undefined,
+	door: GateDoor,
+	activeWorkspaceId: string | null | undefined
+): Promise<RoleVerdict> {
+	if (!authEnforced()) return 'allowed';
+	return getServices().roleGate.verdict(token, door, activeWorkspaceId);
 }
 
 /**
