@@ -6,6 +6,15 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.29] - 2026-09-17
+
+### Fixed
+
+- An `/api/*` request answers 503, not 401, while the account service cannot
+  be reached. The guard runs before the route, so 0.9.27's own 503 never
+  answered on a real install: the MCP gateway read the guard's 401 as a dead
+  session and sent every client back to a browser window.
+
 ## [0.9.28] - 2026-09-17
 
 ### Security

@@ -294,11 +294,17 @@ export const handle: Handle = async ({ event, resolve }) => {
 		// in-frame fetches must surface auth expiry, not follow a redirect into
 		// login HTML they cannot render.
 		if (event.url.pathname.startsWith('/api/') || event.url.pathname.startsWith('/behavior/api/')) {
+			// An outage is not a verdict on the session, and 401 reads as one: the
+			// MCP gateway checks its clients' sessions through /api/auth/session and
+			// ends their sign-in on a 401, which sends every client process to the
+			// browser whenever the account service restarts or runs slow.
 			return withSecurityHeaders(
 				event,
-				new Response(JSON.stringify({ error: 'unauthenticated' }), {
-					status: 401,
-					headers: { 'content-type': 'application/json' }
+				new Response(JSON.stringify({ error: backUnreachable ? 'account service unavailable' : 'unauthenticated' }), {
+					status: backUnreachable ? 503 : 401,
+					headers: backUnreachable
+						? { 'content-type': 'application/json', 'retry-after': '5' }
+						: { 'content-type': 'application/json' }
 				})
 			);
 		}
