@@ -6,6 +6,18 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.30] - 2026-09-18
+
+### Security
+
+- Dependencies flagged by the advisory feeds are updated: `hono` 4.13.8 in the
+  MCP gateway (`parseBody()` memory exhaustion on nested keys, query parsing
+  after the URL fragment), `devalue` 5.9.2, and the build and test tooling
+  (`vite`, `vitest`, `postcss`), which never ships in an image.
+- Every published image is scanned, including its system packages, and an
+  image carrying a fixable high or critical finding is not published. The
+  images themselves carry none.
+
 ## [0.9.29] - 2026-09-17
 
 ### Fixed

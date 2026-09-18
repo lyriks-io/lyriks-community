@@ -1,6 +1,6 @@
 {
   "name": "lyriks",
-  "version": "0.9.29",
+  "version": "0.9.30",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.6.3",
@@ -37,7 +37,7 @@
     "@iconify-json/lucide": "^1.2.114",
     "@playwright/test": "^1.61.1",
     "@sveltejs/adapter-node": "^5.5.4",
-    "@sveltejs/kit": "^2.70.1",
+    "@sveltejs/kit": "^2.70.3",
     "@sveltejs/vite-plugin-svelte": "^7.2.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/bcryptjs": "^3.0.0",
@@ -48,8 +48,8 @@
     "svelte-check": "^4.4.8",
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3",
-    "vite": "^8.0.14",
-    "vitest": "^4.1.10"
+    "vite": "^8.3.0",
+    "vitest": "^4.1.11"
   },
   "dependencies": {
     "@iconify/svelte": "^5.2.1",
@@ -68,7 +68,8 @@
   },
   "pnpm": {
     "overrides": {
-      "hono": "4.12.34",
+      "hono": "4.13.8",
+      "devalue": "5.9.2",
       "tsx>esbuild": "0.28.1",
       "fast-uri": "3.1.6",
       "ip-address": "10.3.1",

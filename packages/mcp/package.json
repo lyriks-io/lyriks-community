@@ -1,6 +1,6 @@
 {
   "name": "@lyriks/mcp",
-  "version": "0.9.29",
+  "version": "0.9.30",
   "private": true,
   "type": "module",
   "scripts": {
@@ -15,7 +15,7 @@
   "dependencies": {
     "@hono/node-server": "^1.19.15",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "hono": "^4.12.34",
+    "hono": "^4.13.5",
     "jose": "^5.4.0",
     "zod": "^3.23.0"
   },
