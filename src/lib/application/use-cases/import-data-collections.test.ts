@@ -3,6 +3,20 @@ import { emptyBuilder } from '$domain/experience';
 import { ImportDataCollectionsUseCase } from './import-data-collections';
 
 describe('ImportDataCollectionsUseCase', () => {
+	it.each([false, true])('can import empty collections without changing existing fixtures (refresh=%s)', async (refresh) => {
+		const builder = emptyBuilder();
+		builder.collections.push({ id: 'existing', name: 'Record', sourceEntityId: 'record', fields: [], seedCount: 7, rows: [{ name: 'Authored' }] });
+		const uc = new ImportDataCollectionsUseCase(
+			{ execute: async () => ({ projectId: 'p', builder }) } as never,
+			{ execute: async () => ({ entities: [{ id: 'record', name: 'Record' }, { id: 'new', name: 'Observation' }], fields: [] }) } as never,
+			{ execute: vi.fn() } as never, { execute: vi.fn() } as never
+		);
+		const result = await uc.execute('p', undefined, { refresh, seedCount: 0 });
+		expect(builder.collections.find(c => c.sourceEntityId === 'new')!.seedCount).toBe(0);
+		expect(builder.collections[0].seedCount).toBe(7);
+		expect(builder.collections[0].rows).toEqual([{ name: 'Authored' }]);
+		expect(result.fixtureNotice).toContain('synthetic');
+	});
 	it('returns collection and field ids for immediate simulator bindings', async () => {
 		const experience = {
 			projectId: 'project-1',

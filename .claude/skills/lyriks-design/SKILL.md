@@ -18,6 +18,8 @@ copy of what the end user actually experiences. NEVER, under any circumstance, s
 a design different from the one the real user lives in.** This rule OVERRIDES
 Rule 3: "distinct identity" applies only to products that do not exist yet.
 
+**Experience writes are per screen, always.** Once a project holds screens, never `set_section` the experience: `build_screen` builds or rebuilds ONE screen (or one component), `patch_section` / `wire_element` / `add_element` edit the rest, and the theme goes through `patch_section` on `builder.theme`. A whole-Experience replacement cannot be verified change by change, and the safety controls of agent runtimes (Claude Code auto mode among them) refuse it outright; if you ever meet such a refusal, the fix is to return to per-screen writes, not to work around it.
+
 Before the first `build_screen`:
 
 - **Read the real design source, not your taste.** Design-system docs

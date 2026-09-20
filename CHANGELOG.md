@@ -4,7 +4,107 @@ All notable changes to Lyriks Community are documented in this file. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the platform's semantic version.
 
-## [Unreleased]
+## [0.9.32] - 2026-09-20
+
+### Added
+
+- Evolution: qualify a change to the product before anyone builds it. A change
+  request opens as a dossier read in three steps (the idea, the proposals a
+  person signs, the impact report), and the whole lifecycle is drivable from an
+  AI client through `get_evolution` and `apply_evolution_batch`, under the same
+  guards as the page: name the features the change touches, read the impact on
+  two planes (what the specification holds and what the code anchors) under the
+  three hypotheses of adding, changing and removing, read the coherence the
+  engine computes, propose values a person accepts (an accepted value is written
+  into the section that owns it, and the dossier keeps no copy), hand a proposal
+  to named reviewers, cross a stage gate or waive it with a stated reason, freeze
+  the specification as a numbered version, judge the implementation report the
+  index derives under five verdicts, and close the request. A request plans
+  without building: while it is being specified, no feature, entity, term, rule,
+  screen or grant is created in the sections.
+- The knowledge graph is the shared read model of a project: it holds what a
+  feature promises, its edges no longer collide, a deep link opens the behaviour
+  node it names, and deleting anything shows what rests on it first.
+- A feature has one list of acceptance criteria, the model's. The rows written
+  on the Features page and the criteria an AI client writes through the MCP were
+  two lists that did not know each other; they are now one, which carries a
+  title, Given/When/Then, an outcome, a status, relations and an index key, and
+  the generated requirements document prints them.
+- Evidence and traceability say apart what verifies a criterion and what is
+  proven against the code, and actions the search did not reach are no longer
+  counted as dead.
+- The authoring skills ship with their helper scripts: an index sync and a batch
+  apply, so a repository can send test results back into the implementation
+  index and an agent can write a batch against the version it read.
+- A conversation stays bound to its Lyriks project: `sync_skills` installs the
+  binding, so every later request about that product goes through the model
+  without anyone naming Lyriks again.
+- AI clients stay signed in while they are used at least once every 30 days:
+  each grant re-signs the session for thirty days, so a restart costs a silent
+  refresh instead of a browser window, while a logout, a removed account or a
+  withdrawn role still cuts the session on the next call.
+- The MCP exposes what authoring actually needs: section writes that guard on
+  the revision they read, a patch preview that validates without saving, the
+  canonical permission capability registry, selective skill synchronisation,
+  project elaboration, and modelled scenarios exported as fixtures a repository
+  test can run against the code, whose results come back into the index.
+- Typography takes any named role beside heading, body and mono, so a product's
+  own type scale survives in the generated screens.
+- The behaviour engine is `unspaghettit` 0.24.0, which is what makes a criterion
+  carry its standing and its relations, and keeps what verifies a criterion with
+  its status.
+- First steps: the user menu links to the getting-started guide on
+  get.lyriks.io, one entry before Documentation, opened in a new tab. The
+  link carries this installation's address as a URL fragment, which stays in
+  the browser, so the guide's shortcuts and its MCP address point back at
+  this installation without the host ever seeing it.
+
+### Changed
+
+- Experience writes are per screen: one screen or component is built or rebuilt
+  at a time, and the rest is edited in place. Replacing a whole Experience could
+  not be verified change by change.
+- A large MCP answer stays readable instead of being cut: it degrades to a shape
+  with a hint naming the argument that narrows it, and an error stays short.
+- Implementation coverage reads what a sync located, never an index the engine
+  found on its own, so a percentage says what was actually proven.
+- Reading an evolution request through the MCP gives the counts and the
+  features it touches, not the rows behind them: the fields, the proposals and
+  the readings are read one list at a time, narrowed to one touched feature
+  with `leaf` and paged with `offset`/`limit`, like the impact and the report
+  already were. A request touching seventeen features answered 59 KB, over the
+  cap an AI client reads through, so the entry point to a real dossier came
+  back as a stub and the client could not even tell which fields to fill.
+
+### Removed
+
+- Supervision and FinOps are retired. They governed AI members, policies and
+  spending inside a workspace, which this product does not manage. The retirement
+  covers the navigation, the capability help, the schemas, the section reads and
+  writes, the gateway endpoints, the composition and repositories, the optional
+  policy and budget adapter, the MCP registration and the build skill; hiding a
+  menu entry alone would have left callable functionality behind. Baselines,
+  approvals, specification generation, audit records and the work queue remain,
+  and no historical data is purged.
+
+### Fixed
+
+- A leaf id another project already holds is refused when it is claimed. Two
+  projects could name the same feature id, and the behaviour engine addresses a
+  feature by its id across projects, so one project's model could answer for
+  another's.
+- A request to `/mcp` or its sign-in routes that carries `Expect: 100-continue`
+  is served. It answered `502 mcp_unavailable` while the gateway was up: the
+  header was forwarded to a `fetch` that refuses it. Windows PowerShell sets it
+  on every POST, so a registration tried by hand from there looked like an
+  outage.
+- A malformed expression operand is refused before it is stored, and a domain
+  payload is no longer read as an expression.
+- A criterion gap stays a criterion gap instead of being reported as something
+  else, and an interaction that was never rendered cannot be planned.
+- Project discovery and multi-term operation references are paged, so a large
+  portfolio answers in full instead of being cut.
+
 
 ## [0.9.30] - 2026-09-18
 

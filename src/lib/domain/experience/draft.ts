@@ -9,6 +9,7 @@ import {
 	type ExperienceBuilder
 } from './builder';
 import { defaultBrand, type ProjectBrand } from './brand';
+import type { SimAction } from './simulate';
 
 /* ── Entities — mirror of Unspaghettit feature 1bf10f8f ─────────────── */
 
@@ -38,6 +39,8 @@ export interface JourneyStep {
 	name: string;
 	order: number;
 	linkedScreenId: string | null;
+	/** Optional exact interactions performed ON this step's screen, before advancing. */
+	actions?: SimAction[];
 }
 
 /** One entry in a Step's Events-Flow underlay — an API call, cache op or event. */

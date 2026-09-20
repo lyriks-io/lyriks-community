@@ -4,7 +4,7 @@
 	// at runtime (air-gap requirement). Side-effect import, must run before any
 	// <Icon> renders, on both SSR and the client.
 	import '$ui/icons/offline';
-	import type { Snippet } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 	import { ConfirmHost, FileViewerHost, ToastHost, Icon } from '$ui/design-system';
 	import type { Component } from 'svelte';
 	import UpdateBanner from '$ui/shell/UpdateBanner.svelte';
@@ -14,6 +14,10 @@
 	import type { LayoutData } from './$types';
 
 	let { children, data }: { children: Snippet; data: LayoutData } = $props();
+	// A deterministic readiness signal for browser automation: SSR visibility
+	// alone does not mean event handlers have been installed yet.
+	let hydrated = $state(false);
+	onMount(() => { hydrated = true; });
 	// The header workspace switcher belongs to the Enterprise overlay; the
 	// glob resolves to nothing in the open-source tree.
 	const switcherModules = import.meta.glob<{ default: Component<{ workspaces: LayoutData['workspaces']; active: string | null }> }>(
@@ -35,7 +39,7 @@
 	);
 </script>
 
-<div class="flex h-screen flex-col overflow-hidden bg-canvas text-ink-700">
+<div data-lyriks-hydrated={hydrated} class="flex h-screen flex-col overflow-hidden bg-canvas text-ink-700">
 	{#if data.isAdmin}
 		<UpdateBanner />
 	{/if}

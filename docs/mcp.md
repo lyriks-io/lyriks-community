@@ -14,6 +14,14 @@ claude mcp add --scope user --transport http lyriks https://<your-install>/mcp
 
 Then run `/mcp` in the client and sign in. The gateway uses OAuth with PKCE
 and dynamic client registration; the login is the platform's own `/login`.
+There is no token or API key to hand to a client, and none to put in a header.
+
+A client with a web callback works the same way. Antigravity is one
+(`https://antigravity.google/oauth-callback`), and it never starts the sign-in
+on its own: declare `{ "serverUrl": "https://<your-install>/mcp" }` in
+`~/.gemini/config/mcp_config.json`, then Agent Settings, Customizations,
+**Authenticate** next to the server, and paste back the code the last page
+shows.
 
 ## What Community answers
 

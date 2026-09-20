@@ -83,6 +83,10 @@ export async function proxyToMcp(
 	// for our Host — and forwarding it would make its own URL parsing lie.
 	headers.delete('host');
 	headers.delete('content-length');
+	// Node already answered `Expect: 100-continue` before this handler ran, and
+	// fetch refuses to send the header at all: forwarded, every POST from a client
+	// that sets it (Windows PowerShell does, on each one) came back as a 502.
+	headers.delete('expect');
 
 	const body =
 		event.request.method === 'GET' || event.request.method === 'HEAD'

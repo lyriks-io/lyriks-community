@@ -3,6 +3,25 @@ import { parseScopeDraft } from './parse-scope-draft';
 import { SECTIONS } from '$lib/shared/sections';
 
 describe('parseScopeDraft', () => {
+	it('ignores retired operator assessments without mutating stored history or losing Baselines', () => {
+		const stored = {
+			sectionAssessments: [
+				{ section: 'supervision', applicability: 'required', status: 'not_started' },
+				{ section: 'finops', applicability: 'required', status: 'not_started' },
+				{ section: 'baselines', applicability: 'required', status: 'ready' }
+			]
+		};
+		const before = structuredClone(stored);
+		const draft = parseScopeDraft(stored, 'project-1');
+
+		expect(draft.sectionAssessments.map((row) => row.section)).not.toContain('supervision');
+		expect(draft.sectionAssessments.map((row) => row.section)).not.toContain('finops');
+		expect(draft.sectionAssessments).toContainEqual(
+			expect.objectContaining({ section: 'baselines', status: 'ready' })
+		);
+		expect(stored).toEqual(before);
+	});
+
 	it('canonicalizes ids, enums and all assessable sections', () => {
 		const draft = parseScopeDraft(
 			{

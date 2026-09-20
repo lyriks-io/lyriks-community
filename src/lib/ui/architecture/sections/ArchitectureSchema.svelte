@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Button, Icon } from '$ui/design-system';
-	import { ARCH_LAYERS, techOfLayer, type ArchLayer } from '$domain/architecture';
+	import { sourceHref } from '$domain/documents';
+	import { architectureStage, ARCH_LAYERS, techOfLayer, type ArchLayer } from '$domain/architecture';
 	import { getDocumentRegistry } from '$ui/documents/registry.svelte';
 	import type { ArchitectureStore } from '../draft-store.svelte';
 
@@ -14,6 +15,7 @@
 	const registry = getDocumentRegistry();
 	const sources = $derived(registry?.sources ?? []);
 	const documentsHref = $derived(registry?.documentsHref ?? '');
+	const logical = $derived(architectureStage(store.draft) === 'logical');
 
 	// First time an author opens the board and it's empty, seed it from Foundation
 	// & Data automatically — no opaque button to discover. Guarded to the empty case,
@@ -54,10 +56,6 @@
 	const docFor = (id: string | null) =>
 		id ? (sources.find((source) => source.id === id) ?? null) : null;
 
-	function hrefFor(url: string): string {
-		const u = url.trim();
-		return /^https?:\/\//i.test(u) ? u : `https://${u}`;
-	}
 
 	/** Citing a tech's official docs also cites it for the section as a whole. */
 	function onRefChange(techId: string, sourceId: string) {
@@ -73,11 +71,19 @@
 				Architecture schema
 			</p>
 			<p class="text-xs text-ink-500">
-				The stack by layer. Attach each choice to an official reference doc so AI agents get the real
-				link, not a guess. <strong>Import stack</strong> adds any tech your Foundation &amp; Data sections
-				imply - it won't touch or re-add cards you've edited.
+				Describe responsibilities first. Select technologies when ready and record the decision,
+				alternatives and versions in linked Documents &amp; Sources. Changing stage keeps your cards.
 			</p>
 		</div>
+		<label class="text-xs text-ink-600">Architecture stage
+			<select aria-label="Architecture stage" value={logical ? 'logical' : 'implementation'}
+				onchange={(e) => store.setStage(e.currentTarget.value as 'logical' | 'implementation')}
+				class="rounded-field border border-line bg-surface px-2 py-1">
+				<option value="logical">Logical design</option>
+				<option value="implementation">Implementation decisions</option>
+			</select>
+		</label>
+		{#if !logical}
 		<Button
 			variant="outline"
 			size="sm"
@@ -86,6 +92,7 @@
 		>
 			<Icon name="rotate" size={14} /> Import stack from Foundation &amp; Data
 		</Button>
+		{/if}
 	</header>
 
 	{#if store.missingTech.length > 0}
@@ -113,7 +120,7 @@
 								<input
 									value={tech.name}
 									oninput={(e) => store.updateTech(tech.id, 'name', e.currentTarget.value)}
-									placeholder="Tech + version, {layerExample[layer.code].name}"
+									placeholder={logical ? 'Component name' : `Component or technology, ${layerExample[layer.code].name}`}
 									class="{fillableInput} min-w-0 flex-1 bg-transparent text-xs font-semibold text-ink-900 placeholder:font-normal"
 								/>
 								<button
@@ -125,7 +132,7 @@
 							<input
 								value={tech.role}
 								oninput={(e) => store.updateTech(tech.id, 'role', e.currentTarget.value)}
-								placeholder={layerExample[layer.code].role}
+								placeholder={logical ? 'Responsibility and boundary' : layerExample[layer.code].role}
 								class="{fillableInput} w-full bg-transparent text-[11px] text-ink-500"
 							/>
 							<!-- reference doc attach -->
@@ -151,9 +158,9 @@
 							</div>
 							{#if docFor(tech.referenceDocId)}
 								{@const d = docFor(tech.referenceDocId)}
-								{#if d?.url?.trim()}
+								{#if d && sourceHref(d)}
 									<a
-										href={hrefFor(d?.url ?? '')}
+										href={d ? sourceHref(d) ?? documentsHref : documentsHref}
 										target="_blank"
 										rel="noopener noreferrer"
 										title="Open in a new tab"
@@ -163,7 +170,7 @@
 									</a>
 								{:else}
 									<p class="mt-0.5 truncate text-[10px] text-success-600">
-										✓ {d?.title || 'untitled source'} - set its URL in Documents &amp; Sources
+										{d?.title || 'untitled source'} — {d?.note?.trim() ? 'content available in Sources' : 'add decision content in Sources'}
 									</p>
 								{/if}
 							{/if}
@@ -174,7 +181,7 @@
 						onclick={() => store.addTech(layer.code)}
 						class="flex w-full items-center justify-center gap-1 rounded-field border border-dashed border-line py-1 text-[11px] font-medium text-ink-400 hover:text-ink-700"
 					>
-						<Icon name="plus" size={12} /> Tech
+						<Icon name="plus" size={12} /> {logical ? 'Component' : 'Choice'}
 					</button>
 				</div>
 			</div>

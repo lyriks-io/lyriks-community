@@ -12,7 +12,17 @@ export interface WorkspaceSummary {
 	readonly plan?: string;
 }
 
+/** One member of a workspace, as much as a reviewer picker needs. */
+export interface WorkspaceMemberSummary {
+	readonly userId: string;
+	readonly email: string;
+	readonly name?: string;
+	readonly role: string;
+}
+
 export interface WorkspaceDirectoryPort {
+	/** The members of one workspace; empty where there is no roster (the single operator). */
+	listMembers(workspaceId: string): Promise<readonly WorkspaceMemberSummary[]>;
 	/** Workspaces the current caller is a member of (empty if none / disabled). */
 	listForCaller(): Promise<WorkspaceSummary[]>;
 	/**

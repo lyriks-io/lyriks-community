@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Icon } from '$ui/design-system';
+	import { Icon, confirmDialog } from '$ui/design-system';
+	import { describeDependants, fetchDependants } from '$ui/graph/dependants';
 	import {
 		FIELD_TYPES,
 		childFieldsOfField,
@@ -24,6 +25,38 @@
 	const code = $derived(entity ? renderEntitySchema(entity, store.draft) : '');
 
 	const childFields = (fieldId: string) => childFieldsOfField(store.draft, fieldId);
+
+	// A table goes only after what rests on it has been named: the screens and
+	// journeys that read or write it, the features and rules that name it, the
+	// fields of other tables that point at it. Read from the knowledge graph,
+	// then confirmed; the relations pointing at it are cleared, never left broken.
+	let weighing = $state(false);
+	async function removeTable() {
+		if (!entity || weighing) return;
+		weighing = true;
+		const id = entity.id;
+		const name = entity.name || 'unnamed';
+		let message: string;
+		try {
+			message = describeDependants(await fetchDependants(store.draft.projectId, `entity:${id}`), {
+				withNames: true
+			});
+		} catch {
+			message = 'What rests on it could not be read from the knowledge graph.';
+		}
+		const relationsInto = store.draft.fields.filter((f) => f.relationTargetEntityId === id).length;
+		if (relationsInto > 0) {
+			message += ` ${relationsInto} relation${relationsInto === 1 ? '' : 's'} pointing at it will be cleared.`;
+		}
+		weighing = false;
+		const ok = await confirmDialog({
+			title: `Delete table “${name}”?`,
+			message,
+			confirmLabel: 'Delete table',
+			danger: true
+		});
+		if (ok) store.removeEntity(id);
+	}
 </script>
 
 {#if entity}
@@ -47,9 +80,11 @@
 			</select>
 			<button
 				type="button"
-				onclick={() => store.removeEntity(entity.id)}
-				class="text-ink-300 hover:text-danger-500"
-				title="Delete table"><Icon name="x" size={15} /></button
+				onclick={removeTable}
+				disabled={weighing}
+				class="text-ink-300 hover:text-danger-500 disabled:cursor-wait"
+				title={weighing ? 'Weighing what rests on it' : 'Delete table'}
+				><Icon name="x" size={15} /></button
 			>
 		</div>
 

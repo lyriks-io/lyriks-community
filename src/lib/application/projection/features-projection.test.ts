@@ -193,7 +193,73 @@ describe('buildFeaturesProjection', () => {
 		expect(serialized).not.toContain('w1');
 		expect(serialized).not.toContain('s1');
 		expect(serialized).not.toContain('assignee');
-		// Only shell + project-id + project-tags ops, all behavior — no assignment op kinds.
-		expect(ops.every((o) => o.kind.startsWith('upsert') || o.kind.startsWith('setProject'))).toBe(true);
+		// The kernel sees the shell, the leaf's criteria, the leaf-id list and the
+		// project tags, and nothing from the work distribution.
+		expect(
+			ops.every(
+				(o) =>
+					o.kind.startsWith('upsert') ||
+					o.kind.startsWith('setProject') ||
+					o.kind === 'mirrorFeatureAcceptance'
+			)
+		).toBe(true);
 	});
 });
+
+describe('leaf acceptance criteria reach the model', () => {
+	function draftWithCriteria(criteria: { id: string; text: string }[]) {
+		const draft = createEmptyFeaturesDraft('p1');
+		draft.cores = [{ id: 'c', name: 'Billing', description: '', tone: 'invoicing' }];
+		draft.features = [
+			{ id: 'f1', name: 'Invoice', coreId: 'c', parentFamilyId: null, unspaghettitFeatureId: 'f1', description: '' }
+		];
+		draft.leafMeta = { f1: { acceptanceCriteria: criteria } };
+		return draft;
+	}
+	const mirrorOf = (draft: ReturnType<typeof draftWithCriteria>) => {
+		const ops = featuresDraftToBehaviorOps(draft, { auxFeatureIds: [], currentProjectTags: [] });
+		const op = ops.find((o) => o.kind === 'mirrorFeatureAcceptance');
+		if (!op || op.kind !== 'mirrorFeatureAcceptance') throw new Error('no acceptance mirror');
+		return { ops, op };
+	};
+
+	it('projects each authored criterion under the reserved leaf prefix', () => {
+		const { op } = mirrorOf(draftWithCriteria([{ id: 'x1', text: 'An overdue invoice is never sent twice' }]));
+		expect(op.featureId).toBe('f1');
+		expect(op.ownedPrefix).toBe('ac-leaf-');
+		expect(op.acceptanceCriteria).toEqual([
+			{ id: 'ac-leaf-x1', title: 'An overdue invoice is never sent twice' }
+		]);
+	});
+
+	it('mirrors only after the shell that guarantees the feature exists', () => {
+		const { ops } = mirrorOf(draftWithCriteria([{ id: 'x1', text: 'Something' }]));
+		const shellAt = ops.findIndex((o) => o.kind === 'upsertFeatureShell');
+		const mirrorAt = ops.findIndex((o) => o.kind === 'mirrorFeatureAcceptance');
+		expect(shellAt).toBeGreaterThanOrEqual(0);
+		expect(mirrorAt).toBeGreaterThan(shellAt);
+	});
+
+	it('skips the blank row the panel mints on "Add criterion"', () => {
+		const { op } = mirrorOf(draftWithCriteria([{ id: 'x1', text: '   ' }, { id: 'x2', text: 'Real one' }]));
+		expect(op.acceptanceCriteria.map((c) => c.id)).toEqual(['ac-leaf-x2']);
+	});
+
+	it('keeps long prose whole, titled by its opening words', () => {
+		const text =
+			'An invoice that the customer disputed within thirty days is held back from the dunning run, ' +
+			'stays visible to the collections team, and is released again only once the dispute is closed.';
+		const { op } = mirrorOf(draftWithCriteria([{ id: 'x1', text }]));
+		const [criterion] = op.acceptanceCriteria as { title: string; description?: string }[];
+		expect(criterion.title.length).toBeLessThanOrEqual(120);
+		expect(criterion.title.endsWith(' ')).toBe(false);
+		expect(text.startsWith(criterion.title)).toBe(true);
+		expect(criterion.description).toBe(text);
+	});
+
+	it('still mirrors an empty list, so deleting the last criterion clears it', () => {
+		const { op } = mirrorOf(draftWithCriteria([]));
+		expect(op.acceptanceCriteria).toEqual([]);
+	});
+});
+

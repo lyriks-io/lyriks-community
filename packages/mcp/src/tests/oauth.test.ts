@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Hono } from 'hono'
 import { createHash, randomBytes } from 'node:crypto'
+import { SignJWT, decodeJwt, jwtVerify } from 'jose'
 import type { HonoVariables } from '../types.js'
 const session = vi.hoisted(() => ({ verify: vi.fn() }))
 vi.mock('../session.js', async (original) => ({ ...await original<typeof import('../session.js')>(), verifyPlatformSession: session.verify }))
@@ -19,7 +20,7 @@ beforeEach(() => {
   session.verify.mockImplementation(async (token: string) => token === SESSION ? 'operator' : null)
   app = new Hono()
   registerOAuthRoutes(app)
-  app.get('/probe', authenticate, c => c.json({ subject: c.get('user_id'), forwardedSession: c.get('user_token') === SESSION }))
+  app.get('/probe', authenticate, c => c.json({ subject: c.get('user_id'), forwardedSession: c.get('user_token') === SESSION, session: c.get('user_token') }))
 })
 afterEach(() => { vi.unstubAllEnvs(); vi.useRealTimers() })
 const post = (body: Record<string, string>, cookie = SESSION, origin = BASE) => ({
@@ -29,18 +30,18 @@ const post = (body: Record<string, string>, cookie = SESSION, origin = BASE) => 
 async function register(uris = [REDIRECT], name = 'test client') {
   return app.request('/mcp/oauth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ redirect_uris: uris, client_name: name }) })
 }
-async function flow(callback = REDIRECT, name = 'test client') {
+async function flow(callback = REDIRECT, name = 'test client', cookie = SESSION) {
   const client = await (await register([callback], name)).json()
   const verifier = randomBytes(32).toString('base64url')
   const q = new URLSearchParams({ client_id: client.client_id, redirect_uri: callback, response_type: 'code', code_challenge_method: 'S256', code_challenge: createHash('sha256').update(verifier).digest('base64url'), state: 'test-state', scope: 'mcp' })
-  const response = await app.request(`/mcp/oauth/authorize?${q}`, { headers: { cookie: `lyriks_session=${SESSION}` } })
+  const response = await app.request(`/mcp/oauth/authorize?${q}`, { headers: { cookie: `lyriks_session=${cookie}` } })
   const html = await response.text()
   const nonce = /name="consent" value="([^"]+)"/.exec(html)?.[1] ?? ''
   return { clientId: client.client_id, verifier, q, response, html, nonce, callback }
 }
-async function approved() {
-  const f = await flow()
-  const response = await app.request('/mcp/oauth/authorize', post({ consent: f.nonce, decision: 'allow' }))
+async function approved(cookie = SESSION) {
+  const f = await flow(REDIRECT, 'test client', cookie)
+  const response = await app.request('/mcp/oauth/authorize', post({ consent: f.nonce, decision: 'allow' }, cookie))
   const code = new URL(response.headers.get('location')!).searchParams.get('code')!
   return { ...f, code }
 }
@@ -81,7 +82,8 @@ describe('OAuth consent and restricted credentials', () => {
     expect(grant.refresh_token).not.toContain(SESSION)
     expect(response.headers.get('cache-control')).toBe('no-store')
     const probe = await app.request('/probe', { headers: { authorization: `Bearer ${grant.access_token}` } })
-    expect(await probe.json()).toEqual({ subject: 'operator', forwardedSession: true })
+    // An opaque session the shared secret does not verify is forwarded as presented.
+    expect(await probe.json()).toEqual({ subject: 'operator', forwardedSession: true, session: SESSION })
     expect((await exchange(f)).status).toBe(400)
   })
   it('refuses forged, cross-origin, missing-origin and other-session consent', async () => {
@@ -233,9 +235,18 @@ describe('OAuth consent and restricted credentials', () => {
     const fresh = await (await exchange(await approved())).json()
     session.verify.mockResolvedValue(null)
     expect((await refresh(fresh.refresh_token)).status).toBe(400)
-    vi.useFakeTimers(); vi.advanceTimersByTime(7 * 24 * 3600_000 + 1)
     session.verify.mockResolvedValue('operator')
-    expect((await refresh(fresh.refresh_token)).status).toBe(400)
+    // Used at least once every thirty days, the chain rolls on: each refresh
+    // re-arms the window. Idle past thirty days, the sign-in has expired.
+    vi.useFakeTimers()
+    vi.advanceTimersByTime(29 * 24 * 3600_000)
+    const rolled = await (await refresh(fresh.refresh_token)).json()
+    expect(rolled.access_token).toMatch(/^lyriks_mcp_/)
+    vi.advanceTimersByTime(29 * 24 * 3600_000)
+    const again = await (await refresh(rolled.refresh_token)).json()
+    expect(again.access_token).toMatch(/^lyriks_mcp_/)
+    vi.advanceTimersByTime(30 * 24 * 3600_000 + 1)
+    expect((await refresh(again.refresh_token)).status).toBe(400)
   })
   it('binds the code to PKCE, client, redirect and resource', async () => {
     for (const overrides of [{ code_verifier: 'wrong'.repeat(10) }, { client_id: 'another-client' }, { redirect_uri: 'https://another.example/cb' }, { resource: 'https://another.example/mcp' }]) {
@@ -322,5 +333,58 @@ describe('OAuth consent and restricted credentials', () => {
     const publicApp = new Hono<{ Variables: HonoVariables }>()
     registerOAuthRoutes(publicApp)
     expect((await publicApp.request('/.well-known/oauth-authorization-server')).status).toBe(404)
+  })
+})
+
+describe('A sign-in that lives while it is used', () => {
+  const SECRET = new TextEncoder().encode(process.env.JWT_SECRET ?? 'dev-secret')
+  const DAY_S = 24 * 3600
+  const signSession = (claims: Record<string, unknown> = {}, secret: Uint8Array = SECRET) => {
+    const now = Math.floor(Date.now() / 1000)
+    return new SignJWT({ sub: 'operator', iss: 'lyriks-platform', iat: now, session_version: 3, exp: now + 7 * DAY_S, ...claims }).setProtectedHeader({ alg: 'HS256' }).sign(secret)
+  }
+  const probe = (token: string) => app.request('/probe', { headers: { authorization: `Bearer ${token}` } })
+  const refresh = (token: string, clientId: string) => app.request('/mcp/oauth/token', post({ grant_type: 'refresh_token', refresh_token: token, client_id: clientId }))
+
+  it('re-signs the confirmed session thirty days out, claims untouched, and each refresh extends it again', async () => {
+    // The platform of these tests verifies the JWT it is shown, expiry
+    // included, and the session_version it currently accepts.
+    let accepted = 3
+    session.verify.mockImplementation(async (token: string) => {
+      try {
+        const { payload } = await jwtVerify(token, SECRET, { algorithms: ['HS256'] })
+        return payload.session_version === accepted && typeof payload.sub === 'string' ? payload.sub : null
+      } catch { return null }
+    })
+    const cookie = await signSession()
+    const original = decodeJwt(cookie)
+    const f = await approved(cookie)
+    const grant = await (await exchange(f)).json()
+    const first = decodeJwt((await (await probe(grant.access_token)).json()).session)
+    expect(first.sub).toBe('operator')
+    expect(first.iss).toBe(original.iss)
+    expect(first.iat).toBe(original.iat)
+    expect(first.session_version).toBe(original.session_version)
+    expect(first.exp).toBeGreaterThanOrEqual(Math.floor(Date.now() / 1000) + 30 * DAY_S - 5)
+    // Ten days later, past the week the browser session itself was signed for,
+    // a refresh still works and re-signs the session thirty days from now.
+    vi.useFakeTimers()
+    vi.advanceTimersByTime(10 * DAY_S * 1000)
+    const renewed = await (await refresh(grant.refresh_token, f.clientId)).json()
+    const second = decodeJwt((await (await probe(renewed.access_token)).json()).session)
+    expect(second.iat).toBe(original.iat)
+    expect(second.exp).toBeGreaterThanOrEqual(Math.floor(Date.now() / 1000) + 30 * DAY_S - 5)
+    // A session_version bump (a Community logout, a withdrawn account) still
+    // cuts the sign-in on the very next call, well inside the thirty days.
+    accepted = 4
+    expect((await probe(renewed.access_token)).status).toBe(401)
+    expect((await refresh(renewed.refresh_token, f.clientId)).status).toBe(400)
+  })
+
+  it('forwards a session the shared secret does not verify exactly as presented', async () => {
+    const foreign = await signSession({}, new TextEncoder().encode('not-the-shared-secret'))
+    session.verify.mockImplementation(async (token: string) => token === foreign ? 'operator' : null)
+    const grant = await (await exchange(await approved(foreign))).json()
+    expect((await (await probe(grant.access_token)).json()).session).toBe(foreign)
   })
 })

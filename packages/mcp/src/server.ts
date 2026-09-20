@@ -17,6 +17,9 @@ import {
   updateProjectWithoutBack,
 } from './tools/portfolio-platform.js'
 import { LyriksClient }             from './lyriks-client.js'
+import { readPortfolio } from './util/portfolio-read.js'
+import { getCapabilitiesHandler } from './tools/capabilities.js'
+import { getProjectElaborationHandler } from './tools/elaboration.js'
 import {
   SECTIONS,
   listProjectsHandler as listWizardProjectsHandler,
@@ -27,6 +30,7 @@ import {
   describeSectionHandler,
   getImplementationContextHandler,
 } from './tools/sections.js'
+import { INCREMENTAL_OPS } from './util/validate-section-patch.js'
 import { buildScreenHandler } from './tools/build_screen.js'
 import { listSkillsHandler, getSkillHandler, syncSkillsHandler } from './tools/skills.js'
 import { getKnowledgeGraphHandler } from './tools/knowledge_graph.js'
@@ -55,6 +59,7 @@ import {
   readBehaviorFeatureHandler,
   scoreBehaviorFeatureHandler,
 } from './tools/behavior.js'
+import { exportBehaviorScenariosHandler } from './tools/behavior_scenarios.js'
 import {
   attachSourceHandler,
   classifySourceHandler,
@@ -82,8 +87,24 @@ import {
   getRoadmapHandler,
   reconcileRoadmapHandler,
 } from './tools/roadmap.js'
+import { DOSSIER_PARTS, applyEvolutionBatchHandler, getEvolutionHandler } from './tools/evolution.js'
 import { capResult } from './util/shape.js'
+import { CAP_HINTS, type HintedTool } from './util/cap-hints.js'
 import { withWriteLock } from './util/write-lock.js'
+
+// One rule, spelled once. The server instructions used to send every "change to
+// an existing product" to Evolution (which plans without building) while the
+// repository binding says such a change is spec, then code, in the same turn: a
+// field agent followed one and silently skipped the other. The instructions and
+// both Evolution tools now carry this same text, so they cannot drift apart.
+export const MAKE_OR_QUALIFY =
+  'A change to MAKE now, in a repository bound to its Lyriks project, is a direct spec change ' +
+  '(apply_behavior_batch, patch_section, build_screen, wire_element), then the code, then the index ' +
+  'sync, in the same turn: never an Evolution request. When a request is ambiguous ("we should add ' +
+  'X"), ask in one sentence which of the two is wanted, to make it or to qualify it; never choose ' +
+  'silently. Evolution is for a change someone asks to QUALIFY: what it would involve, an estimate, ' +
+  'an impact report, a dossier to prepare, or a decision that belongs to someone else (a product ' +
+  'owner, reviewers). Evolution never writes the sections.'
 
 // `ee` is the Enterprise overlay bound to the caller, or null on the Community
 // edition: the portfolio tools then answer from the platform, and the tools only
@@ -98,14 +119,40 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
         'through these tools — never by editing files or databases directly. Authoring skills ' +
         '(SKILL.md playbooks) ship with the platform and auto-update on ANY agent runtime: at ' +
         'the START of any authoring session call sync_skills with `client` set to what you are ' +
+        '(use skill_ids for relevant guides or include_content:false for metadata-only discovery; ' +
+        'fetch any deferred guide completely before following it), then supply your client ' +
         '("claude" | "codex" | "gemini" | "copilot" | "generic") and the contentHash frontmatter ' +
         'line of each SKILL.md you already have, then install each returned installContent the ' +
         'way its installTargets entry says (write the file, and merge pointerBlock into ' +
-        'pointerPath when there is one), then follow the relevant skill — ' +
+        'pointerPath when there is one), and apply the `binding` the same response carries (the ' +
+        'block in the instruction file your runtime always loads, plus the per-prompt hook for Claude ' +
+        'Code): it is what keeps the repository bound to its Lyriks project for every later session ' +
+        'and every user; then follow the relevant skill — ' +
         'lyriks-build to author a project end-to-end, lyriks-design before building or editing ' +
         'any screen, lyriks-behavior when creating features, lyriks-retrospec when ' +
         'reverse-engineering an EXISTING product or codebase into its spec, lyriks-delivery when ' +
-        'the spec meets a tracker (turning features into tickets, and re-syncing once code lands). ' +
+        'the spec meets a tracker (turning features into tickets, and re-syncing once code lands), ' +
+        'lyriks-evolution to QUALIFY a change to an existing product, not to make it ("what would it ' +
+        'take to add X"). ' + MAKE_OR_QUALIFY + ' The whole Evolution dossier is driven through ' +
+        'get_evolution / apply_evolution_batch, and it PLANS WITHOUT BUILDING (no feature, entity, term, ' +
+        'rule, screen or grant is created in the sections while a request is being specified). ' +
+        'THE CONVERSATION STAYS BOUND TO ITS PROJECT: once the user has asked for Lyriks on a product, ' +
+        'named a Lyriks project, or the repository carries a Lyriks binding (installed lyriks-* skills, ' +
+        'a .unspa.json index), EVERY later request in that conversation about that product goes through ' +
+        'this MCP, without the user saying "Lyriks" again: the first request bound the whole conversation. ' +
+        'A request that changes what the product does (a capability, a rule, a screen, a field, a state, ' +
+        'a flow, a message) is a SPEC CHANGE FIRST: author or patch it in the bound project ' +
+        '(apply_behavior_batch, patch_section, build_screen, wire_element), then write the code, then ' +
+        'record where the code implements it (index entries carrying their signature line, ' +
+        'sync_implementation_index; lyriks-delivery step 4), all in the same turn: that is a change to ' +
+        'MAKE, and only a change someone asks to QUALIFY opens an Evolution request. A request that asks ' +
+        'how the product behaves, whether something is right, what is missing or what broke is a SPEC ' +
+        'READ FIRST: get_behavior_feature, get_section, get_implementation_status, get_implementation_gaps, ' +
+        'get_implementation_drift, simulate_experience or verify_experience before answering from the code ' +
+        'or from memory. Only work with no user-visible effect (a refactor, a build or dependency fix, ' +
+        'formatting) skips the spec, and you say so in one line. When a request contradicts the spec, say ' +
+        'so and let the user decide; never code around the spec silently, and never let the code get ahead ' +
+        'of the spec. ' +
         'INGESTING A CODEBASE: a one-line request such as "with the Lyriks MCP, ingest this entire ' +
         'codebase" is lyriks-retrospec end to end, nothing less: sync_skills, install, then follow ' +
         'the skill in full; the user owes you no other instruction. The target project is the one ' +
@@ -159,6 +206,12 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
         'not documenting the code. ' +
         'Rebuild screens top-down like nesting dolls (theme, shared chrome, screen skeletons, tabs, ' +
         'section cards, elements), never in random order, and make every pass content-complete. ' +
+        'EXPERIENCE WRITES ARE PER SCREEN: once a project holds screens, never set_section the ' +
+        'experience. build_screen builds or rebuilds ONE screen or component, patch_section, ' +
+        'wire_element and add_element edit the rest (builder.theme, screens, journeys included). A ' +
+        'whole-Experience replacement cannot be verified change by change and is refused by the ' +
+        'safety controls of agent runtimes; if such a refusal ever appears, return to per-screen ' +
+        'writes instead of narrating a workaround. ' +
         'On an existing codebase, validate the spec against the code with the adoption and ' +
         'implementation tools (record_element_spans, seed_implementation_index, ' +
         'get_implementation_gaps, get_implementation_drift) and proactively offer that validation ' +
@@ -181,8 +234,10 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
 
   // Every tool result passes through capResult — over ~24KB it auto-degrades to
   // a projection/shape + a hint, so no single call can blow the context budget.
-  const json = (result: unknown) => ({
-    content: [{ type: 'text' as const, text: JSON.stringify(capResult(result)) }],
+  // A capped answer advises how to narrow it; only a tool listed in CAP_HINTS
+  // has arguments to advise, so every other one gets the neutral default.
+  const json = (result: unknown, tool?: HintedTool) => ({
+    content: [{ type: 'text' as const, text: JSON.stringify(capResult(result, { hint: tool && CAP_HINTS[tool] })) }],
   })
 
   // ── Authoring skills (self-install + self-update playbooks) ───────────────
@@ -202,8 +257,10 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
 
   mcp.tool(
     'sync_skills',
-    'Reconcile locally installed Lyriks authoring skills with this server. Works for ANY agent runtime, not just Claude. Set `client` to what you are ("claude" | "codex" | "gemini" | "copilot" | "generic") so the response carries your layout alone; omit it and every layout comes back for you to choose from. First read the `contentHash:` frontmatter line of each installed SKILL.md you have, under `.claude/skills/<id>/` or `.agents/skills/<id>/` (missing file or missing line = omit the hash). Pass them as `installed`; omit or send [] on a fresh machine — everything then comes back as "new". Response: { skills: [{ id, name, description, contentHash, status: "up-to-date"|"update"|"new", installPath, installTargets: [{ client, label, path, pointerPath?, pointerBlock? }], installContent? }], unknown: [ids] }. For each entry that carries `installContent`, take the `installTargets` item matching your runtime and: (1) write `installContent` VERBATIM to `path` (create directories as needed); (2) when the target also has `pointerPath`, merge `pointerBlock` into that file — replace the region between its `<!-- lyriks-skill:<id> -->` and `<!-- /lyriks-skill:<id> -->` markers if present, otherwise append the block, and change NOTHING else in that file (it belongs to the user). Entries without installContent are already current. Ids in `unknown` are not published by this server — leave those local skills alone. Call this at the START of any session that will author Lyriks project data, before following a skill.',
+    'Reconcile locally installed Lyriks authoring skills with this server. Works for ANY agent runtime, not just Claude. Set `client` to what you are ("claude" | "codex" | "gemini" | "copilot" | "generic") so the response carries your layout alone; omit it and every layout comes back for you to choose from. First read the `contentHash:` frontmatter line of each installed SKILL.md you have, under `.claude/skills/<id>/` or `.agents/skills/<id>/` (missing file or missing line = omit the hash). Pass them as `installed`; omit or send [] on a fresh machine — everything then comes back as "new". Response: { skills: [{ id, name, description, contentHash, status: "up-to-date"|"update"|"new", installPath, installTargets: [{ client, label, path, pointerPath?, pointerBlock? }], installContent? }], unknown: [ids] }. For each entry that carries `installContent`, take the `installTargets` item matching your runtime and: (1) write `installContent` VERBATIM to `path` (create directories as needed); (2) when the target also has `pointerPath`, merge `pointerBlock` into that file — replace the region between its `<!-- lyriks-skill:<id> -->` and `<!-- /lyriks-skill:<id> -->` markers if present, otherwise append the block, and change NOTHING else in that file (it belongs to the user). An entry is current only when status is "up-to-date". With include_content:false, new/update entries carry contentDeferred:true; fetch their complete content before installing or following them. Use skill_ids to synchronize only the guides relevant to the task. Ids in `unknown` are not published by this server — leave those local skills alone. The response also carries `binding`: what keeps this repository bound to its Lyriks project in every later session, for every user. Take the `binding.targets` item matching your runtime and: (3) merge its `pointerBlock` into `pointerPath` (the instruction file you always load: CLAUDE.md, AGENTS.md, GEMINI.md or .github/copilot-instructions.md), replacing the region between `<!-- lyriks-binding -->` and `<!-- /lyriks-binding -->` if present, appending the block otherwise, touching nothing else; (4) when the target carries `hook` (Claude Code), write `hook.content` VERBATIM to `hook.path` and wire it: if `hook.settingsPath` does not exist write `hook.settingsContent` as is, otherwise add `hook.settingsEntry` under `hooks.UserPromptSubmit[0].hooks` unless a command naming `hook.path` is already there. Then, whatever your runtime: (5) when `binding.tools` is present (the top level of `binding`, the same list for every runtime; an older platform sends none), for each entry write `content` VERBATIM to `path` (create directories as needed), every one of them, side by side under `.lyriks/tools/`, since they import each other. They are plain Node helper scripts for this repository: syncing an index or applying a batch too large to type as a tool argument, and checking the index by signature text instead of by exact line; the `purpose` of each entry says what it does and how to run it. Pass `project_id` (the wizard project slug this repository is specified in) as soon as you know it, so the block names the project; a project created later gets one more sync_skills call with its id. Call this at the START of any session that will author Lyriks project data, before following a skill.',
     {
+      skill_ids: z.array(z.string()).optional().describe('Only reconcile these guides; omit for all. Fetch other relevant guides when needed, never follow a partial guide.'),
+      include_content: z.boolean().optional().describe('Set false for metadata-only discovery. contentDeferred entries must be fetched with get_skill before installation/use; default true.'),
       installed: z
         .array(z.object({
           id: z.string().describe('Locally installed skill id (the <id> directory name under .claude/skills or .agents/skills)'),
@@ -215,6 +272,10 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
         .enum(['claude', 'codex', 'gemini', 'copilot', 'generic'])
         .optional()
         .describe('Which agent runtime you are, so only your install layout comes back. Use "generic" when you are none of the named ones; omit to receive every layout'),
+      project_id: z
+        .string()
+        .optional()
+        .describe('The Lyriks wizard project this repository is specified in (the slug the section tools address), so the binding block names it. Pass it as soon as it is known; call sync_skills again with it once the project is created'),
     },
     async (args) => uncapped(await syncSkillsHandler(args, lyriks)),
   )
@@ -229,16 +290,36 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
   )
 
   // ── Project sections (lyriks source of truth) ─────────────────────────────────
+  mcp.tool(
+    'get_capabilities',
+    'Read the canonical permission capability registry for this project. Each row carries capabilityId, capabilitySource and supported actions; copy these exact values into users.permissions. Includes features, journeys, screens, behavioral surfaces, system and off-structure capabilities. Paginated and read-only. A bare screen id is not a surface capability id.',
+    {
+      project_id: z.string(),
+      source: z.enum(['system', 'feature', 'journey', 'surface', 'off_structure']).optional(),
+      query: z.string().optional(),
+      offset: z.number().int().min(0).optional(),
+      limit: z.number().int().min(1).max(50).optional(),
+    },
+    async args => json(await getCapabilitiesHandler(args, lyriks), 'get_capabilities'),
+  )
+
   // Everything a user can do in the app's capabilities, over MCP. Writes hit the wizard app's
   // per-section PUT (with sync side-effects); reads hit the wizard app's section read.
   mcp.tool(
     'list_wizard_projects',
     'Lists the Lyriks wizard portfolio (domains + projects) so you can find the projectId to target with the section tools. These are Lyriks project ids (e.g. "bigledger"), distinct from the project UUIDs used by list_projects. Each card carries `sourceMode` (where the project started: `code_to_spec` = created "From a codebase", the target of a codebase ingestion; `greenfield` = from scratch) and `backProjectId` when Enterprise links it to a portfolio record (the UUID-addressed tools accept the wizard slug directly too).',
-    {},
+    {
+      query: z.string().optional().describe('Case-insensitive project name or id substring'),
+      workspace_id: z.string().optional().describe('Filter cards by owning workspace'),
+      limit: z.number().int().min(1).max(50).optional().describe('Projects per page (default 20)'),
+      offset: z.number().int().min(0).optional().describe('Continue from nextOffset in the previous response'),
+      summary: z.boolean().optional().describe('Return the portfolio shape instead of project cards'),
+      paths: z.array(z.string()).optional().describe('Exact dotted subtrees of the original portfolio, e.g. portfolio.unassigned.0'),
+    },
     // Best-effort: the overlay stamps each card with what it knows about it.
-    async () => {
+    async (args) => {
       const portfolio = await listWizardProjectsHandler({}, lyriks)
-      return json(ee ? await ee.portfolio.annotateWizardPortfolio(portfolio) : portfolio)
+      return json(readPortfolio(ee ? await ee.portfolio.annotateWizardPortfolio(portfolio) : portfolio, args), 'list_wizard_projects')
     },
   )
 
@@ -333,7 +414,7 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
       summary: z.boolean().optional().describe('Return a tiny shape summary (keys + sizes) instead of the full draft — start here to discover what to drill into'),
       paths: z.array(z.string()).optional().describe('Return only these dotted sub-trees, e.g. ["designSystem","journeys","builder.screenRoots"]. Keeps huge sub-trees (builder.nodes) out unless explicitly requested'),
     },
-    async (args) => json(await getSectionHandler(args, lyriks)),
+    async (args) => json(await getSectionHandler(args, lyriks), 'get_section'),
   )
 
   mcp.tool(
@@ -357,7 +438,7 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
 
   mcp.tool(
     'get_knowledge_graph',
-    'Query a project\'s central knowledge graph — every bounded context (roles, features, journeys, screens, entities, rules, architecture…) plus the unspa behavior model folded into ONE typed node/edge graph (what the in-app graph explorer shows). Read-only derived view; author through the section/behavior tools, not here. DRILL-DOWN FLOW: call with only project_id first — you get whole-graph stats (node/edge counts by context and kind) plus the best-connected hub nodes; then narrow with `contexts`/`kinds` filters or a `q` label search, and expand around one node with `focus_node` (+`depth`) — pass a node id ("kind:rawId"), a bare raw id, or a node label; the response\'s `focusNodeId` reports the node it landed on (an ambiguous label lands on the best-connected match; null = unknown reference, fall back to `q`). Filters and focus combine (intersection). The graph is deduplicated: each concept is ONE node (a screen/feature/entity carries both its wizard facts and its unspa behavior edges — writes/reads/emits/transitions), so follow edges instead of hunting for behavior twins. `limit` caps returned nodes keeping the best-connected; the response flags `truncated` + `matchedNodeCount` so you know to narrow. Contexts: project, foundation, users, features, experience, data, rules, architecture, coherence, behavior, engine. `source`: "merged" (default — wizard projection + behavior, + DPO verdict in Enterprise), "local" (wizard projection alone), "engine" (raw formal-engine substrate, Enterprise-only — errors otherwise).',
+    'Query a project\'s central knowledge graph — every bounded context (roles, features, journeys, screens, entities, rules, architecture…) plus the unspa behavior model folded into ONE typed node/edge graph (what the in-app graph explorer shows). Read-only derived view; author through the section/behavior tools, not here. DRILL-DOWN FLOW: call with only project_id first — you get whole-graph stats (node/edge counts by context and kind) plus the best-connected hub nodes; then narrow with `contexts`/`kinds` filters or a `q` label search, and expand around one node with `focus_node` (+`depth`) — pass a node id ("kind:rawId"), a bare raw id, or a node label; the response\'s `focusNodeId` reports the node it landed on (an ambiguous label lands on the best-connected match; null = unknown reference, fall back to `q`). The expansion is undirected unless you pass `direction`: "in" keeps what points AT the focus node (what contains, reads, writes, tests or triggers it), "out" what the node points at (what it contains, reads, writes, emits), "both" is the default. Filters and focus combine (intersection). The graph is deduplicated: each concept is ONE node (a screen/feature/entity carries both its wizard facts and its unspa behavior edges — writes/reads/emits/transitions), so follow edges instead of hunting for behavior twins. `limit` caps returned nodes keeping the best-connected; the response flags `truncated` + `matchedNodeCount` so you know to narrow. Contexts: project, foundation, users, features, experience, data, rules, architecture, coherence, behavior, engine. `source`: "merged" (default — wizard projection + behavior, + DPO verdict in Enterprise), "local" (wizard projection alone), "engine" (raw formal-engine substrate, Enterprise-only — errors otherwise). TWO RECIPES over the behavior model, whose actions, states, rules, invariants (kind "rule"), scenarios and events are nodes. `q` reads a node\'s label, detail and id only: a feature by its name or the first 140 characters of its description, a surface by its name, an action by its name or intent, a rule by its description, an invariant by its name, a scenario or an event by its name or description, a state by its path or description. Acceptance criteria are not in the graph. (1) FIND THE FEATURE THAT OWNS A WORD: q:"<word>" lists the nodes that carry it. A rule or scenario hit names its feature in its id ("rule:beh:<featureId>:<ruleId>", "scenario:beh:<featureId>:<scenarioId>"). For a surface, an action or a state a surface declares, call again with focus_node:"<hit id>", depth:2, kinds:["feature"], direction:"in": the feature that contains it comes back (feature contains surface, surface contains action and state). Walking "in" only, a feature that merely declares an event the action EMITS stays out (without direction it comes back beside the owner); one that declares an event TRIGGERING the action still does. (2) WHO READS OR WRITES A STATE PATH: focus_node:"state:<dotted.path>", depth:1, direction:"in". A path is ONE node for the whole project, so its neighbors span every feature that touches it, and each edge kind says how: `writes` from an action (an effect on that path, an operation result, a parameter bound to it), `reads` from an action that requires it or from a rule or invariant whose condition names it (depth:2 adds the action or surface holding that rule), `tests` from a scenario that sets or asserts it, `contains` from each surface that declares it. Every behavior edge of a state node points AT it, so direction:"in" loses nothing at depth:1, and at depth:2 it keeps to the holders (the action or surface of a rule, the surface and the scenarios of an action) where an undirected walk also returns every other state and event those actions touch. Blind spot: a path read only inside an effect\'s value expression, a derived-state formula, a rule\'s own effect or a feature-level invariant has no edge, so an empty answer there is not proof that nothing reads it.',
     {
       project_id: z.string().describe('Lyriks project id (from list_wizard_projects)'),
       source: z.enum(['merged', 'local', 'engine']).optional().describe('Graph source (default "merged"); "engine" is Enterprise-only'),
@@ -365,38 +446,44 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
       kinds: z.array(z.string()).optional().describe('Keep only these node kinds, e.g. ["feature","entity","screen","action"]'),
       q: z.string().optional().describe('Case-insensitive substring match on node label / detail / id'),
       focus_node: z.string().optional().describe('Expand the neighborhood around one node — a node id ("kind:rawId"), a bare raw id, or a label; check `focusNodeId` in the response for where it landed'),
-      depth: z.number().int().positive().optional().describe('Neighborhood radius in undirected hops (default 1, with focus_node)'),
+      depth: z.number().int().positive().optional().describe('Neighborhood radius in hops (default 1, with focus_node); undirected unless `direction` is given'),
+      direction: z.enum(['in', 'out', 'both']).optional().describe('With focus_node, which way the expansion follows edges: "in" keeps what points AT the node (what contains, reads, writes, tests or triggers it), "out" what the node points at, "both" (default) the undirected neighborhood'),
       limit: z.number().int().positive().optional().describe('Max nodes returned (best-connected win); also sizes the bare-call overview'),
     },
-    async (args) => json(await getKnowledgeGraphHandler(args, lyriks)),
+    async (args) => json(await getKnowledgeGraphHandler(args, lyriks), 'get_knowledge_graph'),
   )
 
   mcp.tool(
     'set_section',
-    'Writes one section\'s full draft for a project — everything a user can do in the capability that owns it. FULL REPLACE: any sub-tree you omit is DROPPED (e.g. `collections` seeded by import_data_collections, or `builder.nodes`) — for targeted edits prefer patch_section, which preserves everything you don\'t touch. When existing non-empty top-level sub-trees are absent from your document, the write still lands but returns `warnings` naming what was dropped. Pass the complete section document (get_section first, modify, then set); a document shaped {__ops:[...]} is treated as a patch_section call. projectId is stamped automatically. The write runs lyriks\'s real save use-case + sync side-effects, so it shows in the UI.',
+    'Writes one section\'s full draft for a project — everything a user can do in the capability that owns it. FULL REPLACE: any sub-tree you omit is DROPPED (e.g. `collections` seeded by import_data_collections, or `builder.nodes`) — for targeted edits prefer patch_section, which preserves everything you don\'t touch. When existing non-empty top-level sub-trees are absent from your document, the write still lands but returns `warnings` naming what was dropped. Pass the complete section document (get_section first, modify, then set); a document shaped {__ops:[...]} is treated as a patch_section call. On `experience`, once the project holds screens, NEVER full-replace: build_screen builds or rebuilds ONE screen, patch_section / wire_element / add_element edit the rest; a whole-Experience replacement is unverifiable and is blocked by the safety controls of agent runtimes, a refusal you should never have to work around. projectId is stamped automatically. The write runs lyriks\'s real save use-case + sync side-effects, so it shows in the UI. The answer carries `writeGuard`: "revision-checked" when the write went out under the revision read just before it, "unavailable" on an older platform whose read carries no revision (the write was then NOT protected against concurrent edits, and any `revision` in the answer is the one after the write).',
     {
       project_id: z.string().describe('Lyriks project id'),
       section: z.enum(SECTIONS).describe('Section to write — a WIRE id, not a screen label; describe_section reports where each one is edited'),
       document: z.record(z.unknown()).describe('The full section draft document (validated server-side by the wizard app)'),
+      expected_revision: z.number().int().min(0).optional().describe('Revision returned by get_section; a concurrent edit is rejected instead of overwritten.'),
     },
     async (args) => json(await withWriteLock(`${args.project_id}:${args.section}`, () => setSectionHandler(args, lyriks))),
   )
 
   mcp.tool(
     'patch_section',
-    'Targeted edit of a section without resending the whole document — ideal when a section carries large sub-trees (e.g. the Experience builder) you must not retransmit. The MCP server reads the current draft, applies your operations in order, and writes it back through lyriks\'s real save use-case (same sync side-effects as set_section). Operations: {op:"set", path, value} assigns a dotted path — segments may be object keys OR array indices (e.g. "activeTab", "designSystem.colors.primary", "builder.collections.7.fields.5.options"); {op:"merge", collection, id, value, insert?} shallow-merges value into the id-keyed array item (journeys/steps/screens/components/elements/templates), or appends it when insert=true and no match; for KEYLESS rows (no id field, e.g. users "permissions") address with match:{field:value,...} instead of id — insert-via-match appends value verbatim with no id injected; {op:"remove", collection, id|match} deletes that array item, or {op:"remove", path} deletes a key at a dotted path (e.g. an object-map entry like "builder.nodes.<id>" or "builder.screenRoots.<id>"). `collection` also accepts a dotted path to a nested array (e.g. "builder.collections"). Together these give full create/update/delete over any section.',
+    'Targeted edit of a section without resending the whole document: ideal when a section carries large sub-trees (e.g. the Experience builder) you must not retransmit. The MCP server reads the current draft, applies your operations in order, and writes it back through lyriks\'s real save use-case (same sync side-effects as set_section). Operations: {op:"set", path, value} assigns a dotted path, whose segments may be object keys OR array indices (e.g. "activeTab", "designSystem.colors.primary", "builder.collections.7.fields.5.options"); {op:"merge", collection, id, value, insert?} shallow-merges value into the id-keyed array item (journeys/steps/screens/components/elements/templates), or appends it when insert=true and no match; for KEYLESS rows (no id field, e.g. users "permissions") address with match:{field:value,...} instead of id; insert-via-match appends value verbatim with no id injected; {op:"remove", collection, id|match} deletes that array item, or {op:"remove", path} deletes a key at a dotted path (e.g. an object-map entry like "builder.nodes.<id>" or "builder.screenRoots.<id>"). `collection` also accepts a dotted path to a nested array (e.g. "builder.collections"). Together these give full create/update/delete over any section. INCREMENTAL ops add to a list or a text WITHOUT resending the whole value and without erasing what a concurrent writer added to it; prefer them over set/merge whenever you add to something that already exists: {op:"add_to_set", path, value} appends a scalar to the array at path unless it is already there (the array is created when absent), e.g. one more source id in a `sourceIds` list; {op:"remove_from_set", path, value} removes every occurrence; {op:"append_text", path, value, separator?} appends separator (default a blank line) then value to the string at path unless the text already contains value, e.g. one more paragraph in a long description; {op:"replace_text", path, find, value} replaces find by value when find occurs EXACTLY once (zero or several occurrences: the op does not apply and `notApplied` says which, so extend find until it is unique). For these four, `path` may be combined with collection + id|match: it is then read INSIDE that row (e.g. collection:"features", id:"feat-1", path:"sourceIds"), which addresses the row by id rather than by an index another writer can shift. They are idempotent, so a retry cannot duplicate: an op that finds its work already done counts as applied and is listed under `unchanged`, and a retried replace_text either lands there too (its value extends find) or reports that find now occurs 0 times. THE ANSWER: opsApplied/opsTotal, `changed` (the targets of the ops that changed the draft), `unchanged` (found their target, nothing left to change), `notApplied` (each op that found no target, with the reason), and `writeGuard`: "revision-checked" when the write went out under the revision read just before it, "unavailable" on an older platform whose read carries no revision (the write was then NOT protected against concurrent edits, and any `revision` in the answer is the one after the write). With dry_run:true on a platform that has no validation route, the answer says dryRunUnavailable:true with the local match counts, and nothing is saved.',
     {
       project_id: z.string().describe('Lyriks project id'),
       section: z.enum(SECTIONS).describe('Section to patch — a WIRE id, not a screen label; describe_section reports where each one is edited'),
+      expected_revision: z.number().int().min(0).optional().describe('Use baseRevision from a preview to reject intervening section changes.'),
+      dry_run: z.boolean().optional().describe('Preview on a temporary copy and run existing platform authoring guards without saving; default false. Reports unmatched operations. This is not a reserved or atomic multi-section transaction.'),
       operations: z.array(z.object({
-        op: z.enum(['set', 'merge', 'remove']).describe('"set" a dotted path · "merge" into an id- or match-keyed array item · "remove" an array item or a path'),
-        path: z.string().optional().describe('set/remove: dotted path (keys and/or array indices), e.g. "designSystem.radiusPx" or "builder.nodes.<id>"'),
-        collection: z.string().optional().describe('merge/remove: array name — top-level or dotted path, e.g. "journeys", "builder.collections"'),
-        id: z.string().optional().describe('merge/remove: id of the array item (id-keyed collections)'),
-        match: z.record(z.unknown()).optional().describe('merge/remove: field-equality selector for KEYLESS rows (no id field), e.g. {"roleId":"admin","capabilityId":"cap-x"}'),
+        op: z.enum(['set', 'merge', 'remove', ...INCREMENTAL_OPS]).describe('"set" a dotted path · "merge" into an id- or match-keyed array item · "remove" an array item or a path · "add_to_set" / "remove_from_set" one scalar of an array · "append_text" / "replace_text" inside a string (the four incremental ops are idempotent)'),
+        path: z.string().optional().describe('set/remove and the incremental ops: dotted path (keys and/or array indices), e.g. "designSystem.radiusPx" or "builder.nodes.<id>"; with an incremental op plus collection, the path INSIDE the selected row, e.g. "sourceIds"'),
+        collection: z.string().optional().describe('merge/remove, optional on the incremental ops: array name, top-level or dotted path, e.g. "journeys", "builder.collections"'),
+        id: z.string().optional().describe('With collection: id of the array item (id-keyed collections)'),
+        match: z.record(z.unknown()).optional().describe('With collection: field-equality selector for KEYLESS rows (no id field), e.g. {"roleId":"admin","capabilityId":"cap-x"}'),
         insert: z.boolean().optional().describe('merge: append a new item when none matches (id is stamped only when addressing by id)'),
-        value: z.unknown().describe('set: the value to assign · merge: the partial object to shallow-merge'),
-      })).describe('Ordered list of targeted edits'),
+        value: z.unknown().optional().describe('Required for set/merge and the incremental ops (a scalar for add_to_set/remove_from_set, a string for append_text/replace_text); omitted for remove'),
+        find: z.string().optional().describe('replace_text: the exact text to replace; it must occur exactly once at path'),
+        separator: z.string().optional().describe('append_text: what goes between the current text and value (default a blank line)'),
+      })).min(1).max(1000).describe('Ordered list of targeted edits; the complete operation shape is validated before applying any edit'),
     },
     async (args) => json(await withWriteLock(`${args.project_id}:${args.section}`, () => patchSectionHandler(args, lyriks))),
   )
@@ -557,6 +644,22 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
   )
 
   mcp.tool(
+    'get_project_elaboration',
+    'Read prioritized project-elaboration questions and next actions, with exact source paths and dependency blockers. Covers recorded brief/outcomes, scope decisions, acceptance criteria and feature work; recommendations are PROPOSALS, never user approval. Fast structural reading by default; include_checks adds the existing completion assessment. No writes, no new UI, no runtime tests. Filter kind and section; page with offset:nextOffset and expected_snapshot:snapshot.key, keeping filters unchanged. A changed or unavailable snapshot must be re-read. An empty result is not proof of completeness; assess_project_completeness remains the completion authority.',
+    {
+      project_id: z.string(),
+      kind: z.enum(['all', 'question', 'action']).optional(),
+      section: z.enum(SECTIONS).optional(),
+      include_checks: z.boolean().optional().describe('Include the existing, potentially slower completion assessment; default false'),
+      offset: z.number().int().min(0).optional(),
+      limit: z.number().int().min(1).max(20).optional().describe('Default 10'),
+      expected_snapshot: z.string().optional().describe('snapshot.key from the previous page; a changed project requires restarting pagination'),
+    },
+    { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    async (args) => json(await getProjectElaborationHandler(args, lyriks), 'get_project_elaboration'),
+  )
+
+  mcp.tool(
     'get_experience_coverage',
     'LOCAL plan-coverage / readiness report for the Experience prototype — the same analysis the Experience tab shows. It verifies only the capabilities already present in the authored model; it cannot detect product capabilities omitted from the external scope and NEVER proves whole-project completion. Returns 0–100 readiness plus dimensions (screens runnable, journeys→screens, features prototyped, roles covered, data used, actions wired, navigation reachable) and a flat list of gaps sorted blocking→warning→info; each gap carries a ref {screenId?, nodeId?} pointing at the exact screen/element to fix. Call it after build_screen / patch_section to find what is still empty, unwired, unreachable or broken, then use assess_project_completeness for the global verdict.',
     {
@@ -652,7 +755,7 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
         .optional()
         .describe('Offset into the filtered spec-gap list — page with gap_limit on a big model.'),
     },
-    async (args) => json(await verifyExperienceHandler(args, lyriks)),
+    async (args) => json(await verifyExperienceHandler(args, lyriks), 'verify_experience'),
   )
 
   mcp.tool(
@@ -661,6 +764,7 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
     {
       project_id: z.string().describe('Lyriks project id'),
       entity_names: z.array(z.string()).optional().describe('Only import these entity names from the data section (default: all entities)'),
+      seed_count: z.number().int().min(0).max(100).optional().describe('Synthetic rows for NEW collections only (default 5). Set 0 to author domain-appropriate fixtures yourself; existing fixtures are never cleared.'),
       refresh: z.boolean().optional().describe('Also refresh existing collections that drifted from the data model (default false = import-once, existing collections untouched)'),
     },
     async (args) => json(await withWriteLock(`${args.project_id}:experience`, () => importDataCollectionsHandler(args, lyriks))),
@@ -723,7 +827,7 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
       paths: z.array(z.string()).optional().describe('Return only these dotted sub-trees, e.g. ["wizard_envelope.experience.designSystem"]'),
     },
     async (args) =>
-      json(ee ? await ee.portfolio.getProject(args) : await getProjectWithoutBack(args, lyriks)),
+      json(ee ? await ee.portfolio.getProject(args) : await getProjectWithoutBack(args, lyriks), 'get_project'),
   )
 
   mcp.tool(
@@ -768,7 +872,7 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
 
   mcp.tool(
     'apply_behavior_batch',
-    'Author BEHAVIOR DEPTH on a feature — the full Unspaghettit vocabulary (state definitions, rules, effects, invariants, parameters, events, scenarios, reachability goals, transitions, personas, resources, entities) applied as one atomic add/update/remove/move batch. This is the write half of build_screen/patch_section: use it to detail what a screen or step actually DOES (guards, state changes, emitted events, model-checked scenarios), not just its layout. Runs through the platform engine under your auth and writes the shared model, so depth survives wizard re-saves. `feature_id` is a kernel feature id (a features-section leaf id, or "<projectId>__experience" for journey/step behavior, "<projectId>__data_model" for entities) — get it from get_behavior_context or list_wizard_projects. Each op is `{ kind, ref?, ...args }`; add ops can set `ref` so later ops in the SAME batch reference the new id via `*Ref`. Pass dry_run:true to validate + score without saving (STRONGLY recommended first). Returns `{ available, batch }`: `batch.ok:true` applied (with `refs`, `appliedCount`, `maturityPercentage`); `batch.ok:false` REJECTED — read `batch.errors` and fix. Op-kind schema reference: build a batch against the vocabulary in the tool docs (add_state_definition, add_action_rule{rule:{category,condition?,effect:{type,...}}}, add_scenario{surfaceId|actionId,expectedAssertions}, add_reachability_goal, ...). Common gotchas: add_resource/add_reachability_goal nest their own `kind` under resourceKind / the arg (it collides with the op discriminator); block an action with effect {type:"block_action"} not "block"; requiredStates is string[] of paths, use rules for value guards. RULES ARE MANDATORY ON EVERY NEW ACTION — this is the product\'s core reading ("which rules are active"), not a nicety: an `add_action` op is REJECTED unless the same batch also carries at least one `add_action_rule` with that action\'s `actionRef` (so always give `add_action` a `ref`). Ask yourself what gates the action — permissions, state, quota, validity — and encode it. If it is genuinely unconditional, say so AS A RULE: an `add_action_rule` with no `condition` and `effect:{type:"allow_action",description:"…"}`; that records the decision instead of leaving a silent gap.',
+    'Author BEHAVIOR DEPTH on a feature — the full Unspaghettit vocabulary (state definitions, rules, effects, invariants, parameters, events, scenarios, reachability goals, transitions, personas, resources, entities) applied as one atomic add/update/remove/move batch. This is the write half of build_screen/patch_section: use it to detail what a screen or step actually DOES (guards, state changes, emitted events, model-checked scenarios), not just its layout. Runs through the platform engine under your auth and writes the shared model, so depth survives wizard re-saves. `feature_id` is a kernel feature id (a features-section leaf id, or "<projectId>__experience" for journey/step behavior, "<projectId>__data_model" for entities) — get it from get_behavior_context or list_wizard_projects. Each op is `{ kind, ref?, ...args }`; add ops can set `ref` so later ops in the SAME batch reference the new id via `*Ref`. Pass dry_run:true to validate + score without saving (STRONGLY recommended first). Returns `{ available, batch }`: `batch.ok:true` applied (with `refs`, `appliedCount`, `maturityPercentage`); `batch.ok:false` REJECTED — read `batch.errors` and fix. When the engine supports it, `batch.scenarios: { scope, run, passed, failed[], truncated? }` reports the scenarios of what the batch touched, run on the feature as the batch leaves it (a dry run included). A row in `failed` is information, not a rejection: validation alone refuses a batch, so read the row and fix the rule or the scenario; an older engine sends nothing and the field is absent. SEVERAL WRITERS ON ONE FEATURE: pass `expected_updated_at`, the feature `updatedAt` you read (get_behavior_feature returns it at `snapshot.feature.updatedAt` and in its summary), so an engine that supports it refuses to overwrite what changed since; a success then carries `batch.previousUpdatedAt` and `batch.updatedAt`, the version to send next, and an older engine ignores the argument. A conflict answers `batch.ok:false` with `batch.conflict:true`, `batch.currentUpdatedAt` and `batch.changedSince` (the elements that moved, `batch.changedSinceTotal` in all): NOTHING was written, so re-read the feature, rebase your operations on what it now holds, and resend with the new `updatedAt`. `batch.relatedElsewhere`, when present, names elements of OTHER features that share the state paths the batch touched, so a change that looks local is checked against them. Op-kind schema reference: build a batch against the vocabulary in the tool docs (add_state_definition, add_action_rule{rule:{category,condition?,effect:{type,...}}}, add_scenario{surfaceId|actionId,expectedAssertions}, add_reachability_goal, ...). Common gotchas: add_resource/add_reachability_goal nest their own `kind` under resourceKind / the arg (it collides with the op discriminator); block an action with effect {type:"block_action"} not "block"; requiredStates is string[] of paths, use rules for value guards. RULES ARE MANDATORY ON EVERY NEW ACTION — this is the product\'s core reading ("which rules are active"), not a nicety: an `add_action` op is REJECTED unless the same batch also carries at least one `add_action_rule` with that action\'s `actionRef` (so always give `add_action` a `ref`). Ask yourself what gates the action — permissions, state, quota, validity — and encode it. If it is genuinely unconditional, say so AS A RULE: an `add_action_rule` with no `condition` and `effect:{type:"allow_action",description:"…"}`; that records the decision instead of leaving a silent gap.',
     {
       project_id: z.string().describe('Lyriks project id / slug that OWNS the feature (from list_wizard_projects) — authorizes the write'),
       feature_id: z.string().describe('Kernel feature id: a features-section leaf id, or "<projectId>__experience" (journeys/steps) / "<projectId>__data_model" (entities)'),
@@ -776,13 +880,14 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
       dry_run: z.boolean().optional().describe('Validate + score without saving (recommended before a real apply). A valid dry-run returns batch.commitToken'),
       commit: z.string().optional().describe('A commitToken from a prior valid dry_run — saves that exact validated batch WITHOUT resending operations. Single-use, expires after 5 minutes'),
       verbose: z.boolean().optional().describe('Include the per-issue verification report, not just aggregate counts'),
+      expected_updated_at: z.string().optional().describe('The feature `updatedAt` this batch was written against (ISO string, from get_behavior_feature). An engine that supports it refuses the batch when the feature changed since: `batch.conflict:true`, nothing written. Pass it whenever several writers share one feature'),
     },
     async (args) => json(await applyBehaviorBatchHandler(args, lyriks)),
   )
 
   mcp.tool(
     'get_behavior_context',
-    'Resolve a project entity to its BEHAVIOR-MODEL address — the ids apply_behavior_batch needs — so you never hand-translate "journey-triage" into "srf-journey-triage" or "step-tri-3" into "act-step-tri-3". Pass the project plus ONE of journey_id / step_id / screen_id (or a raw surface_id / action_id) and get back { featureId, surfaceId, actionId, name, found, depth }, where depth is a connectivity snapshot { statesWritten, statesRead, eventsEmitted, transitions, actions }. Use it to discover the feature_id + surface/action to target, and to see at a glance how much a step already models. found:false means the entity isn\'t in the model yet (author it first); the ids still come back so you know where it WILL live.',
+    'Resolve a project entity to its BEHAVIOR-MODEL address — the ids apply_behavior_batch needs — so you never hand-translate "journey-triage" into "srf-journey-triage" or "step-tri-3" into "act-step-tri-3". Pass the project plus ONE of journey_id / step_id / screen_id (or a raw surface_id / action_id) and get back { featureId, surfaceId, actionId, name, found, depth }, where depth is a connectivity snapshot { statesWritten, statesRead, eventsEmitted, transitions, actions }. A raw surface_id or action_id is looked up in the Experience feature first and, when that feature does not hold it, across the project\'s LEAF features: the `featureId` in the answer names the feature that owns it. Use it to discover the feature_id + surface/action to target, and to see at a glance how much a step already models. found:false means the entity isn\'t in the model yet (author it first); the ids still come back so you know where it WILL live.',
     {
       project_id: z.string().describe('Lyriks project id / slug (from list_wizard_projects)'),
       journey_id: z.string().optional().describe('An experience-section journey id → its workflow surface'),
@@ -796,14 +901,34 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
 
   mcp.tool(
     'get_behavior_feature',
-    'Read the canonical Unspaghettit feature tree through authenticated Lyriks, including stable ids for surfaces, actions, rules, effects, states, scenarios, invariants, entities and resources. Use paths to fetch focused branches (for example "snapshot.feature.surfaces") when the complete feature is large. This is the required read between apply_behavior_batch calls because batch refs only live within one batch.',
+    'Read the canonical Unspaghettit feature tree through authenticated Lyriks, including stable ids for surfaces, actions, rules, effects, states, scenarios, invariants, entities and resources. A complete feature is often larger than one answer can carry, so read it in two steps: summary:true returns the TABLE OF CONTENTS (feature id, name and updatedAt, counts of the feature-level collections, acceptanceCriteria as {id, title}, and per surface {id, name, stateCount, ruleCount, invariants:[{id, name}], actions:[{id, name, rules, effects, scenarios, parameters}]} with counts as numbers), then surface_id or action_id returns that ONE element whole with its {featureId, surfaceId, surfaceName} context. Select by id, never by position: a path such as "snapshot.feature.surfaces.5" names another surface as soon as someone adds one. action_id searches every surface and wins when both ids are given; an unknown id answers found:false with the ids and names that do exist. index_keys:true answers { featureId, updatedAt, total, keys } instead: the implementation-index keys that belong to this feature, in the engine\'s own grammar (surface:<id>, action:<id>, rule:<id>, invariant:<id>, transition:<id>, surface_rule:<id>, surface_invariant:<id>, entity:<id>, state:<dotted.path>, event:<name>, criterion:<id>), so a repository can slice its .unspa.json by feature although index entries carry no featureId (send that slice to sync_implementation_index as a partial index). A state path or an event name several features declare is one key in each of them; criterion:<id> is resolved by newer engines only, an older one lists it under orphans. The list comes whole (100 to 300 short keys for a feature of 30 actions); only a huge feature is paged, with offset, returned and nextOffset in the answer: continue with offset:nextOffset. index_keys wins over surface_id, action_id and summary. `paths` still reads exact dotted branches that have no id of their own (for example "snapshot.feature.events") and wins over every other argument. This is the required read between apply_behavior_batch calls because batch refs only live within one batch.',
     {
       project_id: z.string().describe('Lyriks project id / slug that owns the feature'),
       feature_id: z.string().describe('Kernel feature id'),
-      paths: z.array(z.string()).optional().describe('Optional dotted paths into the response for focused reads'),
-      summary: z.boolean().optional().describe('Return a compact shape instead of the complete snapshot'),
+      summary: z.boolean().optional().describe('Return the table of contents (ids, names and counts) instead of the complete snapshot: start here'),
+      surface_id: z.string().optional().describe('Return this one surface whole (id from the table of contents)'),
+      action_id: z.string().optional().describe('Return this one action whole, searched in every surface (id from the table of contents); wins over surface_id'),
+      index_keys: z.boolean().optional().describe('Return the implementation-index keys that belong to this feature ({ featureId, updatedAt, total, keys }) instead of the tree; wins over surface_id, action_id and summary'),
+      limit: z.number().int().min(1).optional().describe('index_keys only: keys per page (default: every key that fits the response cap)'),
+      offset: z.number().int().min(0).optional().describe('index_keys only: keys to skip; pass the nextOffset of the previous page'),
+      paths: z.array(z.string()).optional().describe('Exact dotted paths into the response, for branches without an id; wins over summary, surface_id, action_id and index_keys'),
     },
-    async (args) => json(await readBehaviorFeatureHandler(args, lyriks)),
+    async (args) => json(await readBehaviorFeatureHandler(args, lyriks), 'get_behavior_feature'),
+  )
+
+  mcp.tool(
+    'export_behavior_scenarios',
+    'Export the executable scenarios of a feature as FIXTURES, so a repository test runs the spec\'s scenarios against the REAL CODE instead of hand-copying their numbers into a test that then drifts from the spec. One fixture per authored scenario, in model order: { featureId, featureName, surfaceId, surfaceName, actionId, actionName, scenarioId, scenarioName, titleToken, personaId, personaName, initialState, parameters, steps, timeAdvance?, expectedStatus, expectedAssertions, expectedTransition?, specVersion }. initialState is what the simulator starts from: the persona state overrides, then the scenario\'s on top, then the defaults of the scenario\'s surface for every declared path still missing, nested along each dotted state path ("cart.total" is initialState.cart.total). parameters are keyed by name: the persona overrides, then the scenario\'s, only the names the action declares. steps are the actions a multi-step scenario replays before its subject action, each { actionId, actionName, surfaceId, parameters, expectedStatus, expectedAssertions, timeAdvance? }. expectedStatus is "success" when the scenario authored none; expectedTransition is present only when authored (null = the action must not move the user). specVersion is when that scenario last changed in the spec (the feature updatedAt on a feature without element stamps), so a repository can tell when a saved fixture moved. This is the input of the engine\'s `unspa scenarios export`, which reads a local snapshots folder a Lyriks-bound repository does not have. Write ONE adapter in the repository, invoke(fixture) => { status: "success" | "blocked", finalState } (the answer repeats the contract in `adapterContract`; only asserted paths need to come back in finalState), save the fixtures beside the test, and loop over them. NAME EACH TEST WITH ITS `titleToken` ("[unspa:<surfaceId>:<actionId>:<scenarioId>]", anywhere in the title; null when an id could not be read back from it): the token is what brings the results back. Run the tests with a JSON report (vitest `--reporter=json`, jest `--json`, both with `--outputFile`) and hand that report to the shipped script `.lyriks/tools/ingest-results.mjs`, which stamps `verifiedAt` on the `action:<id>` index entries whose scenarios ALL passed; the next sync_implementation_index then carries the proof. surface_id / action_id keep one surface or one action. The answer is paged under the response cap: { featureId, total, offset, returned, nextOffset, fixtures, adapterContract }; continue with offset:nextOffset until it is null. An unknown id answers found:false with the ids and names that exist.',
+    {
+      project_id: z.string().describe('Lyriks project id / slug that owns the feature'),
+      feature_id: z.string().describe('Kernel feature id'),
+      surface_id: z.string().optional().describe('Keep the scenarios of this one surface'),
+      action_id: z.string().optional().describe('Keep the scenarios of this one action (searched in surface_id when given, else in every surface)'),
+      limit: z.number().int().min(1).max(200).optional().describe('Fixtures per page (default 50, max 200); fewer come back when they would not fit the response cap'),
+      offset: z.number().int().min(0).optional().describe('Scenarios to skip, in model order; pass the nextOffset of the previous page'),
+    },
+    { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    async (args) => json(await exportBehaviorScenariosHandler(args, lyriks), 'export_behavior_scenarios'),
   )
 
   mcp.tool(
@@ -817,7 +942,7 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
       area: z.string().optional().describe('Limit issues and counts to one maturity area'),
       severity: z.enum(['critical', 'recommended']).optional().describe('Limit issues by severity'),
     },
-    async (args) => json(await scoreBehaviorFeatureHandler(args, lyriks)),
+    async (args) => json(await scoreBehaviorFeatureHandler(args, lyriks), 'score_behavior_feature'),
   )
 
   mcp.tool(
@@ -832,12 +957,14 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
 
   mcp.tool(
     'get_behavior_operations',
-    'Discover the exact apply_behavior_batch vocabulary from the running Unspaghettit engine, so schemas stay aligned with the installed version. With no query returns section headings; query an operation name or concept (for example "add_scenario", "invariant", "remove_effect") for matching schema excerpts.',
+    'Discover the exact apply_behavior_batch vocabulary from the running Unspaghettit engine. No query returns headings and an authoring-pattern index; search one or more operation names or concepts for paginated schema excerpts. Queries continuous, spatial, or runtime-evidence also return domain-neutral modeling guidance, separately from schemas. Guidance does not establish runtime correctness.',
     {
       project_id: z.string().describe('Lyriks project id / slug used for authenticated access'),
-      query: z.string().optional().describe('Operation name or concept to search for'),
+      query: z.string().max(512).optional().describe('One or more operation names/concepts, separated by spaces or commas (matches any term)'),
+      offset: z.number().int().min(0).optional().describe('Character offset from nextOffset; keep the same query while paging'),
+      max_chars: z.number().int().min(1).max(16000).optional().describe('Maximum excerpt characters per page (default 12000)'),
     },
-    async (args) => json(await getBehaviorOperationsHandler(args, lyriks)),
+    async (args) => json(await getBehaviorOperationsHandler(args, lyriks), 'get_behavior_operations'),
   )
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -877,7 +1004,7 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
       offset: z.number().int().nonnegative().optional().describe('Start character offset when reading'),
       max_chars: z.number().int().positive().optional().describe('How many characters to return'),
     },
-    async (args) => json(await listSourcesHandler(args, lyriks)),
+    async (args) => json(await listSourcesHandler(args, lyriks), 'list_sources'),
   )
 
   mcp.tool(
@@ -1008,7 +1135,34 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
       coverage: z.boolean().optional().describe('Return per-source consumption instead of the trace map'),
       source_id: z.string().optional().describe('Limit coverage to one source'),
     },
-    async (args) => json(await getProvenanceHandler(args, lyriks)),
+    async (args) => json(await getProvenanceHandler(args, lyriks), 'get_provenance'),
+  )
+
+  mcp.tool(
+    'get_evolution',
+    'The Evolution section as ONE aggregate: the board (one card per live change request: stage, the stage its own state supports, maturity, open questions, pending proposals, coherence delta, blocking findings, undecided report lines, acceptance debt, waiver) or, with request_id, ONE dossier IN COUNTS: its touched features, how many fields are filled, empty, critical and empty, open questions, awaiting a proposal or discussed, how many proposals wait and how many are flagged or blocked, how many readings are filled and how many move, the maturity per block with the critical holes named, the coherence findings the engine published, the impact in short (one plain-language line per plane, the spec plane and the code plane, how much moves per section, plus the direct hits), the next gate and exactly why it refuses, the report counts, the observations, the acceptance debt and the last timeline entries. That answer is the SAME SIZE whether the request touches one feature or twenty, because every list it counts comes ONE PART at a time, narrowed to one touched feature with `leaf` and paged with `offset`/`limit`: part:"fields" (one row per inline field per touched feature: the value the owning section holds, whether it is filled, the open question, the proposal waiting, the thread), part:"proposals" (every pending proposal with its full value, reasoning, sources and whether a person may accept it as it stands), part:"impact" (every impacted node under the current hypothesis, `section` narrows to one of leaves|screens_and_journeys|entities_and_fields|rules_and_scenarios|permissions|glossary_terms|code; the code section lists the files the implementation index anchors on the touched and reached features), part:"report" (every line of the current iteration, `verdict` narrows to conform|non_conform|missing|out_of_scope|regression), part:"readings" (the blocks edited elsewhere: behaviour, grants, entities, dependencies; an empty reading = author it in the owning section and it fills itself), part:"history". Read the counts first, then the one list you need, one feature at a time. START HERE for any change request, which is a change to qualify, not one to make. ' + MAKE_OR_QUALIFY + ' The aggregate is precomputed server-side, and `fieldsAvailable` lists the field paths apply_evolution_batch can propose on; `members` is the workspace roster a proposal can be handed to (empty where one member is alone). Read this instead of get_section(evolution), which is the raw document without any of the derived readings.',
+    {
+      project_id: z.string().describe('Lyriks project id (from list_wizard_projects)'),
+      request_id: z.string().optional().describe('One request; omit for the board'),
+      part: z.enum(DOSSIER_PARTS).optional().describe('With request_id: "summary" (default, counts only) or one list: fields | proposals | impact | report | readings | history'),
+      section: z.string().optional().describe('part:"impact": keep one section of the impact list'),
+      verdict: z.string().optional().describe('part:"report": keep one verdict bucket'),
+      leaf: z.string().optional().describe('part:"fields"|"proposals"|"readings": keep what belongs to ONE touched feature (a leaf id from the dossier\'s leafIds)'),
+      offset: z.number().int().nonnegative().optional().describe('part:"fields"|"proposals"|"impact"|"report"|"readings": page start (the answer says total, matched, offset, limit)'),
+      limit: z.number().int().positive().optional().describe('part:"fields"|"proposals"|"impact"|"report"|"readings": page size (default 150)'),
+    },
+    async (args) => json(await getEvolutionHandler(args, lyriks), 'get_evolution'),
+  )
+
+  mcp.tool(
+    'apply_evolution_batch',
+    'Drive a change request through its lifecycle with typed operations, applied ATOMICALLY by the platform under the same guards as the dossier page: nothing lands unless every op is allowed, and a refusal names the op and the sentence the spec wrote. WHEN TO OPEN A REQUEST: ' + MAKE_OR_QUALIFY + ' YOU (the AI client) may: open_request {title, origin (internal_idea|customer_feedback|support_ticket|market_watch|regulatory|technical_debt), requester?, leafIds[] = EXISTING leaf features the change touches}, update_request {requestId, title?, origin?, requester?}, set_leaves {requestId, leafIds[]}, propose {requestId, fieldPath (from get_evolution fieldsAvailable), leafId, value, reasoning (say what you READ and what you INFERRED), citedSourceIds[] (documents register ids: register the source first)}, post_on_field {requestId, fieldPath, leafId?, body}, run_impact {requestId, hypothesis add|change|remove, depth 1..5} (COMPUTED: the spec plane over the knowledge graph, the code plane over the synced implementation index; run the three hypotheses in one batch, they read differently: add extends, change reworks, remove strips; sync_implementation_index first for a real code plane), run_coherence {requestId} (COMPUTED by the coherence engine over the whole project), build_implementation_report {requestId} (DERIVED from the synced implementation index against the frozen version: sync_implementation_index first, in Verify). A PERSON decides, and you relay their decision ONLY when they told you to, with as_person:true on the batch (the act lands as theirs, channel stamped on the timeline): decide_proposal {requestId, proposalId, decision accept|refuse|reword, comment?, value?} (accept WRITES the value into the owning section; on a proposal with tagged reviewers, accept is that reviewer\'s validation and the value is written once every reviewer validated, refuse is an invalidation that refuses it), tag_reviewers {requestId, proposalId, reviewerIds[]} (hand a proposal to named members of the workspace, ids = emails from get_evolution `members`; only where the roster holds more than one member, Enterprise), mark_open_question / answer_open_question {requestId, fieldPath, leafId?}, cross_stage {requestId, waiverReason?} (one gate at a time: Specify > Challenge > Verify (freezes the spec as a numbered version) > Accept > Delivered; a waiver crosses an unmet gate with a stated reason), lift_waiver, rebrief (back to Specify, amends a frozen spec), decide_line {requestId, lineId | verdict, decision validated|invalidated|adopted|removed}, rule_observation {requestId, observationId, ruling validated|invalidated|deferred|requalified, reason?}, fold_back {requestId, observationId, leafId, text} (writes an acceptance criterion on the feature), close_request, delete_request. AN OBSERVATION IS LOGGED BY THE PERSON WALKING THE PRODUCT, on the dossier page, because it is anchored on the screen and the element they are looking at and carries their annotated capture: you rule on the observations get_evolution lists and fold the validated ones back, and there is no operation to log one in their place. An observationId the dossier does not list is refused, which is that rule, not a missing feature. PLAN WITHOUT BUILDING: while a request is specified, never create a feature, entity, term, rule, screen or grant in the sections; predicted new things are impact findings, spec values are proposals a person signs. The answer carries each op result and the touched requests as CARDS; read the dossier again with get_evolution. Order of work: open_request > set_leaves > run_impact (add, then change or remove) > run_coherence > propose on the open questions and empty critical fields > the person decides > cross_stage. Follow the lyriks-evolution skill.',
+    {
+      project_id: z.string().describe('Lyriks project id'),
+      operations: z.array(z.record(z.unknown())).min(1).describe('Ordered typed operations, each { op, requestId?, ...fields } (see the tool description)'),
+      as_person: z.boolean().optional().describe('true ONLY when relaying a decision the signed-in person explicitly took in the conversation; the act is stamped as theirs, through the ai_client channel'),
+    },
+    async (args) => json(await withWriteLock(`${args.project_id}:evolution`, () => applyEvolutionBatchHandler(args, lyriks))),
   )
 
   mcp.tool(
@@ -1071,12 +1225,13 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
 
   mcp.tool(
     'sync_implementation_index',
-    'Push implementation coverage for a whole project from the index you hold: pass the `index` object out of your repo\'s .unspa.json and the engine resolves every key against the spec, reporting status for each action and surface in one call. Prefer this over report_implementation_status once an index exists. Each entry\'s `signature` (one real code line) is its evidence: the engine cannot open your files, so an entry without a signature lands as `unverified` in the dashboard. Seed entries from spans via seed_implementation_index, or copy the real line into `signature` yourself. The response\'s `orphans` block lists index keys that match no spec entity (typo, renamed or removed) and `ok` is true only when there are none.',
+    'Push implementation coverage for a whole project from the index you hold: pass the `index` object out of your repo\'s .unspa.json and the engine resolves every key against the spec, reporting status for each action and surface in one call. Prefer this over report_implementation_status once an index exists. Each entry\'s `signature` (one real code line) is its evidence: the engine cannot open your files, so an entry without a signature lands as `unverified` in the dashboard. Seed entries from spans via seed_implementation_index, or copy the real line into `signature` yourself. YOU MAY SEND A PARTIAL INDEX: actions and surfaces absent from the index you send are left untouched (their previous reports stay) and are only counted in `skipped`. The unit that must travel together is an action or surface entry WITH all of its children (rule:, invariant:, transition:, event: for an action; state:, surface_rule:, surface_invariant: for a surface), because a report REPLACES the located entities of that action or surface. So after changing one feature, sending only that feature\'s keys is safe and keeps the call small. The answer carries the counters, a `semantics` object saying what each one means, and `failedAcks` (only the refused reports; pass verbose:true for the acknowledgement of every action and surface). `synced` counts reports written, one per action and per surface that has its own entry; child keys are folded into their parent\'s report and not counted separately. The `stale` and `healed` blocks of THIS tool are about code location (a signature no longer found at its line) and are not evaluated when the index is sent inline, which is always the case here: zero there is not a clean bill, and spec drift is read with get_implementation_drift. A newer engine also answers `criteria`, every acceptance criterion with its standing, whether an index entry verifies it and how that went (`verified`, `failing`, `unverified`, or `none` when nothing verifies it), marked `stale` when its text changed after the result, and `verified`, how many actions are PROVEN against the code (their index entry carries the `verifiedAt` stamp a passing scenario run leaves), apart from the ones merely located; an older engine sends neither and the fields are absent. An index entry keyed `criterion:<id>` may carry `verification { kind, command, files, artifacts, lastResult { passed, at, summary, revision } }`: what checks that criterion and how it last went. `criteria.entries` is cut to its first 50 rows with `criteria.total` kept. The `orphans` block lists index keys that match no spec entity (typo, renamed or removed) and `shared` the keys several features declare, each cut to its first 50 entries with `total` kept; `ok` is true only when there are no orphans and no refused report.',
     {
       project_id: projectIdArg,
       index: z
         .record(z.string(), z.unknown())
-        .describe('The `index` object from your .unspa.json, keyed "<type>:<id-or-path>"'),
+        .describe('The `index` object from your .unspa.json, keyed "<type>:<id-or-path>". May be partial: an action or surface entry travels with all of its children'),
+      verbose: z.boolean().optional().describe('Also return `acks`, one row per action and surface reported; default false returns only the refused ones as `failedAcks`'),
     },
     async (args) => json(await syncIndexHandler(args, lyriks)),
   )
@@ -1133,14 +1288,14 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
 
   mcp.tool(
     'get_implementation_status',
-    'Current implementation status for one feature, optionally scoped to a surface or action: which entities are recorded as implemented, partial or missing, and where each was last located.',
+    'Current implementation status for one feature, optionally scoped to a surface or action: which entities are recorded as implemented, partial or missing, and where each was last located. A newer engine also answers `criteria`, every acceptance criterion with its standing, whether an index entry verifies it and how that went (`verified`, `failing`, `unverified`, or `none` when nothing verifies it), marked `stale` when its text changed after the result, and `verified`, how many actions are PROVEN against the code (their index entry carries the `verifiedAt` stamp a passing scenario run leaves), apart from the ones merely located; an older engine sends neither and the fields are absent. An index entry keyed `criterion:<id>` may carry `verification { kind, command, files, artifacts, lastResult { passed, at, summary, revision } }`: what checks that criterion and how it last went.',
     {
       project_id: projectIdArg,
       feature_id: featureIdArg,
       surface_id: z.string().optional(),
       action_id: z.string().optional(),
     },
-    async (args) => json(await getStatusHandler(args, lyriks)),
+    async (args) => json(await getStatusHandler(args, lyriks), 'get_implementation_status'),
   )
 
   mcp.tool(
@@ -1156,18 +1311,21 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string): 
         .optional()
         .describe('With entries:true — key, entityTypes, status, offset, limit, statsOnly'),
     },
-    async (args) => json(await gapsHandler(args, lyriks)),
+    async (args) => json(await gapsHandler(args, lyriks), 'get_implementation_gaps'),
   )
 
   mcp.tool(
     'get_implementation_drift',
-    'Spec→code drift: which implementations were audited against an OLDER version of the spec than the one now in the kernel, so the code may no longer match. Returns `stale` (re-audit — the spec moved under them), `unversioned` (audited but never stamped, so drift cannot be judged) and `orphans` (index keys that no longer resolve to any spec entity). This is the payoff of adoption: seeding the index stamps a specVersion on every entry, so this answers meaningfully from day one. Granularity: each entry is judged against the CURRENT version of the exact element it maps, so a changed rule no longer implicates its neighbours. Every stale row carries `scope`: "element" (this entity moved, real evidence) or "feature" (only the feature-wide stamp was available, so the row is suspect by association). A feature written before per-element stamps reports "feature" until its next edit, which calibrates it. Omit feature_id to sweep the whole project.',
+    'Spec-to-code drift: which implementations were audited against an OLDER version of the spec than the one now in the kernel, so the code may no longer match. "Stale" HERE means the SPEC element changed after the audit recorded in the entry (its `specVersion`); it is unrelated to the `stale` block of sync_implementation_index, which is about a code line that moved. Three buckets: `stale` (re-audit: the spec moved under them), `unversioned` (audited but never stamped, so drift cannot be judged) and `orphans` (index keys that no longer resolve to any spec entity). The answer opens with `summary`: `checked`, the total of each bucket, `staleByScope`, `staleByFeature` (featureId to count, the 50 largest, `moreFeatures` counting the rest) and `staleByFile` (the file your own index maps each stale key to, the 50 largest, `moreFiles`), which is what you plan the re-audit from. Then ONE bucket, PAGED: `rows`, `total`, `offset`, `returned`, `nextOffset` (null on the last page); a page holds up to `limit` rows and fewer when they would not fit one answer, so always continue from `nextOffset`. Each stale row carries `file` and `line` from your index when it has them. This is the payoff of adoption: seeding the index stamps a specVersion on every entry, so this answers meaningfully from day one. Granularity: each entry is judged against the CURRENT version of the exact element it maps, so a changed rule no longer implicates its neighbours. Every stale row carries `scope`: "element" (this entity moved, real evidence) or "feature" (only the feature-wide stamp was available, so the row is suspect by association). A feature written before per-element stamps reports "feature" until its next edit, which calibrates it. Omit feature_id to sweep the whole project.',
     {
       project_id: projectIdArg,
       index: z.record(z.string(), z.unknown()).describe('The `index` object from your .unspa.json'),
       feature_id: z.string().optional().describe('Limit the sweep to one feature'),
+      bucket: z.enum(['stale', 'unversioned', 'orphans']).optional().describe('Which list `rows` pages through (default "stale"); the summary always covers all three'),
+      limit: z.number().int().min(1).max(200).optional().describe('Rows per page (default 50, max 200)'),
+      offset: z.number().int().min(0).optional().describe('Continue from nextOffset of the previous page (default 0)'),
     },
-    async (args) => json(await driftHandler(args, lyriks)),
+    async (args) => json(await driftHandler(args, lyriks), 'get_implementation_drift'),
   )
 
   return mcp

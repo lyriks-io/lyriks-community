@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import SourceMetadata from './SourceMetadata.svelte';
 	import { Button, Icon } from '$ui/design-system';
 	import { DOCUMENT_KINDS, sourceAccess, sourceHref, type DocumentKind } from '$domain/documents';
 	import type { DocumentsStore } from './draft-store.svelte';
@@ -82,7 +83,7 @@
 								<input
 									value={s.url}
 									oninput={(e) => store.updateSource(s.id, { url: e.currentTarget.value })}
-									placeholder="https://…  or a reference"
+									placeholder="https://… or leave empty and include the content below"
 									class="min-w-0 flex-1 rounded-field border border-line bg-surface px-2.5 py-1.5 text-[13px] text-ink-700 outline-none placeholder:text-ink-300 focus:border-brand-300"
 								/>
 								{#if href}
@@ -111,6 +112,7 @@
 								placeholder="Citation, excerpt, or why this matters…"
 								class="w-full resize-y rounded-field border border-line bg-surface px-2.5 py-1.5 text-[13px] text-ink-700 outline-none placeholder:text-ink-300 focus:border-brand-300"
 							></textarea>
+							<SourceMetadata source={s} update={(patch) => store.updateSource(s.id, patch)} />
 						</div>
 						<button
 							type="button"

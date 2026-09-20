@@ -1,5 +1,6 @@
 import type { FeatureMaturityScorerPort } from './ports';
 import { isAuxFeatureId } from './projection/aux-feature-ids';
+import { ACCEPTANCE_LEAF_PREFIX } from './projection/ownership';
 import type { UnspaFeatureSnapshot, UnspaProjectSnapshot } from '$lib/unspa-schema';
 
 /**
@@ -29,6 +30,10 @@ export interface BehaviorFeatureSummary {
 	personaCount: number;
 	/** 0–100; 0 when the feature has no authored shell. */
 	maturity: number;
+	/** The feature's acceptance criteria, whoever wrote them: the ones this product
+	    projected from its own panel (they carry `wizardId`) and the ones an AI client
+	    authored through the model, which carry a status and relations. One list. */
+	acceptanceCriteria: BehaviorAcceptanceCriterion[];
 	/** Any behavior authored at all. */
 	authored: boolean;
 	/** Past unspa's "hold in head" size cap — a coherence risk worth splitting. */
@@ -109,6 +114,60 @@ function countSurface(sRaw: unknown): SurfaceCounts {
 }
 
 /**
+ * One acceptance criterion as the product reads it, from the model's own list.
+ */
+export interface BehaviorAcceptanceCriterion {
+	id: string;
+	title: string;
+	description?: string;
+	/** Set only by an author: absent means active. Never inferred here. */
+	status?: string;
+	/** Ids of criteria in THIS feature declaring they supersede this one. */
+	supersededBy: string[];
+	/** The Features-panel criterion this row was projected from, which is what keeps
+	    it editable there. Absent on a criterion authored through the model. */
+	wizardId?: string;
+}
+
+/**
+ * Fold the raw criteria of one feature. `supersededBy` is derived by reading the
+ * relations the other criteria declare, rather than trusting a stored field: the
+ * engine computes it on every read for the same reason, and a status is never set
+ * for an author. A relation pointing into ANOTHER feature is skipped, because the
+ * engine carries those unresolved and this fold cannot resolve them either.
+ */
+function foldAcceptanceCriteria(raw: unknown[]): BehaviorAcceptanceCriterion[] {
+	const rows = raw.map((r) => (r ?? {}) as Record<string, unknown>);
+	const supersededBy = new Map<string, string[]>();
+	for (const row of rows) {
+		const from = str(row.id);
+		if (!from) continue;
+		for (const relRaw of arr(row.relations)) {
+			const rel = (relRaw ?? {}) as Record<string, unknown>;
+			if (str(rel.kind) !== 'supersedes' || str(rel.featureId)) continue;
+			const target = str(rel.criterionId);
+			if (!target) continue;
+			supersededBy.set(target, [...(supersededBy.get(target) ?? []), from]);
+		}
+	}
+	return rows.map((row) => {
+		const id = str(row.id);
+		const description = str(row.description);
+		const status = str(row.status);
+		return {
+			id,
+			title: str(row.title),
+			...(description ? { description } : {}),
+			...(status ? { status } : {}),
+			supersededBy: supersededBy.get(id) ?? [],
+			...(id.startsWith(ACCEPTANCE_LEAF_PREFIX)
+				? { wizardId: id.slice(ACCEPTANCE_LEAF_PREFIX.length) }
+				: {})
+		};
+	});
+}
+
+/**
  * Per-feature counts fold the feature's OWN snapshot, exactly like the maturity
  * score does — a leaf whose behavior lives on a surface that the Experience aux
  * feature also carries must not read "0 surfaces · 0 actions" next to a real
@@ -155,6 +214,7 @@ function summarizeFeature(
 		eventCount,
 		entityCount,
 		personaCount,
+		acceptanceCriteria: foldAcceptanceCriteria(arr(f.acceptanceCriteria)),
 		maturity: maturityScorer.score(snap),
 		authored:
 			surfaceCount > 0 || actionCount > 0 || entityCount > 0 || scenarioCount > 0,

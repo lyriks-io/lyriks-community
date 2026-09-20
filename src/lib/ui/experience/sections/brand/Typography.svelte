@@ -2,6 +2,7 @@
 	import { Card, TextInput, IconButton, Button, Icon } from '$ui/design-system';
 	import {
 		brandNewId,
+		type BrandFontRole,
 		type BrandFontSlot,
 		type BrandTypeSize,
 		type BrandFontWeight
@@ -21,6 +22,15 @@
 	const setFamily = (slot: BrandFontSlot, k: 'stack' | 'fallback', v: string) =>
 		store.setBrand(`typography.families.${slot}.${k}`, v);
 
+	// A face that is neither heading, body nor mono (a display or wordmark face)
+	// gets a role of its own instead of a sentence in a free-text field.
+	const setRoles = (r: BrandFontRole[]) => store.setBrand('typography.roles', r);
+	function addRole(preset: Partial<BrandFontRole>) {
+		setRoles([...typo.roles, { id: brandNewId('fr'), name: '', stack: '', fallback: '', usage: '', ...preset }]);
+	}
+	const patchRole = (id: string, p: Partial<BrandFontRole>) =>
+		setRoles(typo.roles.map((r) => (r.id === id ? { ...r, ...p } : r)));
+
 	const setScale = (s: BrandTypeSize[]) => store.setBrand('typography.scale', s);
 	function addSize(preset: Partial<BrandTypeSize>) {
 		setScale([...typo.scale, { id: brandNewId('sz'), name: '', valuePx: 16, lineHeight: 1.5, usage: '', ...preset }]);
@@ -35,6 +45,11 @@
 	const patchWeight = (id: string, p: Partial<BrandFontWeight>) =>
 		setWeights(typo.weights.map((w) => (w.id === id ? { ...w, ...p } : w)));
 
+	const ROLE_PRESETS: { label: string; preset: Partial<BrandFontRole> }[] = [
+		{ label: 'Display', preset: { name: 'display', usage: 'Titles and hero lines, never body text' } },
+		{ label: 'Wordmark', preset: { name: 'wordmark', usage: 'The product name only' } },
+		{ label: 'Custom', preset: {} }
+	];
 	const SIZE_PRESETS: { label: string; preset: Partial<BrandTypeSize> }[] = [
 		{ label: 'sm', preset: { name: 'sm', valuePx: 14, usage: 'Captions, helper text' } },
 		{ label: 'base', preset: { name: 'base', valuePx: 16, usage: 'Body copy' } },
@@ -68,6 +83,26 @@
 				</div>
 			</div>
 		{/each}
+	</div>
+
+	<div class="space-y-2">
+		<p class="text-[11px] font-bold uppercase tracking-widest text-ink-400">Other named roles</p>
+		{#each typo.roles as r (r.id)}
+			<div class="flex items-start gap-2 rounded-field border border-line bg-surface-sunken p-2.5">
+				<div class="grid flex-1 gap-2 md:grid-cols-[140px_1fr_1fr_1fr]">
+					<TextInput value={r.name} placeholder="display" oninput={(v) => patchRole(r.id, { name: v })} />
+					<TextInput value={r.stack} placeholder={'"Playfair Display", serif'} oninput={(v) => patchRole(r.id, { stack: v })} />
+					<TextInput value={r.fallback} placeholder="Georgia, serif" oninput={(v) => patchRole(r.id, { fallback: v })} />
+					<TextInput value={r.usage} placeholder="Titles only, 64 px and up" oninput={(v) => patchRole(r.id, { usage: v })} />
+				</div>
+				<IconButton name="x" label="Remove role" danger onclick={() => setRoles(typo.roles.filter((x) => x.id !== r.id))} />
+			</div>
+		{/each}
+		<div class="flex flex-wrap gap-1.5">
+			{#each ROLE_PRESETS as p (p.label)}
+				<Button variant="soft" size="sm" onclick={() => addRole(p.preset)}><Icon name="plus" size={12} /> {p.label}</Button>
+			{/each}
+		</div>
 	</div>
 
 	<div class="space-y-2">

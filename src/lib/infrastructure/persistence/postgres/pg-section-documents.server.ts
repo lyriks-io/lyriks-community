@@ -35,6 +35,14 @@ export class PgSectionDocumentStore implements SectionDocumentStorePort {
 		return rows[0]?.revision ?? 0;
 	}
 
+	async currentRevisions(projectId: string): Promise<ReadonlyMap<string, number>> {
+		const { rows } = await pgQuery<{ section: string; revision: number }>(
+			'SELECT section, revision FROM project_section_documents WHERE project_id = $1',
+			[projectId]
+		);
+		return new Map(rows.map((row) => [row.section, row.revision]));
+	}
+
 	async save(
 		projectId: string,
 		section: string,

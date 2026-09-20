@@ -1,3 +1,4 @@
+import { sameProjectedFeature } from '$application/projection/projected-feature-content';
 import type {
 	BehaviorApplyReport,
 	BehaviorOp,
@@ -94,7 +95,7 @@ export class LocalBehaviorPort implements BehaviorPort {
 			switch (op.kind) {
 				case 'upsertFeatureShell': {
 					const existing = await this.repo.loadFeature(projectId, op.featureId);
-					await this.repo.saveFeature(
+					await this.#saveFeature(
 						projectId,
 						this.#featureShell(existing, op.featureId, op.name, op.description, op.tags, now)
 					);
@@ -131,7 +132,7 @@ export class LocalBehaviorPort implements BehaviorPort {
 				}
 				case 'upsertDataModelFeature': {
 					const existing = await this.repo.loadFeature(projectId, op.featureId);
-					await this.repo.saveFeature(
+					await this.#saveFeature(
 						projectId,
 						this.#dataModelShell(existing, op, now)
 					);
@@ -151,7 +152,7 @@ export class LocalBehaviorPort implements BehaviorPort {
 						JSON.stringify(entities) === JSON.stringify(feat.entities ?? []) &&
 						JSON.stringify(resources) === JSON.stringify(feat.resources ?? []);
 					if (unchanged) break; // a save must not touch every leaf file for nothing
-					await this.repo.saveFeature(projectId, {
+					await this.#saveFeature(projectId, {
 						...existing,
 						feature: withoutElementStamps({
 							...feat,
@@ -165,7 +166,7 @@ export class LocalBehaviorPort implements BehaviorPort {
 				}
 				case 'upsertExperienceFeature': {
 					const existing = await this.repo.loadFeature(projectId, op.featureId);
-					await this.repo.saveFeature(projectId, this.#experienceShell(existing, op, now));
+					await this.#saveFeature(projectId, this.#experienceShell(existing, op, now));
 					break;
 				}
 				case 'mirrorFeatureBehavior': {
@@ -176,7 +177,7 @@ export class LocalBehaviorPort implements BehaviorPort {
 					// it. So the merge is ADDITIVE — surfaces/personas/events authored in
 					// the engine survive an Experience save that never mentioned them.
 					const mirroredSurfaces = mergeMirroredSurfaces(op.surfaces, feat.surfaces);
-					await this.repo.saveFeature(projectId, {
+					await this.#saveFeature(projectId, {
 						...existing,
 						feature: withoutElementStamps({
 							...feat,
@@ -203,14 +204,15 @@ export class LocalBehaviorPort implements BehaviorPort {
 					const existing = await this.repo.loadFeature(projectId, op.featureId);
 					if (!existing) break; // enrich only what a feature already authored
 					const feat = existing.feature as Record<string, unknown>;
-					await this.repo.saveFeature(projectId, {
+					await this.#saveFeature(projectId, {
 						...existing,
 						feature: {
 							...feat,
 							id: op.featureId,
 							acceptanceCriteria: mergeAcceptanceById(
 								(feat.acceptanceCriteria as Record<string, unknown>[] | undefined) ?? [],
-								op.acceptanceCriteria
+								op.acceptanceCriteria,
+								op.ownedPrefix
 							),
 							updatedAt: now
 						}
@@ -245,6 +247,18 @@ export class LocalBehaviorPort implements BehaviorPort {
 		return { warnings };
 	}
 
+	/**
+	 * An identical projection must not age every mapped element or discard its
+	 * engine stamps. Actual content changes keep the conservative invalidation
+	 * performed by the projection; we never manufacture engine version hashes.
+	 */
+	async #saveFeature(projectId: string, next: UnspaFeatureSnapshot): Promise<void> {
+		const candidate = next.feature as Record<string, unknown>;
+		const previous = await this.repo.loadFeature(projectId, String(candidate.id));
+		if (previous && sameProjectedFeature(previous.feature as Record<string, unknown>, candidate)) return;
+		await this.repo.saveFeature(projectId, next);
+	}
+
 	/** Merge a partial patch onto an existing feature; no-op if it doesn't exist. */
 	async #patchFeature(
 		projectId: string,
@@ -254,7 +268,7 @@ export class LocalBehaviorPort implements BehaviorPort {
 	): Promise<void> {
 		const existing = await this.repo.loadFeature(projectId, featureId);
 		if (!existing) return;
-		await this.repo.saveFeature(projectId, {
+		await this.#saveFeature(projectId, {
 			...existing,
 			feature: { ...(existing.feature as Record<string, unknown>), ...patch, id: featureId, updatedAt: now }
 		});
@@ -402,19 +416,23 @@ export class LocalBehaviorPort implements BehaviorPort {
 }
 
 /**
- * Merge acceptance-criteria lists. Lyriks owns the `ac-edge-*` rows (projected from
- * Step-06 edge cases): they are replaced wholesale by the incoming set, so a deleted
- * edge case drops its criterion. Criteria authored elsewhere (e.g. the unspa
- * dashboard) are preserved, unless the incoming set reuses their id.
+ * Merge acceptance-criteria lists. A projection owns exactly ONE id prefix and its
+ * rows are replaced wholesale by the incoming set, so deleting the thing that
+ * produced one drops its criterion. Every other row survives: the other
+ * projection's rows (the Rules step and a Features leaf both write here), and above
+ * all the criteria authored in the unspa dashboard or through the MCP, which carry
+ * status, relations and evidence no projection could reconstruct. A row is replaced
+ * rather than preserved when the incoming set reuses its id.
  */
 function mergeAcceptanceById(
 	existing: Record<string, unknown>[],
-	incoming: Record<string, unknown>[]
+	incoming: Record<string, unknown>[],
+	ownedPrefix: string
 ): Record<string, unknown>[] {
 	const incomingIds = new Set(incoming.map((c) => String(c.id ?? '')));
 	const preserved = existing.filter((c) => {
 		const id = String(c.id ?? '');
-		return !id.startsWith('ac-edge-') && !incomingIds.has(id);
+		return !id.startsWith(ownedPrefix) && !incomingIds.has(id);
 	});
 	return [...preserved, ...incoming];
 }

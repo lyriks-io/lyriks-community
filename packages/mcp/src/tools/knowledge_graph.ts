@@ -9,6 +9,9 @@
 import type { LyriksClient } from '../lyriks-client.js'
 
 export type GraphSource = 'merged' | 'local' | 'engine'
+// Which way a focus expansion follows edges: 'in' is what points AT the node
+// (its dependants), 'out' what it points at, 'both' the platform's default.
+export type GraphDirection = 'in' | 'out' | 'both'
 
 export interface KnowledgeGraphArgs {
   project_id: string
@@ -18,6 +21,7 @@ export interface KnowledgeGraphArgs {
   q?: string
   focus_node?: string
   depth?: number
+  direction?: GraphDirection
   limit?: number
 }
 
@@ -32,6 +36,8 @@ export async function getKnowledgeGraphHandler(
   if (args.q) params.set('q', args.q)
   if (args.focus_node) params.set('focus', args.focus_node)
   if (args.depth !== undefined) params.set('depth', String(args.depth))
+  // Only when given: a platform that predates it walks both ways, as it always did.
+  if (args.direction) params.set('direction', args.direction)
   if (args.limit !== undefined) params.set('limit', String(args.limit))
 
   const scoped =

@@ -14,6 +14,17 @@ const okBatch: BehaviorBatchResult = {
 };
 
 describe('AuthorBehaviorUseCase', () => {
+	it.each([true, false])('rejects incomplete operands without writing (dryRun=%s)', async (dryRun) => {
+		const applyBehaviorBatch = vi.fn().mockResolvedValue(okBatch);
+		const uc = new AuthorBehaviorUseCase({ applyBehaviorBatch });
+		const res = await uc.execute({ featureId: 'f', dryRun, operations: [
+			{ kind: 'add_effect', effect: { type: 'set_state', path: 'total', value: { kind: 'count', path: 'records' } } }
+		] });
+		expect(applyBehaviorBatch).not.toHaveBeenCalled();
+		expect(res.batch?.ok).toBe(false);
+		expect(res.batch?.errors.join(' ')).toContain('operand');
+	});
+
 	it('forwards featureId + operations + dryRun to the advisor and returns the batch', async () => {
 		const applyBehaviorBatch = vi.fn().mockResolvedValue(okBatch);
 		const uc = new AuthorBehaviorUseCase({ applyBehaviorBatch });
@@ -238,5 +249,89 @@ describe('AuthorBehaviorUseCase', () => {
 			commit: 'tok-1'
 		});
 		expect(applyBehaviorBatch).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('AuthorBehaviorUseCase, a batch that names the version it was written against', () => {
+	const STAMP = '2026-09-20T10:00:00.000Z';
+
+	it('names no version to the advisor when the caller gave none', async () => {
+		const applyBehaviorBatch = vi.fn().mockResolvedValue(okBatch);
+		await new AuthorBehaviorUseCase({ applyBehaviorBatch }).execute({ featureId: 'f', operations: [] });
+		expect('expectedUpdatedAt' in applyBehaviorBatch.mock.calls[0][2]).toBe(false);
+	});
+
+	it('forwards the version when given, on a direct batch and on a commit', async () => {
+		const applyBehaviorBatch = vi.fn().mockResolvedValue(okBatch);
+		const uc = new AuthorBehaviorUseCase({ applyBehaviorBatch });
+		await uc.execute({ featureId: 'f', operations: [{ kind: 'x' }], expectedUpdatedAt: STAMP });
+		await uc.execute({ featureId: 'f', operations: [], commit: 'tok-1', expectedUpdatedAt: STAMP });
+		expect(applyBehaviorBatch.mock.calls[0][2]).toMatchObject({ expectedUpdatedAt: STAMP });
+		expect(applyBehaviorBatch.mock.calls[1][2]).toMatchObject({
+			commit: 'tok-1',
+			expectedUpdatedAt: STAMP
+		});
+	});
+
+	it('answers a lost race as a rejected batch that says what to rebase on', async () => {
+		const raw = {
+			ok: false,
+			conflict: true,
+			expectedUpdatedAt: STAMP,
+			currentUpdatedAt: '2026-09-20T10:05:00.000Z',
+			changedSince: ['action:act-1', 'state:cart.total'],
+			changedSinceTotal: 2,
+			errors: ['The feature changed since this batch was written.']
+		};
+		const conflicted: BehaviorBatchResult = {
+			...okBatch,
+			ok: false,
+			appliedCount: 0,
+			refs: {},
+			errors: ['The feature changed since this batch was written.'],
+			maturityPercentage: null,
+			raw
+		};
+		const uc = new AuthorBehaviorUseCase({ applyBehaviorBatch: vi.fn().mockResolvedValue(conflicted) });
+		const res = await uc.execute({ featureId: 'f', operations: [{ kind: 'x' }], expectedUpdatedAt: STAMP });
+
+		// Reachable engine, batch not applied: the caller's after-write work keys on `ok`.
+		expect(res.available).toBe(true);
+		expect(res.batch).toMatchObject({
+			ok: false,
+			conflict: true,
+			currentUpdatedAt: '2026-09-20T10:05:00.000Z',
+			changedSince: ['action:act-1', 'state:cart.total'],
+			changedSinceTotal: 2
+		});
+		expect(res.batch?.raw).toBe(raw);
+	});
+
+	it('exposes the versions of a save, what it touches elsewhere and its scenarios', async () => {
+		const saved: BehaviorBatchResult = {
+			...okBatch,
+			raw: {
+				ok: true,
+				previousUpdatedAt: STAMP,
+				updatedAt: '2026-09-20T10:01:00.000Z',
+				relatedElsewhere: [{ featureId: 'feat-other', elements: ['event:order-placed'] }],
+				scenarios: { scope: 'touched', run: 1, passed: 1, failed: [] }
+			}
+		};
+		const uc = new AuthorBehaviorUseCase({ applyBehaviorBatch: vi.fn().mockResolvedValue(saved) });
+		const res = await uc.execute({ featureId: 'f', operations: [{ kind: 'x' }] });
+		expect(res.batch).toMatchObject({
+			ok: true,
+			previousUpdatedAt: STAMP,
+			updatedAt: '2026-09-20T10:01:00.000Z',
+			relatedElsewhere: [{ featureId: 'feat-other', elements: ['event:order-placed'] }],
+			scenarios: { scope: 'touched', run: 1, passed: 1, failed: [] }
+		});
+	});
+
+	it('hands back an older engine answer untouched', async () => {
+		const uc = new AuthorBehaviorUseCase({ applyBehaviorBatch: vi.fn().mockResolvedValue(okBatch) });
+		const res = await uc.execute({ featureId: 'f', operations: [{ kind: 'x' }], expectedUpdatedAt: STAMP });
+		expect(res.batch).toBe(okBatch);
 	});
 });

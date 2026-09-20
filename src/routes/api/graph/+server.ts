@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { graphOverview, scopeGraph } from '$domain/graph';
-import type { GraphContext, GraphNodeKind, GraphScope } from '$domain/graph';
+import type { GraphContext, GraphNodeKind, GraphScope, WalkDirection } from '$domain/graph';
 import type { RequestHandler } from './$types';
 
 /** "a,b , c" -> ["a","b","c"]; null/empty -> undefined (param absent). */
@@ -12,6 +12,11 @@ function csv(value: string | null): string[] | undefined {
 		.map((item) => item.trim())
 		.filter(Boolean);
 	return items.length > 0 ? items : undefined;
+}
+
+/** A walk direction param, or undefined when absent/unknown (the scope then walks both ways). */
+function direction(value: string | null): WalkDirection | undefined {
+	return value === 'in' || value === 'out' || value === 'both' ? value : undefined;
 }
 
 /** Positive integer param, or undefined when absent/malformed. */
@@ -31,7 +36,8 @@ function positiveInt(value: string | null): number | undefined {
  * - `view=overview`: whole-graph stats + best-connected nodes, no edge dump.
  * - `contexts=` / `kinds=`: comma-separated node filters.
  * - `q=`: case-insensitive substring match on label / detail / id.
- * - `focus=` (+ `depth=`): undirected neighborhood around one node id.
+ * - `focus=` (+ `depth=`): neighborhood around one node id, undirected unless
+ *   `direction=in` (what points at it) or `direction=out` (what it points at).
  * - `limit=`: node cap; the best-connected matches win, `truncated` is flagged.
  */
 export const GET: RequestHandler = async (event) => {
@@ -62,6 +68,7 @@ export const GET: RequestHandler = async (event) => {
 		q: url.searchParams.get('q') ?? undefined,
 		focus: url.searchParams.get('focus') ?? undefined,
 		depth: positiveInt(url.searchParams.get('depth')),
+		direction: direction(url.searchParams.get('direction')),
 		limit: positiveInt(url.searchParams.get('limit'))
 	};
 	const isScoped = Object.values(scope).some((value) => value !== undefined);

@@ -16,8 +16,10 @@
  * state path to an explicit observable. Pure functions only.
  */
 import type { ProjectExperienceDraft } from './draft';
+import { screenPath } from './draft';
 import { buildAcceptanceSpec, type AcceptanceAssertion, type JourneyFlow } from './acceptance';
 import { fieldStatePath, type BuilderElementNode } from './builder';
+import { simulate } from './simulate';
 
 /** Maps the prototype onto a real app (existing projects); every field optional. */
 export interface TargetMap {
@@ -55,7 +57,7 @@ function locator(label: string, kind: string, map: TargetMap): string {
 	if (sel) return `page.locator(${q(sel)})`;
 	if (kind === 'button') return `page.getByRole('button', { name: ${q(label)} })`;
 	if (kind === 'link') return `page.getByRole('link', { name: ${q(label)} })`;
-	if (kind === 'input') return `page.getByLabel(${q(label)})`;
+	if (['input', 'textarea', 'select', 'checkbox'].includes(kind)) return `page.getByLabel(${q(label)})`;
 	return `page.getByText(${q(label)})`;
 }
 
@@ -130,12 +132,35 @@ function journeyBlock(
 		lines.push(`    await page.goto(${q(entry)});`);
 		lines.push(`    await expect(page).toHaveURL(${urlRe(entry)});`);
 	}
-	for (const hop of f.hops) {
-		const dest = routeFor(map, hop.toScreenId, hop.toScreen, hop.toPath);
-		lines.push(`    await ${locator(hop.viaLabel, hop.viaKind, map)}.click();`);
-		lines.push(`    await expect(page).toHaveURL(${urlRe(dest)}); // → ${hop.toScreen}`);
+	const run = simulate(draft.builder, { startScreenId: f.startScreenId, actions: f.script });
+	if (!run.ok) lines.push(`    test.fixme(true, ${q('The prototype simulation failed. Repair and re-verify it before accepting this generated test.')});`);
+	for (const [index, action] of f.script.entries()) {
+		const result = run.actions[index];
+		const node = result?.resolvedNodeId ? draft.builder.nodes[result.resolvedNodeId] : null;
+		if (node?.kind !== 'element' || action.tab !== undefined || action.expectError) {
+			lines.push(`    test.fixme(true, ${q('Map this scripted interaction to a real UI assertion before accepting the journey.')});`);
+			continue;
+		}
+		const baseLocator = locator(node.label || 'element', node.elementKind, map);
+		const loc = action.rowIndex !== undefined ? `${baseLocator}.nth(${action.rowIndex})` : baseLocator;
+		if (action.type !== undefined) {
+			if (node.elementKind === 'checkbox') lines.push(`    await ${loc}.${action.type === 'true' ? 'check' : 'uncheck'}();`);
+			else if (node.elementKind === 'select') lines.push(`    await ${loc}.selectOption(${q(action.type)});`);
+			else lines.push(`    await ${loc}.fill(${q(action.type)});`);
+		} else {
+			const trigger = result.trigger;
+			const method = trigger === 'hover' ? 'hover()' : trigger === 'submit' ? "press('Enter')" : trigger === 'change' ? "dispatchEvent('change')" : 'click()';
+			lines.push(`    await ${loc}.${method};`);
+		}
+		if (result.screenAfter && result.screenAfter !== result.screenBefore) {
+			const screen = draft.screens.find((s) => s.id === result.screenAfter);
+			if (screen) {
+				const dest = routeFor(map, screen.id, screen.name, screenPath(screen));
+				lines.push(`    await expect(page).toHaveURL(${urlRe(dest)});`);
+			}
+		}
 	}
-	for (const g of f.flowGaps) lines.push(`    // GAP (fix in the prototype first): ${g}`);
+	for (const gap of f.flowGaps) lines.push(`    test.fixme(true, ${q(`Unverified prototype path: ${gap}`)});`);
 	for (const c of f.criteria) {
 		lines.push(`    // ${c.title} (on "${c.screen}", on ${c.whenTrigger})`);
 		for (const t of c.then) {

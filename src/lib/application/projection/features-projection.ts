@@ -16,6 +16,7 @@ import {
 	type WorkAssignment
 } from '$domain/features';
 import type { BehaviorOp } from '$application/ports';
+import { ACCEPTANCE_LEAF_PREFIX } from './ownership';
 import type { UnspaFeatureSnapshot, UnspaProjectSnapshot, UnspaTag } from '$lib/unspa-schema';
 
 /**
@@ -332,6 +333,20 @@ export function featuresDraftToBehaviorOps(
 		description: leaf.description || `Lyriks Feature ${leaf.id}`,
 		tags: leafTags(draft, leaf.id)
 	}));
+	// The leaf's own criteria join the model's single list, under a reserved prefix,
+	// right after the shell above has guaranteed the feature exists. Always emitted,
+	// even empty, so deleting the last criterion clears the projected rows.
+	for (const leaf of leaves) {
+		ops.push({
+			kind: 'mirrorFeatureAcceptance',
+			featureId: leaf.id,
+			acceptanceCriteria: leafAcceptanceCriteria(draft, leaf.id) as unknown as Record<
+				string,
+				unknown
+			>[],
+			ownedPrefix: ACCEPTANCE_LEAF_PREFIX
+		});
+	}
 	ops.push({ kind: 'setProjectFeatureIds', featureIds: [...leaves.map((l) => l.id), ...ctx.auxFeatureIds] });
 	ops.push({ kind: 'setProjectTags', tags: mergeTags(ctx.currentProjectTags, projectLevelTags(draft)) });
 	return ops;
@@ -352,6 +367,46 @@ function mergeTags(existing: UnspaTag[], incoming: UnspaTag[]): UnspaTag[] {
 }
 
 /** Membership tags for a leaf — core, family path, optional mvp tier and release version. */
+/**
+ * How long a projected criterion's title may be before the prose moves to its
+ * description. A wizard criterion is one free-text field; the model's is a titled
+ * record, so a short line becomes the title alone and a long one is titled by its
+ * opening words with the whole text kept in `description`. Nothing is dropped.
+ */
+const CRITERION_TITLE_MAX = 120;
+
+/** Cut at the last word boundary at or before `max`, so a title never splits a word. */
+function cutAtWord(text: string, max: number): string {
+	if (text.length <= max) return text;
+	const head = text.slice(0, max);
+	const lastSpace = head.lastIndexOf(' ');
+	return (lastSpace > max / 2 ? head.slice(0, lastSpace) : head).trimEnd();
+}
+
+/**
+ * The leaf's authored criteria, in the model's own shape. Blank rows are skipped:
+ * the panel mints an empty one the moment someone clicks "Add criterion", and an
+ * empty criterion is not a criterion.
+ */
+function leafAcceptanceCriteria(
+	draft: ProjectFeaturesDraft,
+	leafId: string
+): { id: string; title: string; description?: string }[] {
+	const meta: LeafMeta | undefined = draft.leafMeta?.[leafId];
+	const out: { id: string; title: string; description?: string }[] = [];
+	for (const criterion of meta?.acceptanceCriteria ?? []) {
+		const text = criterion.text.trim();
+		if (!text) continue;
+		const title = cutAtWord(text.split('\n')[0].trim(), CRITERION_TITLE_MAX);
+		out.push({
+			id: `${ACCEPTANCE_LEAF_PREFIX}${criterion.id}`,
+			title,
+			...(title === text ? {} : { description: text })
+		});
+	}
+	return out;
+}
+
 function leafTags(draft: ProjectFeaturesDraft, leafId: string): UnspaTag[] {
 	const leaf = draft.features.find((f) => f.id === leafId);
 	if (!leaf) return [];

@@ -15,14 +15,6 @@ export type {
 } from './experience-draft-repository';
 export type { RulesDraftRepositoryPort } from './rules-draft-repository';
 export type { GlossaryDraftRepositoryPort } from './glossary-draft-repository';
-export type { SupervisionDraftRepositoryPort } from './supervision-draft-repository';
-export type { FinopsDraftRepositoryPort } from './finops-draft-repository';
-export type {
-	LiteLLMGatewayPort,
-	LiteLLMKeyConfig,
-	LiteLLMKeyState,
-	LiteLLMSpendLog
-} from './litellm-gateway';
 export type { FoundationOperationsRepositoryPort } from './foundation-operations-repository';
 export type { DataDraftRepositoryPort } from './data-draft-repository';
 export type { ArchitectureDraftRepositoryPort } from './architecture-draft-repository';
@@ -45,6 +37,8 @@ export type {
 	BehaviorBatchResult,
 	BehaviorContext,
 	BehaviorMaturityReport,
+	CriterionEvidenceState,
+	CriterionEvidenceSummary,
 	DriftReport,
 	FeatureBehavior,
 	FeatureDigest,
@@ -64,6 +58,7 @@ export type {
 	SimulateArgs,
 	SimulationResult,
 	SpecGap,
+	UnreachedAction,
 	UnspaghettitAdvisorPort,
 	VerificationVerdict
 } from './unspaghettit-advisor';
@@ -123,7 +118,7 @@ export type {
 	PromoteCanonicalInput,
 	ReconciliationStorePort
 } from './reconciliation-store';
-export type { WorkspaceDirectoryPort, WorkspaceSummary } from './workspace-directory';
+export type { WorkspaceDirectoryPort, WorkspaceMemberSummary, WorkspaceSummary } from './workspace-directory';
 export * from './identity-provider';
 export type { ProjectMirrorPort } from './project-mirror';
 export type { FormalCoherenceReport, FormalVerdictPort } from './formal-verdict';
@@ -133,13 +128,18 @@ export type { ProjectCatalogPort } from './project-catalog';
 export type { PortfolioRepositoryPort, ProjectMeta } from './portfolio-repository';
 export type { TeamGatewayPort, NewCollaboratorInput } from './team-gateway';
 export type {
+	BindingHookInstall,
+	BindingInstallTarget,
+	BindingToolInstall,
 	InstalledSkillRef,
 	Skill,
+	SkillBinding,
 	SkillCatalogPort,
 	SkillClientId,
 	SkillInstallTarget,
 	SkillSummary,
 	SkillSyncEntry,
+	SkillSyncOptions,
 	SkillSyncResult,
 	SkillSyncStatus
 } from './skill-catalog';
@@ -149,3 +149,4 @@ export type {
 	FeatureMaturityScorerPort
 } from './feature-maturity-scorer';
 export type { ProjectModelRevisionPort } from './project-model-revision';
+export type { FeatureAcceptanceReaderPort } from './feature-acceptance-reader';

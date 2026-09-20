@@ -187,8 +187,8 @@
 			<!-- Where to simulate before a change, and where fixes get traced. -->
 			<p class="text-center text-[11px] text-ink-400">
 				For impact simulation before a change, open the
-				<span class="font-semibold text-ink-500">Control Center</span> (top bar). Every fix is
-				logged in AI Governance, Traceability.
+				<span class="font-semibold text-ink-500">Control Center</span> (top bar). Review requirement
+				coverage and named specification versions in Traceability.
 			</p>
 		</div>
 	</div>

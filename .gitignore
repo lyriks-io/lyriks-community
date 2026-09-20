@@ -35,6 +35,7 @@ vite.config.js.timestamp-*
 !/.claude/skills/lyriks-behavior/
 !/.claude/skills/lyriks-retrospec/
 !/.claude/skills/lyriks-delivery/
+!/.claude/skills/lyriks-evolution/
 /.claude/settings.local.json
 /.codex/
 

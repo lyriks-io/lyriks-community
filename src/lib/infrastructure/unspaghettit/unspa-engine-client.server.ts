@@ -1,7 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { existsSync } from 'node:fs';
-import { unspaghettitSubprocessEnv } from './subprocess-env.server';
+import { unspaghettitSubprocessCwd, unspaghettitSubprocessEnv } from './subprocess-env.server';
 
 export interface UnspaEngineConfig {
 	/** Absolute path to the Unspaghettit MCP server bin (typically `…/unspaghettit/mcp-server/bin.cjs`). */
@@ -271,6 +271,7 @@ export class UnspaEngineClient {
 		const transport = new StdioClientTransport({
 			command: process.execPath,
 			args: [this.#cfg.mcpBinPath],
+			cwd: unspaghettitSubprocessCwd(),
 			env: unspaghettitSubprocessEnv(process.env, this.#cfg.snapshotsRoot)
 		});
 		const client = new Client(

@@ -7,6 +7,11 @@
 export interface DraftLockPort {
 	/** Current revision for a section (0 if never saved). */
 	current(projectId: string, section: string): Promise<number>;
+	/**
+	 * Every stored section's revision for a project in one read (sections never
+	 * saved are absent). Optional, like `SectionDocumentStorePort.currentRevisions`.
+	 */
+	currentRevisions?(projectId: string): Promise<ReadonlyMap<string, number>>;
 
 	/**
 	 * Atomically bump the revision iff `expected` matches the stored one. Returns

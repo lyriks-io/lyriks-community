@@ -19,6 +19,7 @@ import type {
 	SimulateArgs,
 	SimulationResult,
 	SpecGap,
+	UnreachedAction,
 	UnspaghettitAdvisorPort,
 	VerificationVerdict
 } from '$application/ports';
@@ -30,6 +31,7 @@ import {
 	UnspaEngineClient,
 	type UnspaEngineConfig
 } from './unspa-engine-client.server';
+import { parseCriteriaEvidence, parseProvenActions } from './parse-implementation-evidence';
 
 /**
  * What the advisor needs to reach the engine. Identical to the connection's own
@@ -54,7 +56,6 @@ interface ScoreResult {
 interface GapsResult {
 	missing?: Array<{ type?: string; name?: string; reason?: string; [k: string]: unknown }>;
 	entries?: Array<{ type?: string; name?: string; reason?: string; [k: string]: unknown }>;
-	stats?: { total?: number; implemented?: number; partial?: number; missing?: number; [k: string]: unknown };
 	[k: string]: unknown;
 }
 
@@ -200,35 +201,20 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 		}
 	}
 
+	/**
+	 * Coverage comes from ONE place: the implementation-status sidecar, which every
+	 * report and every index sync writes server-side, and which
+	 * `get_implementation_status` reads too, so the two can never disagree.
+	 *
+	 * It used to ask `get_implementation_gaps` first. That tool cross-references an
+	 * index, and the index lives in the caller's checkout, never here: the only one
+	 * the engine could find on its own was the `.unspa.json` of a platform run from
+	 * its checkout, another project's. A freshly synced feature then read "0
+	 * implemented of 264" while the sidecar held 385 located entities.
+	 */
 	async getImplementationCoverage(featureId: string): Promise<ImplementationCoverage | null> {
-		const client = await this.#getClient();
-		if (!client) return null;
 		try {
-			const res = await client.callTool({
-				name: 'get_implementation_gaps',
-				arguments: { featureId }
-			});
-			const text = extractText(res);
-			const parsed = text ? safeJson(text) : null;
-			if (text && parsed === null) {
-				console.warn(
-					`[unspa-advisor] getImplementationCoverage non-JSON for ${featureId}: ${text.slice(0, 240)}`
-				);
-			}
-			const s = (parsed as GapsResult | null)?.stats ?? {};
-			const total = typeof s.total === 'number' ? s.total : 0;
-			// `get_implementation_gaps` cross-references the index, and the index
-			// lives in the caller's checkout, which an appliance does not have: with
-			// nothing to cross-reference the engine answers no stats, and coverage
-			// read as absent however much had been reported. The status sidecar is
-			// written server-side by every report and sync, so it can answer here.
-			if (total === 0) return this.#coverageFromStatus(featureId);
-			const implemented = typeof s.implemented === 'number' ? s.implemented : 0;
-			const partial = typeof s.partial === 'number' ? s.partial : 0;
-			const missing =
-				typeof s.missing === 'number' ? s.missing : Math.max(0, total - implemented - partial);
-			const percentage = Math.round((implemented / total) * 100);
-			return { total, implemented, partial, missing, percentage };
+			return await this.#coverageFromStatus(featureId);
 		} catch (e) {
 			console.warn('[unspa-advisor] getImplementationCoverage failed:', this.#msg(e));
 			return null;
@@ -256,6 +242,10 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 			implemented += arrayOf(scope.foundEntities).length;
 		}
 		if (total === 0) return null;
+		// Evidence a newer engine adds to this same answer. Each key is omitted when the
+		// engine did not send its block, so an older engine reads exactly as before.
+		const proven = parseProvenActions(parsed);
+		const criteria = parseCriteriaEvidence(parsed);
 		return {
 			total,
 			implemented,
@@ -263,7 +253,10 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 			// says "half located", so partial stays 0 rather than being invented.
 			partial: 0,
 			missing: Math.max(0, total - implemented),
-			percentage: Math.round((implemented / total) * 100)
+			// Located entities only: what is proven or verified below never feeds it.
+			percentage: Math.round((implemented / total) * 100),
+			...(proven ? { proven } : {}),
+			...(criteria ? { criteria } : {})
 		};
 	}
 
@@ -354,7 +347,7 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 	async applyBehaviorBatch(
 		featureId: string,
 		operations: readonly Record<string, unknown>[],
-		opts?: { dryRun?: boolean; commit?: string; verbose?: boolean }
+		opts?: { dryRun?: boolean; commit?: string; verbose?: boolean; expectedUpdatedAt?: string }
 	): Promise<BehaviorBatchResult | null> {
 		const client = await this.#getClient();
 		if (!client) return null; // engine unreachable — distinct from a rejected batch
@@ -363,31 +356,50 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 		// dryRun there and reads the ops + feature from the token, so send neither.
 		const dryRun = commit ? false : opts?.dryRun === true;
 		const verbose = opts?.verbose === true;
+		// The version the batch was written against rides along only when the caller
+		// named one (on the commit path too: a token validated against a version should
+		// not save over a newer one). An engine that predates the argument ignores it.
+		const version =
+			typeof opts?.expectedUpdatedAt === 'string' && opts.expectedUpdatedAt.length > 0
+				? { expectedUpdatedAt: opts.expectedUpdatedAt }
+				: {};
 		try {
 			const res = await client.callTool({
 				name: 'apply_batch',
-				arguments: commit ? { commit } : { featureId, operations, dryRun, verbose }
+				arguments: commit
+					? { commit, ...version }
+					: { featureId, operations, dryRun, verbose, ...version }
 			});
 			const text = extractText(res);
+			const parsed = text ? safeJson(text) : null;
 			// A rejected batch comes back as an isError tool result (the engine's own
 			// "Batch failed: op[i] …" text), NOT a thrown error — surface it structured.
-			if ((res as { isError?: boolean }).isError === true) {
+			// A version conflict is the exception: however the engine flags it, its JSON
+			// carries the version to rebase on, which a flattened message would lose.
+			if ((res as { isError?: boolean }).isError === true && !isConflictAnswer(parsed)) {
 				await this.#recycleIfPoisoned(featureId, commit);
 				return failedBatch(dryRun, text ?? 'Batch rejected.');
 			}
-			const parsed = text ? safeJson(text) : null;
 			if (!parsed || typeof parsed !== 'object') {
 				await this.#recycleIfPoisoned(featureId, commit);
 				return failedBatch(dryRun, text ? text.slice(0, 400) : 'Empty engine response.');
 			}
 			const r = parsed as Record<string, unknown>;
 			const maturity = (r.maturity ?? null) as { percentage?: unknown } | null;
+			// A conflict wrote nothing, so it is never `ok`, whatever else the answer
+			// says: `ok` is what callers key their after-write work on (the back sync).
+			const conflict = isConflictAnswer(r);
+			const ok = r.ok === true && !conflict;
 			return {
-				ok: r.ok === true,
+				ok,
 				dryRun: r.dryRun === true || dryRun,
 				appliedCount: int(r.appliedCount),
 				refs: isStringRecord(r.refs) ? r.refs : {},
-				errors: r.ok === true ? [] : collectBatchErrors(r),
+				// Callers show `errors[0]` verbatim, so a conflict the engine left unworded
+				// still says what happened and what to do, not a bare "Batch rejected.".
+				errors: ok
+					? []
+					: collectBatchErrors(r, conflict ? CONFLICT_FALLBACK_MESSAGE : undefined),
 				maturityPercentage:
 					maturity && typeof maturity.percentage === 'number' ? maturity.percentage : null,
 				commitToken: typeof r.commitToken === 'string' ? r.commitToken : null,
@@ -656,6 +668,12 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 					return str(o.actionName) || str(d);
 				})
 				.filter(Boolean),
+			// Only an engine that tells "not reached" from "dead" sends the list, and
+			// its absence must stay visible: a reader then knows `deadActions` still
+			// has to be read next to `truncated`.
+			...(Array.isArray(r.unreachedActions)
+				? { unreachedActions: mapUnreachedActions(r.unreachedActions) }
+				: {}),
 			deadlockStates: int(r.deadlockStates),
 			unreachableSurfaces: mapNamedSurfaces(reach.unreachableSurfaces),
 			terminalSurfaces: mapNamedSurfaces(reach.terminalSurfaces)
@@ -736,7 +754,9 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 			return {
 				severity: o.severity === 'critical' ? 'critical' : 'recommended',
 				entityType:
-					o.entityType === 'feature' || o.entityType === 'surface' ? o.entityType : 'action',
+					o.entityType === 'feature' || o.entityType === 'surface' || o.entityType === 'criterion'
+						? o.entityType
+						: 'action',
 				entityId: str(o.entityId),
 				entityName: str(o.entityName) || '<unnamed>',
 				reason: str(o.reason),
@@ -838,6 +858,21 @@ function dedupeAdjacentLines(markdown: string): string {
 	return out.join('\n');
 }
 
+/** Shown when the engine reports a version conflict without wording it itself. */
+const CONFLICT_FALLBACK_MESSAGE =
+	'The feature changed since the version this batch was written against. Nothing was written: ' +
+	're-read the feature, rebase the batch on `currentUpdatedAt`, and send it again.';
+
+/** Is this parsed apply_batch answer the engine's structured version conflict? */
+function isConflictAnswer(parsed: unknown): boolean {
+	return (
+		parsed !== null &&
+		typeof parsed === 'object' &&
+		!Array.isArray(parsed) &&
+		(parsed as { conflict?: unknown }).conflict === true
+	);
+}
+
 /** A rejected/failed apply_batch result (engine reachable, batch not applied). */
 function failedBatch(dryRun: boolean, message: string): BehaviorBatchResult {
 	return {
@@ -853,7 +888,7 @@ function failedBatch(dryRun: boolean, message: string): BehaviorBatchResult {
 }
 
 /** Pull whatever error text an apply_batch failure carries (shape varies by op). */
-function collectBatchErrors(r: Record<string, unknown>): string[] {
+function collectBatchErrors(r: Record<string, unknown>, fallback = 'Batch rejected.'): string[] {
 	const out: string[] = [];
 	const validation = r.validation as { errors?: unknown; issues?: unknown } | undefined;
 	for (const src of [validation?.errors, validation?.issues, r.errors]) {
@@ -865,7 +900,7 @@ function collectBatchErrors(r: Record<string, unknown>): string[] {
 			}
 		}
 	}
-	return out.length ? out : ['Batch rejected.'];
+	return out.length ? out : [fallback];
 }
 
 function isStringRecord(v: unknown): v is Record<string, string> {
@@ -912,6 +947,17 @@ function mapScenarioResult(raw: unknown): ScenarioResult {
 		summary: str(o.summary),
 		assertions
 	};
+}
+
+/** Rows the engine could not name are dropped: an anonymous "not reached" helps nobody. */
+function mapUnreachedActions(rows: readonly unknown[]): UnreachedAction[] {
+	return rows.flatMap((row) => {
+		const o = (row ?? {}) as Record<string, unknown>;
+		const actionId = str(o.actionId);
+		const actionName = str(o.actionName) || actionId;
+		if (!actionName) return [];
+		return [{ surfaceId: str(o.surfaceId), actionId, actionName, reason: str(o.reason) }];
+	});
 }
 
 function mapNamedSurfaces(v: unknown): { surfaceId: string; surfaceName: string }[] {

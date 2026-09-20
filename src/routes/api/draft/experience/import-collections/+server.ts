@@ -19,7 +19,7 @@ import type { RequestHandler } from './$types';
 export const POST: RequestHandler = async (event) => {
 	const { request } = event;
 	const body = (await request.json().catch(() => null)) as
-		| { projectId?: unknown; entityNames?: unknown; refresh?: unknown }
+		| { projectId?: unknown; entityNames?: unknown; refresh?: unknown; seedCount?: unknown }
 		| null;
 	const projectId = typeof body?.projectId === 'string' ? body.projectId : '';
 	if (!projectId) error(400, 'projectId is required');
@@ -28,10 +28,13 @@ export const POST: RequestHandler = async (event) => {
 		? body.entityNames.filter((x): x is string => typeof x === 'string')
 		: undefined;
 	const refresh = body?.refresh === true;
+	if (body?.seedCount !== undefined && (typeof body.seedCount !== 'number' || !Number.isInteger(body.seedCount) || body.seedCount < 0 || body.seedCount > 100))
+		error(400, 'seedCount must be an integer from 0 to 100');
 
 	const services = getServices();
 	const result = await services.importDataCollections.execute(projectId, entityNames, {
-		refresh
+		refresh,
+		seedCount: body?.seedCount as number | undefined
 	});
 	return json(result);
 };

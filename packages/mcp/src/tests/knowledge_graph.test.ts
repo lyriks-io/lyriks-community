@@ -58,4 +58,25 @@ describe('getKnowledgeGraphHandler', () => {
     expect(url.searchParams.get('view')).toBe('overview')
     expect(url.searchParams.get('limit')).toBe('10')
   })
+
+  it('KG04: a focus expansion is walked one way when direction is given', async () => {
+    for (const direction of ['in', 'out', 'both'] as const) {
+      const { lyriks, get } = makeLyriks()
+      await getKnowledgeGraphHandler({ project_id: 'causette', focus_node: 'state:cart.total', depth: 1, direction }, lyriks)
+      const url = calledPath(get)
+      expect(url.searchParams.get('focus')).toBe('state:cart.total')
+      expect(url.searchParams.get('direction')).toBe(direction)
+      expect(url.searchParams.get('view')).toBeNull()
+    }
+  })
+
+  it('KG05: direction is left off when not given, and alone it does not scope the call', async () => {
+    const focused = makeLyriks()
+    await getKnowledgeGraphHandler({ project_id: 'causette', focus_node: 'state:cart.total' }, focused.lyriks)
+    expect(calledPath(focused.get).searchParams.has('direction')).toBe(false)
+    // The platform walks from a focus only: without one, the bare-call overview still answers.
+    const bare = makeLyriks()
+    await getKnowledgeGraphHandler({ project_id: 'causette', direction: 'in' }, bare.lyriks)
+    expect(calledPath(bare.get).searchParams.get('view')).toBe('overview')
+  })
 })

@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { validateSectionReferences } from './section-authoring-references';
 
 describe('references resolve inside the payload', () => {
+	it('rejects a scalar field declaring a relation and an unknown field type', () => {
+		const issues = validateSectionReferences('data', {
+			entities: [{ id: 'record' }, { id: 'owner' }],
+			fields: [{ id: 'owner-id', entityId: 'record', type: 'string', relationTargetEntityId: 'owner' }, { id: 'count', entityId: 'record', type: 'integerish' }]
+		});
+		expect(issues.map(i => i.path)).toEqual(['fields[0].type', 'fields[1].type']);
+		expect(issues[0].message).toContain('"relation"');
+	});
 	// Before this guard the parsers dropped these rows and answered 200: half the
 	// write vanished and the author was never told which id was wrong.
 	it('names the invented id and the collection to author first (features)', () => {

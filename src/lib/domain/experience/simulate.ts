@@ -20,6 +20,7 @@ import {
 import {
 	fireInteraction,
 	initRunState,
+	isGatePassing,
 	listRowsFor,
 	resolveCall,
 	resolveGate,
@@ -34,6 +35,7 @@ import {
 	type RunWarning
 } from './builder-runtime';
 import { hostedSurfacesResolver } from './surface-hosting';
+import { isNodeRendered } from './rendered-node';
 
 /**
  * One scripted action. Reference the target element by `nodeId` (preferred —
@@ -248,7 +250,9 @@ export function simulate(b: ExperienceBuilder, req: SimRequest): SimResult {
 				: [];
 			const problem = !group
 				? `no tabs/sidebar group matched ${a.nodeId ? `id "${a.nodeId}"` : `label "${a.label ?? ''}"`}`
-				: a.tab < 0 || a.tab >= panels.length
+				: !isNodeRendered(b, rs, group.id)
+					? `"${group.label}" is not rendered on the current screen (hidden ancestor or inactive panel)`
+				: !Number.isSafeInteger(a.tab) || a.tab < 0 || a.tab >= panels.length
 					? `"${group.label}" has ${panels.length} panel(s); tab ${a.tab} does not exist`
 					: null;
 			if (!group || problem) {
@@ -355,16 +359,24 @@ export function simulate(b: ExperienceBuilder, req: SimRequest): SimResult {
 		// be a back door around RBAC — block it and record why. Author runs
 		// (personaId === null) resolve fully open, so this is a no-op there.
 		const gate = resolveGate(node, rs.activePersonaId, rs.state, ctx);
-		if (!gate.visible || !gate.enabled) {
-			const reason = !gate.visible ? 'is hidden from' : 'is disabled for';
+		const rendered = isNodeRendered(b, rs, node.id, ctx);
+		if (!rendered || !gate.visible || !gate.enabled) {
+			const personaGate = isGatePassing(node.wiring.gate, rs.activePersonaId);
+			const deniedByPersona = rendered && (!personaGate.visible || !personaGate.enabled);
+			const reason = !personaGate.visible ? 'is hidden from' : 'is disabled for';
+			const condition = node.wiring.visibleWhen;
 			rs = {
 				...rs,
 				errors: [
 					...rs.errors,
 					{
 						nodeId: node.id,
-						kind: 'permission',
-						message: `Action ${index}: "${node.label}" ${reason} persona "${rs.activePersonaId}": interaction blocked by its access gate.`,
+						kind: deniedByPersona ? 'permission' : 'visibility',
+						message: !rendered
+							? `Action ${index}: "${node.label}" is not rendered on the current screen (hidden ancestor, inactive panel, or unmounted component). Perform the enabling interaction first.`
+							: deniedByPersona
+							? `Action ${index}: "${node.label}" ${reason} persona "${rs.activePersonaId}": interaction blocked by its access gate.`
+							: `Action ${index}: "${node.label}" is hidden because visibleWhen (${condition?.path} ${condition?.op} ${condition?.expected ?? ''}) is not satisfied. Perform the enabling interaction first; this is not a permission failure.`,
 						at: rs.seq
 					}
 				]
@@ -408,7 +420,8 @@ export function simulate(b: ExperienceBuilder, req: SimRequest): SimResult {
 						]
 					};
 			}
-			rs = setFieldValue(rs, node, a.type, ctx?.key);
+			// A rejected selection must not change state, even in an expectError step.
+			if (rs.errors.length === before) rs = setFieldValue(rs, node, a.type, ctx?.key);
 			finish({
 				index,
 				resolvedNodeId: node.id,

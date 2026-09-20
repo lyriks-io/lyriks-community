@@ -120,8 +120,24 @@ export interface BrandFontWeight {
 	usage: string;
 }
 
+/**
+ * A face the three built-in slots cannot hold: a display or wordmark face is
+ * neither the heading, the body nor the monospace face of a product. Without a
+ * role of its own, the rule about it ends up as free text nothing reads.
+ */
+export interface BrandFontRole {
+	id: string;
+	/** The role, in the brand's own words: `display`, `wordmark`, `numerals`. */
+	name: string;
+	stack: string;
+	fallback: string;
+	usage: string;
+}
+
 export interface BrandTypography {
 	families: Record<BrandFontSlot, BrandFontFamily>;
+	/** Named roles beside heading, body and mono. Empty for most brands. */
+	roles: BrandFontRole[];
 	scale: BrandTypeSize[];
 	weights: BrandFontWeight[];
 }
@@ -405,7 +421,7 @@ export function defaultBrand(): ProjectBrand {
 			}
 		},
 		colors: { tokens: [], semantic: emptySemantic() },
-		typography: { families: emptyFamilies(), scale: [], weights: [] },
+		typography: { families: emptyFamilies(), roles: [], scale: [], weights: [] },
 		foundation: { space: [], radius: [], shadow: [], breakpoints: [] },
 		markers: defaultMarkers(),
 		components: [],
@@ -436,6 +452,11 @@ function fileRef(v: unknown): BrandFileRef | null {
 }
 function rows<T>(v: unknown, map: (o: Record<string, unknown>) => T): T[] {
 	return Array.isArray(v) ? v.map((r) => map((r ?? {}) as Record<string, unknown>)) : [];
+}
+/** First row wins: a role is addressed by its id, so two rows under one id would hide one. */
+function uniqueById<T extends { id: string }>(items: T[]): T[] {
+	const seen = new Set<string>();
+	return items.filter((item) => (seen.has(item.id) ? false : (seen.add(item.id), true)));
 }
 
 export function coerceBrand(input: unknown): ProjectBrand {
@@ -531,6 +552,15 @@ export function coerceBrand(input: unknown): ProjectBrand {
 		},
 		typography: {
 			families: { heading: family('heading'), body: family('body'), mono: family('mono') },
+			roles: uniqueById(
+				rows(typo.roles, (o) => ({
+					id: id(o.id),
+					name: str(o.name).trim(),
+					stack: str(o.stack),
+					fallback: str(o.fallback),
+					usage: str(o.usage)
+				}))
+			),
 			scale: rows(typo.scale, (o) => ({
 				id: id(o.id),
 				name: str(o.name),

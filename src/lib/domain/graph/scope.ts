@@ -16,6 +16,7 @@ import {
 	type GraphStats,
 	type KnowledgeGraph
 } from './graph';
+import { reachableIds, type WalkDirection } from './queries';
 
 /** A declarative subgraph request — every field optional, all combinable. */
 export interface GraphScope {
@@ -27,8 +28,14 @@ export interface GraphScope {
 	q?: string;
 	/** Expand a neighborhood around this node id before filtering. */
 	focus?: string;
-	/** Neighborhood radius (edges are walked undirected). Default 1. */
+	/** Neighborhood radius. Default 1. */
 	depth?: number;
+	/**
+	 * Which way the neighborhood is walked from the focus: `both` (default, the
+	 * undirected neighbourhood), `in` (only what points at the focus: its
+	 * dependants), `out` (only what the focus points at: its dependencies).
+	 */
+	direction?: WalkDirection;
 	/** Hard cap on returned nodes; highest-degree nodes win. */
 	limit?: number;
 }
@@ -57,20 +64,14 @@ function degrees(edges: readonly GraphEdge[]): Map<string, number> {
 	return byNode;
 }
 
-/** Ids reachable from `focus` within `depth` undirected hops (focus included). */
-function neighborhoodIds(graph: KnowledgeGraph, focus: string, depth: number): Set<string> {
-	const reached = new Set<string>([focus]);
-	let frontier = new Set<string>([focus]);
-	for (let hop = 0; hop < depth && frontier.size > 0; hop++) {
-		const next = new Set<string>();
-		for (const edge of graph.edges) {
-			if (frontier.has(edge.from) && !reached.has(edge.to)) next.add(edge.to);
-			if (frontier.has(edge.to) && !reached.has(edge.from)) next.add(edge.from);
-		}
-		for (const id of next) reached.add(id);
-		frontier = next;
-	}
-	return reached;
+/** Ids reachable from `focus` within `depth` hops in `direction` (focus included). */
+function neighborhoodIds(
+	graph: KnowledgeGraph,
+	focus: string,
+	depth: number,
+	direction: WalkDirection
+): Set<string> {
+	return reachableIds(graph, focus, { direction, depth });
 }
 
 /**
@@ -122,7 +123,12 @@ export function scopeGraph(graph: KnowledgeGraph, scope: GraphScope): ScopedGrap
 	if (scope.focus !== undefined) {
 		focusNodeId = resolveFocus(graph, scope.focus) ?? null;
 		const keep = focusNodeId
-			? neighborhoodIds(graph, focusNodeId, Math.max(1, scope.depth ?? 1))
+			? neighborhoodIds(
+					graph,
+					focusNodeId,
+					Math.max(1, scope.depth ?? 1),
+					scope.direction ?? 'both'
+				)
 			: new Set<string>();
 		nodes = nodes.filter((node) => keep.has(node.id));
 	}

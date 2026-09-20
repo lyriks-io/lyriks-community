@@ -182,10 +182,8 @@ function withCanonicalSections(draft: ProjectScopeDraft): ProjectScopeDraft {
 	return {
 		...draft,
 		// Only the product specification is the author's to assess. Computed
-		// surfaces (Project health, Baselines) and the workspace's own operating
-		// data (Supervision, AI Cost Governor) are seeded `derived`, which the
-		// completion gate reads as "not yours to sign off" — otherwise the ledger
-		// demanded an agent assess a budget and a team roster it must not invent.
+		// surfaces (Project health, Baselines) are seeded `derived`; the gate
+		// never asks the author to manufacture their captured or computed content.
 		sectionAssessments: SECTIONS.filter((section) => section !== 'scope').map(
 			(section): ScopeSectionAssessment =>
 				bySection.get(section) ?? {

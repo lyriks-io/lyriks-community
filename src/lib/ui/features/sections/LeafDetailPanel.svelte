@@ -17,7 +17,11 @@
 		type LeafMeta
 	} from '$domain/features';
 	import type { FeatureAdvice, FeatureAssessment } from '$application/use-cases';
-	import type { BehaviorFeatureSummary } from '$application/summarize-behavior';
+	import type {
+		BehaviorAcceptanceCriterion,
+		BehaviorFeatureSummary
+	} from '$application/summarize-behavior';
+	import { ACCEPTANCE_LEAF_PREFIX } from '$application/projection/ownership';
 	import type { FeatureMaturityIssue, FeatureMaturityReport, SpecGap } from '$application/ports';
 	import type { WorkTarget } from '$domain/features';
 	import type { Collaborator } from '$domain/team/team';
@@ -30,6 +34,7 @@
 	import ContributorPicker from '../ContributorPicker.svelte';
 	import { unspaActionPath, unspaFeatureHref, unspaFeaturePath } from '../unspa-dashboard-url';
 	import { renderMarkdown } from '$ui/design-system/markdown';
+	import { describeDependants, fetchDependants, type DependantsReading } from '$ui/graph/dependants';
 	import { digestBody } from '../digest-body';
 
 	interface Props {
@@ -100,7 +105,30 @@
 
 	// Requirements-backbone metadata (Next scope): acceptance criteria, dependencies
 	// on other leaves, and a source link. All ride the same leafMeta residue seam.
-	const acceptance = $derived(meta.acceptanceCriteria ?? []);
+	// ONE list of acceptance criteria: the model's. It holds the rows this panel
+	// authored (projected under a reserved prefix, so they carry `wizardId` back) and
+	// the rows an AI client wrote through the MCP, which carry a status and relations
+	// and used to be displayed nowhere. The panel's own edits are layered back on top
+	// live, because the model list is only refreshed when the section is saved: a row
+	// being typed must not show its last saved wording, a row just added must appear,
+	// and a row just deleted must go.
+	const acceptance = $derived.by((): BehaviorAcceptanceCriterion[] => {
+		const pending = new Map((meta.acceptanceCriteria ?? []).map((c) => [c.id, c.text]));
+		const rows: BehaviorAcceptanceCriterion[] = [];
+		for (const criterion of localSummary?.acceptanceCriteria ?? []) {
+			if (criterion.wizardId === undefined) {
+				rows.push(criterion);
+				continue;
+			}
+			if (!pending.has(criterion.wizardId)) continue; // deleted here, not saved yet
+			rows.push({ ...criterion, title: pending.get(criterion.wizardId) ?? '' });
+			pending.delete(criterion.wizardId);
+		}
+		for (const [id, text] of pending) {
+			rows.push({ id: `${ACCEPTANCE_LEAF_PREFIX}${id}`, title: text, supersededBy: [], wizardId: id });
+		}
+		return rows;
+	});
 	const deps = $derived(meta.dependsOn ?? []);
 	const sourceIds = $derived(meta.sourceIds ?? []);
 	const otherLeaves = $derived(leaf ? store.draft.features.filter((f) => f.id !== leaf.id) : []);
@@ -118,6 +146,30 @@
 	const deleteReleaseName = $derived(
 		deleteRelease ? deleteRelease.name || deleteRelease.version || 'Untitled release' : null
 	);
+	// What rests on the leaf, read from the knowledge graph the moment the
+	// deletion is asked for: screens, journeys, rights, rules, scenarios. The
+	// delete control stays disabled until the reading is in, so nothing goes
+	// blind; a graph that cannot be read is said so, not passed off as "nothing".
+	let deleteDependants = $state<DependantsReading | null>(null);
+	let deleteDependantsFailed = $state(false);
+	const deleteWeighed = $derived(deleteDependants !== null || deleteDependantsFailed);
+	$effect(() => {
+		deleteDependants = null;
+		deleteDependantsFailed = false;
+		if (!confirmingDelete || !leaf) return;
+		const focus = `feature:${leaf.id}`;
+		let cancelled = false;
+		fetchDependants(store.draft.projectId, focus)
+			.then((reading) => {
+				if (!cancelled) deleteDependants = reading;
+			})
+			.catch(() => {
+				if (!cancelled) deleteDependantsFailed = true;
+			});
+		return () => {
+			cancelled = true;
+		};
+	});
 	// The local scoring of this feature's shell. NOT part of the engine assessment
 	// below: it is read straight from the model, so it answers with the advisor
 	// offline and lands in milliseconds. Declared here because the readiness chip
@@ -659,21 +711,56 @@
 				{#each acceptance as criterion, i (criterion.id)}
 					<div class="flex items-start gap-2">
 						<span class="mt-2 shrink-0 text-[10px] font-semibold tabular-nums text-ink-400">{i + 1}.</span>
-						<textarea
-							value={criterion.text}
-							oninput={(e) => store.updateAcceptanceCriterion(leaf.id, criterion.id, e.currentTarget.value)}
-							rows="2"
-							placeholder="e.g. Given an overdue invoice, when the user pays in full, then its status becomes Paid."
-							class="w-full resize-y rounded-field border border-line bg-surface px-3 py-2 text-sm text-ink-700 outline-none placeholder:text-ink-300 focus:border-brand-300"
-						></textarea>
-						<button
-							type="button"
-							onclick={() => store.removeAcceptanceCriterion(leaf.id, criterion.id)}
-							aria-label="Remove criterion"
-							class="mt-1 shrink-0 rounded p-1 text-ink-400 hover:bg-surface-sunken hover:text-danger-500"
-						>
-							<Icon name="x" size={13} />
-						</button>
+						{#if criterion.wizardId !== undefined}
+							<textarea
+								value={criterion.title}
+								oninput={(e) =>
+									store.updateAcceptanceCriterion(leaf.id, criterion.wizardId ?? '', e.currentTarget.value)}
+								rows="2"
+								placeholder="e.g. Given an overdue invoice, when the user pays in full, then its status becomes Paid."
+								class="w-full resize-y rounded-field border border-line bg-surface px-3 py-2 text-sm text-ink-700 outline-none placeholder:text-ink-300 focus:border-brand-300"
+							></textarea>
+							<button
+								type="button"
+								onclick={() => store.removeAcceptanceCriterion(leaf.id, criterion.wizardId ?? '')}
+								aria-label="Remove criterion"
+								class="mt-1 shrink-0 rounded p-1 text-ink-400 hover:bg-surface-sunken hover:text-danger-500"
+							>
+								<Icon name="x" size={13} />
+							</button>
+						{:else}
+							<!-- Authored through the model, by an AI client or the behavior editor. It
+							     is shown as it stands and edited where it was written, so this panel
+							     can never silently rewrite a criterion it does not own. -->
+							<div class="w-full rounded-field border border-line bg-surface px-3 py-2">
+								<p class="text-sm text-ink-700">{criterion.title}</p>
+								{#if criterion.description}
+									<p class="mt-1 text-xs text-ink-500">{criterion.description}</p>
+								{/if}
+								<div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+									<span
+										class="rounded-pill bg-surface-sunken px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-ink-400"
+									>
+										from the model
+									</span>
+									{#if criterion.status}
+										<span
+											class="rounded-pill px-1.5 py-0.5 text-[9px] font-semibold tracking-normal {criterion.status ===
+											'superseded'
+												? 'bg-surface-sunken text-ink-400'
+												: 'bg-brand-50 text-brand-600'}"
+										>
+											{criterion.status}
+										</span>
+									{/if}
+									{#if criterion.supersededBy.length > 0}
+										<span class="text-[10px] text-warning-600">
+											superseded by {criterion.supersededBy.join(', ')}
+										</span>
+									{/if}
+								</div>
+							</div>
+						{/if}
 					</div>
 				{/each}
 				<button
@@ -851,10 +938,15 @@
 								: 'bg-danger-50 text-danger-600'}"
 						>
 							<Icon name={verdict.passed ? 'check' : 'flag'} size={11} />
-							{verdict.passed ? 'Verified' : 'Not ready'}
+							{!verdict.passed ? 'Not ready' : assessment?.degraded.length ? 'Partial checks' : assessment?.evidence.explorationStatus === 'complete' ? 'Model checked' : 'Passed within bounds'}
 						</span>
 					{/if}
 				</div>
+				{#if assessment?.evidence}
+					{#each assessment.evidence.advisories as advisory}
+						<p class="mb-2 text-[11px] text-ink-500">{advisory}</p>
+					{/each}
+				{/if}
 				<div class="grid grid-cols-3 gap-2">
 					{@render verifyStat(
 						'Scenarios',
@@ -980,6 +1072,13 @@
 						implementation.missing > 0 ? 'warn' : 'ok'
 					)}
 				</div>
+				<!-- Proven is a different claim from located, so it sits apart from the bar
+				     and never feeds its percentage. Hidden when the engine does not report it. -->
+				{#if implementation.proven}
+					<p class="mt-2 text-[11px] leading-snug text-ink-500">
+						Proven against the code: {implementation.proven.actions} of {implementation.proven.total} actions
+					</p>
+				{/if}
 			</div>
 		{/if}
 
@@ -1023,6 +1122,22 @@
 						</dd>
 					</div>
 				</dl>
+				<div class="mt-2 border-t border-danger-100 pt-2 text-[11px]">
+					{#if deleteDependantsFailed}
+						<p class="text-ink-500">What rests on it could not be read from the knowledge graph.</p>
+					{:else if deleteDependants === null}
+						<p class="text-ink-400">Weighing what rests on it&hellip;</p>
+					{:else if deleteDependants.total === 0}
+						<p class="text-ink-500">{describeDependants(deleteDependants)}</p>
+					{:else}
+						<p class="font-medium text-danger-600">{describeDependants(deleteDependants)}</p>
+						<div class="mt-1.5 space-y-1.5">
+							{#each deleteDependants.groups as group (group.kind)}
+								{@render nameList(group.label, group.names, 'grid')}
+							{/each}
+						</div>
+					{/if}
+				</div>
 				<div class="mt-3 flex items-center justify-end gap-2">
 					<button
 						type="button"
@@ -1033,13 +1148,16 @@
 					</button>
 					<button
 						type="button"
+						disabled={!deleteWeighed}
+						title={deleteWeighed ? undefined : 'What rests on this feature is named before it goes.'}
 						onclick={() => {
+							if (!deleteWeighed) return;
 							const name = leaf.name || 'unnamed';
 							store.removeFeature(leaf.id);
 							confirmingDelete = false;
 							store.notifier.notify('info', `Feature “${name}” deleted.`);
 						}}
-						class="inline-flex items-center gap-1 rounded-field bg-danger-500 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-danger-600"
+						class="inline-flex items-center gap-1 rounded-field bg-danger-500 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-danger-600 disabled:cursor-not-allowed disabled:opacity-50"
 					>
 						<Icon name="x" size={12} /> Delete feature
 					</button>

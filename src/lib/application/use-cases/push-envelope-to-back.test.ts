@@ -55,8 +55,6 @@ function createUseCase(
 		'documents',
 		'baselines',
 		'approvals',
-		'supervision',
-		'finops'
 	] as const;
 	const repositories = names.map((name) => mutableRepository({ marker: name }));
 	const client = {
@@ -96,6 +94,8 @@ describe('PushEnvelopeToBackUseCase', () => {
 		expect(await useCase.execute('project-1')).toBe(true);
 		expect(pushEnvelope).toHaveBeenCalledOnce();
 		const envelope = pushEnvelope.mock.calls[0][1];
+		expect(envelope).not.toHaveProperty('supervision');
+		expect(envelope).not.toHaveProperty('finops');
 		expect(Object.keys(envelope)).toEqual([
 			'foundation',
 			'scope',
@@ -110,8 +110,6 @@ describe('PushEnvelopeToBackUseCase', () => {
 			'documents',
 			'baselines',
 			'approvals',
-			'supervision',
-			'finops'
 		]);
 	});
 

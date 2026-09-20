@@ -1,6 +1,6 @@
 import type { CoherenceIssue, CoherenceResult, CoherenceTone } from '$domain/shared';
 import { ARCH_LAYERS } from './enums';
-import { layersWithTech, type ProjectArchitectureDraft } from './draft';
+import { architectureStage, layersWithTech, type ProjectArchitectureDraft } from './draft';
 
 /**
  * Local-coherence for Step 08. Five concerns — the "every tech decision is
@@ -21,6 +21,7 @@ function toneFor(score: number): { tone: CoherenceTone; label: string } {
 }
 
 export function computeArchitectureCoherence(draft: ProjectArchitectureDraft): CoherenceResult {
+	if (architectureStage(draft) === 'logical') return logicalCoherence(draft);
 	const issues: CoherenceIssue[] = [];
 	let score = 0;
 
@@ -75,4 +76,22 @@ export function computeArchitectureCoherence(draft: ProjectArchitectureDraft): C
 	const clamped = Math.max(0, Math.min(100, Math.round(score)));
 	const { tone, label } = toneFor(clamped);
 	return { score: clamped, tone, label, issues };
+}
+
+/** Logical design is not penalized for undecided technologies or unused layers. */
+function logicalCoherence(draft: ProjectArchitectureDraft): CoherenceResult {
+	const issues: CoherenceIssue[] = [];
+	const checks = [
+		{ ok: draft.techChoices.length > 0, points: 25, code: 'no-component', message: 'No logical component yet.' },
+		{ ok: draft.techChoices.length > 0 && draft.techChoices.every((c) => c.name.trim() && c.role.trim()),
+			points: 40, code: 'missing-responsibility', message: 'Give every component a name and a responsibility.' },
+		{ ok: draft.sourceIds.length > 0, points: 15, code: 'no-doc', message: 'Cite the requirements behind this design.' },
+		{ ok: draft.constraints.length > 0, points: 20, code: 'no-constraint', message: 'Record the constraints behind this design.' }
+	];
+	let score = 0;
+	for (const check of checks) {
+		if (check.ok) score += check.points;
+		else issues.push({ code: check.code, message: check.message });
+	}
+	return { score, ...toneFor(score), issues };
 }

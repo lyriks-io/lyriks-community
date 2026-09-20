@@ -10,6 +10,10 @@ import type { RequestHandler } from './$types';
  * `journey-triage → srf-journey-triage`. Read-only; gated on read access to the
  * project (the target is always that project's Experience feature).
  *
+ * A `surfaceId` or `actionId` that the Experience feature does not hold is then
+ * looked up in the project's leaf features, so the kernel id a code comment or
+ * an index entry carries resolves to the feature that owns it.
+ *
  * Query: `projectId` (required) + exactly one of `journeyId | stepId | screenId |
  * surfaceId | actionId`. With none, returns just the resolved `featureId`.
  */

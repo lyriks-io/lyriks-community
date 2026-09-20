@@ -68,6 +68,25 @@ describe('proxyToMcp', () => {
 		expect(new Headers(init.headers).has('connection')).toBe(false);
 	});
 
+	it('serves a client that announced its body with Expect: 100-continue', async () => {
+		// The real fetch throws on an `expect` request header; the stub does the same.
+		const fetchImpl = vi.fn(async (_target: URL, init: RequestInit) => {
+			if (new Headers(init.headers).has('expect')) throw new Error('expect header not supported');
+			return new Response('{}', { status: 201 });
+		});
+		const res = await proxyToMcp(
+			event('/mcp/oauth/register', {
+				method: 'POST',
+				headers: { expect: '100-continue' },
+				body: '{}'
+			}),
+			'http://mcp:3055',
+			fetchImpl as unknown as typeof fetch
+		);
+
+		expect(res.status).toBe(201);
+	});
+
 	it('returns the redirect that starts the OAuth login rather than following it', async () => {
 		const fetchImpl = vi.fn(
 			async () =>

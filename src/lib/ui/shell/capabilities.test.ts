@@ -28,29 +28,16 @@ describe('scope coverage is not surfaced', () => {
 	});
 });
 
-describe('supervision is withdrawn', () => {
-	it('is registered but unreachable — no nav entry, no route, nothing to link', () => {
-		const supervision = capabilityById('supervision');
-
-		// Still registered, so stored references resolve to a name, not a dead string.
-		expect(supervision).toMatchObject({ status: 'hidden', title: 'Supervision' });
-		expect(supervision?.route).toBeUndefined();
-		expect(NAV_CAPABILITIES.map((capability) => capability.id)).not.toContain('supervision');
-		expect(PROJECT_TOOL_CAPABILITIES.map((capability) => capability.id)).not.toContain(
-			'supervision'
-		);
-		// Control Center "Fix now" on a supervision gap must not offer a link either;
-		// the layout falls back to the project root for a route-less capability.
-		expect(resolveVisibleCapability('supervision')).toBeUndefined();
+describe('retired operator modules', () => {
+	it.each(['supervision', 'finops'])('does not advertise %s anywhere', (id) => {
+		expect(capabilityById(id)).toBeUndefined();
+		expect(resolveVisibleCapability(id)).toBeUndefined();
+		expect(NAV_CAPABILITIES.map((capability) => capability.id)).not.toContain(id);
+		expect(PROJECT_TOOL_CAPABILITIES.map((capability) => capability.id)).not.toContain(id);
 	});
 
-	it('takes the AI Cost Governor with it — no redirect into a withdrawn page', () => {
-		const finops = capabilityById('finops');
-
-		expect(finops).toMatchObject({ status: 'hidden', partOf: 'supervision' });
-		expect(finops?.route).toBeUndefined();
-		expect(NAV_CAPABILITIES.map((capability) => capability.id)).not.toContain('finops');
-		expect(resolveVisibleCapability('finops')).toBeUndefined();
+	it('preserves the Baselines route under Traceability', () => {
+		expect(capabilityById('baselines')?.route?.('project-1')).toBe('/projects/project-1/traceability?tab=baselines');
 	});
 });
 

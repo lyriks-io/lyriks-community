@@ -89,6 +89,30 @@ const NOT_TOOLS = new Set([
   'not_applicable',
   'selected_scope',
   'web_interface',
+  // apply_evolution_batch operation kinds: like the behavior batch above, the
+  // evolution skill spells them in backticks, and they are ops inside one tool
+  // call, never tools.
+  'open_request',
+  'update_request',
+  'set_leaves',
+  'run_impact',
+  'run_coherence',
+  'build_implementation_report',
+  'mark_open_question',
+  'answer_open_question',
+  'rule_observation',
+  'fold_back',
+  'lift_waiver',
+  'close_request',
+  'delete_request',
+  // apply_behavior_batch op kind whose siblings are listed above.
+  'remove_action',
+  // Payload fields of a batch, not calls.
+  'as_person',
+  'expected_updated_at',
+  // Comparison operators a rule condition takes.
+  'greater_or_equal',
+  'lower_or_equal',
   // Example identifiers the skills quote in their prose.
   'invoice_record_v2',
 ])

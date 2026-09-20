@@ -57,15 +57,7 @@ import {
 	VALIDATION_KINDS
 } from '$domain/experience';
 import { GLOSSARY_LOCALES, GLOSSARY_STATUSES } from '$domain/glossary';
-import {
-	ASSIGNMENT_STATUSES,
-	DECISION_AREAS,
-	POLICY_CATEGORIES,
-	POLICY_STATUSES,
-	SCOPE_TYPES
-} from '$domain/supervision';
 import { FLAG_DEFAULTS, MIGRATION_STRATEGIES } from '$domain/foundation';
-import { ENFORCEMENT_MODES, RULE_KINDS, RULE_SOURCES, RULE_STATUSES } from '$domain/finops';
 import { APPROVAL_AREAS, APPROVAL_STATUSES } from '$domain/approvals';
 import { DOCUMENT_KINDS } from '$domain/documents';
 import {
@@ -82,6 +74,7 @@ import {
 	isSection,
 	type Section
 } from '$lib/shared/sections';
+import { BRAND_LIST_SAMPLES } from '$domain/experience';
 import type { RequestHandler } from './$types';
 
 /**
@@ -147,10 +140,6 @@ async function loadSection(
 			return s.loadCoherenceDraft.execute(projectId);
 		case 'glossary':
 			return s.loadGlossaryDraft.execute(projectId);
-		case 'supervision':
-			return s.loadSupervisionDraft.execute(projectId);
-		case 'finops':
-			return s.loadFinopsDraft.execute(projectId);
 		case 'approvals':
 			return s.loadApprovalsDraft.execute(projectId);
 		case 'baselines':
@@ -187,11 +176,14 @@ const UI_LOCATION: Record<Section, string> = {
 	architecture: 'Data & Architecture → Architecture & Constraints (stack board, constraints)',
 	coherence: 'Project health (coverage, coherence, readiness, maturity) — derived, read-only',
 	glossary: 'Glossary',
-	supervision: 'Supervision (assignments, AI policy, AI Gateway tab)',
-	finops: 'AI Cost Governor, embedded in Supervision → AI Gateway tab',
 	approvals: 'Traceability → Approvals tab',
 	baselines: 'Traceability → Baselines tab',
-	documents: 'Documents & Sources — the project evidence register'
+	documents: 'Documents & Sources — the project evidence register',
+	evolution:
+		'Evolution: the four-stage board, and one dossier page per request ' +
+		'(Specification | Coherence and impact | Implementation quality | Acceptance). ' +
+		'The dossier gathers fields that BELONG to other sections and writes them there; ' +
+		'this section stores only the request, its reports, its proposals and its timeline.'
 };
 
 /** Project a domain `Option[]` vocabulary onto its persisted codes. */
@@ -285,6 +277,7 @@ const ENUMS: Partial<Record<Section, Record<string, string[]>>> = {
 		'interfaces.protocol': codes(PROTOCOLS)
 	},
 	architecture: {
+		stage: ['logical', 'implementation'],
 		'techChoices.layer': codes(ARCH_LAYERS),
 		'constraints.category': codes(CONSTRAINT_CATEGORIES)
 	},
@@ -333,21 +326,6 @@ const ENUMS: Partial<Record<Section, Record<string, string[]>>> = {
 	glossary: {
 		'terms.locale': codes(GLOSSARY_LOCALES),
 		'terms.status': codes(GLOSSARY_STATUSES)
-	},
-	supervision: {
-		'assignments.scopeType': codes(SCOPE_TYPES),
-		'assignments.status': codes(ASSIGNMENT_STATUSES),
-		'policyRules.category': codes(POLICY_CATEGORIES),
-		'policyRules.status': codes(POLICY_STATUSES),
-		'decisions.area': codes(DECISION_AREAS),
-		// GatewayStatus is a type-only union in $domain/supervision/enums.ts.
-		'gatewayAudit.status': ['ok', 'blocked', 'flagged']
-	},
-	finops: {
-		enforcementMode: codes(ENFORCEMENT_MODES),
-		'rules.kind': codes(RULE_KINDS),
-		'rules.status': codes(RULE_STATUSES),
-		'rules.source': codes(RULE_SOURCES)
 	},
 	approvals: {
 		'items.status': codes(APPROVAL_STATUSES),
@@ -581,7 +559,8 @@ const SAMPLES: Partial<Record<Section, Record<string, unknown>>> = {
 			journeyId: 'journey-chat',
 			name: 'Send',
 			order: 0,
-			linkedScreenId: 'scr-chat'
+			linkedScreenId: 'scr-chat',
+			actions: [{ label: 'Message', type: 'Hello' }, { label: 'Send', trigger: 'click' }]
 		},
 		'stepOperations (what a step DOES under the hood — feeds step-depth coherence)': {
 			id: 'op-send',
@@ -615,6 +594,10 @@ const SAMPLES: Partial<Record<Section, Record<string, unknown>>> = {
 			deviceH: 832
 		},
 		components: { id: 'cmp-sidebar', name: 'Sidebar', description: 'Reused nav.', color: 'violet' },
+		// The brand block holds lists too, and an empty draft shows each as `[]`:
+		// without an item here an author cannot know a logo variant from a colour
+		// token. Typed against the brand model, so a sample cannot drift from it.
+		...BRAND_LIST_SAMPLES,
 		'build_screen layout (compact spec → builder nodes)': {
 			label: 'Root',
 			direction: 'col',
@@ -706,33 +689,6 @@ const SAMPLES: Partial<Record<Section, Record<string, unknown>>> = {
 			example: 'Rename the conversation from its context menu.',
 			locale: 'en',
 			status: 'approved'
-		}
-	},
-	supervision: {
-		assignments: {
-			id: 'asg-checkout',
-			assignee: 'Aline',
-			scopeType: 'core',
-			scopeLabel: 'Checkout',
-			status: 'doing',
-			progress: 30,
-			dueInDays: 3,
-			updatedAt: 'just now'
-		},
-		policyRules: {
-			id: 'pol-no-pii',
-			category: 'data',
-			label: 'No PII in prompts',
-			status: 'ok',
-			detail: 'Prompts are scrubbed before leaving the gateway.'
-		},
-		decisions: {
-			id: 'dec-postgres',
-			title: 'PostgreSQL for appliance persistence',
-			rationale: 'One durable datastore across standalone and horizontally scaled profiles.',
-			by: 'Aline',
-			area: 'infrastructure',
-			when: 'just now'
 		}
 	},
 	foundation: {
@@ -848,30 +804,6 @@ const SAMPLES: Partial<Record<Section, Record<string, unknown>>> = {
 			}
 		}
 	},
-	finops: {
-		'levers (top-level authorable fields — numbers are clamped: thresholds 0-100, budgetTightenRatio 0-1)': {
-			monthlyBudgetUsd: 500,
-			spentUsd: 120,
-			enforcementMode: 'advisory',
-			maturityThreshold: 70,
-			coherenceThreshold: 80,
-			budgetTightenRatio: 0.8,
-			scopeLabel: 'Checkout',
-			scopeReadiness: 85,
-			gateway: { baseUrl: 'http://litellm.internal:4000', connected: false, pendingPushCount: 0, lastPushOk: false }
-		},
-		'rules (compiled LiteLLM guardrails — normally compiler-derived; hand-added rows use source "manual")': {
-			id: 'finops-rule-1',
-			kind: 'budget_cap',
-			status: 'active',
-			source: 'budget',
-			rationale: 'Spend ratio 0.85 > tighten ratio 0.8',
-			scopeLabel: 'Checkout',
-			capUsd: 120,
-			estimatedSavingUsd: 45,
-			createdAt: 'just now'
-		}
-	},
 	approvals: {
 		items: {
 			id: 'appr-experience',
@@ -909,7 +841,7 @@ const SAMPLES: Partial<Record<Section, Record<string, unknown>>> = {
 /** How to author each section, which write tool to use, and id conventions. */
 const AUTHORING: Record<Section, string> = {
 	scope:
-		'set_section FIRST and keep it current. Choose mode full_product|selected_scope|prototype, then inventory every externally expected capability. Every capability must cite Documents & Sources through sourceIds; included capabilities must map to leaf featureIds. excluded/deferred rows require a rationale and an approved|accepted_risk approvalId (and are forbidden in full_product mode). Review every pre-populated sectionAssessments row whose applicability is `required`: mark it ready only after checking the section; not_applicable requires a rationale + settled approval and is forbidden in full_product mode. Rows seeded `derived` (Project health, Baselines, Supervision, AI Cost Governor) are computed or operator-owned — leave them alone, the gate does not ask you for them. completionStatus, completedAt, audit and auditLog are server-owned — call assess_project_completeness, then audit_project_scope, then finish_project instead of writing them. Humans never fill this ledger in: it is the reasoning YOU must commit to before authoring, and it has no page in the app — do not point a user at one.',
+		'set_section FIRST and keep it current. Choose mode full_product|selected_scope|prototype, then inventory every externally expected capability. Every capability must cite Documents & Sources through sourceIds; included capabilities must map to leaf featureIds. excluded/deferred rows require a rationale and an approved|accepted_risk approvalId (and are forbidden in full_product mode). Review every pre-populated sectionAssessments row whose applicability is `required`: mark it ready only after checking the section; not_applicable requires a rationale + settled approval and is forbidden in full_product mode. Rows seeded `derived` (Project health, Baselines) are computed or captured — leave them alone, the gate does not ask you for them. completionStatus, completedAt, audit and auditLog are server-owned — call assess_project_completeness, then audit_project_scope, then finish_project instead of writing them. Humans never fill this ledger in: it is the reasoning YOU must commit to before authoring, and it has no page in the app — do not point a user at one.',
 	foundation:
 		`set_section. This is the only Foundation section, and the FIRST page a customer reads. ${FOUNDATION_ALTITUDE_RULE} ` +
 		'Author its three nested records together — identity, definition, operations — using the exact emptyDraft shape; every nested record carries the same projectId and the server pins it to the requested project. ' +
@@ -939,12 +871,13 @@ const AUTHORING: Record<Section, string> = {
 		'`unspaghettitFeatureId` MUST equal the leaf `id` — that pair is the binding to the behavior model. Use a project-unique id (`feat-send-invoice`, not `feat-submit`): a generic id collides across projects. ' +
 		'Every coreId/parentFamilyId/featureId/releaseId must resolve inside the SAME payload — an unknown reference is rejected with the collection to author first. ' +
 		'\n· Per-leaf detail (the drawer behind a leaf) — leafMeta, keyed by leaf feature id: objective, problem, expectedEffect, value (the "why" a reader asks for), code (your own reference), acceptanceCriteria[] {id, text} = the testable statements this leaf must satisfy, dependsOn[] = other leaf ids, sourceIds[] = Documents & Sources citations, status backlog|in-progress|done, trl 1-9 (a MANUAL readiness override — omit it and readiness derives from the engine maturity score, which is the honest default). Every field is optional and an empty string is a deliberate "cleared", never a missing value. ' +
+		'\n  A leaf criterion is NOT a second list: saving this section carries it into the behavior model under a reserved `ac-leaf-` id, beside the criteria you author with apply_behavior_batch, and everything that counts criteria counts that one list. Write prose here; write status, relations and evidence through the model. ' +
 		'\n· Roadmap tab — mvpAssignments[] {featureId, tier} and releases[] {id, name, version, weekStart, weekEnd, order, description, archivedAt?} + roadmapAssignments[] {featureId, releaseId}. actionRelease maps ONE kernel action to a different release than its parent leaf, keyed "<featureId>::<actionId>". ' +
 		'\n· Work queue tab — sprints[] {id, name, startDate?, endDate?, order, archivedAt?}, assignments[] (who does what: kind core|feature|action + the ids for that kind, assigneeId, sprintId, order), featureRoles/actionRoles (contributor ids per feature/action), actionAssignments (owner per action), actionTrl. This is the WORKSPACE\'s own delivery data: it names real people. Author it only from what the user explicitly told you — never invent an assignee, a sprint or a due date, and leave these empty when planning was not part of the request. ' +
 		'\n· PREFER THE ROADMAP TOOLS for delivery management: get_roadmap reads releases/sprints with derived lifecycle (planned|in-progress|done|archived), progress % and per-feature implementation coverage in one call; apply_roadmap_batch mutates them with cascades handled (release/sprint removal cleans its assignments); reconcile_roadmap_statuses raises feature statuses to match code-adoption coverage (upgrade-only, also fired automatically after sync_implementation_index). archivedAt is the explicit ship/close stamp: "done" is always DERIVED from statuses, archiving pins it in history.',
 	experience:
 		'Largest section — the client-visible product: what a user goes through, on which screen, and what the screen actually does. ' +
-		'THE PLAN RECORDS: journeys[] {id, coreId (a features core), name, description, order, actorRoleIds[] = users.roles[] ids} = one end-to-end path a persona takes; steps[] {id, journeyId, name, order, linkedScreenId} = the ordered stops of that path, each landing on a screen; ' +
+		'THE PLAN RECORDS: journeys[] {id, coreId (a features core), name, description, order, actorRoleIds[] = users.roles[] ids} = one end-to-end path a persona takes; steps[] {id, journeyId, name, order, linkedScreenId, actions?} = ordered stops. Optional actions use simulate_experience action objects ({nodeId|label, trigger?, type?, rowIndex?, tab?, expectError?}) and run ON this step before advancing. Use them for exact same-screen sequences; never split a continuous interaction into fake routes. Without actions, verification searches a bounded sequence of real enabling interactions before navigation and reports an explicit gap if it cannot find one. ' +
 		'stepOperations[] {id, stepId, order, kind, label} = what the step does under the hood (feeds step-depth coherence) and stepDataReads[] {id, stepId, order, entityName, mode, fields[]} = which entity fields it reads/writes (feeds entity coverage) — both are how a journey stops being a title and starts being verifiable; ' +
 		'screens[] {id, name, templateId, description, category, parentScreen, path, device, deviceW, deviceH} = the pages; components[] {id, name, description, color} = layouts reused across screens (a row template, a sidebar). Author the plan first, then materialise each screen. ' +
 		'Use set_section for the PLAN (journeys, steps, screens metadata, components metadata, builder.theme/collections/stateSeeds/entryScreenId) with builder.nodes={} and builder.screenRoots={}. Then call build_screen once per screen/component to materialise the layout from a compact nested spec. Use patch_section for targeted edits (e.g. builder.nodes.<id>.flex.card=true, builder.nodes.<id>.appearance={width:"full",fontSize:32,radius:16}, builder.nodes.<id>.media={src:"/assets/hero.png",alt:"Hero",fit:"cover",aspectRatio:"16 / 9"}, builder.stateSeeds). Appearance is structured: width auto|full|fit, align auto|start|center|end|stretch, textAlign left|center|right, fontSize 8..96, fontWeight 100..900, hex color/background/borderColor, borderWidth/radius/paddingX/paddingY, shadow, opacity 0..1. Prefer bundled/uploaded image assets; remote URLs are explicit opt-in and never populated by default. Tabs: presentation:"tabs" selects the active panel by NUMERIC INDEX stored at tabsKey (default 0), not by label. Aside nav: presentation:"sidebar" is the SAME child-groups-are-panels contract rendered as a left navigation menu (labels = menu items, active item highlighted); prefer it over tabs whenever a real product would use an aside navigation panel (settings areas, admin consoles, multi-section detail pages). Dropdown menu: presentation:"menu" is an anchored dropdown (the header-right user menu case): same visibleWhen open/close contract as overlay, no scrim, right-aligned at its slot (appearance.align:"start" opens rightward); clicking outside or picking an item dismisses it by falsifying the condition, so the trigger just toggles the state (e.g. toggle:"menu.open"). Clickable badges/tiles: ANY element with a click transition, click scenario or an action/event binding is a live click target in Run mode and gets the theme hover affordance, so a pill badge or stat tile can carry an action directly. Data on screens: a list ITERATES a simulator collection via bind:{kind:"entity",ref:"<CollectionName>"} (import_data_collections first); text labels interpolate {#Collection}, {Collection.field}, {Collection.N.field}. Per-role authorization: element gate {personaIds,mode:"visible"|"enabled",allow} (build_screen / wire_element `gate`). Input validations: required|email|min|max|pattern (param is a string); on a number input (inputType:"number") min/max bound the VALUE (min 0 rejects -5), on a text input they bound the length. Layout groups: a nested group OMITS `el` entirely ({direction,children,...}); `el:"container"` is a leaf, not a wrapper — putting children on it errors. A `list` iterates a collection and can take a row-template via componentId. Navigation living inside a reused component — including a list row-template — counts for journey verification and reachability; no redundant host-screen links needed. Realistic demo data: builder.collections[].rows = explicit records (keyed by field name, max 50) seeded INSTEAD of generated values — the only way to correlate fields across a row (a "Free" plan priced 0); missing fields are gap-filled. Per-field `options` pools also override a single field\'s generator. Design expressiveness: el:"icon" renders a bundled lucide icon (label = icon name, e.g. "zap"; appearance.fontSize = px size, color cascades); el:"meter" renders a progress bar (label = value 0-100, interpolatable "{usage.pct}"; variant:"ring" = circular gauge; appearance.color = fill); el:"text" variant:"pill" renders a badge/chip; a GROUP\'s appearance.color cascades to descendant text/icon defaults (one patch recolors a dark sidebar); builder.theme.preset picks a named palette ("light"|"dark"|"midnight"|"paper"|"forest") that fills the theme colors in one shot (explicit colors still win). Create flows: a transition effect createRecord:"<Collection>" appends a real row at run time, capturing any input on the same screen whose LABEL equals a collection field name — so name inputs "Name", not "Zap name" — or declare the mapping explicitly with fieldMap {"<field name>":"<input label>"} on the effect; a createRecord that captures no inputs surfaces in simulate warnings. PER-ROW INTERACTIVITY (a catalog, pricing table or inbox where each row acts): author the row template component once, and every element inside it acts on the row it is rendered in — effect selectRecord with target "<prefix>" publishes the whole clicked record to state (readable anywhere as {prefix.field}, plus {prefix} = the row id), and any setState/print value may interpolate {Field} from that row. Drive it headlessly with simulate_experience by adding rowIndex:<N> to an action (N indexes the rows currently visible, i.e. after the live search filter). Row LAYOUT: a bound list takes rowLayout "stack" (default) | "grid" | "cards" plus rowColumns 1..4 — cards wrap responsively, which is how pricing tiers and app catalogs should look; never hand-duplicate one card per record. FORM CONTROLS: besides el:"input", there are el:"textarea" (multi-line), el:"select" (options:[...] or optionsFrom:{collection,field[,filterField,filterPath]} for a live/dependent dropdown) and el:"checkbox" (boolean state, so truthy/falsy guards work). They validate, gate and fire change-triggers exactly like an input; inside a row template each row keeps its own value.',
@@ -966,25 +899,29 @@ const AUTHORING: Record<Section, string> = {
 		'\nRELATIONS, CHECKED ON EVERY WRITE: a table nobody points at and that points at nothing is an orphan, and orphans are a defect, never a starting point. Every entity carries the relation to what owns it (the parent record it cannot exist without: a Line to its Invoice, a Member to their Workspace) or is pointed at by what references it (an Assignee, a Source). Each data write answers with `coherenceIssues`; an `unrelated-entity` issue names every orphan, and assess_project_completeness repeats each one as a `data-entity-unrelated` warning that fails the `data` check. Read the response of every data write and fix the orphans in the same pass, from evidence (what screens show together, what the code stores together), never by inventing a link; a genuinely standalone table (a lookup, a singleton setting) says so in its description. ' +
 		'\nThen call import_data_collections to seed the simulator backend from these entities (enumValues become the exact seeded value pool). Never import while a data write still reports `unrelated-entity`: the collections would freeze the orphans.',
 	architecture:
-		'set_section. techChoices[] {id, layer (see enums), name, role = what it does here ("Web application"), version, referenceDocId, description}, sourceIds[], constraints[] {id, title, detail, category (see enums)} = the non-negotiables the stack must respect. derivedTech is derived — leave []. referenceDocs[] is a retired private list — never author it. Architecture has NO private doc list any more: official docs are rows of the `documents` section (the project evidence register), and this section CITES them. MANDATORY: write the doc rows into `documents` first (title, REAL official-documentation url, kind link|research|regulation|…), then set every techChoices[] entry\'s referenceDocId to one of those source ids, and list the same ids in sourceIds[]. referenceDocId:null is acceptable ONLY when the tech genuinely has no official documentation (bespoke/internal tooling) — never because the lookup was skipped, and never with an invented URL. Also cover all 5 layers (frontend|backend|data|integrations|infra) and declare at least one non-negotiable constraint; tech→doc referencing alone is worth 35/100 coherence points (issue code unreferenced-tech). (A legacy referenceDocs[] on an older project is folded into the register automatically — read it there, do not re-author it here.)',
+		'set_section. stage logical|implementation (new projects default logical). Start with logical responsibilities, boundaries and constraints; do not invent a stack or populate unused layers to raise a score. techChoices[] retains its wire name for compatibility: {id, layer, name (component or technology), role (responsibility), version, referenceDocId, description}. Store technical decisions in documents.sources[] with decision.status proposed|accepted|superseded and a note containing technologies, versions, alternatives and rationale. Link by referenceDocId and sourceIds. Move to implementation when choosing technologies; unresolved decisions remain explicit and are never inferred by an export. sourceIds[] and constraints[] {id,title,detail,category} support both stages. derivedTech is read-only, leave []. referenceDocs is migration-only; use the shared Sources register. get_implementation_context and technical exports include linked source content and unresolved references.',
 	coherence:
 		'DERIVED — agentAuthorable:false. Every score here is computed from the other sections plus the DPO engine. Read it with get_section to find what to FIX upstream; writing it would only assert a number the engine immediately recomputes.',
 	glossary:
 		'set_section. terms[] — one governed concept each: term = the WORD the product and its users say, spelled as a human writes it ("Invoice status"); a code identifier (invoiceStatus, USER_ROLE, getInvoice()) is rejected — that spelling belongs to the Data model, and the word people wrongly use belongs in synonymsAvoid[]. ' +
 		'definition = one sentence a newcomer understands; synonymsAllowed[] = the words that mean the same and may be used; synonymsAvoid[] = the ones the team must stop using (they are matched against the whole project corpus and reported); example = the term in a real product sentence; locale fr|en; status draft|approved; sourceIds[] = the Documents & Sources rows that define it. ' +
 		'Health score, suggestions, and view state are derived or local — never send them.',
-	supervision:
-		'OPERATOR-OWNED — agentAuthorable:false. This is the WORKSPACE\'s own running data, not the specification of the customer\'s product: who is assigned what, which AI policy the organisation applies, what each member spends. It names real people and real money, so authoring it from an LLM means inventing facts about someone\'s organisation. ' +
-		'READ it with get_section when you need context (who owns a scope, whether a policy blocks something); write it ONLY when the user gives you the values explicitly. The completion gate never asks an agent for it. ' +
-		'\nFor reference, the shape a human fills: assignments[] (assignee, scopeType, scopeLabel, status, progress 0-100, dueInDays), policyRules[] (category/label/status/detail), decisions[] (title/rationale/by/area), memberKeys[] (member, monthlyBudgetUsd, spentUsd, tokensUsed, tokenQuota). activity[] and gatewayAudit[] are read-only mirrors — leave []. The AI Gateway tab also embeds the AI Cost Governor (its levers live in the separate `finops` section).',
-	finops:
-		'OPERATOR-OWNED — agentAuthorable:false. The AI Cost Governor holds the workspace\'s real AI budget, its real spend and the enforcement mode that can FREEZE generation for everyone. A budget you infer is a wrong number on someone\'s finance page, and flipping enforcementMode to "enforced" blocks the team — never author either unless the user states the values. Live signals are recomputed at the edge and rules are normally derived by the compiler. ' +
-		'READ it with get_section to know the current posture. The completion gate never asks an agent for it. ' +
-		'\nFor reference, the levers a human sets: monthlyBudgetUsd/spentUsd (USD ≥ 0), enforcementMode advisory|enforced (advisory = warnings only, the air-gap default; enforced freezes generation and pushes blocking rules), maturityThreshold/coherenceThreshold/scopeReadiness (0-100), budgetTightenRatio (0-1), scopeLabel, gateway{baseUrl,connected,pendingPushCount,lastPushOk} (the optional on-prem LiteLLM proxy link), and rules[] (see sample — kind block_scope|route_cheap_model|budget_cap; capUsd only matters for budget_cap, 0 = fall back to the project-wide tighten formula).',
 	approvals:
 		'set_section. items[] — a lightweight approval worklist, one row per thing to sign off (title, area, reviewer, status draft|in_review|approved|changes_requested|accepted_risk, deadline free-form string, note = review comment / accepted-risk rationale). `area` is free text; the codes listed under enums mirror the nav\'s Specify group. Rows keep their ids (send id back on update); unknown statuses fall back to draft.',
 	baselines:
 		'DERIVED — agentAuthorable:false. A baseline is an immutable point-in-time snapshot (scores, feature count, and the full Markdown requirements document in `content`) captured server-side via POST /api/projects/<projectId>/baselines/capture — never author snapshot fields. set_section (PUT) is only for renaming (name), annotating (note), or deleting (omit the row).',
 	documents:
-		'set_section. sources[] — THE project evidence register, and the single source of truth for evidence: no other section keeps its own list of links. Each row: title, kind (see enums, default link), url (a link or stable reference — bytes live elsewhere, e.g. an uploaded brand file ref), note (citation/excerpt). Every other section cites these rows by stable id through a `sourceIds: string[]` field — foundation.definition.<slice>.sourceIds, users.roles[].sourceIds, rules.issues[]/scenarios[].sourceIds, glossary.terms[].sourceIds, architecture.sourceIds (+ techChoices[].referenceDocId), features leafMeta.sourceIds. So: register a source HERE first, then cite its id from wherever the claim is made. Ids are the citation contract — keep them unchanged across writes, and never delete a row that is still cited (the app flags the dangling citation rather than hiding it). REACHABLE, OR IT IS NOT A SOURCE: a row is evidence only if a reader other than you can consult it, through one of two doors. Door 1, url = a web address anyone can open (the Notion page, the Jira issue, the Confluence page, the Figma file, the GitHub file or commit, the official docs; the tool response of the MCP you read it through carries it) or an uploaded file. Door 2, no address (a PDF handed over, an interview, a chat, a file on your disk): leave url EMPTY and carry in note everything the spec relies on, verbatim, with where it came from. Never type a file:// path, a local path or a plain reference into url: it opens for nobody, so the write answers with a coherenceIssues line per such row and assess_project_completeness repeats it as a source-unreachable warning that fails the Source traceability check (a row with neither url nor note is source-empty). A code file you read goes through attach_source (readable back through list_sources) and its row here carries the repository web address of the file, or the repo-relative path in the note. Fix every reported row in the same pass.'
+		'set_section. sources[] — THE project evidence register, and the single source of truth for evidence: no other section keeps its own list of links. Each row: title, kind (see enums, default link), url (a reachable web or uploaded-file address), note (citation/excerpt). Optional decision:{status:proposed|accepted|superseded}; keep technical details and rationale in note. Optional evidence:{kind:unit|integration|e2e|visual|load|manual|prototype,result:passed|failed|blocked|not_run,buildId,artifact,command,observedAt,provenance,criterionIds:string[]}. These are REPORTED results, not independently verified evidence or model coverage. Never mark a real-runtime test passed on the basis of a prototype check. Every other section cites these rows by stable id through a `sourceIds: string[]` field — foundation.definition.<slice>.sourceIds, users.roles[].sourceIds, rules.issues[]/scenarios[].sourceIds, glossary.terms[].sourceIds, architecture.sourceIds (+ techChoices[].referenceDocId), features leafMeta.sourceIds. So: register a source HERE first, then cite its id from wherever the claim is made. Ids are the citation contract — keep them unchanged across writes, and never delete a row that is still cited (the app flags the dangling citation rather than hiding it). REACHABLE, OR IT IS NOT A SOURCE: a row is evidence only if a reader other than you can consult it, through one of two doors. Door 1, url = a web address anyone can open (the Notion page, the Jira issue, the Confluence page, the Figma file, the GitHub file or commit, the official docs; the tool response of the MCP you read it through carries it) or an uploaded file. Door 2, no address (a PDF handed over, an interview, a chat, a file on your disk): leave url EMPTY and carry in note everything the spec relies on, verbatim, with where it came from. Never type a file:// path, a local path or a plain reference into url: it opens for nobody, so the write answers with a coherenceIssues line per such row and assess_project_completeness repeats it as a source-unreachable warning that fails the Source traceability check (a row with neither url nor note is source-empty). A code file you read goes through attach_source (readable back through list_sources) and its row here carries the repository web address of the file, or the repo-relative path in the note. Fix every reported row in the same pass.',
+	evolution:
+		'set_section. One dossier per change request, carrying it from the raw need to the human acceptance walkthrough. ' +
+		'\n. READ IT THROUGH get_evolution AND WRITE IT THROUGH apply_evolution_batch, never set_section: the aggregate carries the derived readings (maturity, gates, readings, pending proposals) and the typed operations apply every guard of the lifecycle server-side; a raw section write is refused. ' +
+		'\n. requests[]: id, title (a request with none cannot be found again), origin (one of the six known origins, never left unset), requester, leafIds[] = the EXISTING leaf features the change touches (a set, each listed once; an evolution never creates a feature of its own), stage, status, iteration (from 1, only moving forward). ' +
+		'\n. THE DOSSIER STORES NO SPECIFICATION VALUE. Every prose field of its page writes through to the section that owns it (features.leafMeta), so deleting a request leaves the spec it wrote untouched. The other blocks (personas and grants, behaviour surfaces/guards/invariants, entities, dependencies, constraints, security, glossary, screens, edge cases) are READINGS: the dossier shows what the touched features hold there and what the impact report moves, and counts a block filled from that reading. Nothing is ticked by hand. When a reading is empty (a touched feature with no invariant, no grant, no entity), THAT is your work: author it with the OWNING section tool (apply_behavior_batch, users, data, ...) and the reading fills itself. ' +
+		'\n. coherenceFindings[] come from the coherence engine over the WHOLE project, never from a model, and each one names BOTH nodes at fault plus a fixNowTarget or it is not published. ' +
+		'\n. impactFindings[] are read under one hypothesis at a time (add, change or remove, never merged), at a depth of 1 to 5 hops; an entities row must say whether a migration is implied, and a rules row must say replay or rewrite. ' +
+		'\n. implementationFindings[] are DERIVED by crossing specified requirements with implementation coverage and reading code anchors. Never write them from your own account of what you built: that is a claim, and it hides exactly the omissions and additions the report exists to surface. One of five verdicts per line, each with a filePath and a lineRange. EVERY LINE NAMES specVersion: the frozen spec version it was built against (read request.specVersion). Crossing into Verify freezes the spec under an incremented version; a report naming another version, or deposited on a request nobody froze, is refused with a 422 and both numbers, never read. ' +
+		'\n. proposals[] may be created by an AI client, but only a PERSON accepts, refuses or rewords one, and only acceptance writes the value to its canonical section. Target the OPEN QUESTIONS first: request.openQuestionKeys lists the fields the author declared they cannot answer (keyed path or path@leafId); they are what the completion is for, then the empty fields. ' +
+		'\n. openQuestionKeys[] are the author\'s, fieldSignatures[] are people standing behind an exact value (a client never signs), fieldThreads[] hold the conversation next to a field (a client may post, never marks a thread answered nor turns it into a change), readinessExclusions[] are an admin\'s traced decisions. Read them; do not author them. ' +
+		'\n. observations[] are ruled on by people, never by a client; a validated one must be folded back into the spec before the request can close. ' +
+		'\n. history[] is append-only: supersede an entry, never delete it, and every entry names its author and whether that author is a person or a client.'
 };

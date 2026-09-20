@@ -3,6 +3,9 @@ import { getServices } from '$composition/container.server';
 import type { AccessAction } from '$application/ports';
 import { dataModelFeatureId, experienceFeatureId } from '$application/projection/aux-feature-ids';
 import { requireProjectAccess } from './project-access.server';
+import { featureIdCollisionMessage } from '$application/feature-id-collision';
+
+export { featureIdCollisionMessage };
 
 /** Authorize a project and prove that a globally-addressed behavior feature belongs to it. */
 export async function requireBehaviorFeatureAccess(
@@ -47,18 +50,4 @@ export async function featureIdCollisions(
 	featureId: string
 ): Promise<readonly string[]> {
 	return getServices().detectFeatureIdCollision.execute(projectId, featureId);
-}
-
-/** What to tell whoever hit the clash, in one sentence they can act on. */
-export function featureIdCollisionMessage(
-	projectId: string,
-	featureId: string,
-	clashes: readonly string[]
-): string {
-	return (
-		`Feature id "${featureId}" is also stored by ${clashes.join(', ')}. ` +
-		'The behavior engine addresses features by id across all projects, so this write would land ' +
-		'in whichever copy it indexed. Give this leaf an id unique to its project (for example ' +
-		`"${projectId.slice(0, 12)}-${featureId}") and author it under that id.`
-	);
 }

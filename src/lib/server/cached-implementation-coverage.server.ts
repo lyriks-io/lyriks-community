@@ -45,6 +45,7 @@ interface Entry {
 	data: Coverage;
 	at: number; // epoch ms of the last successful compute (0 = never)
 	computing: boolean;
+	invalidated?: boolean;
 }
 
 export interface CachedImplementationCoverageOptions {
@@ -71,7 +72,10 @@ export class CachedImplementationCoverage {
 		subscribeSectionChanges(({ projectId, section }) => {
 			if (!COVERAGE_INPUT_SECTIONS.has(section)) return;
 			const entry = this.#cache.get(projectId);
-			if (entry && !entry.computing) entry.at = 0;
+			if (entry) {
+				entry.at = 0;
+				entry.invalidated = true;
+			}
 		});
 	}
 
@@ -88,7 +92,10 @@ export class CachedImplementationCoverage {
 	 */
 	invalidate(projectId: string): void {
 		const entry = this.#cache.get(projectId);
-		if (entry) entry.at = 0;
+		if (entry) {
+			entry.at = 0;
+			entry.invalidated = true;
+		}
 		this.#refresh(projectId);
 	}
 
@@ -120,11 +127,18 @@ export class CachedImplementationCoverage {
 		const entry = this.#cache.get(projectId) ?? { data: {}, at: 0, computing: false };
 		if (entry.computing) return;
 		entry.computing = true;
+		entry.invalidated = false;
 		this.#cache.set(projectId, entry);
 
 		void this.#lane
 			.run(`coverage:${projectId}`, LANE_PRIORITY, () => this.load.execute(projectId))
 			.then((data) => {
+				if (entry.invalidated) {
+					// Do not publish or persist a computation that raced with a write.
+					entry.computing = false;
+					this.#refresh(projectId);
+					return;
+				}
 				const changed = JSON.stringify(data) !== JSON.stringify(entry.data);
 				this.#cache.set(projectId, { data, at: Date.now(), computing: false });
 				if (changed) {

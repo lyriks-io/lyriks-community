@@ -27,6 +27,7 @@ export interface ImportDataCollectionsResult {
 	 * import without re-reading the whole experience section.
 	 */
 	fields: Record<string, Array<{ id: string; name: string; kind: string; options?: string[] }>>;
+	fixtureNotice: string;
 }
 
 /**
@@ -54,7 +55,7 @@ export class ImportDataCollectionsUseCase {
 	async execute(
 		projectId: string,
 		entityNames?: string[],
-		opts?: { refresh?: boolean }
+		opts?: { refresh?: boolean; seedCount?: number }
 	): Promise<ImportDataCollectionsResult> {
 		const [draft, data] = await Promise.all([
 			this.loadExperience.execute(projectId),
@@ -81,7 +82,10 @@ export class ImportDataCollectionsUseCase {
 			if (refresh) {
 				const r = syncEntityIntoCollections(draft.builder.collections, entity, data.fields);
 				mutated = mutated || r.changed;
-				if (r.outcome === 'imported') imported.push(entity.name);
+				if (r.outcome === 'imported') {
+					imported.push(entity.name);
+					if (opts?.seedCount !== undefined) backingCollection(entity)!.seedCount = opts.seedCount;
+				}
 				else if (r.outcome === 'updated') updated.push(entity.name);
 				else skipped.push(entity.name);
 				continue;
@@ -90,7 +94,9 @@ export class ImportDataCollectionsUseCase {
 				skipped.push(entity.name);
 				continue;
 			}
-			draft.builder.collections.push(entityToCollection(entity, data.fields));
+			const collection = entityToCollection(entity, data.fields);
+			if (opts?.seedCount !== undefined) collection.seedCount = opts.seedCount;
+			draft.builder.collections.push(collection);
 			mutated = true;
 			imported.push(entity.name);
 		}
@@ -138,7 +144,8 @@ export class ImportDataCollectionsUseCase {
 			total: draft.builder.collections.length,
 			collectionIds,
 			fieldIds,
-			fields
+			fields,
+			fixtureNotice: 'Generated rows are synthetic placeholders, not domain facts. Use seed_count:0 for new empty collections and author representative rows explicitly. Existing rows and seed counts are preserved.'
 		};
 	}
 }

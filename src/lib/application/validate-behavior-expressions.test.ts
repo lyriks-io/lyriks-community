@@ -55,10 +55,13 @@ describe('expressionKindErrors', () => {
 		expect(expressionKindErrors([{ kind: 'add_effect', effect: { type: 'allow_action' } }])).toEqual([]);
 	});
 
-	it('accepts every kind in the vocabulary', () => {
+	it('accepts complete nodes for every kind in the vocabulary', () => {
 		const ops = EXPRESSION_KINDS.map((kind) => ({
 			kind: 'add_effect',
-			effect: { type: 'set_state', path: 'a.b', value: { kind } }
+			effect: { type: 'set_state', path: 'a.b', value: {
+				kind, value: 0, path: 'records', name: 'amount', left: 0, right: 1,
+				operand: [], field: 'status', equals: 'ready', cases: [], default: 0
+			} }
 		}));
 		expect(expressionKindErrors(ops)).toEqual([]);
 	});
@@ -374,5 +377,67 @@ describe('reachability goals', () => {
 			{ kind: 'update_reachability_goal', goalId: 'g1', patch: { kind: 'sometimes' } }
 		]);
 		expect(errors[0]).toContain('unknown reachability goal kind "sometimes"');
+	});
+});
+
+describe('domain payloads are not read as expressions', () => {
+	// Each of these was refused in production by a message listing arithmetic
+	// kinds, on an operation written exactly as the engine's reference documents.
+	it('accepts an acceptance criterion relation', () => {
+		expect(
+			expressionKindErrors([
+				{
+					kind: 'add_acceptance_criterion',
+					title: 'Wild fruit trees stay rare',
+					status: 'draft',
+					relations: [{ kind: 'refines', criterionId: '8da2756a' }]
+				}
+			])
+		).toEqual([]);
+	});
+
+	it('accepts the nested resource form the engine calls preferred', () => {
+		expect(
+			expressionKindErrors([
+				{
+					kind: 'add_resource',
+					resource: { name: 'Tide table', kind: 'datastore', provider: 'local' }
+				}
+			])
+		).toEqual([]);
+	});
+
+	it("does not read a constant's author payload", () => {
+		expect(
+			expressionKindErrors([
+				{ kind: 'add_constant', name: 'tideCurve', value: { kind: 'sinusoid', period: 12 } }
+			])
+		).toEqual([]);
+	});
+
+	it('reads an update patch as domain data too', () => {
+		expect(
+			expressionKindErrors([
+				{
+					kind: 'update_acceptance_criterion',
+					criterionId: 'c1',
+					patch: { relations: [{ kind: 'supersedes', criterionId: 'c0' }] }
+				},
+				{ kind: 'update_resource', resourceId: 'r1', patch: { kind: 'service' } }
+			])
+		).toEqual([]);
+	});
+
+	it('still catches a mistyped expression kind in the same batch', () => {
+		const errors = expressionKindErrors([
+			{ kind: 'add_resource', resource: { kind: 'datastore' } },
+			{
+				kind: 'add_effect',
+				effect: { type: 'set_state', value: { kind: 'subtract', left: 1, right: 2 } }
+			}
+		]);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('unknown expression kind "subtract"');
+		expect(errors[0]).toContain('Did you mean "sub"?');
 	});
 });

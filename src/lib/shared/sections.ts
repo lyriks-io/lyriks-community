@@ -5,7 +5,7 @@
  *
  * It lives here because it was duplicated: the read endpoint and the describe
  * endpoint each kept their own copy, and the MCP a third one in another repo —
- * which is how `finops`, `approvals` and `baselines` shipped in the app while
+ * which is how `approvals` and `baselines` shipped in the app while
  * staying unreachable over MCP for months. One list, checked against the actual
  * `/api/draft/*` routes by `sections.test.ts`.
  *
@@ -23,11 +23,10 @@ export const SECTIONS = [
 	'architecture',
 	'coherence',
 	'glossary',
-	'supervision',
-	'finops',
 	'approvals',
 	'baselines',
-	'documents'
+	'documents',
+	'evolution'
 ] as const;
 
 export type Section = (typeof SECTIONS)[number];
@@ -45,16 +44,12 @@ export function isSection(value: string): value is Section {
  *   them.
  * - `derived` — computed or captured server-side (scores, snapshots). Read it,
  *   never write it.
- * - `operator` — the WORKSPACE's own running data: who is assigned what, the AI
- *   policy, the AI budget. It says nothing about the product being specified, it
- *   belongs to the human running the workspace, and an agent inventing team
- *   members or a monthly budget is fabricating facts about a real organisation.
  *
  * One registry, because three places used to answer this differently: the scope
  * ledger demanded every section be assessed, `describe_section` implied every
  * section was authorable, and the completion gate blocked on both.
  */
-export type SectionAudience = 'product' | 'derived' | 'operator';
+export type SectionAudience = 'product' | 'derived';
 
 export const SECTION_AUDIENCE: Readonly<Record<Section, SectionAudience>> = {
 	scope: 'product',
@@ -67,14 +62,21 @@ export const SECTION_AUDIENCE: Readonly<Record<Section, SectionAudience>> = {
 	architecture: 'product',
 	coherence: 'derived',
 	glossary: 'product',
-	supervision: 'operator',
-	finops: 'operator',
 	approvals: 'product',
 	baselines: 'derived',
-	documents: 'product'
+	documents: 'product',
+	evolution: 'product'
 };
 
 /** Sections an agent is expected to author. The rest it may read, not write. */
 export function isAgentAuthorable(section: Section): boolean {
 	return SECTION_AUDIENCE[section] === 'product';
 }
+
+/** Storage channel used by each public save endpoint's optimistic-lock gate. */
+export const SECTION_REVISION_STORAGE: Readonly<Record<Section, 'document' | 'legacy'>> = {
+	scope: 'document', foundation: 'legacy', users: 'legacy', features: 'legacy',
+	experience: 'legacy', rules: 'legacy', data: 'legacy', architecture: 'document',
+	coherence: 'document', glossary: 'document', approvals: 'document',
+	baselines: 'document', documents: 'document', evolution: 'document'
+};

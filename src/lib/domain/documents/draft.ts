@@ -12,6 +12,19 @@ export interface DocumentSource {
 	kind: DocumentKind;
 	url: string;
 	note: string;
+	/** Authored decision status, not an inferred acceptance or a runtime result. */
+	decision?: { status: 'proposed' | 'accepted' | 'superseded' };
+	/** Reported execution evidence; never contributes to model coverage by itself. */
+	evidence?: {
+		kind: 'unit' | 'integration' | 'e2e' | 'visual' | 'load' | 'manual' | 'prototype';
+		result: 'passed' | 'failed' | 'blocked' | 'not_run';
+		buildId: string;
+		artifact: string;
+		command: string;
+		observedAt: string;
+		provenance: string;
+		criterionIds: string[];
+	};
 }
 
 export interface ProjectDocumentsDraft {

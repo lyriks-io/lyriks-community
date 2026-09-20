@@ -8,6 +8,13 @@
 // in the repo, versioned with the code it describes.
 
 import type { LyriksClient } from '../lyriks-client.js'
+import { RESULT_CAP } from '../util/shape.js'
+
+type Row = Record<string, unknown>
+
+const isRow = (v: unknown): v is Row => !!v && typeof v === 'object' && !Array.isArray(v)
+// Long lists are cut here; their `total` keeps the real length.
+const LIST_HEAD = 50
 
 export interface SeedIndexArgs {
   project_id: string
@@ -29,14 +36,69 @@ export async function seedIndexHandler(args: SeedIndexArgs, lyriks: LyriksClient
 export interface SyncIndexArgs {
   project_id: string
   index: Record<string, unknown>
+  verbose?: boolean
+}
+
+/**
+ * What each counter of a sync answer means. Agents read `skipped` as refused
+ * entries and a zero `stale` as "the code still matches the spec"; neither is
+ * what the engine counts, so the answer carries the definitions with it.
+ */
+export const SYNC_SEMANTICS = {
+  ok: 'true only when every report succeeded, no orphan key was found and at least one report landed.',
+  synced: 'Implementation reports written: one per action and one per surface that has its own entry in the index you sent.',
+  successes: 'Reports the engine accepted.',
+  failures: 'Reports the engine refused; their rows are in failedAcks.',
+  skipped: 'Actions and surfaces of the spec with NO entry of their own in the index you sent. They are left untouched: their previous reports stay.',
+  children: 'Child keys (rule, state, invariant, transition, event) are folded into the report of their parent action or surface and are not counted separately.',
+  stale: 'About code LOCATION only: entries whose signature is no longer found at their line. NOT evaluated when the index is sent inline, which is always the case through this gateway, so zero here is not a clean bill. Run get_implementation_drift for spec drift.',
+  healed: 'About code LOCATION only: entries whose signature was found again at another line and re-pointed. NOT evaluated when the index is sent inline, which is always the case through this gateway.',
+  shared: 'Keys that SEVERAL features declare (a state path is not unique across features): the index holds one entry per key, so its file and line describe one of them and the others resolve to that same location. Reported, never fatal, and it does not affect ok.',
+  orphans: 'Index keys that match no spec entity (typo, renamed or removed entity, or wrong key format). ok is false while any remain.',
+} as const
+
+/** Keep the head of a `{ total, entries }` block; `total` still says how many there are. */
+function headEntries(block: unknown): unknown {
+  if (!isRow(block) || !Array.isArray(block.entries) || block.entries.length <= LIST_HEAD) return block
+  return { ...block, total: block.total ?? block.entries.length, entries: block.entries.slice(0, LIST_HEAD), entriesReturned: LIST_HEAD }
+}
+
+/**
+ * A sync answer an agent can read. The engine acknowledges every action and
+ * surface (1,146 rows of "fine" on a large project), which buried the counters
+ * under the cap: only the refused rows are kept unless `verbose` asks for all.
+ * An answer without the engine's counters (a refusal) passes through unchanged.
+ *
+ * A newer engine also answers `criteria` (every acceptance criterion with what
+ * verifies it and how that last went) and `verified` (the actions PROVEN against
+ * the code, apart from located). Both pass through, `criteria.entries` cut to
+ * its head like the other lists; an older engine sends neither and neither is
+ * invented.
+ */
+export function shapeSyncAnswer(answer: unknown, verbose = false): unknown {
+  if (!isRow(answer) || !(Array.isArray(answer.acks) || typeof answer.synced === 'number')) return answer
+  const { acks, orphans, shared, criteria, ...rest } = answer
+  const rows = Array.isArray(acks) ? acks : []
+  const failed = rows.filter((ack) => isRow(ack) && ack.ok === false)
+  return {
+    ...rest,
+    ...(orphans !== undefined ? { orphans: headEntries(orphans) } : {}),
+    ...(shared !== undefined ? { shared: headEntries(shared) } : {}),
+    ...(criteria !== undefined ? { criteria: headEntries(criteria) } : {}),
+    ...(verbose
+      ? { acks: rows }
+      : { failedAcks: failed.slice(0, LIST_HEAD), ...(failed.length > LIST_HEAD ? { failedAcksReturned: LIST_HEAD } : {}) }),
+    semantics: SYNC_SEMANTICS,
+  }
 }
 
 /** Push coverage for a whole project from the index you hold. */
 export async function syncIndexHandler(args: SyncIndexArgs, lyriks: LyriksClient): Promise<unknown> {
-  return lyriks.post('/api/behavior/implementation/index', {
+  const answer = await lyriks.post('/api/behavior/implementation/index', {
     projectId: args.project_id,
     index: args.index,
   })
+  return shapeSyncAnswer(answer, args.verbose === true)
 }
 
 export interface FoundEntityArg {
@@ -119,17 +181,95 @@ export async function gapsHandler(args: GapsArgs, lyriks: LyriksClient): Promise
   })
 }
 
+export type DriftBucket = 'stale' | 'unversioned' | 'orphans'
+
 export interface DriftArgs {
   project_id: string
   index: Record<string, unknown>
   feature_id?: string
+  limit?: number
+  offset?: number
+  bucket?: DriftBucket
+}
+
+const DRIFT_PAGE = { default: 50, max: 200 } as const
+
+/** Occurrences per key, most frequent first, cut to the head with the rest counted. */
+function tally(keys: string[]): { top: Record<string, number>; more: number } {
+  const counts = new Map<string, number>()
+  for (const key of keys) counts.set(key, (counts.get(key) ?? 0) + 1)
+  const sorted = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  return { top: Object.fromEntries(sorted.slice(0, LIST_HEAD)), more: Math.max(0, sorted.length - LIST_HEAD) }
+}
+
+/**
+ * A drift answer an agent can act on. The platform relays every row (1.4 MB on
+ * a large project), which the cap reduced to `stale: array(4973)`: nothing to
+ * plan from. So: the totals and where the drift concentrates first, then ONE
+ * bucket, paged, each stale row carrying the file and line the caller's own
+ * index maps it to. The page is sized under the response cap so the generic
+ * cap never samples it, which would open holes in the paging. Any other field
+ * of the platform answer passes through; an answer that is not a drift report
+ * (a refusal, an unavailable engine) is returned unchanged.
+ */
+export function shapeDriftAnswer(answer: unknown, args: Pick<DriftArgs, 'index' | 'limit' | 'offset' | 'bucket'>): unknown {
+  if (!isRow(answer) || answer.ok === false || answer.available === false) return answer
+  if (![answer.stale, answer.unversioned, answer.orphans].some(Array.isArray)) return answer
+  const { stale: staleRaw, unversioned: unversionedRaw, orphans: orphansRaw, summary: engineSummary, ...rest } = answer
+  const index = isRow(args.index) ? args.index : {}
+  const located = (key: unknown): Row => {
+    const entry = typeof key === 'string' && Object.hasOwn(index, key) ? index[key] : undefined
+    if (!isRow(entry)) return {}
+    return { ...(entry.file !== undefined ? { file: entry.file } : {}), ...(entry.line !== undefined ? { line: entry.line } : {}) }
+  }
+  const stale = (Array.isArray(staleRaw) ? staleRaw : []).map((row) => (isRow(row) ? { ...row, ...located(row.key) } : row))
+  const buckets: Record<DriftBucket, unknown[]> = {
+    stale,
+    unversioned: Array.isArray(unversionedRaw) ? unversionedRaw : [],
+    orphans: Array.isArray(orphansRaw) ? orphansRaw : [],
+  }
+  const staleRows = stale.filter(isRow)
+  const text = (rows: Row[], field: string) => rows.map((row) => row[field]).filter((v): v is string => typeof v === 'string')
+  const byFeature = tally(text(staleRows, 'featureId'))
+  const byFile = tally(text(staleRows, 'file'))
+  const head = {
+    summary: {
+      checked: rest.checked,
+      stale: buckets.stale.length,
+      unversioned: buckets.unversioned.length,
+      orphans: buckets.orphans.length,
+      staleByScope: tally(text(staleRows, 'scope')).top,
+      staleByFeature: byFeature.top,
+      moreFeatures: byFeature.more,
+      staleByFile: byFile.top,
+      moreFiles: byFile.more,
+    },
+    ...rest,
+    ...(engineSummary !== undefined ? { engineSummary } : {}),
+  }
+
+  const bucket: DriftBucket = args.bucket ?? 'stale'
+  const all = buckets[bucket]
+  const offset = Number.isSafeInteger(args.offset) ? Math.max(0, args.offset!) : 0
+  const limit = Number.isSafeInteger(args.limit) ? Math.max(1, Math.min(DRIFT_PAGE.max, args.limit!)) : DRIFT_PAGE.default
+  const rows: unknown[] = []
+  let room = RESULT_CAP - JSON.stringify(head).length - 256
+  for (const row of all.slice(offset, offset + limit)) {
+    room -= JSON.stringify(row).length + 1
+    // Always one row, so a page makes progress even under a tiny cap.
+    if (room < 0 && rows.length) break
+    rows.push(row)
+  }
+  const next = offset + rows.length
+  return { ...head, bucket, total: all.length, offset, returned: rows.length, nextOffset: next < all.length ? next : null, rows }
 }
 
 /** Entries audited against an older spec than the one now in the kernel. */
 export async function driftHandler(args: DriftArgs, lyriks: LyriksClient): Promise<unknown> {
-  return lyriks.post('/api/behavior/implementation/drift', {
+  const answer = await lyriks.post('/api/behavior/implementation/drift', {
     projectId: args.project_id,
     index: args.index,
     ...(args.feature_id ? { featureId: args.feature_id } : {}),
   })
+  return shapeDriftAnswer(answer, args)
 }

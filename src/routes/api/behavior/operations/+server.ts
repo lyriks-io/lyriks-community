@@ -1,6 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
+import { BEHAVIOR_AUTHORING_PATTERNS } from '$application/behavior-authoring-patterns';
 import type { RequestHandler } from './$types';
 
 /** Version-aligned apply_batch operation guide read from the isolated engine. */
@@ -14,5 +15,5 @@ export const GET: RequestHandler = async (event) => {
 	if (!result) error(503, 'Behavior engine unavailable');
 	return kind
 		? json({ available: true, kind, description: result })
-		: json({ available: true, reference: result });
+		: json({ available: true, reference: result, patterns: BEHAVIOR_AUTHORING_PATTERNS });
 };

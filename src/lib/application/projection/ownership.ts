@@ -30,6 +30,7 @@ export const LYRIKS_OWNED_PREFIXES = [
 	'evt-', // events
 	'eff-', // effects: emit_event (eff-<id>-<i>) and set_state (eff-ui-<id>-<tid>)
 	'ac-edge-', // acceptance criteria authored in the Rules step
+	'ac-leaf-', // acceptance criteria authored on a leaf in the Features step
 	'ent-', // data-model entities
 	'fld-', // entity fields
 	'res-db-', // data-model resources (db)
@@ -41,6 +42,15 @@ export const LYRIKS_OWNED_PREFIXES = [
 	'core-', // materialised membership Core
 	'family-' // materialised membership Family
 ] as const;
+
+/**
+ * The two acceptance-criteria prefixes, named so a projection and the merge that
+ * serves it cannot drift apart on a string literal. Each projection replaces only
+ * the rows carrying ITS prefix, which is what lets the Rules step and a Features
+ * leaf both write criteria onto a feature that also holds ones an AI client wrote.
+ */
+export const ACCEPTANCE_EDGE_PREFIX = 'ac-edge-';
+export const ACCEPTANCE_LEAF_PREFIX = 'ac-leaf-';
 
 export type NodeOrigin = 'lyriks' | 'engine';
 

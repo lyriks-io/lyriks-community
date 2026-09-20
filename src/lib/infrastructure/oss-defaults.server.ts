@@ -6,7 +6,8 @@ import type {
 	ProjectMirrorPort,
 	WorkspaceDirectoryPort,
 	WorkspaceMemberNamePort,
-	WorkspaceSummary
+	WorkspaceSummary,
+	WorkspaceMemberSummary
 } from '$application/ports';
 import { GraphBuilder, type KnowledgeGraph } from '$domain/graph';
 
@@ -59,6 +60,9 @@ export class EmptyKnowledgeGraphProvider implements KnowledgeGraphProviderPort {
 /** One operator, no organisations to list or to create. */
 export class NoWorkspaceDirectory implements WorkspaceDirectoryPort {
 	async listForCaller(): Promise<WorkspaceSummary[]> {
+		return [];
+	}
+	async listMembers(): Promise<readonly WorkspaceMemberSummary[]> {
 		return [];
 	}
 	async createForCaller(): Promise<WorkspaceSummary | null> {

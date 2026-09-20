@@ -10,6 +10,7 @@ import type {
 	UnspaghettitAdvisorPort,
 	VerificationVerdict
 } from '../ports';
+import { verificationEvidence, type VerificationEvidence } from '../verification-evidence';
 
 /**
  * The full Unspaghettit readout for ONE leaf feature — what the engine knows
@@ -51,6 +52,7 @@ export interface FeatureAssessment {
 	 * call for an unauthored feature goes looking for the wrong problem.
 	 */
 	readonly degraded: readonly string[];
+	readonly evidence: VerificationEvidence;
 }
 
 /**
@@ -75,7 +77,8 @@ export class AssessFeatureUseCase {
 				verdict: null,
 				implementation: null,
 				digest: null,
-				degraded: []
+				degraded: [],
+				evidence: verificationEvidence(null, null)
 			};
 		}
 		const [behavior, score, gaps, specGaps, scenarios, modelCheck, verdict, implementation, digest] =
@@ -111,7 +114,8 @@ export class AssessFeatureUseCase {
 			verdict: readings.verdict,
 			implementation,
 			digest: readings.digest,
-			degraded: resolved(readings) ? lost(readings) : []
+			degraded: resolved(readings) ? lost(readings) : [],
+			evidence: verificationEvidence(readings.scenarios, readings.modelCheck)
 		};
 	}
 

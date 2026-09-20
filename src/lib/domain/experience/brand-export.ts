@@ -24,6 +24,11 @@ export function brandExportJson(brand: ProjectBrand): unknown {
 		semantic: Object.fromEntries(Object.entries(colors.semantic).filter(([, v]) => safe(v))),
 		typography: {
 			families: typo.families,
+			// Only roles that carry a name: the name is the token's key.
+			roles: typo.roles.reduce<Record<string, unknown>>(
+				(m, r) => (r.name ? { ...m, [r.name]: { stack: r.stack, fallback: r.fallback, usage: r.usage } } : m),
+				{}
+			),
 			size: typo.scale.reduce<Record<string, unknown>>(
 				(m, t) => (t.name ? { ...m, [t.name]: { px: t.valuePx, lineHeight: t.lineHeight, usage: t.usage } } : m),
 				{}
@@ -157,10 +162,16 @@ export function brandExportMarkdown(brand: ProjectBrand): string {
 	}
 
 	const typo = brand.typography;
-	if (Object.keys(typo.families).length || typo.scale.length || typo.weights.length) {
+	if (Object.keys(typo.families).length || typo.roles.length || typo.scale.length || typo.weights.length) {
 		out.push('\n## Typography\n');
 		Object.entries(typo.families).forEach(([slot, f]) => {
 			if (f.stack || f.fallback) out.push(`- **${slot}.** ${f.stack || ''}${f.fallback ? `, fallback: ${f.fallback}` : ''}`);
+		});
+		typo.roles.forEach((r) => {
+			if (r.name && (r.stack || r.fallback))
+				out.push(
+					`- **${r.name}.** ${r.stack || ''}${r.fallback ? `, fallback: ${r.fallback}` : ''}${r.usage ? ` (${r.usage})` : ''}`
+				);
 		});
 		if (typo.scale.length) {
 			out.push('\n| Size | Px | Line height | Usage |');

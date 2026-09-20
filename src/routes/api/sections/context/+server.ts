@@ -1,3 +1,4 @@
+import { architectureContext } from '$application/architecture-context';
 import { json, error } from '@sveltejs/kit';
 import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
@@ -83,6 +84,11 @@ export const GET: RequestHandler = async (event) => {
 		);
 	}
 
+	const [architecture, documents] = await Promise.all([
+		s.loadArchitectureDraft.execute(projectId), s.loadDocumentRegister.execute(projectId)
+	]);
+	md.push('\n' + architectureContext(architecture, documents));
+	md.push('\n## Validation boundary\nExperience describes prototype interactions, navigation and state. Validate the real implementation separately; this brief is not runtime, visual or load-test evidence.');
 	return json({ projectId, screen: screenId, markdown: md.join('\n') });
 };
 

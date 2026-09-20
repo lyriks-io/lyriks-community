@@ -1,4 +1,5 @@
 import { SYSTEM_CAPABILITIES } from '$domain/users';
+import { isFieldType } from '$domain/data';
 import type { SectionValidationIssue } from './section-authoring-schema';
 
 /**
@@ -98,6 +99,18 @@ export function validateSectionReferences(
 				path: `${check.from}[${index}].${check.field}`,
 				message: `references a ${check.label} that is not in this payload: "${value}". Author the ${check.label} in \`${check.to}[]\` first and reuse its exact id — an unknown reference is dropped on save`
 			});
+		});
+	}
+
+	if (section === 'data') {
+		list(source, 'fields').forEach((item, index) => {
+			if (!item || typeof item !== 'object') return;
+			const field = item as Record<string, unknown>;
+			if (field.type !== undefined && !isFieldType(field.type)) {
+				issues.push({ path: `fields[${index}].type`, message: 'is not a supported field type; read describe_section(data) instead of relying on a fallback to string' });
+			} else if (field.relationTargetEntityId && field.type && field.type !== 'relation') {
+				issues.push({ path: `fields[${index}].type`, message: 'must be "relation" when relationTargetEntityId is set; a scalar field cannot declare an entity relationship' });
+			}
 		});
 	}
 

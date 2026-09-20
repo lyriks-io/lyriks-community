@@ -1,4 +1,4 @@
-import type { ProjectArchitectureDraft } from './draft';
+import { architectureStage, type ProjectArchitectureDraft } from './draft';
 
 /**
  * Minimum bar to unlock Step 09 (Global coherence): at least one tech choice
@@ -10,6 +10,10 @@ export function architectureCanAdvance(draft: ProjectArchitectureDraft): boolean
 }
 
 export function missingArchitectureRequirements(draft: ProjectArchitectureDraft): string[] {
+	if (architectureStage(draft) === 'logical') {
+		return draft.techChoices.some((component) => component.name.trim() && component.role.trim())
+			? [] : ['one named component with its responsibility'];
+	}
 	const missing: string[] = [];
 	if (draft.techChoices.length === 0) {
 		missing.push('one tech choice');

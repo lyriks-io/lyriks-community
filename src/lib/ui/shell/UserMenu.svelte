@@ -1,9 +1,11 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import { invalidateAll } from '$app/navigation';
 	import { Icon } from '$ui/design-system';
 	import type { WorkspaceSummary } from '$application/ports';
 	import { PROJECT_TOOL_CAPABILITIES } from './capabilities';
 	import { memberInitials, memberNameFromEmail } from './member-identity';
+	import { firstStepsUrlFor } from './first-steps';
 
 	// The active user's identity. `memberName` is the one name the app resolves
 	// (workspace member → operator profile → email), so the menu shows exactly
@@ -30,6 +32,12 @@
 
 	const name = $derived(memberName?.trim() || memberNameFromEmail(email));
 	const initials = $derived(memberInitials(name));
+
+	// The first steps live on get.lyriks.io, one entry before Documentation.
+	// This installation's origin travels as a URL fragment (see first-steps.ts),
+	// which only a browser can know; the menu only ever opens on a click, so
+	// the server never renders the link anyway.
+	const firstStepsUrl = $derived(firstStepsUrlFor(browser ? location.origin : null));
 
 	const close = () => (open = false);
 
@@ -176,6 +184,21 @@
 				>
 					<Icon name="users" size={16} class="text-white/40" />
 					Members & invitations
+				</a>
+				<!-- One link out to get.lyriks.io, in a new tab, so the page being
+				     worked on stays put; no referrer, and the origin only in the
+				     fragment, so nothing about this installation reaches the host. -->
+				<a
+					href={firstStepsUrl}
+					target="_blank"
+					rel="noopener noreferrer"
+					role="menuitem"
+					onclick={close}
+					class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-white/75 transition hover:bg-white/6 hover:text-white"
+				>
+					<Icon name="flag" size={16} class="text-white/40" />
+					<span class="flex-1">First steps</span>
+					<Icon name="arrow-up-right" size={13} class="text-white/30" />
 				</a>
 				<a
 					href="/documentation"

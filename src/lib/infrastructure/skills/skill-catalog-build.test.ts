@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import type { SkillClientId } from '$application/ports';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +14,14 @@ import {
 	injectContentHash,
 	parseFrontmatter,
 	pointerMarkers,
-	portableInstallPath
+	portableInstallPath,
+	BINDING_HOOK_PATH,
+	BINDING_MARKERS,
+	BINDING_TOOLS,
+	BINDING_TOOLS_DIR,
+	buildBinding,
+	buildBindingBlock,
+	buildBindingTools
 } from './skill-catalog-build';
 
 const skillFile = (name: string, description: string, body = '# Playbook\nDo the thing.') =>
@@ -105,6 +113,7 @@ describe('buildSkillCatalog', () => {
 		'/.claude/skills/lyriks-behavior/SKILL.md': skillFile('lyriks-behavior', 'Behavior depth.'),
 		'/.claude/skills/lyriks-retrospec/SKILL.md': skillFile('lyriks-retrospec', 'Retro-spec law.'),
 		'/.claude/skills/lyriks-delivery/SKILL.md': skillFile('lyriks-delivery', 'Spec to tickets.'),
+		'/.claude/skills/lyriks-evolution/SKILL.md': skillFile('lyriks-evolution', 'Change requests.'),
 		'/.claude/skills/graphify/SKILL.md': skillFile('graphify', 'Repo-internal, excluded.')
 	};
 
@@ -115,7 +124,8 @@ describe('buildSkillCatalog', () => {
 			'lyriks-design',
 			'lyriks-behavior',
 			'lyriks-retrospec',
-			'lyriks-delivery'
+			'lyriks-delivery',
+			'lyriks-evolution'
 		]);
 	});
 
@@ -168,6 +178,24 @@ describe('diffSkillCatalog', () => {
 	};
 	const catalog = buildSkillCatalog(files);
 	const hashOf = (id: string) => catalog.find((s) => s.id === id)!.contentHash;
+
+	it('selects only requested guides without marking omitted published skills unknown', () => {
+		const result = diffSkillCatalog(catalog, [{ id: 'lyriks-design' }], 'codex', { skillIds: ['lyriks-behavior', 'unknown-guide'] });
+		expect(result.skills.map(s => s.id)).toEqual(['lyriks-behavior']);
+		expect(result.skills[0].installContent).toBe(catalog.find(s => s.id === 'lyriks-behavior')!.installContent);
+		expect(result.unknown).toEqual(['unknown-guide']);
+	});
+
+	it('supports metadata-only reconciliation without implying that missing content was installed', () => {
+		const result = diffSkillCatalog(catalog, [], 'codex', { includeContent: false });
+		expect(result.skills).toHaveLength(3);
+		for (const skill of result.skills) {
+			expect(skill.status).toBe('new');
+			expect(skill.contentDeferred).toBe(true);
+			expect(skill.installContent).toBeUndefined();
+		}
+		expect(diffSkillCatalog(catalog, [], 'codex', { skillIds: [] }).skills).toEqual([]);
+	});
 	const entry = (result: ReturnType<typeof diffSkillCatalog>, id: string) =>
 		result.skills.find((s) => s.id === id)!;
 
@@ -318,5 +346,237 @@ describe('scripts/check-skill-catalog.mjs (the Docker build gate)', () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('buildBinding (the repository stays bound to its Lyriks project)', () => {
+	const script = '// the hook';
+	const targetsOf = (client?: SkillClientId) => buildBinding(script, client).targets;
+	const of = (client: SkillClientId) => targetsOf().find((target) => target.client === client)!;
+
+	it('fences the block with the binding markers and names the project when told', () => {
+		const block = buildBindingBlock('vector-rally');
+		expect(block.startsWith(BINDING_MARKERS.open)).toBe(true);
+		expect(block.endsWith(BINDING_MARKERS.close)).toBe(true);
+		expect(block).toContain('the Lyriks project `vector-rally`');
+		expect(block).toContain('spec change FIRST');
+		expect(block).toContain('spec READ first');
+		expect(buildBindingBlock()).toContain('its Lyriks project');
+		expect(buildBindingBlock()).not.toContain('vector-rally');
+	});
+
+	it('separates a change to make (spec, code, index) from a change to qualify (Evolution)', () => {
+		// The MCP server instructions, this block and the per-prompt hook are loaded
+		// together by one client: they must state ONE rule, or the agent picks
+		// whichever text it read last (the field report: a direct change request
+		// sent to the Evolution flow, which plans without building).
+		const block = buildBindingBlock();
+		const make = block.split('\n').find((line) => line.includes('to MAKE a change'))!;
+		expect(make).toContain('spec change FIRST');
+		expect(make).toContain('in the same turn');
+		expect(make).not.toContain('Evolution');
+		const qualify = block.split('\n').find((line) => line.includes('to QUALIFY'))!;
+		for (const cue of ['what it would involve', 'an estimate', 'an impact report', 'a dossier to prepare', 'belongs to someone else']) {
+			expect(qualify).toContain(cue);
+		}
+		expect(qualify).toContain('`apply_evolution_batch`');
+		expect(qualify).toContain('never writes the sections');
+		// An ambiguous request is asked about, never settled silently.
+		expect(qualify).toContain('"we should add X"');
+		expect(qualify).toContain('ask which in one sentence');
+	});
+
+	it('sends every runtime to the instruction file it always loads, with one shared block', () => {
+		expect(of('claude').pointerPath).toBe('CLAUDE.md');
+		expect(of('codex').pointerPath).toBe('AGENTS.md');
+		expect(of('gemini').pointerPath).toBe('GEMINI.md');
+		expect(of('copilot').pointerPath).toBe('.github/copilot-instructions.md');
+		expect(of('generic').pointerPath).toBe('AGENTS.md');
+		expect(new Set(targetsOf().map((target) => target.pointerBlock)).size).toBe(1);
+	});
+
+	it('gives Claude Code, and only it, the per-prompt hook wired in the project settings', () => {
+		const hook = of('claude').hook!;
+		expect(hook.path).toBe(BINDING_HOOK_PATH);
+		expect(hook.content).toBe(script);
+		expect(hook.settingsPath).toBe('.claude/settings.json');
+		expect(hook.settingsEvent).toBe('UserPromptSubmit');
+		expect(hook.settingsEntry.command).toContain(BINDING_HOOK_PATH);
+		const settings = JSON.parse(hook.settingsContent);
+		expect(settings.hooks.UserPromptSubmit[0].hooks[0]).toEqual(hook.settingsEntry);
+		for (const client of ['codex', 'gemini', 'copilot', 'generic'] as const) {
+			expect(of(client).hook).toBeUndefined();
+		}
+	});
+
+	it('narrows to the calling runtime, and falls back to every target for an unknown one', () => {
+		expect(targetsOf('codex').map((target) => target.client)).toEqual(['codex']);
+		expect(targetsOf('martian' as SkillClientId)).toHaveLength(5);
+		expect(buildBinding(script, undefined, ' vector-rally ').projectId).toBe('vector-rally');
+		expect(buildBinding(script).projectId).toBeNull();
+	});
+});
+
+describe('the helper scripts ship with the binding, for every runtime', () => {
+	const toolsDir = fileURLToPath(new URL('./tools/', import.meta.url));
+	// What the adapter's glob hands over: `./tools/<file>` to the raw script.
+	const bundled = Object.fromEntries(
+		readdirSync(toolsDir)
+			.filter((file) => file.endsWith('.mjs'))
+			.map((file) => [`./tools/${file}`, readFileSync(join(toolsDir, file), 'utf8')])
+	);
+
+	it('installs each script verbatim under .lyriks/tools/, with its hash and what it is for', () => {
+		const tools = buildBindingTools(bundled);
+		expect(tools.map((tool) => tool.path)).toEqual(BINDING_TOOLS.map(({ file }) => `${BINDING_TOOLS_DIR}/${file}`));
+		expect(BINDING_TOOLS_DIR).toBe('.lyriks/tools');
+		for (const tool of tools) {
+			const file = tool.path.slice(BINDING_TOOLS_DIR.length + 1);
+			expect(tool.content).toBe(bundled[`./tools/${file}`]);
+			expect(tool.contentHash).toBe(fnv1aHash(tool.content));
+			expect(tool.purpose.length).toBeGreaterThan(20);
+		}
+	});
+
+	it('lists every script of the folder, since they import each other side by side', () => {
+		// A script added to the folder and not to BINDING_TOOLS would never reach a
+		// customer; one imported by another and not listed would break it there.
+		expect(Object.keys(bundled).map((path) => path.slice('./tools/'.length)).sort()).toEqual(
+			BINDING_TOOLS.map(({ file }) => file).sort()
+		);
+		for (const [path, content] of Object.entries(bundled)) {
+			for (const imported of content.matchAll(/from '\.\/([^']+)'/g)) {
+				expect(Object.keys(bundled), `${path} imports ${imported[1]}`).toContain(`./tools/${imported[1]}`);
+			}
+			// Dependency free: only Node built-ins and the sibling scripts.
+			for (const imported of content.matchAll(/from '([^'.][^']*)'/g)) {
+				expect(imported[1], `${path} imports ${imported[1]}`).toMatch(/^node:/);
+			}
+			expect(content.split('\n').length, `${path} stays a small script`).toBeLessThanOrEqual(200);
+		}
+	});
+
+	it('ships the script that brings test results back into the index, right after the checker', () => {
+		const tools = buildBindingTools(bundled);
+		const ingest = tools.find((tool) => tool.path === `${BINDING_TOOLS_DIR}/ingest-results.mjs`);
+		expect(ingest, 'ingest-results.mjs is installed').toBeDefined();
+		// An agent picks a script from its purpose alone: the command line, the token
+		// it looks for, and that a located entry is not a proven one.
+		expect(ingest!.purpose).toContain('node .lyriks/tools/ingest-results.mjs <report.json> [--dry-run] [--json]');
+		expect(ingest!.purpose).toContain('[unspa:<surfaceId>:<actionId>:<scenarioId>]');
+		expect(ingest!.purpose).toContain('verifiedAt');
+		expect(ingest!.purpose).toContain('Located and proven are two claims');
+		// Check, prove, then send: the proof must be in the file before sync-index carries it.
+		const order = tools.map((tool) => tool.path.slice(BINDING_TOOLS_DIR.length + 1));
+		expect(order.indexOf('check-index.mjs')).toBeLessThan(order.indexOf('ingest-results.mjs'));
+		expect(order.indexOf('ingest-results.mjs')).toBeLessThan(order.indexOf('sync-index.mjs'));
+		// It writes the index, so it must be the offline kind: no MCP client import.
+		expect(ingest!.content).not.toContain('mcp-client.mjs');
+		expect(ingest!.content).toContain("from './index-file.mjs'");
+	});
+
+	it('hands the same scripts to every runtime, narrowed or not, and none when the bundle has none', () => {
+		const all = buildBinding('// the hook', undefined, null, bundled);
+		expect(all.tools).toHaveLength(BINDING_TOOLS.length);
+		for (const client of ['claude', 'codex', 'gemini', 'copilot', 'generic'] as const) {
+			expect(buildBinding('// the hook', client, null, bundled).tools).toEqual(all.tools);
+		}
+		expect(buildBinding('// the hook').tools).toEqual([]);
+	});
+
+	it('leaves out a script missing from the bundle instead of throwing inside an appliance', () => {
+		const { './tools/apply-batch.mjs': _dropped, ...partial } = bundled;
+		const tools = buildBindingTools(partial);
+		expect(tools.map((tool) => tool.path)).not.toContain(`${BINDING_TOOLS_DIR}/apply-batch.mjs`);
+		expect(tools).toHaveLength(BINDING_TOOLS.length - 1);
+	});
+
+	it('is named by the binding block in one sentence', () => {
+		const line = buildBindingBlock().split('\n').find((candidate) => candidate.includes(BINDING_TOOLS_DIR))!;
+		expect(line).toContain('`check-index.mjs --fix`');
+		expect(line).toContain('`sync-index.mjs`');
+		expect(line).toContain('`apply-batch.mjs`');
+		expect(line.match(/\. /g) ?? []).toHaveLength(0);
+	});
+});
+
+describe('the bundled binding hook (Claude Code, UserPromptSubmit)', () => {
+	const hook = fileURLToPath(new URL('./lyriks-bound-prompt.hook.mjs', import.meta.url));
+	const run = (input: string) =>
+		JSON.parse(execFileSync('node', [hook], { input, encoding: 'utf8' })) as {
+			hookSpecificOutput: { hookEventName: string; additionalContext: string };
+		};
+
+	it('restates the binding on every prompt and names the last project a Lyriks tool was given', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'lyriks-hook-'));
+		const transcript = join(dir, 'session.jsonl');
+		writeFileSync(
+			transcript,
+			[
+				JSON.stringify({
+					type: 'assistant',
+					message: {
+						content: [{ type: 'tool_use', name: 'mcp__lyriks__list_wizard_projects', input: {} }]
+					}
+				}),
+				JSON.stringify({
+					type: 'assistant',
+					message: {
+						content: [
+							{
+								type: 'tool_use',
+								name: 'mcp__lyriks__get_section',
+								input: { project_id: 'vector-rally', section: 'features' }
+							}
+						]
+					}
+				}),
+				'not json at all'
+			].join('\n')
+		);
+		const out = run(JSON.stringify({ cwd: dir, prompt: 'add a nitro boost', transcript_path: transcript }));
+		expect(out.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
+		expect(out.hookSpecificOutput.additionalContext).toContain('(project vector-rally)');
+		expect(out.hookSpecificOutput.additionalContext).toContain('spec first');
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it('states the same make versus qualify rule as the binding block', () => {
+		const context = run(JSON.stringify({ cwd: tmpdir(), prompt: 'we should add a nitro boost' }))
+			.hookSpecificOutput.additionalContext;
+		expect(context).toContain('to MAKE a change to what the product does: spec first');
+		expect(context).toContain('in this same turn');
+		expect(context).toMatch(/QUALIFY a change \(what it would involve, an estimate, an impact report, a dossier to prepare, a decision that belongs to someone else\): Evolution/);
+		expect(context).toContain('never writes the sections');
+		expect(context).toContain('ask which in one sentence');
+		// The cues are the same words in both texts, so neither can drift alone.
+		const block = buildBindingBlock();
+		for (const cue of ['what it would involve', 'an estimate', 'an impact report', 'a dossier to prepare', 'a decision that belongs to someone else', '"we should add X"']) {
+			expect(context).toContain(cue);
+			expect(block).toContain(cue);
+		}
+	});
+
+	it('stays silent on a harness event, which is not a request about the product', () => {
+		const raw = (prompt: string) =>
+			execFileSync('node', [hook], { input: JSON.stringify({ cwd: tmpdir(), prompt }), encoding: 'utf8' });
+		expect(raw('<task-notification>\n<task-id>abc</task-id>')).toBe('');
+		expect(raw('  <system-reminder>\nnot user input')).toBe('');
+		expect(raw('[SYSTEM NOTIFICATION - NOT USER INPUT]')).toBe('');
+		// A person quoting one of those words mid-sentence is still a person asking.
+		expect(raw('why did I get a <task-notification> about the sync?')).toContain('spec first');
+	});
+
+	it('falls back to the project named by the binding block in CLAUDE.md', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'lyriks-hook-'));
+		writeFileSync(join(dir, 'CLAUDE.md'), `# mine\n\n${buildBindingBlock('causette')}\n`);
+		const out = run(JSON.stringify({ cwd: dir, prompt: 'hi' }));
+		expect(out.hookSpecificOutput.additionalContext).toContain('(project causette)');
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it('still answers, without a project, on garbage input', () => {
+		const out = run('not json');
+		expect(out.hookSpecificOutput.additionalContext).toMatch(/^Lyriks-bound repository: /);
 	});
 });

@@ -120,3 +120,16 @@ describe('graphOverview', () => {
 		expect(overview.topNodes.map((n) => n.id)).not.toContain('screen:s');
 	});
 });
+
+describe('scopeGraph direction', () => {
+	it('walks only into the focus when direction is in, and only out of it when out', () => {
+		const inward = scopeGraph(fixture(), { focus: 'feature:a', direction: 'in' });
+		expect(inward.nodes.map((n) => n.id).sort()).toEqual(['feature:a', 'project:p']);
+
+		const outward = scopeGraph(fixture(), { focus: 'feature:a', direction: 'out' });
+		expect(outward.nodes.map((n) => n.id).sort()).toEqual(['entity:e', 'feature:a']);
+
+		const both = scopeGraph(fixture(), { focus: 'feature:a' });
+		expect(both.nodes.map((n) => n.id).sort()).toEqual(['entity:e', 'feature:a', 'project:p']);
+	});
+});

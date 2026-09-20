@@ -70,7 +70,13 @@ export function buildTraceability(
 		const beh = behaviorById.get(leaf.id);
 		const surfaceCount = beh?.surfaceCount ?? 0;
 		const actionCount = beh?.actionCount ?? 0;
-		const acceptanceCount = (meta.acceptanceCriteria ?? []).filter((c) => c.text.trim()).length;
+		// One list: the model's, which holds both the criteria projected from the
+		// Features panel and the ones an AI client wrote through the MCP. Before the
+		// section has ever been saved there is no kernel snapshot, so the panel's own
+		// rows still answer, and a brand new draft reads right instead of reading zero.
+		const acceptanceCount =
+			beh?.acceptanceCriteria.length ??
+			(meta.acceptanceCriteria ?? []).filter((c) => c.text.trim()).length;
 		const dependencyCount = (meta.dependsOn ?? []).length;
 		const linkedSourceIds = [...new Set(meta.sourceIds ?? [])];
 		const validSourceCount = linkedSourceIds.filter((id) => sourceIds.has(id)).length;

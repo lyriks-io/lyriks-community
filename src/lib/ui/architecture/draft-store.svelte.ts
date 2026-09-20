@@ -1,5 +1,6 @@
 import {
 	architectureCanAdvance,
+	architectureStage,
 	computeArchitectureCoherence,
 	createConstraint,
 	createTechChoice,
@@ -75,6 +76,11 @@ export class ArchitectureStore {
 	#touch = (_path: string) => this.#autosave.touch();
 
 	flushNow = () => this.#autosave.flushNow();
+
+	setStage = (stage: 'logical' | 'implementation') => {
+		this.draft.stage = stage;
+		this.#touch('architecture.stage');
+	};
 
 	/* ─────────────────────────────── TECH ──────────────────────────────── */
 	addTech = (layer: ArchLayer, overrides: Partial<TechChoice> = {}): string => {
@@ -157,7 +163,7 @@ export class ArchitectureStore {
 	 * (deriveStack autosaves), and a no-op the moment the board holds any card.
 	 */
 	autoDeriveIfEmpty = () => {
-		if (!this.session.isAuthenticated) return;
+		if (!this.session.isAuthenticated || architectureStage(this.draft) === 'logical') return;
 		if (this.draft.techChoices.length > 0) return;
 		if (this.missingTech.length === 0) return;
 		this.deriveStack();

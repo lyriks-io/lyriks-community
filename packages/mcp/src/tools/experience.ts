@@ -30,13 +30,14 @@ export async function verifyExperienceHandler(
 }
 
 export async function importDataCollectionsHandler(
-  args: { project_id: string; entity_names?: string[]; refresh?: boolean },
+  args: { project_id: string; entity_names?: string[]; refresh?: boolean; seed_count?: number },
   lyriks: LyriksClient,
 ): Promise<unknown> {
   return lyriks.post('/api/draft/experience/import-collections', {
     projectId: args.project_id,
     entityNames: Array.isArray(args.entity_names) ? args.entity_names : undefined,
     refresh: args.refresh === true ? true : undefined,
+    ...(args.seed_count !== undefined ? { seedCount: args.seed_count } : {}),
   })
 }
 

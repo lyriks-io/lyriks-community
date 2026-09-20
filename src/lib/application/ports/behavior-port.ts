@@ -111,14 +111,21 @@ export type BehaviorOp =
 			personas: Record<string, unknown>[];
 			events: Record<string, unknown>[];
 	  }
-	/** Mirror the Lyriks-owned acceptance criteria (Step-06 edge cases → prose
-	 *  Given/When/Then) onto a feature. Patches an EXISTING feature only — never
-	 *  creates — merging `acceptanceCriteria` by id: the Lyriks-owned `ac-edge-*`
-	 *  rows are replaced, any others (authored in the unspa dashboard) are kept.
-	 *  No-op if the feature is absent. Needs unspaghettit ≥ 0.9.0 (the feature-level
-	 *  `acceptanceCriteria` field); on older stores it just writes an ignored key. */
+	/** Mirror the Lyriks-owned acceptance criteria onto a feature, as prose
+	 *  Given/When/Then: the Rules step's edge cases (`ac-edge-*`) and a Features
+	 *  leaf's own criteria (`ac-leaf-*`). Patches an EXISTING feature only, never
+	 *  creates, merging `acceptanceCriteria` by id: the rows carrying `ownedPrefix`
+	 *  are replaced wholesale, and every other row is kept untouched, including the
+	 *  ones authored in the unspa dashboard or through the MCP, which carry status,
+	 *  relations and evidence this projection knows nothing about.
+	 *  No-op if the feature is absent. Needs unspaghettit 0.9.0 or later (the
+	 *  feature-level `acceptanceCriteria` field); older stores ignore the key. */
 	| {
 			kind: 'mirrorFeatureAcceptance';
 			featureId: string;
 			acceptanceCriteria: Record<string, unknown>[];
+			/** The Lyriks id prefix this projection OWNS and therefore replaces. Scoping
+			 *  the replacement to one prefix is what lets two projections write criteria
+			 *  onto the same feature without either erasing the other's rows. */
+			ownedPrefix: string;
 	  };

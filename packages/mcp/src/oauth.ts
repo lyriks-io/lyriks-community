@@ -4,7 +4,7 @@ import type { Context } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { HonoVariables } from './types.js'
-import { SESSION_UNAVAILABLE, verifyPlatformSession } from './session.js'
+import { SESSION_UNAVAILABLE, extendPlatformSession, verifyPlatformSession } from './session.js'
 import {
   issueAccessToken, revokeAccessToken, ACCESS_TOKEN_TTL_SECONDS,
   issueRefreshToken, readRefreshToken, redeemRefreshToken, revokeRefreshToken,
@@ -255,10 +255,17 @@ export function registerOAuthRoutes(app: Hono<{ Variables: HonoVariables }>): vo
     return c.redirect(callback(entry.redirectUri, entry.state, { code }), 303)
   })
 
-  const grantResponse = (c: Context, grant: { session: string; subject: string; clientId: string }) => {
-    const token = issueAccessToken(grant.session, grant.subject, grant.clientId)
+  // The platform has just confirmed this session, so the tokens carry a copy
+  // re-signed to expire thirty days from now, claims untouched: the sign-in
+  // lives while it is used at least once every thirty days, instead of ending
+  // with the browser session it was approved under. A sign-out, a removed
+  // account or a withdrawn MCP role still cuts it on the next call, because
+  // every call and every refresh re-verifies the session with the platform.
+  const grantResponse = async (c: Context, grant: { session: string; subject: string; clientId: string }) => {
+    const session = await extendPlatformSession(grant.session)
+    const token = issueAccessToken(session, grant.subject, grant.clientId)
     if (!token) return c.json({ error: 'temporarily_unavailable' }, 429, cors)
-    const refresh = issueRefreshToken(grant.session, grant.subject, grant.clientId)
+    const refresh = issueRefreshToken(session, grant.subject, grant.clientId)
     return c.json({ access_token: token, token_type: 'Bearer', expires_in: ACCESS_TOKEN_TTL_SECONDS, refresh_token: refresh, scope: 'mcp' }, 200, cors)
   }
   app.post('/mcp/oauth/token', async c => {

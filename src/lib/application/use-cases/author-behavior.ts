@@ -1,6 +1,7 @@
 import type { BehaviorBatchResult, UnspaghettitAdvisorPort } from '$application/ports';
 import type { DeleteBehaviorStateUseCase } from './delete-behavior-state';
 import { expressionKindErrors } from '$application/validate-behavior-expressions';
+import { liftBehaviorBatchAnswer } from '$application/lift-behavior-batch-answer';
 
 /** Op kinds that add an invariant; the engine requires a `condition` predicate. */
 const INVARIANT_OP_KINDS = new Set([
@@ -182,6 +183,14 @@ export interface AuthorBehaviorInput {
 	 * `batch.raw.maturity`) instead of aggregate counts only. Ignored on commit.
 	 */
 	readonly verbose?: boolean;
+	/**
+	 * The feature version (`updatedAt`) the ops were written against. When two
+	 * authors edit one feature at once, the later batch otherwise overwrites the
+	 * earlier one in silence; with this, a newer engine writes nothing and answers
+	 * `conflict` instead. Optional on purpose: a caller that names no version
+	 * keeps today's last-write-wins, and so does every engine older than the field.
+	 */
+	readonly expectedUpdatedAt?: string;
 }
 
 /** A batch refused by this facade, shaped exactly like an engine rejection. */
@@ -267,10 +276,17 @@ export class AuthorBehaviorUseCase {
 		const batch = await this.advisor.applyBehaviorBatch(input.featureId, input.operations, {
 			dryRun: input.dryRun === true,
 			commit: input.commit,
-			verbose: input.verbose === true
+			verbose: input.verbose === true,
+			// Named only when given, so an engine that predates it never sees the key.
+			...(input.expectedUpdatedAt ? { expectedUpdatedAt: input.expectedUpdatedAt } : {})
 		});
 		// A commit replays ops already warned about on its dry run.
 		const warnings = input.commit ? [] : handlerParameterWarnings(input.operations);
-		return { available: batch !== null, batch, warnings };
+		return {
+			available: batch !== null,
+			// The one place the engine's newer answer fields leave `raw` (see the mapper).
+			batch: batch ? liftBehaviorBatchAnswer(batch) : null,
+			warnings
+		};
 	}
 }

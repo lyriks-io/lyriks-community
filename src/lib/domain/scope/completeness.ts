@@ -255,8 +255,8 @@ export function assessProjectCompletion(
 	for (const assessment of draft.sectionAssessments) {
 		const path = `sectionAssessments.${assessment.section}`;
 		const sectionLabel = scopeSectionLabel(assessment.section);
-		// A `derived` section is computed server-side or owned by the workspace
-		// operator (Project health, Baselines, Supervision, AI Cost Governor). It
+		// A `derived` section is computed or captured server-side (Project health,
+		// Baselines). It
 		// carries no product decision to sign off, so demanding a verdict on it only
 		// pushed the author — and any agent — to assert something it cannot know.
 		if (assessment.applicability === 'derived') continue;

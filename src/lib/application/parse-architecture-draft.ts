@@ -22,6 +22,8 @@ export function parseArchitectureDraft(
 	return withStableArchitectureIds({
 		...base,
 		projectId,
+		stage: src.stage === 'logical' || src.stage === 'implementation'
+			? src.stage : arr('techChoices').length ? 'implementation' : 'logical',
 		techChoices: arr('techChoices'),
 		sourceIds: arr<unknown>('sourceIds').filter(
 			(id): id is string => typeof id === 'string' && id.length > 0

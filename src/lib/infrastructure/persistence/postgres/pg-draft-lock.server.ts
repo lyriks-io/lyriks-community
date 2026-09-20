@@ -15,6 +15,14 @@ export class PgDraftLock implements DraftLockPort {
 		return rows[0]?.revision ?? 0;
 	}
 
+	async currentRevisions(projectId: string): Promise<ReadonlyMap<string, number>> {
+		const { rows } = await pgQuery<{ section: string; revision: number }>(
+			'SELECT section, revision FROM draft_revisions WHERE project_id = $1',
+			[projectId]
+		);
+		return new Map(rows.map((row) => [row.section, row.revision]));
+	}
+
 	async rollback(projectId: string, section: string, committed: number): Promise<void> {
 		// Compare-and-set back: only undoes OUR bump. If a concurrent writer moved
 		// the revision past `committed`, the WHERE clause misses and nothing changes.

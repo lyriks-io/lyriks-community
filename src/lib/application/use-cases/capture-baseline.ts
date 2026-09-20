@@ -8,6 +8,7 @@ import {
 import { composeArtifacts } from '../compose-specs';
 import type {
 	ClockPort,
+	FeatureAcceptanceReaderPort,
 	GlobalCoherenceCheckerPort,
 	SectionDraftRepositoryPort,
 	SectionDraftSaveOptions
@@ -42,7 +43,9 @@ export class CaptureBaselineUseCase {
 		private readonly loadRules: LoadRulesDraftUseCase,
 		private readonly loadData: LoadDataDraftUseCase,
 		private readonly loadArchitecture: LoadArchitectureDraftUseCase,
-		private readonly loadDocuments: LoadResidueDraftUseCase<ProjectDocumentsDraft>
+		private readonly loadDocuments: LoadResidueDraftUseCase<ProjectDocumentsDraft>,
+		/** The model's criteria, so the document prints the list the product counts. */
+		private readonly acceptance: FeatureAcceptanceReaderPort
 	) {}
 
 	async execute(
@@ -66,8 +69,12 @@ export class CaptureBaselineUseCase {
 			]);
 
 		const now = this.clock.nowIso();
+		const acceptanceCriteriaByFeature = await this.acceptance.byFeature(projectId);
 		const artifacts = composeArtifacts(
-			{ identity, definition, users, features, experience, rules, data, architecture, documents },
+			{
+				identity, definition, users, features, experience, rules, data, architecture, documents,
+				acceptanceCriteriaByFeature
+			},
 			analysis,
 			now
 		);

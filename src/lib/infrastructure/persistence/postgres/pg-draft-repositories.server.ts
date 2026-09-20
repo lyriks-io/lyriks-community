@@ -6,8 +6,6 @@ import { createEmptyFeaturesDraft, isCoreTone, type ProjectFeaturesDraft } from 
 import { createEmptyExperienceDraft, type ProjectExperienceDraft } from '$domain/experience';
 import { createEmptyRulesDraft, type ProjectRulesDraft } from '$domain/rules';
 import { createEmptyGlossaryDraft, type ProjectGlossaryDraft } from '$domain/glossary';
-import { createEmptySupervisionDraft, type ProjectSupervisionDraft } from '$domain/supervision';
-import { createEmptyFinopsDraft, type ProjectFinopsDraft } from '$domain/finops';
 import { createEmptyOperationsDraft, type FoundationOperationsDraft } from '$domain/foundation';
 import { createEmptyDataDraft, type ProjectDataDraft } from '$domain/data';
 import { createEmptyArchitectureDraft, type ProjectArchitectureDraft } from '$domain/architecture';
@@ -21,11 +19,9 @@ import type {
 	FeaturesDraftRepositoryPort,
 	FoundationOperationsRepositoryPort,
 	FoundationDefinitionRepositoryPort,
-	FinopsDraftRepositoryPort,
 	GlossaryDraftRepositoryPort,
 	RulesDraftRepositoryPort,
 	SectionDocumentStorePort,
-	SupervisionDraftRepositoryPort,
 	UsersDraftRepositoryPort
 } from '$application/ports';
 import { PgDocumentRepository } from './pg-document-repository.server';
@@ -47,8 +43,6 @@ export interface PgDraftRepositories {
 	readonly experience: ExperienceDraftRepositoryPort;
 	readonly rules: RulesDraftRepositoryPort;
 	readonly glossary: GlossaryDraftRepositoryPort;
-	readonly supervision: SupervisionDraftRepositoryPort;
-	readonly finops: FinopsDraftRepositoryPort;
 	readonly foundationOperations: FoundationOperationsRepositoryPort;
 	readonly data: DataDraftRepositoryPort;
 	readonly architecture: ArchitectureDraftRepositoryPort;
@@ -103,16 +97,6 @@ export function buildPgDraftRepositories(store: SectionDocumentStorePort): PgDra
 			store,
 			'glossary',
 			(stored, id) => ({ ...createEmptyGlossaryDraft(id), ...(stored as object), projectId: id })
-		),
-		supervision: new SectionDocumentDraftRepository<ProjectSupervisionDraft>(
-			store,
-			'supervision',
-			(stored, id) => ({ ...createEmptySupervisionDraft(id), ...(stored as object), projectId: id })
-		),
-		finops: new SectionDocumentDraftRepository<ProjectFinopsDraft>(
-			store,
-			'finops',
-			(stored, id) => ({ ...createEmptyFinopsDraft(id), ...(stored as object), projectId: id })
 		),
 		foundationOperations: new SectionDocumentDraftRepository<FoundationOperationsDraft>(
 			store,

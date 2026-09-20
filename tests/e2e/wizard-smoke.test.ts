@@ -32,8 +32,8 @@ const CAPABILITIES = [
 ] as const;
 
 /**
- * Capabilities withdrawn from the product: registered and still authorable over
- * `/api/draft/*`, but with no page a user can reach. Asserted as 404 so a
+ * Modules retired from the product, including their draft and gateway APIs.
+ * Their pages and mutation endpoints return 404, so a
  * re-exposed route fails the smoke run instead of quietly coming back.
  */
 const WITHDRAWN_CAPABILITIES = ['supervision', 'finops'] as const;
@@ -59,10 +59,21 @@ describe.skipIf(!BASE)('Lyriks project smoke', () => {
 			const res = await fetch(url(`/projects/${PROJECT}/${capability}`), { redirect: 'manual' });
 			expect(res.status, `page ${capability}`).toBe(404);
 		}
-		// The section stays in the wire vocabulary: it is still readable and writable
-		// over the MCP surface, only its page is gone.
-		const read = await fetch(url(`/api/sections?projectId=${PROJECT}&section=supervision`));
-		expect(read.status, 'supervision section read').toBe(200);
+		for (const capability of WITHDRAWN_CAPABILITIES) {
+			const read = await fetch(url(`/api/sections?projectId=${PROJECT}&section=${capability}`));
+			expect(read.status, `${capability} section read`).toBe(400);
+			const describe = await fetch(url(`/api/sections/describe?section=${capability}`));
+			expect(describe.status, `${capability} schema`).toBe(400);
+			const write = await save(PROJECT, `/api/draft/${capability}`, {});
+			expect(write.status, `${capability} draft write`).toBe(404);
+			for (const operation of ['push', 'pull']) {
+				const gateway = await fetch(url(`/api/${capability}/gateway/${operation}`), {
+					method: 'POST', headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ projectId: PROJECT })
+				});
+				expect(gateway.status, `${capability} gateway ${operation}`).toBe(404);
+			}
+		}
 	});
 
 	it.skipIf(!MUTATION_PROJECT)('draft endpoints save a disposable project', async () => {
@@ -84,7 +95,7 @@ describe.skipIf(!BASE)('Lyriks project smoke', () => {
 	});
 
 	it('rejects a draft save with no projectId (400)', async () => {
-		const res = await fetch(url('/api/draft'), {
+		const res = await fetch(url('/api/draft/foundation'), {
 			method: 'PUT',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ productName: 'no project' })
@@ -96,7 +107,7 @@ describe.skipIf(!BASE)('Lyriks project smoke', () => {
 // Optional: prove the v3 → Lyriks-back mirror landed (envelope keys present).
 describe.skipIf(!BASE || !BACK || !BACK_PROJECT || !MUTATION_PROJECT)('platform → Lyriks Back mirror', () => {
 	it('mirrors the wizard envelope onto the back project', async () => {
-		await save(MUTATION_PROJECT!, '/api/draft', { productName: 'E2E Smoke' });
+		await save(MUTATION_PROJECT!, '/api/draft/foundation', { productName: 'E2E Smoke' });
 
 		const login = await fetch(`${BACK}/v1/auth/login`, {
 			method: 'POST',

@@ -68,6 +68,29 @@ function makeRepo(legacy: ProjectFeaturesDraft | null = null) {
 }
 
 describe('KernelFeaturesDraftRepository (Phase 1 Features flip)', () => {
+	it('does not restamp unchanged behavior when planning metadata is saved', async () => {
+		let now = '2026-01-01T00:00:00.000Z';
+		const mem = new MemRepo();
+		const port = new LocalBehaviorPort(mem, { nowIso: () => now });
+		const repo = new KernelFeaturesDraftRepository(port, new MemResidue(), legacyOf(null));
+		await repo.save(sampleDraft('p1'));
+		const feature = mem.features.get('p1/f1')!.feature as Record<string, unknown>;
+		feature.elementVersions = { 'action:unchanged': { version: 'original' } };
+		const before = structuredClone([...mem.features.entries()]);
+		const draft = (await repo.load('p1'))!;
+		draft.leafMeta ??= {};
+		draft.leafMeta.f1 = { ...draft.leafMeta.f1, status: 'in-progress', sourceIds: ['source-new'] };
+		draft.lastSavedAt = now = '2026-01-02T00:00:00.000Z';
+		await repo.save(draft);
+		expect([...mem.features.entries()]).toEqual(before);
+		expect((await repo.load('p1'))!.leafMeta?.f1.sourceIds).toEqual(['source-new']);
+
+		draft.features[0].name = 'Updated invoice';
+		await repo.save(draft);
+		expect((mem.features.get('p1/f1')!.feature as Record<string, unknown>).updatedAt).toBe(now);
+		expect((mem.features.get('p1/f2')!.feature as Record<string, unknown>).updatedAt).toBe('2026-01-01T00:00:00.000Z');
+	});
+
 	it('round-trips a draft through the kernel + residue', async () => {
 		const { repo } = makeRepo();
 		await repo.save(sampleDraft('p1'));

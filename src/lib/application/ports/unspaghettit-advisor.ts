@@ -49,6 +49,53 @@ export interface ImplementationCoverage {
 	readonly missing: number;
 	/** implemented / total, 0–100. */
 	readonly percentage: number;
+	/**
+	 * Actions PROVEN against the code (a passing test run stamped them), out of the
+	 * feature's actions. A different claim from `implemented`, which only says the
+	 * code was located, so it is counted apart and never mixed into `percentage`.
+	 * Absent on an engine that does not report it: unknown, not zero.
+	 */
+	readonly proven?: { readonly actions: number; readonly total: number };
+	/** What verifies each acceptance criterion. Absent on an engine that does not report it. */
+	readonly criteria?: readonly CriterionEvidenceSummary[];
+}
+
+/**
+ * How one acceptance criterion stands against what is recorded to verify it:
+ * `verified` (its last recorded result passed), `failing` (it failed),
+ * `unverified` (something is recorded to verify it and was never run) or `none`
+ * (nothing is recorded to verify it).
+ */
+export type CriterionEvidenceState = 'verified' | 'failing' | 'unverified' | 'none';
+
+/**
+ * What verifies one acceptance criterion and how that last went, as a newer
+ * engine reads it from the repository's index (`criterion:<id>` entries).
+ * Evidence for a reader, kept apart on purpose: it is never folded into
+ * `percentage`, a readiness gate or a TRL, because a criterion is prose and the
+ * result is whatever the repository last recorded, not something run here.
+ */
+export interface CriterionEvidenceSummary {
+	readonly id: string;
+	readonly title: string;
+	/** The engine's one-line standing: `active`, `draft`, `superseded by <ids>`, and so on. */
+	readonly standing: string;
+	readonly state: CriterionEvidenceState;
+	/** True when the criterion changed after its verification was last synced. */
+	readonly stale: boolean;
+	readonly verification?: {
+		/** unit | integration | e2e | visual | measurement | manual, as the engine names it. */
+		readonly kind: string;
+		readonly command?: string;
+		/** At most the first five: enough to find the test, never the whole list. */
+		readonly files?: readonly string[];
+		readonly artifacts?: readonly string[];
+		readonly lastResult?: {
+			readonly passed: boolean;
+			readonly at: string;
+			readonly summary?: string;
+		};
+	};
 }
 
 /**
@@ -146,6 +193,19 @@ export interface NamedSurface {
 }
 
 /**
+ * An action the search never saw firing because a bound cut it short. It says
+ * nothing about the action: the state that enables it may lie past the cut. A
+ * dead action is a finding; this is only what the search did not get to.
+ */
+export interface UnreachedAction {
+	readonly surfaceId: string;
+	readonly actionId: string;
+	readonly actionName: string;
+	/** Which bound cut the search, in the engine's words. */
+	readonly reason: string;
+}
+
+/**
  * Bounded exhaustive verification of the reachable state space, paired with the
  * static navigation-graph analysis. Findings are "within bounds" when
  * `truncated` is true.
@@ -156,6 +216,13 @@ export interface ModelCheckReport {
 	readonly invariantViolations: readonly InvariantCounterexample[];
 	/** Action names never observed firing within the bound (dead branches). */
 	readonly deadActions: readonly string[];
+	/**
+	 * Actions a truncated search did not reach. Only an engine that tells the two
+	 * apart reports it (and then fills `deadActions` on a complete search alone);
+	 * absent on an older engine, whose `deadActions` must be read next to
+	 * `truncated`. Never merged into `deadActions`, never a failure.
+	 */
+	readonly unreachedActions?: readonly UnreachedAction[];
 	/** Reachable states from which no action can fire (potential soft-locks). */
 	readonly deadlockStates: number;
 	/** Screens a user can never navigate to (static nav-graph analysis). */
@@ -169,7 +236,12 @@ export interface ModelCheckReport {
 /** A prioritized spec-completeness gap grounded in an existing entity. */
 export interface SpecGap {
 	readonly severity: 'critical' | 'recommended';
-	readonly entityType: 'feature' | 'surface' | 'action';
+	/**
+	 * `criterion` comes from engines that give acceptance criteria a standing: a
+	 * criterion still active while another one supersedes it. Older engines never
+	 * send it.
+	 */
+	readonly entityType: 'feature' | 'surface' | 'action' | 'criterion';
 	/**
 	 * The engine id of the entity the gap sits on (`srf-*` / `act-*` / the feature
 	 * id) — carried through so an author can jump straight to it rather than reading
@@ -231,6 +303,29 @@ export interface BehaviorBatchResult {
 	readonly commitToken: string | null;
 	/** The engine's own slim summary verbatim, for a caller that wants the detail. */
 	readonly raw: unknown;
+	/**
+	 * Everything below is answered by newer engines only and lifted from `raw`
+	 * (see `liftBehaviorBatchAnswer`): absent means the engine did not say, never
+	 * "false" or "nothing changed".
+	 *
+	 * True when the batch named the version it was written against
+	 * (`expectedUpdatedAt`) and the feature had moved on. Nothing was written.
+	 */
+	readonly conflict?: true;
+	/** On a conflict: the version the feature is at now, to re-read and rebase on. */
+	readonly currentUpdatedAt?: string;
+	/** On a conflict: the elements changed since the expected version (may be capped). */
+	readonly changedSince?: readonly string[];
+	/** On a conflict: how many elements changed in all, when `changedSince` is capped. */
+	readonly changedSinceTotal?: number;
+	/** On a save: the version the batch was applied on top of. */
+	readonly previousUpdatedAt?: string;
+	/** On a save: the version the feature is at after the batch. */
+	readonly updatedAt?: string;
+	/** What the batch touches in OTHER features, relayed as the engine shaped it. */
+	readonly relatedElsewhere?: unknown;
+	/** The scenarios of what the batch touched, relayed as the engine shaped them. */
+	readonly scenarios?: unknown;
 }
 
 /* ── Id bridge (get_behavior_context) — Fix #2: wizard id → kernel id ───── */
@@ -349,8 +444,9 @@ export interface UnspaghettitAdvisorPort {
 	 */
 	getDigest(featureId: string): Promise<FeatureDigest | null>;
 	/**
-	 * Implementation coverage tally from the behavioral index. Null when the
-	 * engine is unreachable.
+	 * Implementation coverage tallied from what reports and index syncs located,
+	 * the same record the implementation status reads. Null when the engine is
+	 * unreachable or nothing was ever reported for the feature.
 	 */
 	getImplementationCoverage(featureId: string): Promise<ImplementationCoverage | null>;
 
@@ -425,6 +521,13 @@ export interface UnspaghettitAdvisorPort {
 			 * the exact issues to fix, not just `issuesByArea` tallies.
 			 */
 			verbose?: boolean;
+			/**
+			 * The feature version (`updatedAt`) this batch was written against. A newer
+			 * engine writes nothing and answers a conflict when the feature has moved
+			 * on since. Sent to the engine only when given: an older engine has no such
+			 * argument, and a caller that names no version keeps last-write-wins.
+			 */
+			expectedUpdatedAt?: string;
 		}
 	): Promise<BehaviorBatchResult | null>;
 

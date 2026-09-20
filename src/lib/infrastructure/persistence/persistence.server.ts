@@ -8,7 +8,6 @@ import type {
 	FoundationIdentityRepositoryPort,
 	ExperienceDraftRepositoryPort,
 	FeaturesDraftRepositoryPort,
-	FinopsDraftRepositoryPort,
 	FoundationOperationsRepositoryPort,
 	ActivationRepositoryPort,
 	FoundationDefinitionRepositoryPort,
@@ -21,7 +20,6 @@ import type {
 	OperatorProfileRepositoryPort,
 	SectionChangePublisher,
 	SectionDocumentStorePort,
-	SupervisionDraftRepositoryPort,
 	UsersDraftRepositoryPort
 } from '$application/ports';
 
@@ -48,8 +46,6 @@ export interface Persistence {
 	readonly experienceDrafts: ExperienceDraftRepositoryPort;
 	readonly rulesDrafts: RulesDraftRepositoryPort;
 	readonly glossaryDrafts: GlossaryDraftRepositoryPort;
-	readonly supervisionDrafts: SupervisionDraftRepositoryPort;
-	readonly finopsDrafts: FinopsDraftRepositoryPort;
 	readonly foundationOperationsDrafts: FoundationOperationsRepositoryPort;
 	readonly dataDrafts: DataDraftRepositoryPort;
 	readonly architectureDrafts: ArchitectureDraftRepositoryPort;
@@ -87,8 +83,6 @@ export function buildPersistence(sectionChanges: SectionChangePublisher): Persis
 		experienceDrafts: d.experience,
 		rulesDrafts: d.rules,
 		glossaryDrafts: d.glossary,
-		supervisionDrafts: d.supervision,
-		finopsDrafts: d.finops,
 		foundationOperationsDrafts: d.foundationOperations,
 		dataDrafts: d.data,
 		architectureDrafts: d.architecture,

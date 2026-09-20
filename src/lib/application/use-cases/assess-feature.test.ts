@@ -24,7 +24,9 @@ function scriptedAdvisor(script: Partial<Record<string, unknown[]>>) {
 		runScenarios: async () => next('scenarios', { total: 1, passed: 1, failed: 0 }),
 		modelCheck: async () => next('modelCheck', { statesExplored: 3 }),
 		verify: async () => next('verdict', { passed: true }),
-		getImplementationCoverage: async () => null,
+		// Not logged in `calls`: that log counts the reads a lost call is asked again for,
+		// and coverage is not one of them (null is what an un-adopted feature reads as).
+		getImplementationCoverage: async () => script.implementation?.shift() ?? null,
 		getDigest: async () => next('digest', { hasContent: true, markdown: '# Board' })
 	} as unknown as UnspaghettitAdvisorPort;
 	return { advisor, calls };
@@ -95,5 +97,47 @@ describe('AssessFeatureUseCase', () => {
 
 		expect(assessment.available).toBe(false);
 		expect(assessment.degraded).toEqual([]);
+	});
+
+	it('answers what is proven and what verifies each criterion under implementation, apart from every score', async () => {
+		const implementation = {
+			total: 8,
+			implemented: 6,
+			partial: 0,
+			missing: 2,
+			percentage: 75,
+			proven: { actions: 1, total: 2 },
+			criteria: [
+				{
+					id: 'crit-1',
+					title: 'Footsteps are silent in deep water',
+					standing: 'active',
+					state: 'failing',
+					stale: false,
+					verification: { kind: 'integration', lastResult: { passed: false, at: '2026-09-20T09:00:00.000Z' } }
+				}
+			]
+		};
+		const { advisor } = scriptedAdvisor({ implementation: [implementation] });
+
+		const assessment = await new AssessFeatureUseCase(advisor).execute('feat-1');
+
+		expect(assessment.implementation).toEqual(implementation);
+		// A failing criterion is evidence for a reader: it moves neither the maturity
+		// score nor the verdict, and it is not a lost read.
+		expect(assessment.score).toEqual({ percentage: 90 });
+		expect(assessment.verdict).toEqual({ passed: true });
+		expect(assessment.degraded).toEqual([]);
+	});
+
+	it('answers plain coverage, with neither part, on an engine that reports neither', async () => {
+		const implementation = { total: 4, implemented: 3, partial: 0, missing: 1, percentage: 75 };
+		const { advisor } = scriptedAdvisor({ implementation: [implementation] });
+
+		const assessment = await new AssessFeatureUseCase(advisor).execute('feat-1');
+
+		expect(assessment.implementation).toEqual(implementation);
+		expect('proven' in assessment.implementation!).toBe(false);
+		expect('criteria' in assessment.implementation!).toBe(false);
 	});
 });

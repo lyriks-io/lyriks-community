@@ -82,12 +82,84 @@ export interface SkillSyncEntry {
 	installTargets: SkillInstallTarget[];
 	/** Present only when status ≠ "up-to-date" — the file to write verbatim. */
 	installContent?: string;
+	/** Content deliberately omitted; fetch get_skill before installing or following it. */
+	contentDeferred?: true;
+}
+
+/**
+ * The per-prompt hook Claude Code runs once the repository is bound: it
+ * restates the binding on EVERY prompt, so a long conversation cannot drift
+ * back to code-only work. Written verbatim, wired in the project settings.
+ */
+export interface BindingHookInstall {
+	/** Where the script goes, relative to the workspace root. */
+	path: string;
+	/** The script, written verbatim. */
+	content: string;
+	/** Fingerprint of `content`, so a client can tell a stale copy. */
+	contentHash: string;
+	/** The Claude Code project settings file the hook is wired in. */
+	settingsPath: string;
+	/** The hook event the entry belongs to. */
+	settingsEvent: 'UserPromptSubmit';
+	/** The entry to add under `hooks.<settingsEvent>[].hooks`, unless a command naming `path` is already there. */
+	settingsEntry: { type: 'command'; command: string; timeout: number; statusMessage: string };
+	/** The whole settings file to write when `settingsPath` does not exist yet. */
+	settingsContent: string;
+}
+
+export interface BindingInstallTarget {
+	client: SkillClientId;
+	label: string;
+	/** The instruction file this runtime always loads (CLAUDE.md, AGENTS.md, GEMINI.md, copilot-instructions.md). */
+	pointerPath: string;
+	/** The block merged there between the binding markers: replace the region when present, append otherwise. */
+	pointerBlock: string;
+	/** Claude Code only: the per-prompt hook restating the binding. */
+	hook?: BindingHookInstall;
+}
+
+/**
+ * A helper script installed next to the skills, under `.lyriks/tools/`. Plain
+ * Node with no dependency, so it is the same file for every runtime. It covers
+ * what an agent cannot do through a tool call (an index or a batch too large to
+ * type as an argument) or should not improvise (checking the index against the
+ * code). The scripts import each other by relative path: install them all, side
+ * by side.
+ */
+export interface BindingToolInstall {
+	/** Where the script goes, relative to the workspace root. */
+	path: string;
+	/** The script, written verbatim. */
+	content: string;
+	/** Fingerprint of `content`, so a client can tell a stale copy. */
+	contentHash: string;
+	/** One sentence: what it does and how it is invoked. */
+	purpose: string;
+}
+
+/**
+ * What keeps a repository bound to its Lyriks project beyond the session that
+ * first asked for Lyriks: a block in the instruction file every runtime loads
+ * (so every later session, for every user, starts bound) and, for Claude
+ * Code, a hook that restates the rule on every prompt. It also carries the
+ * helper scripts the block and the skills refer to. Idempotent to apply.
+ */
+export interface SkillBinding {
+	/** The project the block names, when the sync was told which one. */
+	projectId: string | null;
+	markers: { open: string; close: string };
+	targets: BindingInstallTarget[];
+	/** The helper scripts every runtime installs, whichever target it picked. */
+	tools: BindingToolInstall[];
 }
 
 export interface SkillSyncResult {
 	skills: SkillSyncEntry[];
 	/** Ids the client reported that this server does not publish — leave them alone. */
 	unknown: string[];
+	/** The binding to (re)apply on every sync; absent only from a pure catalog diff. */
+	binding?: SkillBinding;
 }
 
 export interface SkillCatalogPort {
@@ -96,7 +168,15 @@ export interface SkillCatalogPort {
 	/**
 	 * Diff the client's installed set against the published catalog. `client`
 	 * narrows `installTargets` to the caller's own layout when it knows what it
-	 * is; omitted, every layout comes back and the agent chooses.
+	 * is; omitted, every layout comes back and the agent chooses. `projectId`
+	 * (the wizard project slug this repository is specified in) makes the
+	 * binding block name the project; omitted, the block stays generic.
 	 */
-	syncSkills(installed: InstalledSkillRef[], client?: SkillClientId): SkillSyncResult;
+	syncSkills(installed: InstalledSkillRef[], client?: SkillClientId, projectId?: string, options?: SkillSyncOptions): SkillSyncResult;
+}
+
+/** Optional selective reads; absence preserves the full synchronization contract. */
+export interface SkillSyncOptions {
+	skillIds?: readonly string[];
+	includeContent?: boolean;
 }

@@ -1,3 +1,5 @@
+import { behaviorNodeShapeErrors } from './behavior-node-shape-errors';
+
 /**
  * Reject behavior ops that carry an unrecognised Expression `kind`.
  *
@@ -102,6 +104,31 @@ const REACHABILITY_OPS: ReadonlySet<string> = new Set([
 	'add_reachability_goal',
 	'update_reachability_goal'
 ]);
+
+/**
+ * Slots whose subtree is DOMAIN data rather than one of the three grammars.
+ *
+ * The walk reads any nested `kind` as a node kind, which holds for every
+ * expression, condition and goal slot. It does not hold for a payload that
+ * discriminates ITSELF: a criterion relation is supersedes|refines|exception_to,
+ * a resource is a resource kind, and a constant's value is whatever the author
+ * put there. None of these slots can contain an expression, so the walk stops
+ * at them instead of complaining about a vocabulary it was never reading.
+ *
+ * Found by the first end-to-end run against a live gateway: the engine's own
+ * operations reference calls the nested `add_resource { resource: { kind } }`
+ * form the preferred one, and this check refused it, with a message listing
+ * arithmetic kinds. A criterion relation was refused the same way, which made
+ * the whole relations facet unreachable through the platform.
+ */
+const DOMAIN_SLOTS: Readonly<Record<string, ReadonlySet<string>>> = {
+	add_acceptance_criterion: new Set(['relations']),
+	update_acceptance_criterion: new Set(['relations', 'patch']),
+	add_resource: new Set(['resource']),
+	update_resource: new Set(['resource', 'patch']),
+	add_constant: new Set(['value']),
+	update_constant: new Set(['value', 'patch'])
+};
 
 interface Vocabulary {
 	readonly kinds: ReadonlySet<string>;
@@ -246,10 +273,11 @@ function collectBadKinds(
 	path: string,
 	out: { path: string; kind: string; grammar: Grammar }[],
 	atOpRoot: boolean,
-	grammar: Grammar
+	grammar: Grammar,
+	shapeErrors: string[]
 ): void {
 	if (Array.isArray(node)) {
-		node.forEach((child, i) => collectBadKinds(child, `${path}[${i}]`, out, false, grammar));
+		node.forEach((child, i) => collectBadKinds(child, `${path}[${i}]`, out, false, grammar, shapeErrors));
 		return;
 	}
 	if (!isPlainObject(node)) return;
@@ -262,23 +290,28 @@ function collectBadKinds(
 		// one root cause beats a cascade of derived complaints.
 		return;
 	}
+	if (!atOpRoot && typeof kind === 'string') {
+		shapeErrors.push(...behaviorNodeShapeErrors(node, path, grammar));
+	}
 
 	// A reachability op nests its goal body, which is where that body's own
 	// `kind` becomes readable without colliding with the operation's.
 	const goalBody = atOpRoot && typeof kind === 'string' && REACHABILITY_OPS.has(kind);
+	const domainSlots = atOpRoot && typeof kind === 'string' ? DOMAIN_SLOTS[kind] : undefined;
 	const isLiteral = grammar === 'expression' && kind === 'literal';
 	for (const [key, child] of Object.entries(node)) {
 		if (key === 'kind') continue;
 		if (isLiteral && OPAQUE_FIELDS.has(key)) continue;
+		if (domainSlots?.has(key)) continue;
 		const childGrammar =
 			goalBody && (key === 'goal' || key === 'patch') ? 'goal' : grammarOf(key, grammar, kind);
-		collectBadKinds(child, `${path}.${key}`, out, false, childGrammar);
+		collectBadKinds(child, `${path}.${key}`, out, false, childGrammar, shapeErrors);
 	}
 }
 
 /**
- * One error message per op that carries a bad expression kind. Empty ⇒ the
- * batch's expression trees are all in the engine's vocabulary.
+ * Path-specific errors for unknown kinds and malformed known AST nodes. Empty
+ * means structurally valid, not a proof that expressions evaluate correctly.
  */
 export function expressionKindErrors(
 	operations: readonly Record<string, unknown>[]
@@ -287,7 +320,7 @@ export function expressionKindErrors(
 	operations.forEach((op, i) => {
 		if (!isPlainObject(op)) return;
 		const bad: { path: string; kind: string; grammar: Grammar }[] = [];
-		collectBadKinds(op, `op[${i}]`, bad, true, 'expression');
+		collectBadKinds(op, `op[${i}]`, bad, true, 'expression', errors);
 		for (const { path, kind, grammar } of bad) {
 			const vocabulary = VOCABULARIES[grammar];
 			errors.push(

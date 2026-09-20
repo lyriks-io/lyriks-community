@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { resolve } from 'node:path';
-import { unspaghettitSubprocessEnv } from './subprocess-env.server';
+import { existsSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { unspaghettitSubprocessCwd, unspaghettitSubprocessEnv } from './subprocess-env.server';
 
 describe('unspaghettitSubprocessEnv', () => {
 	it('passes only process essentials and the snapshot boundary', () => {
@@ -25,5 +27,22 @@ describe('unspaghettitSubprocessEnv', () => {
 			UNSPA_FILE_NAMING: 'id'
 		});
 		expect(JSON.stringify(env)).not.toContain('secret');
+	});
+});
+
+describe('unspaghettitSubprocessCwd', () => {
+	it('starts the engine in a private empty directory, away from any checkout index', () => {
+		const cwd = unspaghettitSubprocessCwd();
+		try {
+			expect(cwd.startsWith(tmpdir())).toBe(true);
+			expect(readdirSync(cwd)).toEqual([]);
+			// The engine adopts the first `.unspa.json` between its working directory
+			// and a repository root: this one must not sit under the platform checkout.
+			expect(cwd.startsWith(process.cwd())).toBe(false);
+			expect(existsSync(join(cwd, '.unspa.json'))).toBe(false);
+			expect(unspaghettitSubprocessCwd()).toBe(cwd);
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
 	});
 });

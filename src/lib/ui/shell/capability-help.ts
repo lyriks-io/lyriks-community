@@ -1,5 +1,4 @@
 import type { HelpEntry } from '$ui/design-system';
-import { SUPERVISION_HELP } from '$ui/supervision/help';
 
 /**
  * Plain-language documentation for every capability page, keyed by capability id
@@ -22,6 +21,20 @@ export const PORTFOLIO_HELP: HelpEntry = {
 };
 
 export const CAPABILITY_HELP: Record<string, HelpEntry> = {
+	evolution: {
+		title: 'Evolution',
+		what: 'One dossier per change request, carrying it through four stages: the specification on a single progressive page, the coherence and impact reports that challenge it before any code, the five-verdict confrontation between what was asked and what was built, and the acceptance walkthrough whose validated remarks are folded back into the spec.',
+		how: [
+			'Open a request with a title, an origin and the single leaf feature answerable for the change.',
+			'Fill the ten specification blocks in any order. Every field is written into the section that owns it, so nothing is duplicated here.',
+			'Run the coherence check over the whole project, then read the impact under each of the three hypotheses separately: adding does not break what removing breaks.',
+			'Cross a stage gate when its threshold is met, or waive it with a stated reason that stays visible until an admin lifts it.',
+			'Decide every line of the implementation report, then rebrief from the refusals or amend the spec.',
+			'Walk the product, log anchored observations, and fold the validated ones back before closing.'
+		],
+		value:
+			'It is the difference between a change that was agreed and a change that merely happened. The reports are derived from the spec crossed with the code, never from what the model says it did, so the omissions and the unrequested additions surface before they become the product. And because every decision is recorded with its author and whether that author was a person or a model, a sentence questioned six months later can be traced to the decision that put it there.'
+	},
 	scope: {
 		title: 'Scope coverage',
 		what: 'The external reference set for the project: what the source material says the product must cover, what is included, and which omissions were explicitly approved. It is authored by the modelling agent and has no page in the product.',
@@ -61,10 +74,10 @@ export const CAPABILITY_HELP: Record<string, HelpEntry> = {
 		how: [
 			'Build the tree of families and features.',
 			'Mark what is in the MVP versus later releases.',
-			'Each feature’s maturity feeds the coherence score and the AI-spend governor.'
+			'Each feature’s maturity identifies missing specification details.'
 		],
 		value:
-			'Features are the unit AI generation and cost governance act on. An immature feature is exactly where the governor holds spend, so an honest tree directly controls cost.'
+			'Features connect product intent, behavior, implementation and acceptance evidence. An honest tree makes missing work visible.'
 	},
 	experience: {
 		title: 'Experience',
@@ -85,7 +98,7 @@ export const CAPABILITY_HELP: Record<string, HelpEntry> = {
 			'Define the AI agents and what each is allowed to do.'
 		],
 		value:
-			'Where automated and AI behaviour is specified: the place to set guardrails on autonomous spend before it ever runs.'
+			'Where automated behavior is specified: define permissions, consequences and failure paths before implementation.'
 	},
 	infrastructure: {
 		title: 'Data & Architecture',
@@ -115,10 +128,9 @@ export const CAPABILITY_HELP: Record<string, HelpEntry> = {
 		how: [
 			'Read the scores and the blocking gaps.',
 			'Work the breach list to raise readiness.',
-			'The AI-spend governor reads these exact scores to decide whether to spend.'
+			'Inspect the evidence behind a score before deciding what is ready to build.'
 		],
 		value:
-			'This is the quality signal the cost governor gates on. Raising maturity here is literally what unlocks safe AI spend; low maturity means held spend.'
-	},
-	supervision: SUPERVISION_HELP
+			'The scores help locate specification gaps. They do not certify runtime correctness or control an AI budget.'
+	}
 };

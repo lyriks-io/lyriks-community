@@ -71,3 +71,43 @@ describe('composeArtifacts — requirements document', () => {
 		expect(doc.content).toContain('Stakeholder note');
 	});
 });
+
+describe('the requirements document prints ONE list of criteria', () => {
+	const leafIdOf = (env: SpecEnvelope) =>
+		env.features.features.find((f) => f.name === 'Pay invoice')!.id;
+	const docOf = (env: SpecEnvelope) =>
+		composeArtifacts(env, analysis, '2026-07-15T00:00:00Z').find((a) => a.kind === 'requirements_doc')!;
+
+	it('prints a criterion an AI client wrote, which the panel never held', () => {
+		const env = envelope();
+		const leafId = leafIdOf(env);
+		env.features.leafMeta![leafId].acceptanceCriteria = [];
+		env.acceptanceCriteriaByFeature = { [leafId]: ['A refused payment leaves the invoice overdue.'] };
+		const doc = docOf(env);
+		expect(doc.content).toContain('A refused payment leaves the invoice overdue.');
+		expect(doc.content).toContain('Acceptance criteria');
+	});
+
+	it('does not print a projected criterion twice', () => {
+		const env = envelope();
+		const leafId = leafIdOf(env);
+		env.acceptanceCriteriaByFeature = {
+			[leafId]: ['Given an overdue invoice, when paid, then status is Paid.']
+		};
+		const doc = docOf(env);
+		const printed = doc.content.split('- Given an overdue invoice, when paid, then status is Paid.').length - 1;
+		expect(printed).toBe(1);
+	});
+
+	it('says nothing where the model holds nothing, rather than reprinting the draft', () => {
+		const env = envelope();
+		env.acceptanceCriteriaByFeature = { [leafIdOf(env)]: [] };
+		expect(docOf(env).content).not.toContain('Given an overdue invoice, when paid');
+	});
+
+	it('falls back to the panel for a feature the model does not know', () => {
+		const env = envelope();
+		env.acceptanceCriteriaByFeature = {};
+		expect(docOf(env).content).toContain('Given an overdue invoice, when paid, then status is Paid.');
+	});
+});

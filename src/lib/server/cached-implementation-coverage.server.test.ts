@@ -79,6 +79,30 @@ describe('CachedImplementationCoverage', () => {
 		await expect(tier.get('p4')).resolves.toEqual({});
 	});
 
+	it.each(['bus', 'sync'])('recomputes after a %s invalidation during an in-flight refresh', async (kind) => {
+		let resolve!: (value: Record<string, typeof ROW>) => void;
+		const stale = { 'feat-a': ROW };
+		const fresh = { 'feat-a': { ...ROW, found: 4, percent: 100 } };
+		const load = vi.fn().mockImplementationOnce(() => new Promise((done) => { resolve = done; }))
+			.mockResolvedValue(fresh);
+		const store = { load: vi.fn(async () => null), save: vi.fn(async () => {}) };
+		const tier = new CachedImplementationCoverage(
+			{ execute: load } as unknown as LoadImplementationCoverageUseCase, { store }
+		);
+		const project = 'race-' + kind;
+		await tier.get(project);
+		await settle();
+		if (kind === 'bus') publishSectionChange({ projectId: project, section: 'features', origin: null });
+		else tier.invalidate(project);
+		resolve(stale);
+		await settle();
+		await settle();
+		expect(load).toHaveBeenCalledTimes(2);
+		await expect(tier.get(project)).resolves.toEqual(fresh);
+		expect(store.save).toHaveBeenCalledTimes(1);
+		expect(store.save).toHaveBeenCalledWith(project, fresh);
+	});
+
 	it('keeps the last snapshot when a refresh fails', async () => {
 		let fail = false;
 		const tier = cache(async () => {

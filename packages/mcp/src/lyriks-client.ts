@@ -7,6 +7,8 @@
 // Base URL: LYRIKS_BASE_URL env var (default http://localhost:5173).
 // lyriks endpoints return raw JSON (no { data } envelope).
 
+import { httpStatusError } from './util/http-error.js'
+
 // V3_BASE_URL is the former name of this variable, still honoured because the
 // appliance carries its compose file across upgrades: every install predating
 // the rename sets the old name, and an image that read only the new one would
@@ -38,26 +40,30 @@ export class LyriksClient {
   constructor(private readonly token?: string) {}
 
   private headers(): Record<string, string> {
-    const h: Record<string, string> = { 'Content-Type': 'application/json' }
+    // The platform reads who is acting off this header: an AI client writes and
+    // reports, a person decides (the Evolution lifecycle pivots on it). Nothing
+    // but the MCP sends it, so a missing header means a person on the page.
+    const h: Record<string, string> = { 'Content-Type': 'application/json', 'x-lyriks-actor': 'ai_client' }
     if (this.token) h['Cookie'] = `lyriks_session=${this.token}`
     return h
   }
 
-  private async request<T>(method: 'GET' | 'PUT' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
-    const init: RequestInit = { method, headers: this.headers() }
+  private async request<T>(method: 'GET' | 'PUT' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown, headers?: Record<string, string>): Promise<T> {
+    const init: RequestInit = { method, headers: { ...this.headers(), ...headers } }
     if (body !== undefined) init.body = JSON.stringify(body)
     let retried = false
     for (;;) {
       const res = await fetch(`${BASE_URL}${path}`, init)
       if (res.ok) return (await res.json()) as T
       const text = await res.text()
-      if (!retried && isDevServerTypegenRace(res.status, text)) {
+      if (method === 'GET' && !retried && isDevServerTypegenRace(res.status, text)) {
         retried = true
         await sleep(400)
         continue
       }
       const note = retried ? ' (dev server busy — already retried once)' : ''
-      throw new Error(`lyriks ${res.status} on ${method} ${path}${note}: ${text}`)
+      // The raw text fed the retry check above; the message only gets a short detail of it.
+      throw httpStatusError('lyriks', res.status, method, path, text, res.headers.get('content-type'), note)
     }
   }
 
@@ -65,8 +71,8 @@ export class LyriksClient {
     return this.request<T>('GET', path)
   }
 
-  async put<T = unknown>(path: string, body: unknown): Promise<T> {
-    return this.request<T>('PUT', path, body)
+  async put<T = unknown>(path: string, body: unknown, headers?: Record<string, string>): Promise<T> {
+    return this.request<T>('PUT', path, body, headers)
   }
 
   // POST for read-only computations that need a request body (e.g. simulate) —

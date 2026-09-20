@@ -31,7 +31,7 @@ export interface SectionSaveSpec<TDraft, TResult extends object> {
 	/** Wizard section key — revision scope, sync-bus topic and error label. */
 	section: string;
 	/** Optional pre-parse gate (e.g. `assertSectionDraftValid`) — throws 400. */
-	validate?: (body: unknown) => void;
+	validate?: (body: unknown, services: AppServices, projectId: string) => void | Promise<void>;
 	/** Bounded-context anti-corruption parser (pure — must not touch IO). */
 	parse: (body: unknown, projectId: string) => TDraft;
 	/**
@@ -131,7 +131,7 @@ export async function saveSectionDraft<TDraft, TResult extends object>(
 		);
 	}
 
-	spec.validate?.(body);
+	await spec.validate?.(body, services, projectId);
 	const draft = spec.parse(body, projectId);
 	const save: SectionDraftSaveOptions = {
 		expectedRevision: expectedRevision(request),

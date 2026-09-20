@@ -180,6 +180,15 @@ export const CAPABILITIES: Capability[] = [
 		route: projectRoute('documents')
 	},
 	{
+		id: 'evolution',
+		title: 'Evolution',
+		subtitle: 'Change requests, from the need to acceptance',
+		icon: 'rotate',
+		tier: 'oss',
+		status: 'built',
+		route: projectRoute('evolution')
+	},
+	{
 		// Hidden for now: the Features tab that hosted it is no longer surfaced, so
 		// cross-links (and the legacy /reuse route) land on Features itself.
 		id: 'reuse',
@@ -238,20 +247,6 @@ export const CAPABILITIES: Capability[] = [
 		route: (projectId) => `/projects/${projectId}/infrastructure?tab=graph`
 	},
 	{
-		// WITHDRAWN from the product: no left-nav entry, no sidebar footer card, and
-		// NOT NAVIGABLE — deliberately no `route`, so nothing in the app can build a
-		// link to it and the page itself answers 404. The id stays registered so the
-		// section keeps a title and a help entry, and so a stored reference resolves
-		// to a name rather than a dead string; the draft, `/api/draft/supervision`
-		// and the MCP `supervision` section are untouched and still authorable.
-		id: 'supervision',
-		title: 'Supervision',
-		subtitle: 'Spec-driven AI policy, budgets & traceability',
-		icon: 'eye',
-		tier: 'oss',
-		status: 'hidden'
-	},
-	{
 		// Merged into Traceability as its "Baselines" tab (matching the prototype).
 		// Kept as a hidden alias so Control Center "Fix now" + legacy deep links
 		// resolve to the merged tab instead of a retired route.
@@ -276,19 +271,6 @@ export const CAPABILITIES: Capability[] = [
 		status: 'hidden',
 		partOf: 'traceability',
 		route: (projectId) => `/projects/${projectId}/traceability?tab=approvals`
-	},
-	{
-		// Merged into Supervision as its "AI Gateway" tab — and withdrawn with it.
-		// NOT NAVIGABLE: its route used to redirect into /supervision, which is now
-		// unreachable, so advertising one would only lead to a 404. The FinOps draft
-		// and `/api/finops` are unchanged.
-		id: 'finops',
-		title: 'AI Cost Governor',
-		subtitle: 'LiteLLM FinOps from readiness & coherence',
-		icon: 'cpu',
-		tier: 'oss',
-		status: 'hidden',
-		partOf: 'supervision'
 	},
 	// ── Shell capabilities (top bar + docked panels, NOT left-nav) ──
 	{

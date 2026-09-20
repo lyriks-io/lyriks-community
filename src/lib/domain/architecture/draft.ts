@@ -48,6 +48,8 @@ export interface DerivedTech {
  * stack/infra declared upstream — refreshed on load, never authored.
  */
 export interface ProjectArchitectureDraft {
+	/** Logical responsibilities first; implementation decisions live in linked sources. */
+	stage?: 'logical' | 'implementation';
 	projectId: string;
 	techChoices: TechChoice[];
 	/** Ids from the project Documents & Sources register backing the stack + constraints. */
@@ -62,6 +64,7 @@ export interface ProjectArchitectureDraft {
 export function createEmptyArchitectureDraft(projectId: string): ProjectArchitectureDraft {
 	return {
 		projectId,
+		stage: 'logical',
 		techChoices: [],
 		sourceIds: [],
 		referenceDocs: [],
@@ -129,6 +132,7 @@ export function withStableArchitectureIds(
 	};
 	return {
 		...draft,
+		stage: architectureStage(draft),
 		techChoices: fix(draft.techChoices, 'tech'),
 		referenceDocs: fix(draft.referenceDocs, 'reference-doc'),
 		constraints: fix(draft.constraints, 'constraint')
@@ -143,4 +147,10 @@ export function techOfLayer(draft: ProjectArchitectureDraft, layer: ArchLayer): 
 
 export function layersWithTech(draft: ProjectArchitectureDraft): Set<ArchLayer> {
 	return new Set(draft.techChoices.map((t) => t.layer));
+}
+
+/** Existing populated boards retain their historical implementation semantics. */
+export function architectureStage(draft: Pick<ProjectArchitectureDraft, 'stage' | 'techChoices'>): 'logical' | 'implementation' {
+	return draft.stage === 'logical' || draft.stage === 'implementation'
+		? draft.stage : draft.techChoices.length ? 'implementation' : 'logical';
 }

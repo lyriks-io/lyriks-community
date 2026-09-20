@@ -1,5 +1,6 @@
 export * from './enums';
 export * from './brand';
+export * from './brand-samples';
 export * from './brand-files';
 export * from './brand-export';
 export * from './draft';

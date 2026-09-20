@@ -119,6 +119,24 @@ describe('VerifyExperienceUseCase engine reads', () => {
 		});
 	});
 
+	it('lists interactions the exploration did not reach, without letting them fail the verdict', async () => {
+		const unreachedActions = [
+			{ surfaceId: 'srf-a', actionId: 'act-1', actionName: 'Turn Lively', reason: 'exploration stopped at 2000 states' }
+		];
+		const withList = await useCase(
+			advisorSpy({
+				modelCheck: (async () => ({ invariantViolations: [], deadActions: [], unreachedActions })) as never
+			}).advisor
+		).execute('project-1');
+		const without = await useCase(advisorSpy().advisor).execute('project-1');
+
+		expect(withList.engine.unreachedInteractions).toEqual(unreachedActions);
+		expect('unreachedInteractions' in without.engine).toBe(false);
+		// Nothing about the verdict reads the list.
+		expect(withList.engine.passed).toBe(without.engine.passed);
+		expect(withList.blockers).toEqual(without.blockers);
+	});
+
 	it('says so when a reading did not come back, instead of passing quietly', async () => {
 		const { advisor } = advisorSpy({ modelCheck: (async () => null) as never });
 

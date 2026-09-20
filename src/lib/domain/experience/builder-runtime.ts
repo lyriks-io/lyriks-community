@@ -41,7 +41,7 @@ export function rowContext(row: Record<string, unknown>, index: number): RowCont
 
 export interface RunError {
 	nodeId: string | null;
-	kind: 'scenario' | 'binding' | 'navigation' | 'validation' | 'permission';
+	kind: 'scenario' | 'binding' | 'navigation' | 'validation' | 'permission' | 'visibility';
 	message: string;
 	at: number;
 }

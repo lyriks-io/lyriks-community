@@ -23,7 +23,13 @@ export async function getSkillHandler(
 }
 
 export async function syncSkillsHandler(
-  args: { installed?: Array<{ id: string; content_hash?: string }>; client?: string },
+  args: {
+    installed?: Array<{ id: string; content_hash?: string }>
+    client?: string
+    project_id?: string
+    skill_ids?: string[]
+    include_content?: boolean
+  },
   lyriks: LyriksClient,
 ): Promise<unknown> {
   // MCP snake_case → platform camelCase.
@@ -31,5 +37,11 @@ export async function syncSkillsHandler(
     id: ref.id,
     contentHash: ref.content_hash,
   }))
-  return lyriks.post('/api/skills/sync', { installed, client: args.client })
+  return lyriks.post('/api/skills/sync', {
+    installed,
+    client: args.client,
+    projectId: args.project_id,
+    ...(args.skill_ids !== undefined ? { skillIds: args.skill_ids } : {}),
+    ...(args.include_content !== undefined ? { includeContent: args.include_content } : {}),
+  })
 }

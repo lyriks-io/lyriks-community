@@ -11,6 +11,7 @@ import type {
 	InvariantCounterexample,
 	NamedSurface,
 	SpecGap,
+	UnreachedAction,
 	UnspaghettitAdvisorPort
 } from '../ports';
 import type { LoadExperienceDraftUseCase } from './load-experience-draft';
@@ -20,6 +21,7 @@ import { experienceFeatureId } from '$application/projection/aux-feature-ids';
 import { experienceDraftToBehaviorOps } from '$application/projection/experience-projection';
 import type { ProjectExperienceDraft } from '$domain/experience';
 import type { ProjectUsersDraft } from '$domain/users';
+import { verificationEvidence, type VerificationEvidence } from '../verification-evidence';
 
 /** One pass over the wizard projection, read by the engine verdict. */
 interface ProjectionFacts {
@@ -98,6 +100,7 @@ export interface JourneyVerification {
  * falls back to the native builder-runtime checks only).
  */
 export interface ExperienceEngineVerdict {
+	evidence: VerificationEvidence;
 	available: boolean;
 	/** The gated `verify` verdict (scenarios + maturity + reachability + drift). */
 	passed: boolean;
@@ -113,6 +116,12 @@ export interface ExperienceEngineVerdict {
 	invariantViolations: readonly InvariantCounterexample[];
 	/** Interactions the model checker never observed firing (dead branches). */
 	deadInteractions: readonly string[];
+	/**
+	 * Interactions not reached within the exploration bound, each with the bound
+	 * that cut the search. Not dead, not a failure: nothing in `passed` reads it.
+	 * Absent when the engine does not tell the two apart.
+	 */
+	unreachedInteractions?: readonly UnreachedAction[];
 	/**
 	 * True when the engine answered, but at least one read did not come back
 	 * inside its budget. The verdict then stands on the reads that did land, and
@@ -270,8 +279,8 @@ export class VerifyExperienceUseCase {
 		// Only journeys that actually have steps gate readiness. The engine, when
 		// reachable, is authoritative: its gated verdict must pass and no reachable
 		// invariant may break.
-		const journeysOk = journeys.every((j) => j.actionCount === 0 || j.ok);
-		const engineOk = !engine.available || (engine.passed && engine.invariantViolations.length === 0);
+		const journeysOk = journeys.every((j) => j.ok);
+		const engineOk = !engine.available || (engine.passed && engine.scenarios.failed === 0 && engine.invariantViolations.length === 0);
 		const ready = blocking.length === 0 && journeysOk && engineOk;
 
 		return {
@@ -304,6 +313,7 @@ export class VerifyExperienceUseCase {
 		projection: ProjectionFacts
 	): Promise<ExperienceEngineVerdict> {
 		const offline: ExperienceEngineVerdict = {
+			evidence: verificationEvidence(null, null),
 			available: false,
 			passed: false,
 			maturity: null,
@@ -351,6 +361,7 @@ export class VerifyExperienceUseCase {
 
 		return {
 			available: true,
+			evidence: verificationEvidence(scenarios, modelCheck),
 			passed: verdict?.passed ?? false,
 			maturity: score ? score.percentage : null,
 			scenarios: {
@@ -364,6 +375,7 @@ export class VerifyExperienceUseCase {
 			),
 			invariantViolations: modelCheck?.invariantViolations ?? [],
 			deadInteractions: modelCheck?.deadActions ?? [],
+			...(modelCheck?.unreachedActions ? { unreachedInteractions: modelCheck.unreachedActions } : {}),
 			degraded: incomplete.length > 0,
 			incomplete,
 			explorationCap: cap,
@@ -475,8 +487,8 @@ function engineBlockers(engine: ExperienceEngineVerdict): string[] {
 
 /** Non-gating engine signals: worth fixing, but they never flip `ready`. */
 function engineAdvisories(engine: ExperienceEngineVerdict): string[] {
-	if (!engine.available) return [];
-	const out: string[] = [];
+	const out: string[] = [...engine.evidence.advisories];
+	if (!engine.available) return out;
 	// Say it out loud when the verdict stands on fewer readings than usual. A
 	// missing reading can only make the verdict MORE permissive (nothing it would
 	// have reported can block), so silence here would read as a clean pass.

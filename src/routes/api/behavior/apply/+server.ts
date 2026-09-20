@@ -5,6 +5,7 @@ import {
 	featureIdCollisions,
 	requireBehaviorFeatureAccess
 } from '$lib/server/behavior-feature-access.server';
+import { isIsoInstant } from '$domain/shared/iso-instant';
 import type { RequestHandler } from './$types';
 
 /**
@@ -21,6 +22,13 @@ import type { RequestHandler } from './$types';
  * validated batch without resending the ops, so `operations` may be omitted on the
  * commit path (the engine replays the cached ops against the current feature).
  *
+ * `expectedUpdatedAt` is the feature version the ops were written against. When
+ * the feature has moved on since, a newer engine writes nothing and the answer is
+ * a 200 with `batch.ok:false`, `batch.conflict:true`, `batch.currentUpdatedAt`
+ * and `batch.changedSince`: a lost race is an expected outcome to read and rebase
+ * on, like any rejected batch, and never an HTTP error. Optional: without it a
+ * batch keeps last-write-wins, which is also what an older engine does with it.
+ *
  * Authorization mirrors the read endpoint: the engine resolves a feature by id
  * across the whole workspace, so we gate on WRITE access to `projectId` AND require
  * `featureId` to belong to that project — either one of its Step-04 leaves or its
@@ -35,6 +43,7 @@ export const POST: RequestHandler = async (event) => {
 		dryRun?: unknown;
 		commit?: unknown;
 		verbose?: unknown;
+		expectedUpdatedAt?: unknown;
 	} | null;
 
 	const projectId = typeof body?.projectId === 'string' ? body.projectId : '';
@@ -43,6 +52,18 @@ export const POST: RequestHandler = async (event) => {
 	const commit =
 		typeof body?.commit === 'string' && body.commit.length > 0 ? body.commit : undefined;
 	if (!projectId || !featureId) error(400, 'projectId and featureId are required');
+	// Absent (or null) means "no version named". Anything else must be a real version
+	// stamp: forwarding a malformed one would answer a conflict that can never resolve.
+	const expectedUpdatedAt = body?.expectedUpdatedAt ?? undefined;
+	if (
+		expectedUpdatedAt !== undefined &&
+		(typeof expectedUpdatedAt !== 'string' || !isIsoInstant(expectedUpdatedAt))
+	) {
+		error(
+			400,
+			'expectedUpdatedAt must be the feature\'s `updatedAt`, an ISO 8601 instant such as 2026-09-20T10:15:30.123Z'
+		);
+	}
 	// The commit path replays the token's cached ops, so operations are optional there;
 	// otherwise a batch must carry them.
 	if (!commit && !Array.isArray(body?.operations)) error(400, 'operations must be an array');
@@ -82,7 +103,8 @@ export const POST: RequestHandler = async (event) => {
 		operations,
 		dryRun,
 		commit,
-		verbose: body?.verbose === true
+		verbose: body?.verbose === true,
+		...(expectedUpdatedAt ? { expectedUpdatedAt } : {})
 	});
 	// The engine returns nothing for two different reasons: it was never reachable,
 	// or the call died mid-flight and took the subprocess with it. The old wording

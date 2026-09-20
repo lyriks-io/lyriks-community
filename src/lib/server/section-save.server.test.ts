@@ -84,6 +84,16 @@ describe('saveSectionDraft', () => {
 		expect(calls).toEqual(['access', 'exists', 'parse', 'commit', 'persist', 'mirror', 'publish']);
 	});
 
+	it('awaits cross-context validation before parsing, revision changes or persistence', async () => {
+		const spec = baseSpec();
+		await expect(saveSectionDraft(makeEvent({ projectId: 'p1' }), { ...spec, validate: async () => {
+			await Promise.resolve();
+			throw new Error('unresolved capability');
+		} })).rejects.toThrow('unresolved capability');
+		expect(calls).toEqual(['access', 'exists']);
+		expect(spec.persist).not.toHaveBeenCalled();
+	});
+
 	it('rejects a missing projectId before touching anything', async () => {
 		await expect(saveSectionDraft(makeEvent({}), baseSpec())).rejects.toSatisfy(
 			(e: unknown) => isHttpError(e) && e.status === 400

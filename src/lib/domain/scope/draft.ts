@@ -98,8 +98,6 @@ const SECTION_LABELS: Readonly<Record<string, string>> = {
 	architecture: 'Data & Architecture · Architecture',
 	coherence: 'Project health',
 	glossary: 'Glossary',
-	supervision: 'Supervision',
-	finops: 'Supervision · AI Cost Governor',
 	approvals: 'Traceability · Approvals',
 	baselines: 'Traceability · Baselines',
 	documents: 'Documents & Sources'

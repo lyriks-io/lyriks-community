@@ -66,7 +66,13 @@ export type GraphNodeKind =
 	| 'state'
 	| 'effect'
 	| 'scenario'
-	| 'event';
+	| 'event'
+	/** An acceptance criterion: prose (given/when/then), never a model-checked assertion. */
+	| 'criterion'
+	/** A named value declared once and referenced from expressions by name. */
+	| 'constant'
+	/** A named set of allowed strings an enum state or parameter points at. */
+	| 'valueSet';
 
 /** A typed relationship between two nodes. */
 export type GraphEdgeKind =

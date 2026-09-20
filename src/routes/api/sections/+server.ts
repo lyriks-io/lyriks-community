@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
-import { SECTIONS, isSection, type Section } from '$lib/shared/sections';
+import { SECTIONS, SECTION_REVISION_STORAGE, isSection, type Section } from '$lib/shared/sections';
 import type { RequestHandler } from './$types';
 
 /**
@@ -24,8 +24,13 @@ export const GET: RequestHandler = async (event) => {
 	}
 
 	const s = getServices();
+	// Read the token first: a concurrent save may make it stale, never newer
+	// than the document we loaded. The write gate will reject that stale token.
+	const revision = await (SECTION_REVISION_STORAGE[section] === 'document'
+		? s.sectionDocuments.currentRevision(projectId, section)
+		: s.draftLock.current(projectId, section));
 	const draft = await loadSection(s, section, projectId);
-	return json({ section, projectId, draft });
+	return json({ section, projectId, revision, draft });
 };
 
 async function loadSection(
@@ -54,15 +59,13 @@ async function loadSection(
 			return s.loadCoherenceDraft.execute(projectId);
 		case 'glossary':
 			return s.loadGlossaryDraft.execute(projectId);
-		case 'supervision':
-			return s.loadSupervisionDraft.execute(projectId);
-		case 'finops':
-			return s.loadFinopsDraft.execute(projectId);
 		case 'approvals':
 			return s.loadApprovalsDraft.execute(projectId);
 		case 'baselines':
 			return s.loadBaselinesDraft.execute(projectId);
 		case 'documents':
 			return s.loadDocumentRegister.execute(projectId);
+		case 'evolution':
+			return s.loadEvolutionDraft.execute(projectId);
 	}
 }

@@ -17,6 +17,8 @@ import type { AssertOp, BuilderElementNode, ScenarioAssertion } from './builder'
 import { hostedSurfacesResolver } from './surface-hosting';
 import { blocksWhenEmpty, inputNodesOfScreen, sampleInputValue } from './builder-runtime';
 import type { SimAction } from './simulate';
+import { simulate } from './simulate';
+import { planNavigation } from './plan-navigation';
 
 /** One assertion, both human text and the structured state condition behind it. */
 export interface AcceptanceAssertion {
@@ -119,6 +121,7 @@ export function deriveJourneyFlow(draft: ProjectExperienceDraft, journey: Journe
 	const stops = steps
 		.filter((s) => s.linkedScreenId && hasRoot(s.linkedScreenId))
 		.map((s) => ({
+			stepId: s.id,
 			step: s.name?.trim() || 'Step',
 			screenId: s.linkedScreenId as string,
 			screen: screenNameOf(draft, s.linkedScreenId)
@@ -131,12 +134,29 @@ export function deriveJourneyFlow(draft: ProjectExperienceDraft, journey: Journe
 	const script: SimAction[] = [];
 	const flowGaps: string[] = [];
 	const hops: JourneyHop[] = [];
-	for (let i = 0; i < stops.length - 1; i++) {
+	const start = stops[0]?.screenId ?? draft.builder.entryScreenId;
+	for (let i = 0; i < stops.length; i++) {
 		const from = stops[i];
+		const actions = steps.find((s) => s.id === from.stepId)?.actions;
+		if (Array.isArray(actions)) script.push(...actions);
+		else if (actions !== undefined) flowGaps.push(`Step "${from.step}" actions must be an array.`);
 		const to = stops[i + 1];
+		if (!to) continue;
 		if (from.screenId === to.screenId) continue; // same screen, no nav needed
+		if (actions?.length && simulate(draft.builder, { startScreenId: start, actions: script }).finalScreenId === to.screenId) continue;
+		const planned = start ? planNavigation(draft.builder, start, script, from.screenId, to.screenId) : null;
+		if (planned) {
+			script.push(...planned);
+			const navigation = draft.builder.nodes[planned[planned.length - 1].nodeId ?? ''];
+			if (navigation?.kind === 'element') hops.push({
+				viaLabel: navigation.label || 'element', viaKind: navigation.elementKind,
+				toScreen: to.screen, toScreenId: to.screenId, toPath: pathOf(to.screenId)
+			});
+			continue;
+		}
 		const el = navElementTo(draft, from.screenId, to.screenId);
 		if (el) {
+			flowGaps.push(`No executable path from "${from.screen}" to "${to.screen}" within the planning budget. Check visibility/validation guards or author steps[].actions explicitly.`);
 			// A require-valid submit is blocked while its screen holds an invalid
 			// input, so the happy path has to fill the form before pressing it. That
 			// is what a user does, and skipping it made every screen behind a login

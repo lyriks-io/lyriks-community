@@ -1,4 +1,6 @@
 import { DeleteBehaviorStateUseCase } from '$application/use-cases/delete-behavior-state';
+import { ReadProjectElaborationUseCase } from '$application/use-cases/read-project-elaboration';
+import { readBehaviorOverview } from '$application/read-behavior-overview';
 import {
 	AnalyzeBriefUseCase,
 	GenerateSpecsUseCase,
@@ -32,12 +34,6 @@ import {
 	SaveScopeDraftUseCase,
 	LoadRulesDraftUseCase,
 	LoadGlossaryDraftUseCase,
-	LoadSupervisionDraftUseCase,
-	LoadFinopsDraftUseCase,
-	PushFinopsRulesUseCase,
-	PullFinopsUsageUseCase,
-	PushMemberKeysUseCase,
-	PullMemberSpendUseCase,
 	LoadFoundationDraftUseCase,
 	SaveFoundationDraftUseCase,
 	LoadSettingsUseCase,
@@ -170,15 +166,15 @@ import { createEmptyDocumentsDraft, type ProjectDocumentsDraft } from '$domain/d
 // Simple-section wiring: each section's local coherence fold (and any pre-save
 // transform) is bound to the ONE generic save use-case here, not in copies.
 import { computeGlossaryCoherence, type ProjectGlossaryDraft } from '$domain/glossary';
-import { computeSupervisionCoherence, type ProjectSupervisionDraft } from '$domain/supervision';
-import { computeFinopsCoherence, type ProjectFinopsDraft } from '$domain/finops';
 import { computeOperationsCoherence, type FoundationOperationsDraft } from '$domain/foundation';
 import { computeArchitectureCoherence, type ProjectArchitectureDraft } from '$domain/architecture';
 import { parseDocumentsDraft } from '$application/parse-documents-draft';
 import { createEmptyBaselinesDraft, type ProjectBaselinesDraft } from '$domain/baselines';
 import { parseBaselinesDraft } from '$application/parse-baselines-draft';
 import { createEmptyApprovalsDraft, type ProjectApprovalsDraft } from '$domain/approvals';
+import { createEmptyEvolutionDraft, type ProjectEvolutionDraft } from '$domain/evolution';
 import { parseApprovalsDraft } from '$application/parse-approvals-draft';
+import { parseEvolutionDraft } from '$application/parse-evolution-draft';
 import type { ProjectScopeDraft } from '$domain/scope';
 import { parseScopeDraft } from '$application/parse-scope-draft';
 import { ProjectModelRevisionReader } from '$infrastructure/persistence/project-model-revision-reader.server';
@@ -201,6 +197,7 @@ import { McpUnspaghettitAdvisor } from '$infrastructure/unspaghettit/mcp-unspagh
 import { UnspaEngineClient } from '$infrastructure/unspaghettit/unspa-engine-client.server';
 import { DEFAULT_CALL_TIMEOUT_MS } from '$infrastructure/unspaghettit/unspa-engine-client.server';
 import { CachedCompletionEvidence } from '$lib/server/cached-completion-evidence.server';
+import { CachedKnowledgeGraph } from '$lib/server/cached-knowledge-graph.server';
 import { McpCodeAdoption } from '$infrastructure/unspaghettit/mcp-code-adoption.server';
 import {
 	declaredEngineVersion,
@@ -209,11 +206,9 @@ import {
 import { PgServerVersion } from '$infrastructure/persistence/postgres/pg-server-version.server';
 import { HostFactsFile } from '$infrastructure/system/host-facts-file.server';
 import { ProcessResources } from '$infrastructure/system/container-resources.server';
-import { HttpLiteLLMGateway } from '$infrastructure/litellm/http-litellm-gateway.server';
-import { NullLiteLLMGateway } from '$infrastructure/litellm/null-litellm-gateway';
 import { Ed25519LicenseVerifier } from '$infrastructure/licensing/ed25519-license-verifier.server';
 import { BundledSkillCatalog } from '$infrastructure/skills/bundled-skill-catalog.server';
-import type { LiteLLMGatewayPort, SkillCatalogPort } from '$application/ports';
+import type { SkillCatalogPort } from '$application/ports';
 
 /**
  * Composition root (server-side). The ONE place that knows concrete adapters;
@@ -222,6 +217,7 @@ import type { LiteLLMGatewayPort, SkillCatalogPort } from '$application/ports';
  * StubAiSuggester → ClaudeAiSuggester) and nothing upstream changes.
  */
 export interface AppServices {
+	readProjectElaboration: ReadProjectElaborationUseCase;
 	loadScopeDraft: LoadResidueDraftUseCase<ProjectScopeDraft>;
 	saveScopeDraft: SaveScopeDraftUseCase;
 	assessProjectCompleteness: AssessProjectCompletenessUseCase;
@@ -265,27 +261,13 @@ export interface AppServices {
 	captureBaseline: CaptureBaselineUseCase;
 	loadApprovalsDraft: LoadResidueDraftUseCase<ProjectApprovalsDraft>;
 	saveApprovalsDraft: SaveResidueDraftUseCase<ProjectApprovalsDraft>;
+	loadEvolutionDraft: LoadResidueDraftUseCase<ProjectEvolutionDraft>;
+	saveEvolutionDraft: SaveResidueDraftUseCase<ProjectEvolutionDraft>;
 	/** The workspace-shared requirement reuse library + its actions. */
 	loadReuseLibrary: LoadReuseLibraryUseCase;
 	exportRequirement: ExportRequirementUseCase;
 	importRequirement: ImportRequirementUseCase;
 	removeReuseTemplate: RemoveReuseTemplateUseCase;
-	loadSupervisionDraft: LoadSupervisionDraftUseCase;
-	saveSupervisionDraft: SaveSimpleSectionDraftUseCase<ProjectSupervisionDraft>;
-	loadFinopsDraft: LoadFinopsDraftUseCase;
-	saveFinopsDraft: SaveSimpleSectionDraftUseCase<ProjectFinopsDraft>;
-	/** Provision the project's LiteLLM key from the active rules (opt-in gateway). */
-	pushFinopsRules: PushFinopsRulesUseCase;
-	/** Read the project's live LiteLLM spend back into the governor. */
-	pullFinopsUsage: PullFinopsUsageUseCase;
-	/** Provision one LiteLLM virtual key per Supervision member (opt-in gateway). */
-	pushMemberKeys: PushMemberKeysUseCase;
-	/** Read each member key's live spend back into the Supervision ledger. */
-	pullMemberSpend: PullMemberSpendUseCase;
-	/** Whether a LiteLLM proxy is configured (env-gated; false = air-gapped). */
-	litellmGatewayAvailable(): boolean;
-	/** The configured LiteLLM proxy base URL (empty when unavailable). */
-	litellmGatewayBaseUrl(): string;
 	loadDataDraft: LoadDataDraftUseCase;
 	saveDataDraft: SaveDataDraftUseCase;
 	loadArchitectureDraft: LoadArchitectureDraftUseCase;
@@ -570,8 +552,6 @@ export function getServices(): AppServices {
 		experienceDrafts: legacyExperienceDrafts,
 		rulesDrafts: legacyRulesDrafts,
 		glossaryDrafts,
-		supervisionDrafts,
-		finopsDrafts,
 		foundationOperationsDrafts,
 		architectureDrafts,
 		coherenceDrafts,
@@ -640,15 +620,6 @@ export function getServices(): AppServices {
 	// switch it off at runtime in Settings → Feedback.
 	const feedbackUrlRaw = (env.LYRIKS_FEEDBACK_URL ?? 'https://get.lyriks.io/api/v1/feedback').trim();
 	const feedbackEndpoint = feedbackUrlRaw === 'off' || feedbackUrlRaw === '0' ? '' : feedbackUrlRaw;
-	// AI Cost Governor gateway seam. OFF by default (air-gapped): only when BOTH
-	// LITELLM_GATEWAY_URL and LITELLM_MASTER_KEY are set do we wire the real proxy
-	// adapter; otherwise the Null adapter keeps the governor local/advisory. No new
-	// default egress — this is opt-in, matching the enterprise appliance posture.
-	const litellmGateway: LiteLLMGatewayPort =
-		env.LITELLM_GATEWAY_URL && env.LITELLM_MASTER_KEY
-			? new HttpLiteLLMGateway(env.LITELLM_GATEWAY_URL, env.LITELLM_MASTER_KEY)
-			: new NullLiteLLMGateway();
-	const finopsCheapModel = env.LITELLM_CHEAP_MODEL ?? 'gpt-4o-mini';
 	// AI seam: brief heuristics stay offline (the stub). Feature suggestions have
 	// no backend at all — the operator's LLM pushes them through the MCP write
 	// path, gated by the Settings switch.
@@ -706,6 +677,11 @@ export function getServices(): AppServices {
 		persistence.sectionDocuments,
 		'approvals',
 		parseApprovalsDraft
+	);
+	const evolutionDrafts = new SectionDocumentDraftRepository(
+		persistence.sectionDocuments,
+		'evolution',
+		parseEvolutionDraft
 	);
 	const scopeDrafts = new SectionDocumentDraftRepository(
 		persistence.sectionDocuments,
@@ -1007,21 +983,38 @@ export function getServices(): AppServices {
 		(err) => console.warn('[coherence] decisions/history unavailable:', err)
 	);
 
-	// The central knowledge graph — a derived read model that folds every
-	// per-context draft into one node/edge graph (the "Knowledge Base graph"
-	// of the platform diagram). Drafts stay authoritative; this projects
-	// them on demand. Swappable for an engine-backed provider via the same port.
-	const knowledgeGraph = new ProjectedKnowledgeGraphProvider(
-		loadFoundationDraft,
-		loadFeaturesDraft,
-		loadUsersDraft,
-		loadExperienceDraft,
-		loadDataDraft,
-		loadRulesDraft,
-		loadArchitectureDraft,
-		clock,
-		globalChecker,
-		upstream
+	// What the spec is at: every section's revision channel. Keys the graph
+	// cache below and the completion evidence further down.
+	const projectModelRevision = new ProjectModelRevisionReader(
+		SECTIONS.filter((section) => section !== 'scope'),
+		persistence.sectionDocuments,
+		persistence.draftLock
+	);
+	const kernelSignature = (projectId: string) => localBehavior.kernelSignature(projectId);
+
+	// The central knowledge graph, the official read model for anything that
+	// reasons across sections: a derived graph that folds every per-context
+	// draft into one node/edge graph (the "Knowledge Base graph" of the
+	// platform diagram). Drafts stay authoritative; the picture is assembled
+	// once per spec revision (section revisions + kernel folder) and served as
+	// it stands until the spec moves. Swappable for an engine-backed provider
+	// via the same port.
+	const knowledgeGraph = new CachedKnowledgeGraph(
+		new ProjectedKnowledgeGraphProvider(
+			loadFoundationDraft,
+			loadFeaturesDraft,
+			loadUsersDraft,
+			loadExperienceDraft,
+			loadDataDraft,
+			loadRulesDraft,
+			loadArchitectureDraft,
+			clock,
+			globalChecker,
+			upstream
+		),
+		projectModelRevision,
+		kernelSignature,
+		{ label: 'local' }
 	);
 	// Engine-backed variant of the SAME port: Enterprise-only DPO/MRS graph read
 	// from Lyriks-back. Other tiers and unavailable engines yield an empty graph.
@@ -1029,13 +1022,21 @@ export function getServices(): AppServices {
 		overlayPorts.engineKnowledgeGraph ?? new EmptyKnowledgeGraphProvider(() => clock.nowIso());
 	// The default explorer view: wizard projection + readable unspa behavior +
 	// the DPO verdict, in one graph (raw engine substrate stays on ?source=engine).
-	const mergedKnowledgeGraph = new MergedKnowledgeGraphProvider(
-		knowledgeGraph,
-		behavior,
-		formalVerdict,
-		clock,
-		(err) => console.warn('[graph] merged overlay degraded (best-effort):', err),
-		overlayPorts.formalVerdict !== undefined
+	// Cached on the same key: the overlays read the kernel folder (behavior) and
+	// the back's own cached verdict, so a moved spec is the only reason to
+	// assemble again; the freshness bound covers the verdict's own clock.
+	const mergedKnowledgeGraph = new CachedKnowledgeGraph(
+		new MergedKnowledgeGraphProvider(
+			knowledgeGraph,
+			behavior,
+			formalVerdict,
+			clock,
+			(err) => console.warn('[graph] merged overlay degraded (best-effort):', err),
+			overlayPorts.formalVerdict !== undefined
+		),
+		projectModelRevision,
+		kernelSignature,
+		{ label: 'merged' }
 	);
 	const loadScopeDraft = new LoadResidueDraftUseCase(scopeDrafts, (projectId) =>
 		parseScopeDraft(null, projectId)
@@ -1066,11 +1067,6 @@ export function getServices(): AppServices {
 			)
 		}
 	);
-	const projectModelRevision = new ProjectModelRevisionReader(
-		SECTIONS.filter((section) => section !== 'scope'),
-		persistence.sectionDocuments,
-		persistence.draftLock
-	);
 	// The gate, the audit and the finish all read the SAME evidence; a caller that
 	// retries reads it again. Memoizing it on the model's own fingerprints is what
 	// turns closing a project into one computation instead of one per call.
@@ -1085,7 +1081,7 @@ export function getServices(): AppServices {
 			projectModelRevision
 		),
 		projectModelRevision,
-		(projectId) => localBehavior.kernelSignature(projectId)
+		kernelSignature
 	);
 	const assessProjectCompleteness = new AssessProjectCompletenessUseCase(
 		loadScopeDraft,
@@ -1112,12 +1108,10 @@ export function getServices(): AppServices {
 		documentsDrafts,
 		baselinesDrafts,
 		approvalsDrafts,
-		supervisionDrafts,
-		finopsDrafts,
 		projectMirror,
 		backLinks,
 		behaviorPort,
-		(projectId) => localBehavior.kernelSignature(projectId)
+		kernelSignature
 	);
 
 	// Durable back-sync outbox (persistence-sync-remaining, item 5): every save
@@ -1153,7 +1147,25 @@ export function getServices(): AppServices {
 		? overlayPorts.stateDeletionCheck ?? { checkStateDeletion: async () => null }
 		: undefined;
 	const deleteBehaviorState = new DeleteBehaviorStateUseCase(behaviorPort, advisor, deletionPolicy);
+	// The model's acceptance criteria per feature, for the readers that must print
+	// or count ONE list: the rows the Features panel projected and the ones an AI
+	// client wrote. Titles only, which is all a document prints.
+	const featureAcceptance = {
+		byFeature: async (projectId: string) => {
+			const overview = await readBehaviorOverview(behaviorPort, maturityScorer, projectId);
+			return Object.fromEntries(
+				overview.features.map((f) => [f.featureId, f.acceptanceCriteria.map((c) => c.title)])
+			);
+		}
+	};
+
 	const built: AppServices = {
+		readProjectElaboration: new ReadProjectElaborationUseCase({
+			foundation: loadFoundationDraft, scope: loadScopeDraft, users: loadUsersDraft,
+			features: loadFeaturesDraft, completion: assessProjectCompleteness,
+			behavior: { execute: (projectId) => readBehaviorOverview(behaviorPort, maturityScorer, projectId) },
+			modelRevision: { fingerprint: async (projectId) => `${await projectModelRevision.fingerprint(projectId)}:${localBehavior.kernelSignature(projectId)}` }
+		}),
 		loadScopeDraft,
 		saveScopeDraft: new SaveScopeDraftUseCase(scopeDrafts, clock),
 		assessProjectCompleteness,
@@ -1205,6 +1217,8 @@ export function getServices(): AppServices {
 		saveBaselinesDraft: new SaveResidueDraftUseCase(baselinesDrafts, clock),
 		loadApprovalsDraft,
 		saveApprovalsDraft: new SaveResidueDraftUseCase(approvalsDrafts, clock),
+		loadEvolutionDraft: new LoadResidueDraftUseCase(evolutionDrafts, createEmptyEvolutionDraft),
+		saveEvolutionDraft: new SaveResidueDraftUseCase(evolutionDrafts, clock),
 		loadReuseLibrary: new LoadReuseLibraryUseCase(projectResidue),
 		exportRequirement: new ExportRequirementUseCase(
 			projectResidue,
@@ -1229,34 +1243,9 @@ export function getServices(): AppServices {
 			loadRulesDraft,
 			loadDataDraft,
 			loadArchitectureDraft,
-			new LoadResidueDraftUseCase(documentsDrafts, createEmptyDocumentsDraft)
+			new LoadResidueDraftUseCase(documentsDrafts, createEmptyDocumentsDraft),
+			featureAcceptance
 		),
-		loadSupervisionDraft: new LoadSupervisionDraftUseCase(supervisionDrafts),
-		saveSupervisionDraft: new SaveSimpleSectionDraftUseCase<ProjectSupervisionDraft>(
-			'supervision',
-			supervisionDrafts,
-			clock,
-			telemetry,
-			{ coherence: computeSupervisionCoherence }
-		),
-		loadFinopsDraft: new LoadFinopsDraftUseCase(finopsDrafts),
-		// Draft-only coherence (live signals aren't available server-side); the
-		// client shows the signal-aware score. Good enough for the autosave trail.
-		saveFinopsDraft: new SaveSimpleSectionDraftUseCase<ProjectFinopsDraft>('finops', finopsDrafts, clock, telemetry, {
-			coherence: computeFinopsCoherence
-		}),
-		pushFinopsRules: new PushFinopsRulesUseCase(
-			finopsDrafts,
-			litellmGateway,
-			clock,
-			telemetry,
-			finopsCheapModel
-		),
-		pullFinopsUsage: new PullFinopsUsageUseCase(finopsDrafts, litellmGateway, clock, telemetry),
-		pushMemberKeys: new PushMemberKeysUseCase(supervisionDrafts, litellmGateway, clock, telemetry),
-		pullMemberSpend: new PullMemberSpendUseCase(supervisionDrafts, litellmGateway, clock, telemetry),
-		litellmGatewayAvailable: () => litellmGateway.available,
-		litellmGatewayBaseUrl: () => litellmGateway.baseUrl,
 		loadDataDraft,
 		saveDataDraft: new SaveDataDraftUseCase(dataDrafts, clock, telemetry),
 		loadArchitectureDraft,
@@ -1290,7 +1279,8 @@ export function getServices(): AppServices {
 			loadRulesDraft,
 			loadDataDraft,
 			loadArchitectureDraft,
-			new LoadResidueDraftUseCase(documentsDrafts, createEmptyDocumentsDraft)
+			new LoadResidueDraftUseCase(documentsDrafts, createEmptyDocumentsDraft),
+			featureAcceptance
 		),
 		loadKnowledgeGraph: new LoadKnowledgeGraphUseCase(knowledgeGraph),
 		loadEngineKnowledgeGraph: new LoadKnowledgeGraphUseCase(engineKnowledgeGraph),
@@ -1319,7 +1309,9 @@ export function getServices(): AppServices {
 		readBehaviorOperations: new ReadBehaviorOperationsUseCase(advisor),
 		authorBehavior: new AuthorBehaviorUseCase(advisor, deleteBehaviorState),
 		codeAdoption,
-		resolveBehaviorContext: new ResolveBehaviorContextUseCase(advisor),
+		resolveBehaviorContext: new ResolveBehaviorContextUseCase(advisor, async (projectId) =>
+			(await loadFeaturesDraft.execute(projectId)).features.map((feature) => feature.id)
+		),
 		suggestFeatures: new SuggestFeaturesUseCase(featuresDrafts, projectResidue, settingsRepo),
 		submitFeatureSuggestions: new SubmitFeatureSuggestionsUseCase(projectResidue, settingsRepo),
 		loadSettings: new LoadSettingsUseCase(settingsRepo),

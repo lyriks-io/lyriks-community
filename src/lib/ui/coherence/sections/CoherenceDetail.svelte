@@ -83,7 +83,7 @@
 
 	/* Settle with a traced decision (persisted, append-only) */
 	// The rationale lives only in this session: acknowledgedGapIds is a bare
-	// string[], so persisting the reasoning (or writing a Supervision trace) would
+	// string[], so persisting a separate reasoning trace would
 	// need a schema change — out of scope. We never claim it is durably stored.
 	// The reason and the author are kept on the coherence section (append-only);
 	// the gap leaves the score everywhere and stays readable below, reopenable.

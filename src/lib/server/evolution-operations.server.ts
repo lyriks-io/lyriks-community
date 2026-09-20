@@ -1,0 +1,437 @@
+import type { AppServices } from '$composition/container.server';
+import {
+	answerOpenQuestionAct,
+	buildReportAct,
+	closeRequestAct,
+	crossStageAct,
+	decideLineAct,
+	decideProposalAct,
+	deleteRequestAct,
+	deriveCodeImpact,
+	deriveImplementationReport,
+	foldBackAct,
+	isImpactHypothesis,
+	isImplementationVerdict,
+	isLineDecision,
+	isObservationRuling,
+	isRequestOrigin,
+	liftWaiverAct,
+	mapCoherenceAnalysis,
+	markOpenQuestionAct,
+	openRequestAct,
+	postOnFieldAct,
+	propagateImpact,
+	proposeAct,
+	reachedFeatures,
+	rebriefAct,
+	refuse,
+	ruleObservationAct,
+	runCoherenceAct,
+	runImpactAct,
+	setLeavesAct,
+	tagReviewersAct,
+	updateRequestAct,
+	type ActContext,
+	type ActOutcome,
+	type Actor,
+	type EvolutionRequest,
+	type FeatureStatus,
+	type Guarded,
+	type ProjectEvolutionDraft
+} from '$domain/evolution';
+import { saveDossierField } from '$application/use-cases/save-dossier-field';
+import type { ProjectFeaturesDraft } from '$domain/features';
+import { mapLimit } from '$lib/shared/map-limit';
+import { loadEvolutionView, maturityOf, requestCard, type EvolutionView } from './evolution-view.server';
+
+/**
+ * Typed operations on the Evolution section, applied by the server.
+ *
+ * This is the write half of "everything a user can do", for the MCP: every act
+ * of the lifecycle as one operation, guarded here by the same rules the page
+ * applies, with the three reports COMPUTED from the platform's own engines
+ * (the knowledge graph, the coherence checker, the implementation index) rather
+ * than deposited by whoever calls.
+ *
+ * The batch is atomic: the operations are applied in order on a working copy,
+ * and nothing lands unless every one of them is allowed. A refusal names the
+ * operation, the reason the specification wrote, and why the rule exists.
+ */
+
+const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+const strList = (v: unknown): string[] =>
+	Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x !== '') : [];
+const num = (v: unknown, fallback: number): number =>
+	typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+
+export const EVOLUTION_OPERATIONS = [
+	'open_request',
+	'update_request',
+	'set_leaves',
+	'propose',
+	'decide_proposal',
+	'tag_reviewers',
+	'mark_open_question',
+	'answer_open_question',
+	'post_on_field',
+	'run_impact',
+	'run_coherence',
+	'build_implementation_report',
+	'cross_stage',
+	'lift_waiver',
+	'rebrief',
+	'decide_line',
+	'rule_observation',
+	'fold_back',
+	'close_request',
+	'delete_request'
+] as const;
+export type EvolutionOperationName = (typeof EVOLUTION_OPERATIONS)[number];
+
+export interface OperationResult {
+	readonly index: number;
+	readonly op: string;
+	readonly requestId: string | null;
+	readonly ok: boolean;
+	readonly summary: string;
+	readonly detail?: string;
+}
+
+export type ApplyOutcome =
+	| {
+			readonly ok: true;
+			readonly results: OperationResult[];
+			readonly revision: number;
+			readonly savedAt: string;
+			readonly requests: ReturnType<typeof requestCard>[];
+	  }
+	| { readonly ok: false; readonly status: 409 | 422; readonly results: OperationResult[] };
+
+interface Working {
+	evolution: ProjectEvolutionDraft;
+	features: ProjectFeaturesDraft;
+	featuresChanged: boolean;
+	readonly touched: Set<string>;
+}
+
+/** The engine's status of one feature, or null when it holds none. */
+async function featureStatus(services: AppServices, leafId: string): Promise<FeatureStatus | null> {
+	if (!services.codeAdoption.available) return null;
+	const result = await services.codeAdoption.getImplementationStatus(leafId).catch(() => null);
+	return result?.ok ? (result.value as FeatureStatus) : null;
+}
+
+export async function applyEvolutionOperations(
+	services: AppServices,
+	input: {
+		readonly projectId: string;
+		readonly operations: readonly unknown[];
+		readonly actor: Actor;
+		readonly origin: string | null;
+		readonly activeWorkspaceId?: string;
+	}
+): Promise<ApplyOutcome> {
+	const view = await loadEvolutionView(services, input.projectId, { activeWorkspaceId: input.activeWorkspaceId });
+	// The roster a proposal can be handed to; null where one member is alone.
+	const roster = view.members.length > 1 ? new Set(view.members.map((m) => m.id)) : null;
+	const working: Working = {
+		evolution: view.draft,
+		features: view.features,
+		featuresChanged: false,
+		touched: new Set()
+	};
+	const ctx: ActContext = {
+		actor: input.actor,
+		at: services.clock.nowIso(),
+		newId: () => crypto.randomUUID()
+	};
+	const knownLeafIds = new Set(view.leaves.map((l) => l.id));
+	const leafNames = Object.fromEntries(view.leaves.map((l) => [l.id, l.name]));
+	const sourceIds = new Set(view.sources.map((s) => s.id));
+	const bannedWords = view.glossaryTerms.flatMap((t) => t.synonymsAvoid ?? []);
+
+	const results: OperationResult[] = [];
+	const findRequest = (id: string): EvolutionRequest | undefined =>
+		working.evolution.requests.find((r) => r.id === id);
+	const put = (request: EvolutionRequest) => {
+		const exists = working.evolution.requests.some((r) => r.id === request.id);
+		working.evolution = {
+			...working.evolution,
+			requests: exists
+				? working.evolution.requests.map((r) => (r.id === request.id ? request : r))
+				: [...working.evolution.requests, request]
+		};
+		working.touched.add(request.id);
+	};
+
+	for (let index = 0; index < input.operations.length; index++) {
+		const raw = input.operations[index];
+		const op = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+		const name = str(op.op);
+		const requestId = str(op.requestId) || null;
+		const record = (outcome: ActOutcome | Guarded, id: string | null = requestId) => {
+			if (outcome.ok) {
+				if ('request' in outcome) put(outcome.request);
+				results.push({ index, op: name, requestId: 'request' in outcome ? outcome.request.id : id, ok: true, summary: 'summary' in outcome ? outcome.summary : 'ok' });
+				return true;
+			}
+			results.push({ index, op: name, requestId: id, ok: false, summary: outcome.reason, detail: outcome.detail });
+			return false;
+		};
+
+		if (!(EVOLUTION_OPERATIONS as readonly string[]).includes(name)) {
+			record(refuse(`Unknown operation "${name}".`, `The operations are: ${EVOLUTION_OPERATIONS.join(', ')}.`));
+			break;
+		}
+
+		if (name === 'open_request') {
+			const origin = op.origin;
+			const ok = record(
+				openRequestAct(ctx, {
+					id: str(op.id) || undefined,
+					title: str(op.title),
+					origin: isRequestOrigin(origin) ? origin : null,
+					requester: str(op.requester),
+					leafIds: strList(op.leafIds),
+					knownLeafIds
+				}),
+				null
+			);
+			if (!ok) break;
+			continue;
+		}
+
+		const request = requestId ? findRequest(requestId) : undefined;
+		if (!request) {
+			record(
+				refuse(
+					requestId ? `Request "${requestId}" does not exist on this project.` : 'requestId is required.',
+					'get_evolution lists the requests with their ids; open_request creates one.'
+				)
+			);
+			break;
+		}
+
+		let outcome: ActOutcome;
+		switch (name as EvolutionOperationName) {
+			case 'update_request': {
+				const origin = op.origin;
+				outcome = updateRequestAct(ctx, request, {
+					title: typeof op.title === 'string' ? op.title : undefined,
+					origin: isRequestOrigin(origin) ? origin : undefined,
+					requester: typeof op.requester === 'string' ? op.requester : undefined
+				});
+				break;
+			}
+			case 'set_leaves':
+				outcome = setLeavesAct(ctx, request, strList(op.leafIds), knownLeafIds);
+				break;
+			case 'propose':
+				outcome = proposeAct(
+					ctx,
+					request,
+					{
+						fieldPath: str(op.fieldPath),
+						leafId: str(op.leafId) || null,
+						value: str(op.value),
+						reasoning: str(op.reasoning),
+						citedSourceIds: strList(op.citedSourceIds),
+						readVsInferred: typeof op.readVsInferred === 'boolean' ? op.readVsInferred : undefined
+					},
+					{ sourceExists: (id) => sourceIds.has(id), bannedWords }
+				);
+				break;
+			case 'decide_proposal': {
+				const decision = str(op.decision);
+				const decisionInput =
+					decision === 'accept'
+						? ({ decision: 'accept' } as const)
+						: decision === 'refuse'
+							? ({ decision: 'refuse', comment: str(op.comment) } as const)
+							: decision === 'reword'
+								? ({ decision: 'reword', value: str(op.value) } as const)
+								: null;
+				if (!decisionInput) {
+					outcome = refuse('decision must be accept, refuse or reword.', 'Four decisions exist on a proposal; a comment goes through post_on_field.');
+					break;
+				}
+				outcome = decideProposalAct(ctx, request, str(op.proposalId), decisionInput, (proposal, leafId) => {
+					// The write-through: the value lands in the section that owns it, under
+					// the section's own refusal, and the dossier keeps no copy.
+					const written = saveDossierField(working.features, {
+						fieldPath: proposal.targetField,
+						leafId,
+						value: proposal.value,
+						sourceIds: proposal.citedSourceIds,
+						canWriteCanonical: input.actor.role !== 'viewer'
+					});
+					if (written.status === 'refused') return refuse(written.reason, written.detail);
+					working.features = written.draft;
+					working.featuresChanged = true;
+					return { ok: true };
+				});
+				break;
+			}
+			case 'tag_reviewers':
+				outcome = tagReviewersAct(ctx, request, str(op.proposalId), strList(op.reviewerIds), roster);
+				break;
+			case 'mark_open_question':
+				outcome = markOpenQuestionAct(ctx, request, str(op.fieldPath), str(op.leafId) || null);
+				break;
+			case 'answer_open_question':
+				outcome = answerOpenQuestionAct(ctx, request, str(op.fieldPath), str(op.leafId) || null);
+				break;
+			case 'post_on_field':
+				outcome = postOnFieldAct(ctx, request, str(op.fieldPath), str(op.leafId) || null, str(op.body));
+				break;
+			case 'run_impact': {
+				const hypothesis = isImpactHypothesis(op.hypothesis) ? op.hypothesis : request.impactReport.hypothesis;
+				const depth = num(op.depth, request.impactReport.depth);
+				const graph = await services.loadKnowledgeGraph.execute(input.projectId);
+				const spec = propagateImpact({
+					request,
+					hypothesis,
+					depth,
+					graph: { nodes: graph.nodes, edges: graph.edges },
+					terms: view.glossaryTerms.map((t) => ({ id: t.id, term: t.term, synonymsAllowed: t.synonymsAllowed }))
+				});
+				// The code plane: the files anchoring the touched features and the
+				// features the spec plane reached, read off the synced index.
+				const depthByFeature: Record<string, number> = {
+					...reachedFeatures(spec),
+					...Object.fromEntries(request.leafIds.map((id) => [id, 1]))
+				};
+				const featureIds = Object.keys(depthByFeature).filter((id) => knownLeafIds.has(id));
+				const statuses = Object.fromEntries(
+					await mapLimit(featureIds, 2, async (id) => [id, await featureStatus(services, id)] as const)
+				);
+				const code = deriveCodeImpact({ request, hypothesis, statuses, depthByFeature, leafNames });
+				outcome = runImpactAct(ctx, request, hypothesis, depth, [...spec, ...code]);
+				break;
+			}
+			case 'run_coherence': {
+				const { analysis } = await services.loadCoherenceDraft.execute(input.projectId);
+				outcome = runCoherenceAct(
+					ctx,
+					request,
+					mapCoherenceAnalysis({ request, analysis, leafNames, at: ctx.at })
+				);
+				break;
+			}
+			case 'build_implementation_report': {
+				// The neighbours worth reading: what the touched features depend on and
+				// what depends on them, which is where a change disturbs a span.
+				const meta = working.features.leafMeta ?? {};
+				const neighbourIds = new Set<string>();
+				for (const leafId of request.leafIds) {
+					for (const dep of meta[leafId]?.dependsOn ?? []) neighbourIds.add(dep);
+					for (const [otherId, other] of Object.entries(meta))
+						if ((other.dependsOn ?? []).includes(leafId)) neighbourIds.add(otherId);
+				}
+				for (const leafId of request.leafIds) neighbourIds.delete(leafId);
+				const [own, near] = await Promise.all([
+					mapLimit(request.leafIds, 2, async (id) => [id, await featureStatus(services, id)] as const),
+					mapLimit([...neighbourIds], 2, async (id) => [id, await featureStatus(services, id)] as const)
+				]);
+				const lines = deriveImplementationReport({
+					request,
+					statuses: Object.fromEntries(own),
+					neighbours: Object.fromEntries(near),
+					leafNames
+				});
+				outcome = buildReportAct(ctx, request, lines);
+				break;
+			}
+			case 'cross_stage':
+				outcome = crossStageAct(ctx, request, {
+					criticalEmptyCount: maturityOf(view, working.features, request).criticalEmptyCount,
+					waiverReason: typeof op.waiverReason === 'string' ? op.waiverReason : undefined
+				});
+				break;
+			case 'lift_waiver':
+				outcome = liftWaiverAct(ctx, request);
+				break;
+			case 'rebrief':
+				outcome = rebriefAct(ctx, request);
+				break;
+			case 'decide_line': {
+				const decision = op.decision;
+				const verdict = op.verdict;
+				outcome = decideLineAct(ctx, request, {
+					lineId: str(op.lineId) || undefined,
+					verdict: isImplementationVerdict(verdict) ? verdict : undefined,
+					decision: isLineDecision(decision) ? decision : 'undecided'
+				});
+				break;
+			}
+			case 'rule_observation': {
+				const ruling = op.ruling;
+				if (!isObservationRuling(ruling) || ruling === 'open') {
+					outcome = refuse('ruling must be validated, invalidated, deferred or requalified.', 'A thread ends in exactly one ruling.');
+					break;
+				}
+				outcome = ruleObservationAct(ctx, request, str(op.observationId), ruling, str(op.reason));
+				break;
+			}
+			case 'fold_back': {
+				const leafId = str(op.leafId);
+				const text = str(op.text);
+				outcome = foldBackAct(
+					ctx,
+					request,
+					{ observationId: str(op.observationId), leafId, kind: 'acceptance_criterion', text },
+					() => {
+						const meta = working.features.leafMeta ?? {};
+						const current = meta[leafId] ?? {};
+						working.features = {
+							...working.features,
+							leafMeta: {
+								...meta,
+								[leafId]: {
+									...current,
+									acceptanceCriteria: [
+										...(current.acceptanceCriteria ?? []),
+										{ id: ctx.newId(), text: text.trim() }
+									]
+								}
+							}
+						};
+						working.featuresChanged = true;
+						return { ok: true };
+					}
+				);
+				break;
+			}
+			case 'close_request':
+				outcome = closeRequestAct(ctx, request);
+				break;
+			case 'delete_request':
+				outcome = deleteRequestAct(ctx, request);
+				break;
+			default:
+				outcome = refuse(`Unknown operation "${name}".`, `The operations are: ${EVOLUTION_OPERATIONS.join(', ')}.`);
+		}
+		if (!record(outcome)) break;
+	}
+
+	if (results.some((r) => !r.ok)) return { ok: false, status: 422, results };
+
+	// Persist: the canonical section first (it is what an accepted value IS),
+	// then the dossier under the revision it was read at.
+	if (working.featuresChanged) await services.saveFeaturesDraft.execute(working.features);
+	const saved = await services.saveEvolutionDraft.execute(working.evolution, {
+		expectedRevision: view.revision,
+		origin: input.origin
+	});
+	if (!saved) return { ok: false, status: 409, results };
+	services.implementationCoverage.invalidate(input.projectId);
+
+	// The touched requests as cards, read back off the saved state; the dossier
+	// itself is one get_evolution away, so a batch answer stays small.
+	const after: EvolutionView = await loadEvolutionView(services, input.projectId, { activeWorkspaceId: input.activeWorkspaceId });
+	const requests = [...working.touched]
+		.map((id) => after.draft.requests.find((r) => r.id === id))
+		.filter((r): r is EvolutionRequest => r !== undefined)
+		.map((r) => requestCard(after, r));
+	return { ok: true, results, revision: saved.revision, savedAt: saved.savedAt, requests };
+}

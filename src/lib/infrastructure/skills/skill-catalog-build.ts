@@ -1,9 +1,14 @@
 import type {
+	BindingHookInstall,
+	BindingInstallTarget,
+	BindingToolInstall,
 	InstalledSkillRef,
 	Skill,
+	SkillBinding,
 	SkillClientId,
 	SkillInstallTarget,
 	SkillSyncEntry,
+	SkillSyncOptions,
 	SkillSyncResult
 } from '$application/ports';
 
@@ -22,7 +27,8 @@ export const PUBLISHED_SKILL_IDS = [
 	'lyriks-design',
 	'lyriks-behavior',
 	'lyriks-retrospec',
-	'lyriks-delivery'
+	'lyriks-delivery',
+	'lyriks-evolution'
 ] as const;
 
 /**
@@ -218,13 +224,15 @@ export function buildSkillCatalog(files: Record<string, string>): Skill[] {
 export function diffSkillCatalog(
 	catalog: Skill[],
 	installed: InstalledSkillRef[],
-	client?: SkillClientId
+	client?: SkillClientId,
+	options: SkillSyncOptions = {}
 ): SkillSyncResult {
 	const reported = new Map<string, InstalledSkillRef>();
 	for (const ref of installed) reported.set(ref.id, ref);
 
 	const published = new Set(catalog.map((skill) => skill.id));
-	const skills: SkillSyncEntry[] = catalog.map((skill) => {
+	const selected = options.skillIds ? new Set(options.skillIds) : null;
+	const skills: SkillSyncEntry[] = catalog.filter((skill) => !selected || selected.has(skill.id)).map((skill) => {
 		const local = reported.get(skill.id);
 		const status: SkillSyncEntry['status'] = !local
 			? 'new'
@@ -245,12 +253,182 @@ export function diffSkillCatalog(
 			installPath: skillInstallPath(skill.id),
 			installTargets: narrowed.length > 0 ? narrowed : skill.installTargets
 		};
-		if (status !== 'up-to-date') entry.installContent = skill.installContent;
+		if (status !== 'up-to-date') {
+			if (options.includeContent === false) entry.contentDeferred = true;
+			else entry.installContent = skill.installContent;
+		}
 		return entry;
 	});
 
 	return {
 		skills,
-		unknown: installed.map((ref) => ref.id).filter((id) => !published.has(id))
+		unknown: [...new Set([...installed.map((ref) => ref.id), ...(options.skillIds ?? [])])].filter((id) => !published.has(id))
+	};
+}
+
+// The binding: the repository stays bound to its Lyriks project. Saying "use
+// the Lyriks MCP" once must bind every later request, in every later session,
+// for every user of the repository. sync_skills therefore also returns what
+// makes that binding durable: a block in the instruction file each runtime
+// always loads, and for Claude Code a hook that restates the rule on every
+// prompt. It also carries the helper scripts the block refers to. Applying it
+// is idempotent (marked region, verbatim files, deduplicated settings entry).
+
+/** Delimiters of the binding block: one region per instruction file, replaced on every sync. */
+export const BINDING_MARKERS = {
+	open: '<!-- lyriks-binding -->',
+	close: '<!-- /lyriks-binding -->'
+} as const;
+
+/** Where the Claude Code binding hook is written, relative to the workspace root. */
+export const BINDING_HOOK_PATH = '.claude/hooks/lyriks-bound-prompt.mjs';
+/** Claude Code's project settings, where the hook is wired. */
+export const BINDING_SETTINGS_PATH = '.claude/settings.json';
+/** Where the helper scripts go, relative to the workspace root: one folder, whatever the runtime. */
+export const BINDING_TOOLS_DIR = '.lyriks/tools';
+
+/**
+ * The block every runtime gets in the instruction file it always loads. Names
+ * the project when the sync was told which one, so a fresh session knows where
+ * the spec lives without a lookup.
+ */
+export function buildBindingBlock(projectId?: string | null): string {
+	const id = projectId?.trim();
+	const where = id ? `the Lyriks project \`${id}\`` : 'its Lyriks project';
+	return [
+		BINDING_MARKERS.open,
+		'## This product is specified in Lyriks',
+		'',
+		`Its spec lives in ${where} and nowhere else; the code is written from it. Every request about this product goes through the Lyriks MCP, without anyone repeating "update Lyriks": the binding holds for every request of every session.`,
+		'',
+		'- A request to MAKE a change to what the product does (a capability, a rule, a screen, a field, a state, a flow, a message) is a spec change FIRST: author or patch it through the MCP (`apply_behavior_batch`, `patch_section`, `build_screen`, `wire_element`), then write the code, then record where the code implements it (index entries carrying their signature line, `sync_implementation_index`), in the same turn. The sync takes a partial index: send the entries of the features you touched, each action or surface with all of its children, never the whole file when it is large. Never let the code get ahead of the spec; a number only a measurement can settle is specified as a provisional constant, measured, then written once.',
+		'- A change someone asks to QUALIFY (what it would involve, an estimate, an impact report, a dossier to prepare, a decision that belongs to someone else) is an Evolution request instead (`get_evolution` / `apply_evolution_batch`, skill `lyriks-evolution`): it plans and never writes the sections. When a request could be either ("we should add X"), ask which in one sentence; never choose silently.',
+		'- A question about how the product behaves, whether something is right, what is missing or what broke is a spec READ first (`get_behavior_feature`, `get_section`, `get_implementation_status` / `get_implementation_gaps` / `get_implementation_drift`, `simulate_experience`, `verify_experience`). Never answer from the code alone or from memory.',
+		'- Only work with no user-visible effect (a refactor, a build or dependency fix, formatting) skips the spec; say so in one line. A request that contradicts the spec is surfaced, not coded around: say what the spec says and let the user decide.',
+		`- The scripts in \`${BINDING_TOOLS_DIR}/\` do what a tool call cannot: \`check-index.mjs --fix\` checks \`.unspa.json\` against the code by signature text, \`sync-index.mjs\` and \`apply-batch.mjs\` send an index or a batch too large to type.`,
+		'- If the Lyriks MCP is not connected, say so and do not guess specified behavior from the code.',
+		BINDING_MARKERS.close
+	].join('\n');
+}
+
+/** The hook entry Claude Code runs on every prompt (a relative path: hooks run from the workspace root). */
+export function buildBindingHookEntry(): BindingHookInstall['settingsEntry'] {
+	return {
+		type: 'command',
+		command: `node ${BINDING_HOOK_PATH}`,
+		timeout: 10,
+		statusMessage: 'Lyriks binding'
+	};
+}
+
+/** The Claude Code hook install: the script verbatim, and how to wire it in the project settings. */
+export function buildBindingHook(script: string): BindingHookInstall {
+	const entry = buildBindingHookEntry();
+	return {
+		path: BINDING_HOOK_PATH,
+		content: script,
+		contentHash: fnv1aHash(script),
+		settingsPath: BINDING_SETTINGS_PATH,
+		settingsEvent: 'UserPromptSubmit',
+		settingsEntry: entry,
+		settingsContent: JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [entry] }] } }, null, 2) + '\n'
+	};
+}
+
+/**
+ * The helper scripts, in install order, each with the sentence an agent reads
+ * to pick one. They exist because field sessions kept hand-writing a JSON-RPC
+ * client to send an index or a batch too large for a tool argument, and kept
+ * checking the index with line-exact comparisons that punish clean edits.
+ */
+export const BINDING_TOOLS: ReadonlyArray<{ file: string; purpose: string }> = [
+	{
+		file: 'check-index.mjs',
+		purpose:
+			'`node .lyriks/tools/check-index.mjs [--fix] [--json]`: checks every .unspa.json entry against the code the way the engine does (the signature is found by its text, `line` is a hint), reports every problem in one run, and with --fix rewrites the line numbers that moved. Replaces any line-exact checker.'
+	},
+	{
+		file: 'ingest-results.mjs',
+		purpose:
+			'`node .lyriks/tools/ingest-results.mjs <report.json> [--dry-run] [--json]`: reads a vitest or jest JSON report, keeps the tests whose title carries a scenario token `[unspa:<surfaceId>:<actionId>:<scenarioId>]` (the `titleToken` of export_behavior_scenarios), and stamps `verifiedAt` on each action whose every result passed, removes it from one with a failing result, and only reports an action that has no index entry. Located and proven are two claims: this is the only way `verifiedAt` gets written. No network.'
+	},
+	{
+		file: 'sync-index.mjs',
+		purpose:
+			'`node .lyriks/tools/sync-index.mjs [--feature <featureId>] [--project <id>]`: sends .unspa.json to sync_implementation_index (the whole index, or the keys of one feature) and prints the counters with what each one means.'
+	},
+	{
+		file: 'apply-batch.mjs',
+		purpose:
+			'`node .lyriks/tools/apply-batch.mjs <feature_id> <ops.json> [--dry-run | --commit TOKEN]`: sends a behavior batch read from a file to apply_behavior_batch and prints ok, errors, refs, commitToken and scenarios.'
+	},
+	{
+		file: 'mcp-call.mjs',
+		purpose:
+			'`node .lyriks/tools/mcp-call.mjs <tool> <args.json | -> [--out FILE]`: calls any Lyriks MCP tool with arguments read from a file or stdin, and prints the result text or writes it to --out.'
+	},
+	{
+		file: 'mcp-client.mjs',
+		purpose:
+			'Not run directly: the Streamable HTTP MCP client the networked scripts import (endpoint from --url or LYRIKS_MCP_URL, bearer from --token or LYRIKS_MCP_TOKEN).'
+	},
+	{
+		file: 'index-file.mjs',
+		purpose: 'Not run directly: finds and reads .unspa.json (walking up from the working directory) for the other scripts.'
+	}
+];
+
+/**
+ * The installable scripts from `path -> raw file` (the adapter's glob result),
+ * matched by file name. A script missing from the bundle is logged and left
+ * out rather than thrown on: this runs inside customer appliances, where a
+ * throw on every sync would cost far more than a missing helper.
+ */
+export function buildBindingTools(files: Readonly<Record<string, string>>): BindingToolInstall[] {
+	const byName = new Map<string, string>();
+	for (const [path, raw] of Object.entries(files)) byName.set(path.slice(path.lastIndexOf('/') + 1), raw);
+	const tools: BindingToolInstall[] = [];
+	for (const { file, purpose } of BINDING_TOOLS) {
+		const content = byName.get(file);
+		if (content === undefined) {
+			console.error(`[skill-catalog] helper script "${file}" is not in the bundle; this build shipped without it.`);
+			continue;
+		}
+		tools.push({ path: `${BINDING_TOOLS_DIR}/${file}`, content, contentHash: fnv1aHash(content), purpose });
+	}
+	return tools;
+}
+
+/**
+ * The binding for one sync: one target per runtime (narrowed like the skill
+ * layouts when the client names itself), the same block for all, the hook for
+ * Claude Code alone, the helper scripts for everyone (plain Node, no runtime
+ * involved). Claude Code discovers skills natively but still reads CLAUDE.md,
+ * which is where its block goes.
+ */
+export function buildBinding(
+	hookScript: string,
+	client?: SkillClientId,
+	projectId?: string | null,
+	toolFiles: Readonly<Record<string, string>> = {}
+): SkillBinding {
+	const block = buildBindingBlock(projectId);
+	const hook = buildBindingHook(hookScript);
+	const targets: BindingInstallTarget[] = CLIENT_LAYOUTS.map((layout) => {
+		const target: BindingInstallTarget = {
+			client: layout.client,
+			label: layout.label,
+			pointerPath: layout.pointerPath ?? 'CLAUDE.md',
+			pointerBlock: block
+		};
+		if (layout.client === 'claude') target.hook = hook;
+		return target;
+	});
+	const narrowed = client ? targets.filter((target) => target.client === client) : targets;
+	return {
+		projectId: projectId?.trim() || null,
+		markers: { ...BINDING_MARKERS },
+		targets: narrowed.length > 0 ? narrowed : targets,
+		tools: buildBindingTools(toolFiles)
 	};
 }

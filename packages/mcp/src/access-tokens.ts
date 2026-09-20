@@ -9,9 +9,11 @@ interface Grant {
 const grants = new Map<string, Grant>()
 const MAX_GRANTS = 1000
 export const ACCESS_TOKEN_TTL_SECONDS = 3600
-// Bounded by the platform session it wraps (seven days): a refresh past the
-// session's own expiry fails at verifyPlatformSession, whatever this says.
-export const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 3600
+// Matches the thirty days each grant re-signs the wrapped platform session for
+// (oauth.ts): the sign-in lives while it is used at least once every thirty
+// days, and a refresh past the session's own expiry still fails at
+// verifyPlatformSession, whatever this says.
+export const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 3600
 const REFRESH_PREFIX = 'lyriks_mcp_refresh_'
 const digest = (token: string) => createHash('sha256').update(token).digest('hex')
 

@@ -50,6 +50,12 @@ export interface SectionDocumentStorePort {
 	): Promise<number | null>;
 	/** Current revision for a section (0 if never saved). */
 	currentRevision(projectId: string, section: string): Promise<number>;
+	/**
+	 * Every stored section's revision for a project in one read (sections never
+	 * saved are absent). Optional: an adapter that cannot batch omits it and the
+	 * revision reader falls back to one `currentRevision` per section.
+	 */
+	currentRevisions?(projectId: string): Promise<ReadonlyMap<string, number>>;
 }
 
 /** Options a versioned caller (the autosave route) passes through to `save`. */

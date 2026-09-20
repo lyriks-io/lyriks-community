@@ -40,7 +40,7 @@ import {
 	type ProjectRulesDraft
 } from '$domain/rules';
 import { computeDataCoherence, type ProjectDataDraft } from '$domain/data';
-import { computeArchitectureCoherence, type ProjectArchitectureDraft } from '$domain/architecture';
+import { architectureStage, computeArchitectureCoherence, type ProjectArchitectureDraft } from '$domain/architecture';
 import { computeGlossaryCoherence, type ProjectGlossaryDraft } from '$domain/glossary';
 import type {
 	BehaviorRepositoryPort,
@@ -658,7 +658,7 @@ function detectGaps(
 
 	// Unreferenced tech (Step 08).
 	const unreferenced = architecture.techChoices.filter((t) => !t.referenceDocId).length;
-	if (unreferenced > 0) {
+	if (architectureStage(architecture) === 'implementation' && unreferenced > 0) {
 		gaps.push({
 			id: 'gap-architecture-refs',
 			checkId: 'architecture.references',

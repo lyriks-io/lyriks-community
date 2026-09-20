@@ -7,6 +7,7 @@ import {
 } from '$domain/rules';
 import type { BehaviorOp } from '$application/ports';
 import { experienceFeatureId } from './aux-feature-ids';
+import { ACCEPTANCE_EDGE_PREFIX } from './ownership';
 
 /**
  * The Lyriks-owned RESIDUE for the Rules section (Step 06). The derived `inventory`
@@ -46,7 +47,8 @@ export function rulesAcceptanceOps(projectId: string, draft: ProjectRulesDraft):
 		{
 			kind: 'mirrorFeatureAcceptance',
 			featureId: experienceFeatureId(projectId),
-			acceptanceCriteria: acceptanceCriteria as unknown as Record<string, unknown>[]
+			acceptanceCriteria: acceptanceCriteria as unknown as Record<string, unknown>[],
+			ownedPrefix: ACCEPTANCE_EDGE_PREFIX
 		}
 	];
 }
@@ -60,7 +62,7 @@ const OUTCOME_MAP: Record<EdgeOutcome, 'success' | 'failure' | 'blocked'> = {
 
 function acceptanceCriterion(edge: EdgeCase) {
 	return {
-		id: `ac-edge-${edge.id}`,
+		id: `${ACCEPTANCE_EDGE_PREFIX}${edge.id}`,
 		title: edge.title,
 		given: edge.given,
 		when: edge.whenText,

@@ -10,8 +10,6 @@ import type {
 	FoundationDefinitionRepositoryPort,
 	FoundationOperationsRepositoryPort,
 	GlossaryDraftRepositoryPort,
-	SupervisionDraftRepositoryPort,
-	FinopsDraftRepositoryPort,
 	ProjectMirrorPort,
 	RulesDraftRepositoryPort,
 	SectionDraftRepositoryPort,
@@ -56,8 +54,6 @@ export class PushEnvelopeToBackUseCase {
 	private readonly documentsDrafts: SectionDraftRepositoryPort<ProjectDocumentsDraft>,
 	private readonly baselinesDrafts: SectionDraftRepositoryPort<ProjectBaselinesDraft>,
 	private readonly approvalsDrafts: SectionDraftRepositoryPort<ProjectApprovalsDraft>,
-	private readonly supervisionDrafts: SupervisionDraftRepositoryPort,
-	private readonly finopsDrafts: FinopsDraftRepositoryPort,
 		private readonly client: ProjectMirrorPort,
 		private readonly backLinks: BackLinkRepositoryPort,
 		/**
@@ -188,8 +184,6 @@ export class PushEnvelopeToBackUseCase {
 			documents,
 			baselines,
 			approvals,
-			supervision,
-			finops
 		] = await Promise.all([
 			this.identityDrafts.load(projectId),
 			this.scopeDrafts.load(projectId),
@@ -206,8 +200,6 @@ export class PushEnvelopeToBackUseCase {
 			this.documentsDrafts.load(projectId),
 			this.baselinesDrafts.load(projectId),
 			this.approvalsDrafts.load(projectId),
-			this.supervisionDrafts.load(projectId),
-			this.finopsDrafts.load(projectId)
 		]);
 
 		const envelope: Record<string, unknown> = {};
@@ -231,8 +223,6 @@ export class PushEnvelopeToBackUseCase {
 		if (documents) envelope.documents = documents;
 		if (baselines) envelope.baselines = baselines;
 		if (approvals) envelope.approvals = approvals;
-		if (supervision) envelope.supervision = supervision;
-		if (finops) envelope.finops = finops;
 
 		const result = await this.client.pushEnvelope(
 			backProjectId,

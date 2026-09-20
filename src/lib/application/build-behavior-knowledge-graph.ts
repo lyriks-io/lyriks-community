@@ -68,11 +68,15 @@ interface UState {
 	path?: unknown;
 	type?: unknown;
 	description?: unknown;
+	/** Expression a derived state recomputes itself from. Newer engines only. */
+	derived?: unknown;
+	valueSetId?: unknown;
 }
 interface UParameter {
 	id?: unknown;
 	name?: unknown;
 	bindToStatePath?: unknown;
+	valueSetId?: unknown;
 }
 interface URule {
 	id?: unknown;
@@ -85,6 +89,8 @@ interface UEffect {
 	id?: unknown;
 	type?: unknown;
 	path?: unknown;
+	/** What the effect writes INTO `path`: an expression that may read other states. */
+	value?: unknown;
 	event?: unknown;
 	target?: unknown;
 	targetRef?: unknown;
@@ -129,6 +135,50 @@ interface UResource {
 	name?: unknown;
 	type?: unknown;
 }
+/**
+ * What a feature promises, as newer engines carry it. All optional: an older
+ * snapshot has none of these keys and must project exactly as it did before.
+ */
+interface UCriterionRelation {
+	kind?: unknown;
+	criterionId?: unknown;
+	/** Set only when the related criterion lives in ANOTHER feature. */
+	featureId?: unknown;
+	note?: unknown;
+}
+interface UCriterion {
+	id?: unknown;
+	title?: unknown;
+	given?: unknown;
+	when?: unknown;
+	then?: unknown;
+	expectedOutcome?: unknown;
+	relatedSurfaceId?: unknown;
+	description?: unknown;
+	status?: unknown;
+	relations?: unknown;
+}
+interface UConstant {
+	id?: unknown;
+	name?: unknown;
+	value?: unknown;
+	description?: unknown;
+}
+interface UValueSet {
+	id?: unknown;
+	name?: unknown;
+	values?: unknown;
+	description?: unknown;
+}
+/** A feature-level invariant, or a reachability goal (which adds its `kind`). */
+interface UFeatureRule {
+	id?: unknown;
+	name?: unknown;
+	description?: unknown;
+	category?: unknown;
+	condition?: unknown;
+	kind?: unknown;
+}
 interface UFeature {
 	id?: unknown;
 	name?: unknown;
@@ -139,6 +189,11 @@ interface UFeature {
 	resources?: unknown;
 	events?: unknown;
 	dependencies?: unknown;
+	acceptanceCriteria?: unknown;
+	featureInvariants?: unknown;
+	reachabilityGoals?: unknown;
+	constants?: unknown;
+	valueSets?: unknown;
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -157,11 +212,31 @@ function objectId(entry: unknown): string {
 	return str((entry as { id?: unknown }).id);
 }
 
-function statePaths(entry: unknown): string[] {
-	const found = new Set<string>();
+/** What one authored expression tree references, wherever the reference sits. */
+interface ExpressionRefs {
+	readonly states: string[];
+	readonly constants: string[];
+}
+
+/**
+ * The ONE walker over an authored expression tree. A rule condition, an
+ * effect's value, a derived formula, a goal's condition and a scenario's
+ * assertions are all the same shape, so they are all read here rather than in
+ * five half-walkers: a reference nested under three operators is exactly the
+ * one that used to be missed (a `set_state` whose value reads two other states
+ * projected the write and neither read).
+ *
+ * A state is recognised by the KEYS the wire format puts a path under (`path`,
+ * `left`, `bindToStatePath`), a constant by the expression node itself
+ * (`{ kind: 'const', name }`). A `{ kind: 'literal', value }` is not a
+ * reference, and a `param` name is not a state, so neither is collected.
+ */
+function expressionRefs(entry: unknown): ExpressionRefs {
+	const states = new Set<string>();
+	const constants = new Set<string>();
 	const visit = (value: unknown, key = ''): void => {
 		if (typeof value === 'string') {
-			if (key === 'path' || key === 'left' || key === 'bindToStatePath') found.add(value);
+			if (key === 'path' || key === 'left' || key === 'bindToStatePath') states.add(value);
 			return;
 		}
 		if (Array.isArray(value)) {
@@ -169,10 +244,19 @@ function statePaths(entry: unknown): string[] {
 			return;
 		}
 		if (!value || typeof value !== 'object') return;
+		const node = value as { kind?: unknown; name?: unknown };
+		if (node.kind === 'const' && typeof node.name === 'string' && node.name.length > 0) {
+			constants.add(node.name);
+		}
 		for (const [childKey, child] of Object.entries(value)) visit(child, childKey);
 	};
 	visit(entry);
-	return [...found];
+	return { states: [...states], constants: [...constants] };
+}
+
+/** The state paths an expression tree reads: the half most callers want. */
+function statePaths(entry: unknown): string[] {
+	return expressionRefs(entry).states;
 }
 
 /** The name of an emitted event, whether the entry is a bare string or an object. */
@@ -417,6 +501,168 @@ export function buildBehaviorGraphElements(
 			edges.push({ id: `e:beh:${fid}->event:${name}`, from: fNodeId, to: eventNodeId, kind: 'contains' });
 		}
 
+		// ── What the feature PROMISES, before the surfaces that reference it ──
+		// Constants and value sets come first: a rule, an effect or a state below
+		// names them, and an edge is only drawn to something this feature declared.
+		const constantNames = new Set<string>();
+		for (const constantRaw of arr(f.constants)) {
+			const constant = (constantRaw ?? {}) as UConstant;
+			const name = str(constant.name);
+			if (!name) continue;
+			constantNames.add(name);
+			const value = constant.value;
+			nodes.push({
+				id: nodeId('constant', `beh:${fid}:${name}`),
+				kind: 'constant',
+				context: 'behavior',
+				label: name,
+				detail: str(constant.description) || undefined,
+				// The value is the point of a constant, so it travels when it is a scalar.
+				...(typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+					? { meta: { value } }
+					: {})
+			});
+			edges.push({
+				id: `e:beh:${fid}->constant:${name}`,
+				from: fNodeId,
+				to: nodeId('constant', `beh:${fid}:${name}`),
+				kind: 'contains'
+			});
+		}
+
+		/** `reads` edges to every constant of THIS feature an expression references. */
+		const readsConstants = (fromId: string, edgeIdPrefix: string, expression: unknown): void => {
+			for (const name of expressionRefs(expression).constants) {
+				// A name the feature never declared is a spec error, not an edge.
+				if (!constantNames.has(name)) continue;
+				edges.push({
+					id: `${edgeIdPrefix}->constant:${name}`,
+					from: fromId,
+					to: nodeId('constant', `beh:${fid}:${name}`),
+					kind: 'reads'
+				});
+			}
+		};
+
+		for (const valueSetRaw of arr(f.valueSets)) {
+			const valueSet = (valueSetRaw ?? {}) as UValueSet;
+			const valueSetId = objectId(valueSetRaw);
+			if (!valueSetId) continue;
+			const values = arr(valueSet.values).map(str).filter(Boolean);
+			nodes.push({
+				id: nodeId('valueSet', `beh:${fid}:${valueSetId}`),
+				kind: 'valueSet',
+				context: 'behavior',
+				label: str(valueSet.name) || valueSetId,
+				// The allowed values, so searching for one of them finds the set.
+				detail: values.join(' | ') || str(valueSet.description) || undefined
+			});
+			edges.push({
+				id: `e:beh:${fid}->value-set:${valueSetId}`,
+				from: fNodeId,
+				to: nodeId('valueSet', `beh:${fid}:${valueSetId}`),
+				kind: 'contains'
+			});
+		}
+
+		for (const criterionRaw of arr(f.acceptanceCriteria)) {
+			const criterion = (criterionRaw ?? {}) as UCriterion;
+			const criterionId = objectId(criterionRaw);
+			if (!criterionId) continue;
+			const criterionNodeId = nodeId('criterion', `beh:${fid}:${criterionId}`);
+			const status = str(criterion.status);
+			const outcome = str(criterion.expectedOutcome);
+			nodes.push({
+				id: criterionNodeId,
+				kind: 'criterion',
+				context: 'behavior',
+				label: str(criterion.title) || criterionId,
+				// The prose itself, joined, so a search for the words of a criterion
+				// finds it. It is documentation: nothing here is model-checked.
+				detail:
+					[str(criterion.given), str(criterion.when), str(criterion.then)]
+						.filter(Boolean)
+						.join(' · ') ||
+					str(criterion.description) ||
+					undefined,
+				...(status || outcome
+					? { meta: { ...(status ? { status } : {}), ...(outcome ? { expectedOutcome: outcome } : {}) } }
+					: {})
+			});
+			edges.push({
+				id: `e:beh:${fid}->criterion:${criterionId}`,
+				from: fNodeId,
+				to: criterionNodeId,
+				kind: 'contains'
+			});
+			// The surface a criterion is about may live on a sibling feature, so the
+			// edge is queued like any other and dropped if it stays dangling.
+			const relatedSurfaceId = str(criterion.relatedSurfaceId);
+			if (relatedSurfaceId) {
+				edges.push({
+					id: `e:beh:${fid}:criterion:${criterionId}->surface:${relatedSurfaceId}`,
+					from: criterionNodeId,
+					to: nodeId('surface', relatedSurfaceId),
+					kind: 'relates',
+					label: 'about'
+				});
+			}
+			for (const relationRaw of arr(criterion.relations)) {
+				const relation = (relationRaw ?? {}) as UCriterionRelation;
+				const relationKind = str(relation.kind);
+				const targetId = str(relation.criterionId);
+				if (!relationKind || !targetId) continue;
+				// A relation resolves in this feature unless it names another one.
+				const targetFeatureId = str(relation.featureId) || fid;
+				edges.push({
+					id: `e:beh:${fid}:criterion:${criterionId}:${relationKind}:${targetFeatureId}:${targetId}`,
+					from: criterionNodeId,
+					to: nodeId('criterion', `beh:${targetFeatureId}:${targetId}`),
+					kind: 'relates',
+					label: relationKind.replace(/_/g, ' ')
+				});
+			}
+		}
+
+		// Feature-level invariants and reachability goals are projected as `rule`
+		// nodes, exactly like the invariants a surface or an action carries: same
+		// vocabulary, so a reader meets one kind of "what must hold" everywhere.
+		for (const [collection, label] of [
+			[arr(f.featureInvariants), 'feature invariant'],
+			[arr(f.reachabilityGoals), 'reachability goal']
+		] as const) {
+			for (const featureRuleRaw of collection) {
+				const featureRule = (featureRuleRaw ?? {}) as UFeatureRule;
+				const featureRuleId = objectId(featureRuleRaw);
+				if (!featureRuleId) continue;
+				const featureRuleNodeId = nodeId('rule', `beh:${fid}:${featureRuleId}`);
+				const goalKind = str(featureRule.kind);
+				nodes.push({
+					id: featureRuleNodeId,
+					kind: 'rule',
+					context: 'behavior',
+					label: str(featureRule.name) || str(featureRule.description) || `${label} ${featureRuleId}`,
+					detail: str(featureRule.category) || (goalKind ? `${label} · ${goalKind}` : label)
+				});
+				const slug = label.replace(' ', '-');
+				edges.push({
+					id: `e:beh:${fid}->${slug}:${featureRuleId}`,
+					from: fNodeId,
+					to: featureRuleNodeId,
+					kind: 'contains'
+				});
+				for (const path of statePaths(featureRule.condition)) {
+					edges.push({
+						id: `e:beh:${fid}:${slug}:${featureRuleId}->state:${path}`,
+						from: featureRuleNodeId,
+						to: ensureState(path),
+						kind: 'reads'
+					});
+				}
+				readsConstants(featureRuleNodeId, `e:beh:${fid}:${slug}:${featureRuleId}`, featureRule.condition);
+			}
+		}
+
 		for (const sRaw of arr(f.surfaces)) {
 			const s = (sRaw ?? {}) as USurface;
 			const sid = str(s.id);
@@ -475,6 +721,27 @@ export function buildBehaviorGraphElements(
 					to: stateNodeId,
 					kind: 'contains'
 				});
+				// A derived state is computed from other states: the formula is what
+				// says which, and without it the dependency was nowhere in the graph.
+				for (const readPath of statePaths(state.derived)) {
+					edges.push({
+						id: `e:beh:derived:${path}->state:${readPath}`,
+						from: stateNodeId,
+						to: ensureState(readPath),
+						kind: 'reads'
+					});
+				}
+				readsConstants(stateNodeId, `e:beh:${fid}:derived:${path}`, state.derived);
+				const valueSetId = str(state.valueSetId);
+				if (valueSetId) {
+					edges.push({
+						id: `e:beh:${fid}:state:${path}->value-set:${valueSetId}`,
+						from: stateNodeId,
+						to: nodeId('valueSet', `beh:${fid}:${valueSetId}`),
+						kind: 'uses',
+						label: 'allowed values'
+					});
+				}
 			}
 			for (const [collection, label] of [
 				[arr(s.rules), 'rule'],
@@ -495,12 +762,13 @@ export function buildBehaviorGraphElements(
 					edges.push({ id: `e:beh:${sid}->${label}:${ruleId}`, from: sNodeId, to: ruleNodeId, kind: 'contains' });
 					for (const path of statePaths(rule.condition)) {
 						edges.push({
-							id: `e:beh:${label}:${ruleId}->state:${path}`,
+							id: `e:beh:${fid}:${label}:${ruleId}->state:${path}`,
 							from: ruleNodeId,
 							to: ensureState(path),
 							kind: 'reads'
 						});
 					}
+					readsConstants(ruleNodeId, `e:beh:${fid}:${label}:${ruleId}`, rule.condition);
 				}
 			}
 			for (const transitionRaw of arr(s.transitions)) {
@@ -566,6 +834,17 @@ export function buildBehaviorGraphElements(
 				}
 				for (const parameterRaw of arr(a.parameters)) {
 					const parameter = (parameterRaw ?? {}) as UParameter;
+					const parameterValueSetId = str(parameter.valueSetId);
+					if (parameterValueSetId) {
+						edges.push({
+							id: `e:beh:${fid}:${aid}->value-set:${parameterValueSetId}`,
+							from: aNodeId,
+							to: nodeId('valueSet', `beh:${fid}:${parameterValueSetId}`),
+							kind: 'uses',
+							label: 'allowed values'
+						});
+					}
+					// A parameter with no bound path writes nothing; it may still name a set.
 					const path = str(parameter.bindToStatePath);
 					if (!path) continue;
 					edges.push({
@@ -596,12 +875,13 @@ export function buildBehaviorGraphElements(
 						edges.push({ id: `e:beh:${aid}->${label}:${ruleId}`, from: aNodeId, to: ruleNodeId, kind: 'contains' });
 						for (const path of statePaths(rule.condition)) {
 							edges.push({
-								id: `e:beh:${label}:${ruleId}->state:${path}`,
+								id: `e:beh:${fid}:${label}:${ruleId}->state:${path}`,
 								from: ruleNodeId,
 								to: ensureState(path),
 								kind: 'reads'
 							});
 						}
+						readsConstants(ruleNodeId, `e:beh:${fid}:${label}:${ruleId}`, rule.condition);
 					}
 				}
 
@@ -627,6 +907,18 @@ export function buildBehaviorGraphElements(
 							label: description
 						});
 					}
+					// What an effect writes is an expression: `total = cart.items + fee`
+					// writes `total` and READS the two others. Only the write was
+					// projected, so the states an action depends on stayed invisible.
+					for (const readPath of statePaths(effect.value)) {
+						edges.push({
+							id: `e:beh:${aid}:reads:${readPath}`,
+							from: aNodeId,
+							to: ensureState(readPath),
+							kind: 'reads'
+						});
+					}
+					readsConstants(aNodeId, `e:beh:${aid}`, effect.value);
 					const event = str(effect.event);
 					if (event && !declaredEvents.has(event)) {
 						edges.push({

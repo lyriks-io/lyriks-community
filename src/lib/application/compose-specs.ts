@@ -1,4 +1,5 @@
 import type { GeneratedArtifact, CoherenceAnalysis } from '$domain/coherence';
+import { architectureContext } from './architecture-context';
 import type { FoundationIdentityDraft } from '$domain/foundation';
 import type { FoundationDefinitionDraft } from '$domain/foundation';
 import type { ProjectUsersDraft } from '$domain/users';
@@ -7,7 +8,7 @@ import { leafFeatures, type ProjectFeaturesDraft } from '$domain/features';
 import { stepsOfJourney, type ProjectExperienceDraft } from '$domain/experience';
 import type { ProjectRulesDraft } from '$domain/rules';
 import { fieldsOfEntity, type ProjectDataDraft } from '$domain/data';
-import { ARCH_LAYERS, techOfLayer, type ProjectArchitectureDraft } from '$domain/architecture';
+import type { ProjectArchitectureDraft } from '$domain/architecture';
 
 export interface SpecEnvelope {
 	identity: FoundationIdentityDraft;
@@ -19,6 +20,14 @@ export interface SpecEnvelope {
 	rules: ProjectRulesDraft;
 	data: ProjectDataDraft;
 	architecture: ProjectArchitectureDraft;
+	/**
+	 * The MODEL's acceptance criteria per feature id, whoever authored them. A
+	 * document that prints criteria must print the same list the product counts,
+	 * or a criterion an AI client wrote would be missing from the requirements.
+	 * Absent, or missing a feature, means the model has nothing for it and the
+	 * features draft answers instead.
+	 */
+	acceptanceCriteriaByFeature?: Readonly<Record<string, readonly string[]>>;
 }
 
 function newId(): string {
@@ -101,10 +110,12 @@ function requirementsDoc(env: SpecEnvelope): string {
 			if (m.problem?.trim()) lines.push(`\n**Problem**: ${m.problem.trim()}`);
 			if (m.value?.trim()) lines.push(`**Value**: ${m.value.trim()}`);
 			if (m.objective?.trim()) lines.push(`**Objective**: ${m.objective.trim()}`);
-			const criteria = (m.acceptanceCriteria ?? []).filter((c) => c.text.trim());
+			const criteria =
+				env.acceptanceCriteriaByFeature?.[leaf.id] ??
+				(m.acceptanceCriteria ?? []).map((c) => c.text.trim()).filter(Boolean);
 			if (criteria.length > 0) {
 				lines.push(`\n**Acceptance criteria**`);
-				for (const c of criteria) lines.push(`- ${c.text.trim()}`);
+				for (const c of criteria) lines.push(`- ${c}`);
 			}
 			if (m.dependsOn && m.dependsOn.length > 0) {
 				lines.push(`\n**Depends on**: ${m.dependsOn.map(nameOf).join(', ')}`);
@@ -175,16 +186,7 @@ function technicalDoc(env: SpecEnvelope): string {
 	const lines: string[] = [];
 	lines.push(`# Technical specification`);
 
-	lines.push(`\n## Stack`);
-	for (const layer of ARCH_LAYERS) {
-		const techs = techOfLayer(architecture, layer.code);
-		if (techs.length === 0) continue;
-		lines.push(`\n### ${layer.label}`);
-		for (const t of techs) {
-			const doc = architecture.referenceDocs.find((d) => d.id === t.referenceDocId);
-			lines.push(`- **${t.name || 'tech'}**${t.role ? `: ${t.role}` : ''}${doc ? ` · ref: ${doc.url}` : ''}`);
-		}
-	}
+	lines.push('\n' + architectureContext(architecture, env.documents));
 
 	lines.push(`\n## Data model`);
 	for (const e of data.entities) {
