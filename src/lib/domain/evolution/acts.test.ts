@@ -27,6 +27,7 @@ import {
 	type ActOutcome
 } from './acts';
 import { createEvolutionRequest, createObservation, type Actor, type EvolutionRequest } from './draft';
+import { REQUEST_ORIGINS } from './enums';
 import { ALLOW } from './guard';
 
 /**
@@ -90,7 +91,16 @@ describe('opening and describing a request', () => {
 			reasonOf(
 				openRequestAct(ctxFor(client), { title: 'x', origin: null, requester: '', leafIds: [], knownLeafIds: known })
 			)
-		).toBe('Pick where this change comes from before opening it.');
+		).toBe(
+			'Pick where this change comes from before opening it: internal_idea, customer_feedback, support_ticket, market_watch, regulatory, technical_debt.'
+		);
+	});
+
+	it('names the six origins in the refusal, so the enumeration never has to be guessed', () => {
+		const reason = reasonOf(
+			openRequestAct(ctxFor(client), { title: 'x', origin: null, requester: '', leafIds: [], knownLeafIds: known })
+		);
+		for (const origin of REQUEST_ORIGINS) expect(reason).toContain(origin.code);
 	});
 
 	it('never creates a feature: an unknown leaf is refused', () => {
@@ -332,6 +342,31 @@ describe('the reports are computed, and the gates decide', () => {
 		);
 		expect(checked.coherenceGateClosed).toBe(false);
 		expect(checked.coherenceFindings).toHaveLength(1);
+	});
+
+	it('holds a request in Specify while a proposal still awaits a signature', () => {
+		const request = ok(
+			proposeAct(
+				ctxFor(client),
+				opened(),
+				{
+					fieldPath: '01-origin.objective',
+					leafId: 'feat-a',
+					value: 'Let a shopper apply a coupon before paying.',
+					reasoning: 'Read in the support tickets; inferred the wording from the glossary.',
+					citedSourceIds: ['src-1']
+				},
+				checks
+			)
+		);
+		expect(reasonOf(crossStageAct(ctxFor(relay), request, { criticalEmptyCount: 0 }))).toBe(
+			'1 proposal still awaits a decision.'
+		);
+		// The named way through stays open, at the cost of a stated reason.
+		const waived = ok(
+			crossStageAct(ctxFor(relay), request, { criticalEmptyCount: 0, waiverReason: 'Shipping the pilot on Friday.' })
+		);
+		expect(waived.stage).toBe('coherence');
 	});
 
 	it('a client cannot cross; a relayed person crosses gate by gate, and Verify freezes the spec', () => {

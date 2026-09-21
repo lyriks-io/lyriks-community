@@ -24,6 +24,8 @@ export interface GetEvolutionArgs {
   part?: DossierPart
   section?: string
   verdict?: string
+  /** impact: which run to read. The three hypotheses are all kept. */
+  hypothesis?: string
   /** fields, proposals, readings: keep what belongs to one touched feature. */
   leaf?: string
   offset?: number
@@ -43,6 +45,7 @@ export async function getEvolutionHandler(args: GetEvolutionArgs, lyriks: Lyriks
   if (args.part && args.part !== 'summary') q.set('part', args.part)
   if (args.section) q.set('section', args.section)
   if (args.verdict) q.set('verdict', args.verdict)
+  if (args.hypothesis) q.set('hypothesis', args.hypothesis)
   if (args.leaf) q.set('leaf', args.leaf)
   if (args.offset !== undefined) q.set('offset', String(args.offset))
   if (args.limit !== undefined) q.set('limit', String(args.limit))

@@ -304,7 +304,9 @@ describe('AuthorBehaviorUseCase, a batch that names the version it was written a
 			changedSince: ['action:act-1', 'state:cart.total'],
 			changedSinceTotal: 2
 		});
-		expect(res.batch?.raw).toBe(raw);
+		// Lifted once: the conflict fields moved up to `batch`, so `raw` keeps
+		// only what nothing lifts.
+		expect(res.batch?.raw).toEqual({ ok: false, expectedUpdatedAt: STAMP, errors: raw.errors });
 	});
 
 	it('exposes the versions of a save, what it touches elsewhere and its scenarios', async () => {

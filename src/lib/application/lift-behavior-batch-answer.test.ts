@@ -44,7 +44,9 @@ describe('liftBehaviorBatchAnswer', () => {
 			changedSince: ['action:act-1', 'state:cart.total'],
 			changedSinceTotal: 7
 		});
-		expect(lifted.raw).toBe(raw);
+		// Lifted once: what moved up to `batch` is gone from `raw`, and the rest
+		// of the engine's answer is still there.
+		expect(lifted.raw).toEqual({ ok: false, expectedUpdatedAt: '2026-09-20T10:00:00.000Z', errors: raw.errors });
 	});
 
 	it('lifts the versions of a save, what it touches elsewhere and its scenarios', () => {
@@ -65,6 +67,8 @@ describe('liftBehaviorBatchAnswer', () => {
 		expect(lifted.relatedElsewhere).toBe(relatedElsewhere);
 		expect(lifted.scenarios).toBe(scenarios);
 		expect(lifted.conflict).toBeUndefined();
+		// Not a second copy under `raw`: one answer, one place to read each name.
+		expect(lifted.raw).toEqual({ ok: true });
 	});
 
 	it('never states what the engine did not: no conflict:false, no empty list, no zero', () => {

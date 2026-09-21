@@ -180,13 +180,19 @@ export const CAPABILITIES: Capability[] = [
 		route: projectRoute('documents')
 	},
 	{
+		// Merged into Features as its "Evolution" tab: a change request is read
+		// beside the feature tree it changes, so it is not a capability of its own.
+		// Kept as a hidden alias so old deep-links + Control Center "Fix now"
+		// resolve to the merged tab (the /evolution route redirects there, query
+		// included); not a left-nav entry.
 		id: 'evolution',
 		title: 'Evolution',
 		subtitle: 'Change requests, from the need to acceptance',
 		icon: 'rotate',
 		tier: 'oss',
-		status: 'built',
-		route: projectRoute('evolution')
+		status: 'hidden',
+		partOf: 'features',
+		route: (projectId) => `/projects/${projectId}/features?tab=evolution`
 	},
 	{
 		// Hidden for now: the Features tab that hosted it is no longer surfaced, so

@@ -48,9 +48,20 @@ describe('createMcpServer', () => {
     for (const name of ['describe_section', 'get_section', 'set_section', 'patch_section']) {
       const args = { project_id: 'p', document: {}, operations: [{ op: 'set', path: 'activeTab', value: 'snapshots' }], section: 'baselines' }
       expect(tools[name].inputSchema.safeParse(args).success, name).toBe(true)
-      for (const section of ['supervision', 'finops', 'contract', 'generation', 'evolution'])
+      for (const section of ['supervision', 'finops', 'contract', 'generation'])
         expect(tools[name].inputSchema.safeParse({ ...args, section }).success, name).toBe(false)
     }
+  })
+
+  it('describes and reads evolution, and still refuses a raw write to it', () => {
+    const server = createMcpServer(makeClient())
+    // @ts-expect-error testing registered wire schemas
+    const tools = server._registeredTools
+    const args = { project_id: 'p', document: {}, operations: [{ op: 'set', path: 'requests', value: [] }], section: 'evolution' }
+    for (const name of ['describe_section', 'get_section'])
+      expect(tools[name].inputSchema.safeParse(args).success, name).toBe(true)
+    for (const name of ['set_section', 'patch_section'])
+      expect(tools[name].inputSchema.safeParse(args).success, name).toBe(false)
   })
 
   it('advertises read-only elaboration with bounded paging', () => {
@@ -80,8 +91,10 @@ describe('createMcpServer', () => {
       { op: 'replace_text', path: 'brief', find: '3 days', value: '5 days' },
     ]
     expect(tool.inputSchema.parse({ project_id: 'p', section: 'features', operations }).operations).toEqual(operations)
-    expect(tool.inputSchema.safeParse({ project_id: 'p', section: 'features', operations: [{ op: 'append', path: 'brief', value: 'x' }] }).success).toBe(false)
-    for (const op of ['add_to_set', 'remove_from_set', 'append_text', 'replace_text']) expect(tool.description).toContain(`op:"${op}"`)
+    expect(tool.inputSchema.safeParse({ project_id: 'p', section: 'features', operations: [{ op: 'push', path: 'brief', value: 'x' }] }).success).toBe(false)
+    for (const op of ['add_to_set', 'remove_from_set', 'append_text', 'replace_text', 'append']) expect(tool.description).toContain(`op:"${op}"`)
+    // Adding a row is one op with no selector: the shape the wire accepts.
+    expect(tool.inputSchema.safeParse({ project_id: 'p', section: 'scope', operations: [{ op: 'append', collection: 'capabilities', id: 'cap-2', value: { name: 'Sign out' } }] }).success).toBe(true)
     expect(tool.description).toContain('writeGuard')
     expect(tool.description).toContain('dryRunUnavailable')
   })

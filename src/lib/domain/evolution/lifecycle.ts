@@ -1,4 +1,4 @@
-import { STAGE_ORDER, type RequestStage } from './enums';
+import { REQUEST_ORIGINS, STAGE_ORDER, type RequestStage } from './enums';
 import type { EvolutionRequest } from './draft';
 import { canCrossToImplementation, openWaiver } from './gate';
 import { canCloseReport } from './implementation';
@@ -42,7 +42,11 @@ export function canOpenRequest(request: EvolutionRequest): Guarded {
 		),
 		guard(
 			request.origin === null,
-			'Pick where this change comes from before opening it.',
+			// The codes travel WITH the refusal: a caller that cannot see the
+			// enumeration cannot pick from it, and this is the first operation of
+			// the whole run. Reading the source code is not an available move for
+			// an agent working at a customer's.
+			`Pick where this change comes from before opening it: ${REQUEST_ORIGINS.map((o) => o.code).join(', ')}.`,
 			'The origin is what lets the portfolio be read later: how much of our work comes from customers, from support, from regulation.'
 		)
 	);

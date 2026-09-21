@@ -36,7 +36,7 @@ describe('SaveRulesDraftUseCase — inventory is derived before scoring', () => 
 		expect(res.coherenceIssues).not.toContain('Rule inventory is empty — refresh it from the earlier steps.');
 	});
 
-	it('still reports the empty-inventory issue when nothing upstream declares any rule', async () => {
+	it('reports an empty inventory by naming the sections that fill it, never as an instruction to fill it here', async () => {
 		const rulesDrafts = { save: async () => {}, load: async () => null } as unknown as RulesDraftRepositoryPort;
 		const definitionDrafts = nullLoader() as unknown as FoundationDefinitionRepositoryPort;
 		const usersDrafts = nullLoader() as unknown as UsersDraftRepositoryPort;
@@ -45,6 +45,44 @@ describe('SaveRulesDraftUseCase — inventory is derived before scoring', () => 
 		const uc = new SaveRulesDraftUseCase(rulesDrafts, clock, telemetry, definitionDrafts, usersDrafts, experienceDrafts);
 		const res = await uc.execute({ ...createEmptyRulesDraft('p1'), inventory: [] });
 
-		expect(res.coherenceIssues).toContain('Rule inventory is empty. Refresh it from the earlier steps.');
+		const reported = res.coherenceIssues.join('\n');
+		expect(reported).toContain('No rule reaches this inventory');
+		expect(reported).toContain('Foundation');
+		expect(reported).not.toContain('Refresh it');
+	});
+
+	it('does not zero a section whose contradictions and edge cases were authored, whatever the mirror holds', async () => {
+		const rulesDrafts = { save: async () => {}, load: async () => null } as unknown as RulesDraftRepositoryPort;
+		const uc = new SaveRulesDraftUseCase(
+			rulesDrafts,
+			clock,
+			telemetry,
+			nullLoader() as unknown as FoundationDefinitionRepositoryPort,
+			nullLoader() as unknown as UsersDraftRepositoryPort,
+			nullLoader() as unknown as ExperienceDraftRepositoryPort
+		);
+		const res = await uc.execute({
+			...createEmptyRulesDraft('p1'),
+			inventory: [],
+			issues: [
+				{
+					id: 'iss-1',
+					kind: 'contradiction',
+					severity: 'major',
+					status: 'resolved',
+					title: 'Two refund windows',
+					detail: 'The policy and the checkout disagree.',
+					ownerRoleId: null,
+					resolutionNote: 'The policy wins.',
+					relatedRuleIds: [],
+					relatedFeatureId: null,
+					relatedJourneyId: null,
+					autoDetected: false,
+					sourceIds: []
+				}
+			]
+		});
+
+		expect(res.coherenceScore).toBeGreaterThan(0);
 	});
 });

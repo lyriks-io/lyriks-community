@@ -40,7 +40,16 @@ const WRITE_PATHS = {
 } as const
 
 export type Section = keyof typeof WRITE_PATHS
+/** What a raw section write may target: Evolution is driven by its typed tools. */
 export const SECTIONS = Object.keys(WRITE_PATHS).filter((section) => section !== 'evolution') as [Section, ...Section[]]
+/**
+ * What a READ may target, Evolution included. Describing and reading it is
+ * legitimate (the completion ledger names it, and its shape is documented like
+ * every other section); only writing it raw is refused. Keeping `evolution` out
+ * of this list is what made `describe_section("evolution")` answer with an
+ * enumeration of thirteen sections that did not contain the one being asked for.
+ */
+export const READABLE_SECTIONS = Object.keys(WRITE_PATHS) as [Section, ...Section[]]
 
 export async function listProjectsHandler(_args: unknown, lyriks: LyriksClient): Promise<unknown> {
   return lyriks.get('/api/projects')
@@ -199,6 +208,16 @@ export async function setSectionHandler(
  *               `id` matches (the wizard's arrays are id-keyed: journeys, steps,
  *               screens, components, ...). No match → the op is a no-op unless
  *               `insert` is true, in which case `value` is appended as a new item.
+ *   - `append`: add one row at the END of array `collection`, with NO selector
+ *               at all. The op to reach for when the row does not exist yet:
+ *               `merge` has to point at a row to find, so adding one meant
+ *               either knowing an id the section has not minted or counting the
+ *               existing rows to `set` an index. Give `id` to stamp one on the
+ *               new row (id-keyed collections); leave it out for a keyless one
+ *               (users `permissions[]`), whose sections reject unknown fields.
+ *               Idempotent: an id already present, or a row the collection
+ *               already holds verbatim, reports `unchanged` instead of
+ *               duplicating. The array is created when the section has none yet.
  *
  * Keyless collections (rows without an `id`, e.g. users `permissions[]`) are
  * addressed with `match` — field equality on the row — instead of `id`. Inserts
@@ -208,7 +227,7 @@ export async function setSectionHandler(
  * e.g. "builder.collections" or "builder.collections.7.fields".
  */
 export interface PatchOp {
-  op: 'set' | 'merge' | 'remove' | IncrementalOp
+  op: 'set' | 'merge' | 'append' | 'remove' | IncrementalOp
   path?: string
   collection?: string
   id?: string
@@ -376,10 +395,55 @@ function applyIncremental(draft: Record<string, unknown>, op: PatchOp): OpOutcom
   return 'changed'
 }
 
+/**
+ * Why an op found nothing. A `merge` that matched no row is the classic way an
+ * author tries to ADD a line, so the reason names the op that does it instead
+ * of leaving them to discover `insert` or to count rows for a `set` by index.
+ */
+function noTargetReason(op: PatchOp): string {
+  if (op.op === 'merge' && op.collection) {
+    return (
+      'matched no target: merge edits a row that already exists. ' +
+      `To ADD one, use { op: "append", collection: "${op.collection}", value: { ... } }` +
+      (op.id !== undefined ? ` with id: "${op.id}"` : ' (no id for a keyless collection)') +
+      '.'
+    )
+  }
+  return 'matched no target'
+}
+
 /** What one op is aimed at, for the change report. */
 const opTarget = (op: PatchOp): string => {
   const row = op.collection !== undefined ? `${op.collection}[${op.id ?? (op.match ? JSON.stringify(op.match) : '?')}]` : ''
   return row && op.path ? `${row}.${op.path}` : row || op.path || '?'
+}
+
+/**
+ * Append one row to a collection. Separate from `applyLegacy` because it can
+ * report `unchanged`: a retry of an append must find its work done rather than
+ * write the row twice, the same contract as the incremental ops.
+ */
+function applyAppend(draft: Record<string, unknown>, op: PatchOp): OpOutcome {
+  const collection = op.collection as string
+  let arr = resolveCollection(draft, collection)
+  if (arr === undefined || arr === null) {
+    // Nothing there yet: create the array, but never carve a path through a
+    // scalar or invent a missing parent row.
+    const parent = parentOf(draft, collection, false)
+    if (!parent) return { notApplied: 'no collection at this path, and its parent does not exist' }
+    parent.node[parent.key] = []
+    arr = parent.node[parent.key]
+  }
+  if (!Array.isArray(arr)) return { notApplied: 'the value at this path is not a collection' }
+  const rows = arr as unknown[]
+  const row = op.id !== undefined ? { id: op.id, ...(op.value as object) } : { ...(op.value as object) }
+  const already =
+    op.id !== undefined
+      ? rows.some((x) => !!x && typeof x === 'object' && (x as { id?: unknown }).id === op.id)
+      : rows.some((x) => !!x && typeof x === 'object' && JSON.stringify(x) === JSON.stringify(row))
+  if (already) return 'unchanged'
+  rows.push(row)
+  return 'changed'
 }
 
 /** set / merge / remove: true when the op found its target. */
@@ -434,7 +498,13 @@ export function applySectionPatchReport(draft: Record<string, unknown>, operatio
   validateSectionPatch(operations)
   const report: PatchReport = { applied: 0, changed: [], unchanged: [], notApplied: [] }
   for (const [index, op] of operations.entries()) {
-    const outcome = isIncremental(op.op) ? applyIncremental(draft, op) : applyLegacy(draft, op) ? 'changed' : { notApplied: 'matched no target' }
+    const outcome = isIncremental(op.op)
+      ? applyIncremental(draft, op)
+      : op.op === 'append'
+        ? applyAppend(draft, op)
+        : applyLegacy(draft, op)
+          ? 'changed'
+          : { notApplied: noTargetReason(op) }
     if (typeof outcome === 'object') {
       report.notApplied.push({ index, op: op.op, target: opTarget(op), reason: outcome.notApplied })
       continue

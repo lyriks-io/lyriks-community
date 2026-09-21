@@ -13,6 +13,7 @@ import {
 	projectSyncKey,
 	sectionSyncKey
 } from '$lib/shared/section-sync';
+import { loadEvolutionTab } from '$lib/server/evolution-tab.server';
 import type { PageServerLoad } from './$types';
 
 const EMPTY_OVERVIEW: BehaviorOverview = {
@@ -24,6 +25,12 @@ const EMPTY_OVERVIEW: BehaviorOverview = {
 };
 
 const EMPTY_KERNEL_RULES: KernelRulesReadModel = { groups: [], total: 0, missingDescription: 0 };
+
+const NO_BEHAVIOR = {
+	overview: EMPTY_OVERVIEW,
+	actions: {} as FeatureActionIndex,
+	kernelRules: EMPTY_KERNEL_RULES
+};
 
 /**
  * Read-only behavior read models folded from the canonical kernel, in ONE pass
@@ -58,16 +65,26 @@ async function readBehavior(projectId: string): Promise<{
 }
 
 /**
- * Server-side load: hydrate the features draft + Step 01 identity, plus the two
+ * Server-side load: hydrate the features draft + Step 01 identity, plus the
  * capabilities folded in as tabs — the read-only Behavior overview (was
- * Functional) and the editable Rules & edge cases draft.
+ * Functional), the editable Rules & edge cases draft, and, only when the URL
+ * asks for it, the Evolution board.
  */
-export const load: PageServerLoad = async ({ params, depends }) => {
+export const load: PageServerLoad = async ({ params, url, depends, cookies }) => {
 	// Live-sync: re-run when these sections change.
 	depends(projectSyncKey(params.projectId));
 	depends(sectionSyncKey(params.projectId, 'features'));
 	depends(sectionSyncKey(params.projectId, 'rules'));
 	depends(sectionSyncKey(params.projectId, 'foundation'));
+	// Evolution is a TAB of this page, and its view is the second heaviest read
+	// in the product: load it only when the tab is the one being shown, so the
+	// tree, the roadmap and the rules never pay for it. Reading the search param
+	// is what makes SvelteKit re-run this load on the tab switch.
+	const wantsEvolution = url.searchParams.get('tab') === 'evolution';
+	if (wantsEvolution) {
+		depends(sectionSyncKey(params.projectId, 'evolution'));
+		depends(sectionSyncKey(params.projectId, 'documents'));
+	}
 	// The badge tiers publish these when a background refresh lands; the client
 	// invalidates them alone, so only this load re-runs, not the project chrome.
 	depends(sectionSyncKey(params.projectId, FEATURE_ADVICE_SECTION));
@@ -88,14 +105,18 @@ export const load: PageServerLoad = async ({ params, depends }) => {
 		rulesRevision,
 		behavior,
 		advice,
-		implementation
+		implementation,
+		evolution
 	] = await Promise.all([
 		services.loadFeaturesDraft.execute(params.projectId),
 		services.loadRulesDraft.execute(params.projectId),
 		services.loadFoundationDraft.loadIdentity(params.projectId),
 		services.draftLock.current(params.projectId, 'features'),
 		services.draftLock.current(params.projectId, 'rules'),
-		readBehavior(params.projectId),
+		// Nothing on the Evolution tab reads the behavior fan-out, and every write
+		// inside a dossier invalidates this load: paying a per-feature engine read
+		// on each signed proposal would make the tab crawl on a large project.
+		wantsEvolution ? NO_BEHAVIOR : readBehavior(params.projectId),
 		// Instant read from the maturity-score cache — the heavy per-leaf engine
 		// scoring runs in the background and pushes over live-sync (features-advice)
 		// so the badges fill in without blocking this load.
@@ -105,7 +126,8 @@ export const load: PageServerLoad = async ({ params, depends }) => {
 		// subprocess, tens of seconds on an adopted project) run in the background,
 		// and a `features-implementation` change re-runs this load when they land,
 		// so the chips fill in live instead of blocking the page.
-		services.implementationCoverage.get(params.projectId)
+		services.implementationCoverage.get(params.projectId),
+		wantsEvolution ? loadEvolutionTab(services, params.projectId, url, cookies) : null
 	]);
 	const session = services.currentSession();
 	const behaviorWorkspaceRoot = services.behaviorWorkspaceRoot();
@@ -121,6 +143,8 @@ export const load: PageServerLoad = async ({ params, depends }) => {
 		advisorAvailable: services.advisorAvailable(),
 		advice,
 		implementation,
+		// null on every tab but Evolution; the panel is mounted only with it.
+		evolution,
 		session,
 		behaviorWorkspaceRoot,
 		productName,

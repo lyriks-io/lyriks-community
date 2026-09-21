@@ -13,6 +13,7 @@ import {
 	pendingProposals,
 	publishedFindings,
 	readCoherence,
+	REQUEST_ORIGINS,
 	readMaturity,
 	readReadiness,
 	supportedStage,
@@ -799,6 +800,11 @@ export function requestSummary(view: EvolutionView, request: EvolutionRequest, a
 			depth: request.impactReport.depth,
 			ranAt: request.impactReport.ranAt,
 			total: impactAll.length,
+			// Every hypothesis that was run, with what it moves: the three read
+			// differently (add extends, change reworks, remove strips) and each run
+			// keeps its own findings, so a reader sees the three side by side and
+			// reads any of them in full with part:"impact" + hypothesis.
+			byHypothesis: countBy(request.impactFindings, (f) => f.hypothesis),
 			bySection: countBy(impactAll, (f) => f.section),
 			// One line per plane, read without the spec open (ac-evo-imp-10).
 			plain: impactInPlainWords(impactAll),
@@ -955,6 +961,7 @@ export function evolutionAggregate(
 			revision: view.revision,
 			actor: { id: actor.id, kind: actor.kind, role: actor.role, channel: actor.channel ?? 'page' },
 			fieldsAvailable: fieldsAvailable(),
+			originsAvailable: originsAvailable(),
 			// The roster a proposal can be handed to; empty where one member is alone.
 			members: view.members,
 			requests: [],
@@ -969,9 +976,20 @@ export function evolutionAggregate(
 		leaves: view.leaves,
 		sources: view.sources.map((s) => ({ id: s.id, title: s.title })),
 		fieldsAvailable: fieldsAvailable(),
+		originsAvailable: originsAvailable(),
 		requests: live.map((r) => requestCard(view, r)),
 		request: null
 	};
+}
+
+/**
+ * Where a change may come from: the six codes `open_request` takes. Served with
+ * the board and with every dossier, because this is where a client looks before
+ * opening a request, and an enumeration nobody can read is an enumeration
+ * nobody can pick from.
+ */
+function originsAvailable() {
+	return REQUEST_ORIGINS.map((origin) => ({ code: origin.code, label: origin.label }));
 }
 
 /** The field paths a client may propose on, with the question each one answers. */

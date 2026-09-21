@@ -43,11 +43,15 @@ describe('the authorable section vocabulary', () => {
 		expect(isSection('finops')).toBe(false);
 	});
 
-	it('keeps derived surfaces out of agent authoring', () => {
+	it('keeps derived surfaces out of agent authoring, Evolution included', () => {
 		expect(SECTIONS.filter((section) => SECTION_AUDIENCE[section] === 'derived')).toEqual([
 			'coherence',
-			'baselines'
+			'baselines',
+			'evolution'
 		]);
 		expect(isAgentAuthorable('foundation')).toBe(true);
+		// A dossier is driven by apply_evolution_batch, so the completion gate
+		// never asks an author for a verdict on it.
+		expect(isAgentAuthorable('evolution')).toBe(false);
 	});
 });

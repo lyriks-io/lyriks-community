@@ -62,3 +62,28 @@ it('tells agents to install the helper scripts, as a fifth step after the four i
   expect(step).toContain('syncing an index or applying a batch too large to type as a tool argument, and checking the index by signature text instead of by exact line')
   expect(step).toContain('an older platform sends none')
 })
+
+// A catalog is several playbooks of 10 to 40 KB: sent whole, one sync answer
+// runs past the ceiling of several clients and the session loses the one call
+// that installs the guides.
+it('keeps whole guides while they fit the budget and defers the rest', async () => {
+  const guide = (id: string, size: number) => ({ id, name: id, status: 'new', installContent: 'x'.repeat(size) })
+  const answer = { skills: [guide('lyriks-build', 600), guide('lyriks-design', 600), guide('lyriks-behavior', 600)], unknown: [] }
+  const client = { post: vi.fn().mockResolvedValue(answer) } as unknown as LyriksClient
+  const capped = (await syncSkillsHandler({ client: 'claude' }, client, 1000)) as {
+    skills: Array<{ id: string; installContent?: string; contentDeferred?: boolean }>
+    deferredForSize: string[]
+    note: string
+  }
+  expect(capped.skills[0].installContent).toHaveLength(600)
+  expect(capped.skills[1].installContent).toBeUndefined()
+  expect(capped.skills[1].contentDeferred).toBe(true)
+  expect(capped.deferredForSize).toEqual(['lyriks-design', 'lyriks-behavior'])
+  expect(capped.note).toContain('get_skill')
+})
+
+it('leaves an answer that fits exactly as the platform sent it', async () => {
+  const answer = { skills: [{ id: 'lyriks-build', status: 'new', installContent: 'short' }], unknown: [] }
+  const client = { post: vi.fn().mockResolvedValue(answer) } as unknown as LyriksClient
+  expect(await syncSkillsHandler({ client: 'claude' }, client, 1000)).toBe(answer)
+})

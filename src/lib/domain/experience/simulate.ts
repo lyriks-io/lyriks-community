@@ -111,6 +111,12 @@ export interface SimResult {
 	/** Non-fatal authoring smells (e.g. a createRecord that captured no inputs). */
 	warnings: RunWarning[];
 	actions: SimActionResult[];
+	/**
+	 * Who the run acted as, and how many of the elements it touched carry an
+	 * access gate. Zero on a persona run means the run proves nothing about
+	 * permissions, which the warnings say in words.
+	 */
+	persona: { id: string | null; gatedElementsTouched: number };
 	/** True when the run raised no unexpected error (expectError steps excluded). */
 	ok: boolean;
 }
@@ -464,6 +470,26 @@ export function simulate(b: ExperienceBuilder, req: SimRequest): SimResult {
 	const collectionCounts: Record<string, number> = {};
 	for (const [k, rows] of Object.entries(rs.collections)) collectionCounts[k] = rows.length;
 
+	// A run made AS a role proves something about permissions only where an
+	// element carries a gate. Where none of the elements it touched has one, the
+	// run says nothing about access, and reading "it went through" as "the role
+	// is allowed" is exactly the mistake to prevent: the permission then lives
+	// in the model and nowhere the simulator can enforce it.
+	const gatesSeen = results.filter((r) => r.resolvedNodeId && hasGate(b, r.resolvedNodeId)).length;
+	const warnings =
+		rs.activePersonaId !== null && results.length > 0 && gatesSeen === 0
+			? [
+					...rs.warnings,
+					{
+						nodeId: null,
+						message:
+							`This run acted as "${rs.activePersonaId}" but no element it touched carries an access gate, so it proves nothing about permissions. ` +
+							'Wire the gate on the element (wire_element gate {personaIds, mode, allow}), then a refusal is simulable: the step raises a `permission` error and expectError:true turns it green.',
+						at: rs.seq
+					}
+				]
+			: rs.warnings;
+
 	return {
 		startScreenId,
 		finalScreenId: rs.currentScreenId,
@@ -472,8 +498,17 @@ export function simulate(b: ExperienceBuilder, req: SimRequest): SimResult {
 		visited,
 		activity: rs.activity,
 		errors: rs.errors,
-		warnings: rs.warnings,
+		warnings,
+		// What the run was made as, so a reader never has to infer it from the
+		// request they sent.
+		persona: { id: rs.activePersonaId, gatedElementsTouched: gatesSeen },
 		actions: results,
 		ok: rs.errors.length === 0
 	};
+}
+
+/** Does this node carry a persona gate naming at least one role? */
+function hasGate(b: ExperienceBuilder, nodeId: string): boolean {
+	const node = b.nodes[nodeId];
+	return !!node && node.kind === 'element' && (node.wiring.gate?.personaIds.length ?? 0) > 0;
 }

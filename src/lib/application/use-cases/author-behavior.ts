@@ -155,6 +155,59 @@ function handlerParameterWarnings(operations: readonly Record<string, unknown>[]
 	return warnings;
 }
 
+/**
+ * An action that DECLARES an emission the batch does not wire with an effect.
+ *
+ * The engine now makes the declaration real: it adds a default `emit_event`
+ * effect so the event fires when the action succeeds, cascades and
+ * `triggeredByEvent` handlers included. That is what the field's name promises,
+ * and what everyone reads it as. Say it at the moment of the batch, because the
+ * author is deciding something here: an event that must fire only in some cases
+ * belongs on the rule that carries the condition, not on the action.
+ *
+ * Scoped to the ops in THIS batch, like the other two readings: what an author
+ * did not touch is not theirs to be told about.
+ */
+function declaredEmissionNotices(operations: readonly Record<string, unknown>[]): string[] {
+	const emittedByEffects = new Set<string>();
+	const collect = (value: unknown): void => {
+		if (Array.isArray(value)) {
+			value.forEach(collect);
+			return;
+		}
+		if (!value || typeof value !== 'object') return;
+		const node = value as Record<string, unknown>;
+		if (node.type === 'emit_event' && typeof node.event === 'string') emittedByEffects.add(node.event);
+		Object.values(node).forEach(collect);
+	};
+	for (const op of operations) {
+		const kind = String(op?.kind);
+		if (kind === 'add_effect' || kind === 'add_action_rule' || kind === 'add_surface_rule' || kind === 'update_effect' || kind === 'update_action_rule') {
+			collect(op);
+		}
+	}
+
+	const notices: string[] = [];
+	for (const op of operations) {
+		const kind = String(op?.kind);
+		if (kind !== 'add_action' && kind !== 'update_action') continue;
+		const patch = (op.patch && typeof op.patch === 'object' ? op.patch : op) as Record<string, unknown>;
+		const declared = Array.isArray(patch.emittedEvents)
+			? patch.emittedEvents.filter((e): e is string => typeof e === 'string')
+			: [];
+		const unwired = declared.filter((event) => !emittedByEffects.has(event));
+		if (unwired.length === 0) continue;
+		const name = typeof op.name === 'string' ? op.name : String(op.actionRef ?? op.actionId ?? 'the action');
+		notices.push(
+			`Action "${name}" declares ${unwired.length === 1 ? 'the event' : 'the events'} ${unwired.map((e) => `"${e}"`).join(', ')} ` +
+				`and this batch fires ${unwired.length === 1 ? 'it' : 'them'} with no effect, so the engine wires a default ` +
+				'`emit_event` effect: the event is emitted whenever the action succeeds, and any handler subscribed to it cascades. ' +
+				'If it must fire only under a condition, author the `emit_event` effect on the rule that carries that condition instead.'
+		);
+	}
+	return notices;
+}
+
 /** Does this effect payload read a parameter anywhere in its expression tree? */
 function readsAParameter(value: unknown): boolean {
 	if (Array.isArray(value)) return value.some(readsAParameter);
@@ -162,6 +215,26 @@ function readsAParameter(value: unknown): boolean {
 	const node = value as Record<string, unknown>;
 	if (node.kind === 'param') return true;
 	return Object.values(node).some(readsAParameter);
+}
+
+/**
+ * `kind` is this batch's discriminator and `op` is the evolution batch's. An
+ * author who switches between the two sends one for the other, and the engine
+ * then reads an op with no kind at all. Accept either spelling, and let `kind`
+ * win when both are there, instead of refusing a batch whose operations are
+ * perfectly well named.
+ */
+function withCanonicalKind(
+	operations: readonly Record<string, unknown>[]
+): readonly Record<string, unknown>[] {
+	if (!operations.some((op) => typeof op?.kind !== 'string' && typeof op?.op === 'string')) {
+		return operations;
+	}
+	return operations.map((op) =>
+		typeof op?.kind !== 'string' && typeof op?.op === 'string'
+			? { ...op, kind: op.op, op: undefined }
+			: op
+	);
 }
 
 export interface AuthorBehaviorInput {
@@ -236,7 +309,8 @@ export class AuthorBehaviorUseCase {
 	constructor(private readonly advisor: Pick<UnspaghettitAdvisorPort, 'applyBehaviorBatch'>,
 		private readonly deleteState?: Pick<DeleteBehaviorStateUseCase, 'execute'>) {}
 
-	async execute(input: AuthorBehaviorInput): Promise<AuthorBehaviorResult> {
+	async execute(raw: AuthorBehaviorInput): Promise<AuthorBehaviorResult> {
+		const input: AuthorBehaviorInput = { ...raw, operations: withCanonicalKind(raw.operations) };
 		if (!input.commit && input.operations.some((op) => op.kind === 'remove_state_definition')) {
 			const op = input.operations[0];
 			if (!this.deleteState || !input.projectId || input.operations.length !== 1 ||
@@ -281,7 +355,9 @@ export class AuthorBehaviorUseCase {
 			...(input.expectedUpdatedAt ? { expectedUpdatedAt: input.expectedUpdatedAt } : {})
 		});
 		// A commit replays ops already warned about on its dry run.
-		const warnings = input.commit ? [] : handlerParameterWarnings(input.operations);
+		const warnings = input.commit
+			? []
+			: [...handlerParameterWarnings(input.operations), ...declaredEmissionNotices(input.operations)];
 		return {
 			available: batch !== null,
 			// The one place the engine's newer answer fields leave `raw` (see the mapper).

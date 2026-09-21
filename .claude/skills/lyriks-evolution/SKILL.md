@@ -57,7 +57,7 @@ sign. Never write the sections from inside the dossier.
 | Tool | What it is |
 |---|---|
 | `get_evolution {project_id}` | The board: one card per live request. |
-| `get_evolution {project_id, request_id}` | One dossier in full: fields with their values, readings, maturity per block, coherence and impact findings, the next gate and why it refuses, the report lines, the timeline, and `fieldsAvailable` (the field paths you may propose on). |
+| `get_evolution {project_id, request_id}` | One dossier in full: fields with their values, readings, maturity per block, coherence and impact findings, the next gate and why it refuses, the report lines, the timeline, `fieldsAvailable` (the field paths you may propose on) and `originsAvailable` (the codes `open_request` takes). |
 | `apply_evolution_batch {project_id, operations[], as_person?}` | Typed operations, atomic, guarded server-side. |
 
 Read `get_evolution` before every batch. Never `set_section` or `patch_section`
@@ -67,16 +67,26 @@ on `evolution`: it is refused.
 
 **You, as the AI client** (no `as_person`):
 
-- `open_request {title, origin, leafIds[]}`: a title so it can be found on
-  Thursday, one of the six origins, the existing features it touches.
+- `open_request {title, origin, leafIds[]?}`: a title so it can be found on
+  Thursday, and one of the six origins. The origins are `internal_idea`,
+  `customer_feedback`, `support_ticket`, `market_watch`, `regulatory`,
+  `technical_debt`, and `get_evolution` lists them as `originsAvailable` for
+  the day the list grows. The door asks for nothing else: the features the
+  change touches are a SET with no main one among them, named with `set_leaves`
+  once the impact report has been read, because naming them at the door only
+  buys a guess the report then has to contradict. What requires them is the
+  gate to Verify, through the maturity of the dossier.
 - `set_leaves`, `update_request`.
 - `run_impact {hypothesis, depth}`: computed, on two planes. The spec plane
   walks the knowledge graph from the touched features (never through a role or
   a core); the code plane lists the files the implementation index anchors on
   the touched and reached features, so sync the index from the checkout first.
   Run the three hypotheses in one batch: they read differently (add extends,
-  change reworks, remove strips). The dossier opens on one plain line per
-  plane: read those to the person before any list.
+  change reworks, remove strips). Each run keeps its own findings, so the
+  three stay readable side by side: the summary counts them under
+  `impact.byHypothesis`, and `get_evolution {part:"impact", hypothesis}` reads
+  any of them in full. The dossier opens on one plain line per plane: read
+  those to the person before any list.
 - `run_coherence`: computed by the coherence engine over the whole project.
   The findings that name a touched feature are published with the other node
   at fault and a Fix now target.
@@ -135,6 +145,12 @@ conversation. If they said "accept the first three", relay exactly those three.
    The person reads the request in three steps: the idea (title, need, touched
    features), the proposals to sign, and the impact report on the spec and on
    the code. Everything else is behind the report; do not recite it unasked.
+   The maturity percentage next to the dossier is INHERITED from the features
+   the change touches, so a change to a complete product reads high before
+   anything of its own has been decided. It never proves the change is
+   specified, and Specify does not close while a proposal is still waiting for
+   a signature: the gate says how many, and the waiver stays the named way
+   through when a person decides to cross anyway.
 3. **Challenge.** The person crosses. Re-run `run_coherence` after every
    accepted proposal that changed the spec. A blocking finding is fixed in the
    owning section (by a person, or by you once they ask), accepted as a risk on

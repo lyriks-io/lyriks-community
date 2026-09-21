@@ -84,3 +84,51 @@ describe('AuthorBehaviorUseCase handler warnings', () => {
 		expect(result.warnings).toEqual([]);
 	});
 });
+
+describe('declared emissions', () => {
+	it('says a declared event is wired to a default effect, so the author knows it fires', async () => {
+		const result = await run([
+			{ kind: 'add_action', ref: 'open', name: 'Open the schedule', emittedEvents: ['schedule.opened'] },
+			allowRule('open')
+		]);
+		expect(result.warnings).toHaveLength(1);
+		expect(result.warnings[0]).toContain('schedule.opened');
+		expect(result.warnings[0]).toContain('emit_event');
+	});
+
+	it('says nothing when the batch fires the event with its own effect', async () => {
+		const result = await run([
+			{ kind: 'add_action', ref: 'open', name: 'Open the schedule', emittedEvents: ['schedule.opened'] },
+			allowRule('open'),
+			{ kind: 'add_effect', actionRef: 'open', effect: { type: 'emit_event', event: 'schedule.opened' } }
+		]);
+		expect(result.warnings).toEqual([]);
+	});
+
+	it('says nothing when a rule of the batch emits it conditionally', async () => {
+		const result = await run([
+			{ kind: 'add_action', ref: 'open', name: 'Open the schedule', emittedEvents: ['schedule.opened'] },
+			{
+				kind: 'add_action_rule',
+				actionRef: 'open',
+				rule: {
+					category: 'business',
+					condition: { left: 'schedule.locked', operator: '==', right: false },
+					effect: { type: 'emit_event', event: 'schedule.opened' }
+				}
+			}
+		]);
+		expect(result.warnings).toEqual([]);
+	});
+});
+
+describe('operation discriminator', () => {
+	it('takes `op` as the spelling of `kind`, the way the evolution batch names it', async () => {
+		const result = await run([
+			{ op: 'add_action', ref: 'open', name: 'Open the schedule' },
+			{ op: 'add_action_rule', actionRef: 'open', rule: { category: 'business', effect: { type: 'allow_action' } } }
+		]);
+		expect(result.batch?.ok).toBe(true);
+		expect(result.batch?.errors ?? []).toEqual([]);
+	});
+});

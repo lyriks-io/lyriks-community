@@ -41,6 +41,7 @@ export type FeaturesTab =
 	| 'roadmap'
 	| 'behavior'
 	| 'rules'
+	| 'evolution'
 	| 'reuse'
 	| 'mywork'
 	| 'delivery';

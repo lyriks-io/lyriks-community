@@ -193,3 +193,67 @@ describe('incremental ops: add to a list or a text without resending it', () => 
     expect(({} as Record<string, unknown>).polluted).toBeUndefined()
   })
 })
+
+describe('append', () => {
+  it('adds a row to an id-keyed collection without any selector, stamping the id', () => {
+    const draft: Record<string, unknown> = { capabilities: [{ id: 'cap-1', name: 'Sign in' }] }
+    const report = applySectionPatchReport(draft, [
+      { op: 'append', collection: 'capabilities', id: 'cap-2', value: { name: 'Sign out', disposition: 'included' } },
+    ])
+    expect(report.applied).toBe(1)
+    expect(draft.capabilities).toEqual([
+      { id: 'cap-1', name: 'Sign in' },
+      { id: 'cap-2', name: 'Sign out', disposition: 'included' },
+    ])
+  })
+
+  it('adds a keyless row verbatim, injecting no id', () => {
+    const draft: Record<string, unknown> = { permissions: [{ roleId: 'admin', capabilityId: 'cap-a' }] }
+    expect(applySectionPatch(draft, [
+      { op: 'append', collection: 'permissions', value: { roleId: 'viewer', capabilityId: 'cap-a', action: 'read' } },
+    ])).toBe(1)
+    const rows = draft.permissions as Record<string, unknown>[]
+    expect(rows[1]).toEqual({ roleId: 'viewer', capabilityId: 'cap-a', action: 'read' })
+    expect(rows.every((r) => !('id' in r))).toBe(true)
+  })
+
+  it('creates the collection when the section holds none yet', () => {
+    const draft: Record<string, unknown> = { builder: {} }
+    expect(applySectionPatch(draft, [
+      { op: 'append', collection: 'builder.screens', id: 'scr-1', value: { name: 'Home' } },
+    ])).toBe(1)
+    expect((draft.builder as { screens: unknown[] }).screens).toEqual([{ id: 'scr-1', name: 'Home' }])
+  })
+
+  it('is idempotent: a retry reports unchanged instead of duplicating the row', () => {
+    const draft: Record<string, unknown> = { capabilities: [] }
+    const op: PatchOp = { op: 'append', collection: 'capabilities', id: 'cap-2', value: { name: 'Sign out' } }
+    const keyless: PatchOp = { op: 'append', collection: 'permissions', value: { roleId: 'viewer', capabilityId: 'cap-a' } }
+    applySectionPatchReport(draft, [op, keyless])
+    const again = applySectionPatchReport(draft, [op, keyless])
+    expect(again.changed).toEqual([])
+    expect(again.unchanged).toHaveLength(2)
+    expect(draft.capabilities).toHaveLength(1)
+    expect(draft.permissions).toHaveLength(1)
+  })
+
+  it('names append in the reason when a merge matched no row', () => {
+    const draft: Record<string, unknown> = { capabilities: [{ id: 'cap-1' }] }
+    const report = applySectionPatchReport(draft, [
+      { op: 'merge', collection: 'capabilities', id: 'cap-9', value: { name: 'New' } },
+    ])
+    expect(report.applied).toBe(0)
+    expect(report.notApplied[0].reason).toContain('op: "append"')
+    expect(report.notApplied[0].reason).toContain('cap-9')
+  })
+
+  it('refuses an append that carries a row selector or a non-object value', () => {
+    const draft: Record<string, unknown> = { capabilities: [] }
+    expect(() => applySectionPatch(draft, [
+      { op: 'append', collection: 'capabilities', match: { name: 'x' }, value: { name: 'x' } },
+    ])).toThrow(/append takes a collection and a value/)
+    expect(() => applySectionPatch(draft, [
+      { op: 'append', collection: 'capabilities', value: 'Sign out' as unknown as Record<string, unknown> },
+    ])).toThrow(/append requires a safe object value/)
+  })
+})

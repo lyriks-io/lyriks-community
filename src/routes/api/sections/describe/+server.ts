@@ -110,9 +110,37 @@ export const GET: RequestHandler = async ({ url }) => {
 		itemSchemas: SECTION_ITEM_SCHEMAS[section as keyof typeof SECTION_ITEM_SCHEMAS] ?? {},
 		enums: ENUMS[section] ?? {},
 		samples: SAMPLES[section] ?? {},
+		// The write path in wire terms: which tool, and under WHICH argument the
+		// document goes. Naming the shape without naming the argument left an
+		// author guessing at `draft`, `content` or `body`.
+		writeTools: writeToolsFor(section),
 		authoring: AUTHORING[section]
 	});
 };
+
+/** How this section is written, argument by argument. */
+function writeToolsFor(section: Section) {
+	if (section === 'evolution') {
+		return {
+			write:
+				'apply_evolution_batch { project_id, operations[] }: every operation is `{ op, ... }` and the lifecycle guards apply server-side. A raw set_section on this section is refused.',
+			read: 'get_evolution { project_id, request_id?, part? }, which carries the derived readings (maturity, gates, impact, proposals) the raw document does not.'
+		};
+	}
+	if (!isAgentAuthorable(section)) {
+		return {
+			write: 'Nothing: this section is computed or captured server-side. Read it with get_section.',
+			read: 'get_section { project_id, section }'
+		};
+	}
+	return {
+		write:
+			'set_section { project_id, section, document }: `document` is the WHOLE section draft, in the shape of `emptyDraft` above. It REPLACES what is stored, so anything absent from it is dropped (the answer warns about non-empty sub-trees it dropped).',
+		patch:
+			'patch_section { project_id, section, operations[] }: a targeted edit that resends nothing. `set` a dotted path, `merge` into a row that already exists (by `id`, or by `match` for a keyless collection), `append` ONE new row at the end of a collection (no selector: this is how a row is added), `remove` a row or a path, and the incremental `add_to_set` / `remove_from_set` / `append_text` / `replace_text`. Prefer it to set_section on any section carrying large sub-trees.',
+		read: 'get_section { project_id, section, summary?, paths? }'
+	};
+}
 
 async function loadSection(
 	s: ReturnType<typeof getServices>,
@@ -841,7 +869,7 @@ const SAMPLES: Partial<Record<Section, Record<string, unknown>>> = {
 /** How to author each section, which write tool to use, and id conventions. */
 const AUTHORING: Record<Section, string> = {
 	scope:
-		'set_section FIRST and keep it current. Choose mode full_product|selected_scope|prototype, then inventory every externally expected capability. Every capability must cite Documents & Sources through sourceIds; included capabilities must map to leaf featureIds. excluded/deferred rows require a rationale and an approved|accepted_risk approvalId (and are forbidden in full_product mode). Review every pre-populated sectionAssessments row whose applicability is `required`: mark it ready only after checking the section; not_applicable requires a rationale + settled approval and is forbidden in full_product mode. Rows seeded `derived` (Project health, Baselines) are computed or captured — leave them alone, the gate does not ask you for them. completionStatus, completedAt, audit and auditLog are server-owned — call assess_project_completeness, then audit_project_scope, then finish_project instead of writing them. Humans never fill this ledger in: it is the reasoning YOU must commit to before authoring, and it has no page in the app — do not point a user at one.',
+		'set_section FIRST and keep it current. Choose mode full_product|selected_scope|prototype, then inventory every externally expected capability. Every capability must cite Documents & Sources through sourceIds; included capabilities must map to leaf featureIds. excluded/deferred rows require a rationale and an approvalId (and are forbidden in full_product mode): an approval still `in_review` is enough to FILE the decision, the gate then reports the missing signature as debt instead of blocking, and you never write `accepted_risk` yourself, since that asserts a human accepted a risk. Review every pre-populated sectionAssessments row whose applicability is `required`: mark it ready only after checking the section; not_applicable requires a rationale + an approval (in review is enough) and is forbidden in full_product mode. Rows seeded `derived` (Project health, Baselines, Evolution: a dossier is driven by apply_evolution_batch, never assessed here) are computed or captured — leave them alone, the gate does not ask you for them. completionStatus, completedAt, audit and auditLog are server-owned — call assess_project_completeness, then audit_project_scope, then finish_project instead of writing them. Humans never fill this ledger in: it is the reasoning YOU must commit to before authoring, and it has no page in the app — do not point a user at one.',
 	foundation:
 		`set_section. This is the only Foundation section, and the FIRST page a customer reads. ${FOUNDATION_ALTITUDE_RULE} ` +
 		'Author its three nested records together — identity, definition, operations — using the exact emptyDraft shape; every nested record carries the same projectId and the server pins it to the requested project. ' +
@@ -885,7 +913,7 @@ const AUTHORING: Record<Section, string> = {
 		'set_section. Features › Rules — the home of every EXECUTABLE statement, and the section Foundation rejects its feature rules into. ' +
 		'issues[] — one tracked problem across the declared rules: {id, kind, title, detail, severity, status, ownerRoleId = a users.roles[] id or null, resolutionNote, relatedRuleIds[], relatedFeatureId = a leaf feature id or null, relatedJourneyId, autoDetected (false when you author it by hand), sourceIds[]}. ' +
 		'scenarios[] — one risky edge case as a plain Given/When/Then: {id, title, given, whenText, then, expectedOutcome, relatedIssueId, relatedJourneyId, covered, sourceIds[]}. `whenText` is the field name, not `when`. These become the verify_experience acceptance spec, so write them so a run can decide pass/fail. ' +
-		'inventory[] is a read-only mirror of the rules declared upstream (Foundation, Users, Experience) — leave it [], it is recomputed on load. ' +
+		'inventory[] is a read-only mirror of the rules declared upstream (Foundation, Users, Experience) — leave it [], it is recomputed on every load. It fills itself when Foundation declares its SLAs, authentication and retention, when Users & Permissions grants a capability and when Experience holds journeys: an empty mirror is a statement about THOSE sections, never an instruction to write here, and it no longer zeroes this section once contradictions or edge cases are authored. ' +
 		'TITLE GRAMMAR for issues[]: the title is read on a Control Center card by someone without the spec open. Subject first, the thing that is wrong, under 80 characters, no reasoning ("Sidebar colour has no dark-palette value"); the why, the option taken and the alternative go in detail. Set relatedFeatureId whenever the issue belongs to a feature: it names the subject on the card.',
 	data:
 		'set_section. Data & Architecture › Data model, authored top-down — every child names its parent by id, and an unknown parent is rejected with the collection to author first. ' +

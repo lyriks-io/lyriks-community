@@ -82,6 +82,44 @@ describe('ImportDataCollectionsUseCase', () => {
 		expect(saveExperience.execute).not.toHaveBeenCalled();
 	});
 
+	it('gives an existing collection the model field it was missing, instead of skipping it', async () => {
+		const builder = emptyBuilder();
+		builder.collections.push({
+			id: 'col-1',
+			name: 'Note',
+			fields: [{ id: 'field-1', name: 'content', kind: 'sentence' }],
+			seedCount: 3,
+			rows: [{ content: 'hello' }],
+			sourceEntityId: 'entity-1'
+		});
+		const experience = { projectId: 'project-1', builder };
+		const data = {
+			entities: [{ id: 'entity-1', name: 'Note' }],
+			// `pinned` was declared on the entity after the first import.
+			fields: [
+				{ id: 'f-1', entityId: 'entity-1', name: 'content', type: 'string' },
+				{ id: 'f-2', entityId: 'entity-1', name: 'pinned', type: 'boolean' }
+			]
+		};
+		const saveExperience = { execute: vi.fn() };
+		const useCase = new ImportDataCollectionsUseCase(
+			{ execute: vi.fn().mockResolvedValue(experience) } as never,
+			{ execute: vi.fn().mockResolvedValue(data) } as never,
+			saveExperience as never,
+			{ execute: vi.fn() } as never
+		);
+
+		const result = await useCase.execute('project-1');
+
+		expect(result.reconciled).toEqual([{ entity: 'Note', addedFields: ['pinned'] }]);
+		expect(result.skipped).toEqual([]);
+		expect(builder.collections[0].fields.map((f) => f.name)).toEqual(['content', 'pinned']);
+		// Nothing authored is lost: the rows and the seed count stay.
+		expect(builder.collections[0].rows).toEqual([{ content: 'hello' }]);
+		expect(builder.collections[0].seedCount).toBe(3);
+		expect(saveExperience.execute).toHaveBeenCalled();
+	});
+
 	it('refresh mode re-syncs drifted collections from the model, keeping demo knobs', async () => {
 		const builder = emptyBuilder();
 		builder.collections.push({

@@ -127,7 +127,7 @@ export { LoadDataDraftUseCase } from './load-data-draft';
 export { SaveDataDraftUseCase, type SaveDataDraftResult } from './save-data-draft';
 export { experienceFeatureId } from '$application/projection/aux-feature-ids';
 export { AnalyzeExperienceCoverageUseCase } from './analyze-experience-coverage';
-export { SimulateExperienceUseCase } from './simulate-experience';
+export { SimulateExperienceUseCase, UnknownPersonaError } from './simulate-experience';
 export {
 	VerifyExperienceUseCase,
 	DEFAULT_ENGINE_READ_BUDGETS,

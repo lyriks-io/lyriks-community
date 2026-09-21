@@ -346,10 +346,14 @@ export async function assessBehaviorFeatureHandler(
  * bounded while making every operation discoverable through this one MCP.
  */
 export async function getBehaviorOperationsHandler(
-  args: { project_id: string; query?: string; offset?: number; max_chars?: number },
+  args: { project_id?: string; query?: string; offset?: number; max_chars?: number },
   lyriks: LyriksClient,
 ): Promise<unknown> {
-  const q = new URLSearchParams({ projectId: args.project_id })
+  // The vocabulary is the engine's own and is the same for every project, so a
+  // caller who has no project yet can still read it: the id is forwarded only
+  // when there is one. Asking for a project before the first project exists was
+  // a door with nothing behind it.
+  const q = new URLSearchParams(args.project_id ? { projectId: args.project_id } : {})
   const result = await lyriks.get(`/api/behavior/operations?${q.toString()}`) as {
     reference?: unknown
     patterns?: Array<{ id: string; title: string; keywords: string[]; steps: string[]; verificationBoundary: string }>

@@ -30,7 +30,7 @@ import {
 	nextStage,
 	openRequest
 } from './lifecycle';
-import { canCrossToImplementation, canLeaveCoherence, canLiftWaiver, canWaive, openWaiver } from './gate';
+import { canCrossToImplementation, canLeaveCoherence, canLeaveSpecification, canLiftWaiver, canWaive, openWaiver } from './gate';
 import { amend, canReceiveReport, freeze } from './freeze';
 import { canAdopt, canBuildReport, canCloseReport, canDecide, canRemove } from './implementation';
 import {
@@ -646,6 +646,8 @@ export function gateFor(
 	criticalEmptyCount: number
 ): Guarded {
 	switch (target) {
+		case 'coherence':
+			return canLeaveSpecification(request);
 		case 'implementation':
 			return firstRefusal(
 				canCrossToImplementation(request, criticalEmptyCount),
