@@ -10,8 +10,14 @@
 		/** Behavior overview + Rules folded in as tabs — counts sourced by the page. */
 		behaviorCount?: number;
 		rulesCount?: number;
+		/**
+		 * Requests in flight on the Evolution tab. Undefined until the tab has been
+		 * opened once: its board is loaded only with `?tab=evolution`, so the bar
+		 * shows no count rather than a wrong one.
+		 */
+		evolutionCount?: number;
 	}
-	let { active, store, onSwitch, behaviorCount, rulesCount }: Props = $props();
+	let { active, store, onSwitch, behaviorCount, rulesCount, evolutionCount }: Props = $props();
 
 	interface Tab {
 		id: FeaturesTab;
@@ -49,6 +55,16 @@
 			eyebrow: 'Declared rules · acceptance tests',
 			count: rulesCount === undefined ? '' : String(rulesCount),
 			icon: 'sliders'
+		},
+		{
+			// Evolution is a tab here, not a capability of its own: a change request
+			// is read beside the feature tree it changes. It sits after the tabs that
+			// describe the product as it stands, and before the personal work queue.
+			id: 'evolution',
+			label: 'Evolution',
+			eyebrow: 'Change requests, idea to acceptance',
+			count: evolutionCount === undefined ? '' : String(evolutionCount),
+			icon: 'rotate'
 		},
 		{
 			id: 'mywork',

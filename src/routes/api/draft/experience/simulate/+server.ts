@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { getServices } from '$composition/container.server';
+import { UnknownPersonaError } from '$application/use-cases/simulate-experience';
 import type { SimAction, SimRequest } from '$domain/experience';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import type { RequestHandler } from './$types';
@@ -36,6 +37,13 @@ export const POST: RequestHandler = async (event) => {
 	};
 
 	const services = getServices();
-	const result = await services.simulateExperience.execute(projectId, req);
-	return json(result);
+	try {
+		return json(await services.simulateExperience.execute(projectId, req));
+	} catch (err) {
+		// A role nobody declared is the caller's mistake, named as such: running
+		// it as the author instead would answer a proof about a role that does
+		// not exist.
+		if (err instanceof UnknownPersonaError) error(400, err.message);
+		throw err;
+	}
 };

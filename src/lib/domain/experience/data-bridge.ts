@@ -66,16 +66,7 @@ export function fieldTypeToFakeKind(field: { name: string; type: FieldType }): F
  * renders something.
  */
 export function entityToCollection(entity: DataEntity, fields: EntityField[]): BackendCollection {
-	const owned = fields.filter((f) => f.entityId === entity.id && f.name.trim());
-	const builtFields = owned.map((f) =>
-		createBackendField({
-			name: f.name.trim(),
-			kind: f.isId ? 'id' : fieldTypeToFakeKind(f),
-			// Declared enum members become the exact value pool the simulator draws
-			// from, so a `plan` field seeds free/premium/family — not generic statuses.
-			...(f.enumValues && f.enumValues.length > 0 ? { options: f.enumValues } : {})
-		})
-	);
+	const builtFields = modelFields(entity, fields);
 	return createBackendCollection({
 		name: entity.name.trim() || 'Entity',
 		fields: builtFields.length > 0 ? builtFields : [createBackendField({ name: 'Name', kind: 'fullName' })],
@@ -119,6 +110,48 @@ export function collectionInSync(
 ): boolean {
 	const fresh = entityToCollection(entity, fields);
 	return col.name.trim() === fresh.name.trim() && fieldSignature(col.fields) === fieldSignature(fresh.fields);
+}
+
+/**
+ * The collection fields one entity's model declares, in model order. No
+ * placeholder: an entity with no field yields none, and only a NEW collection
+ * gets the one-field fallback so it renders something.
+ */
+function modelFields(entity: DataEntity, fields: EntityField[]): BackendField[] {
+	return fields
+		.filter((f) => f.entityId === entity.id && f.name.trim())
+		.map((f) =>
+			createBackendField({
+				name: f.name.trim(),
+				kind: f.isId ? 'id' : fieldTypeToFakeKind(f),
+				// Declared enum members become the exact value pool the simulator draws
+				// from, so a `plan` field seeds free/premium/family, not generic statuses.
+				...(f.enumValues && f.enumValues.length > 0 ? { options: f.enumValues } : {})
+			})
+		);
+}
+
+/**
+ * Add to an existing collection the model fields it does not have yet, in
+ * place, and answer their names.
+ *
+ * Purely additive: a field the author added, renamed or re-typed on the
+ * collection is left alone, and nothing is removed. That is the difference with
+ * a refresh, which makes the collection follow the model wholesale. What it
+ * fixes is the case an import-once rule made silent: a field declared on the
+ * entity AFTER its first import never reached the prototype, and the answer
+ * said `skipped` with nothing else to read.
+ */
+export function addMissingFieldsFromModel(
+	col: BackendCollection,
+	entity: DataEntity,
+	fields: EntityField[]
+): string[] {
+	const present = new Set(col.fields.map((f) => f.name.trim().toLowerCase()));
+	const missing = modelFields(entity, fields).filter((f) => !present.has(f.name.trim().toLowerCase()));
+	if (missing.length === 0) return [];
+	col.fields = [...col.fields, ...missing];
+	return missing.map((f) => f.name);
 }
 
 /**

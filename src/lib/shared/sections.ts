@@ -42,8 +42,11 @@ export function isSection(value: string): value is Section {
  * - `product` — the specification of the customer's product. An agent authoring
  *   through the MCP is expected to fill these, and the completion gate asks for
  *   them.
- * - `derived` — computed or captured server-side (scores, snapshots). Read it,
- *   never write it.
+ * - `derived` — not the author's to fill in: computed or captured
+ *   server-side (scores, snapshots), or written only through its own typed
+ *   operations (Evolution dossiers, driven by apply_evolution_batch under the
+ *   lifecycle guards). Read it, never write it raw, and the completion gate
+ *   never asks for a verdict on it.
  *
  * One registry, because three places used to answer this differently: the scope
  * ledger demanded every section be assessed, `describe_section` implied every
@@ -65,7 +68,11 @@ export const SECTION_AUDIENCE: Readonly<Record<Section, SectionAudience>> = {
 	approvals: 'product',
 	baselines: 'derived',
 	documents: 'product',
-	evolution: 'product'
+	// A dossier is a change being qualified, not a part of the product
+	// specification: it is written through apply_evolution_batch alone, and
+	// demanding that an author assess it made the completion gate ask for a
+	// section nothing could write and describe_section refused to describe.
+	evolution: 'derived'
 };
 
 /** Sections an agent is expected to author. The rest it may read, not write. */

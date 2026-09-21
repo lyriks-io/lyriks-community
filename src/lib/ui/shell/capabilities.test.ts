@@ -14,6 +14,19 @@ describe('knowledge graph navigation', () => {
 	});
 });
 
+describe('evolution navigation', () => {
+	it('folds evolution into the Features tabs, off the left nav', () => {
+		const evolution = capabilityById('evolution');
+
+		expect(evolution).toMatchObject({ status: 'hidden', partOf: 'features' });
+		expect(evolution?.route?.('project-1')).toBe('/projects/project-1/features?tab=evolution');
+		// Control Center "Fix now" on an evolution dimension lands on its host page.
+		expect(resolveVisibleCapability('evolution')?.id).toBe('features');
+		expect(NAV_CAPABILITIES.map((capability) => capability.id)).not.toContain('evolution');
+		expect(PROJECT_TOOL_CAPABILITIES.map((capability) => capability.id)).not.toContain('evolution');
+	});
+});
+
 describe('scope coverage is not surfaced', () => {
 	it('has no page and no route — the ledger is agent-authored, not a human surface', () => {
 		const scope = capabilityById('scope');

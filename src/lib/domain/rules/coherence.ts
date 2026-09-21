@@ -5,15 +5,22 @@ import type { ProjectRulesDraft } from './draft';
 
 /**
  * Local-coherence for Step 06. Four concerns:
- *   1. A corpus was actually consolidated (inventory non-empty) ...... 10 pts
+ *   1. There is something to be coherent about ....................... 10 pts
  *   2. No open critical contradiction ............................... 30 pts
  *   3. Issues triaged to a settled status (proportional) ............ 30 pts
  *   4. Gaps covered by an edge-case scenario (proportional) ......... 30 pts
  *
- * Concerns 2-4 are credit for reviewed rules, so they are only awarded once a
- * corpus exists: an empty section scores 0, never the "nothing is broken yet"
- * credit an untouched draft would otherwise collect (that read as a
+ * Concerns 2-4 are credit for reviewed rules, so they are only awarded once the
+ * section holds something: an empty section scores 0, never the "nothing is
+ * broken yet" credit an untouched draft would otherwise collect (that read as a
  * half-finished project the moment it was created).
+ *
+ * "Something" is the consolidated inventory OR what the author wrote here. The
+ * inventory is a READ-ONLY mirror, recomputed on every load from the Foundation
+ * commitments, the Users grants and the Experience journeys: an author cannot
+ * fill it, so its emptiness must not be what zeroes a section they did author.
+ * It is still reported, since an empty mirror says something true about the
+ * sections upstream.
  *
  * Score clamped to [0, 100], same convention as Steps 01-05.
  */
@@ -31,15 +38,21 @@ export function computeRulesCoherence(draft: ProjectRulesDraft): CoherenceResult
 	const issues: CoherenceIssue[] = [];
 	let score = 0;
 
-	// 1. Inventory consolidated — 10 pts. Nothing consolidated ⇒ nothing to be
-	// coherent about: the section scores 0 outright.
+	// 1. Something to be coherent about. Nothing at all (no mirrored rule, no
+	// authored issue, no edge case) means the section scores 0 outright.
+	const authoredHere = draft.issues.length > 0 || draft.scenarios.length > 0;
 	if (draft.inventory.length === 0) {
 		issues.push({
 			code: 'empty-inventory',
-			message: 'Rule inventory is empty. Refresh it from the earlier steps.'
+			// No instruction to act on this section: the mirror fills itself when
+			// rules are declared upstream, which is where this sends the reader.
+			message:
+				'No rule reaches this inventory. It mirrors what Foundation declares (SLAs, authentication, retention), the grants in Users & Permissions and the Experience journeys, and it is recomputed on every load: declare them there. Contradictions and edge cases are authored here.'
 		});
-		const { tone, label } = toneFor(0);
-		return { score: 0, tone, label, issues };
+		if (!authoredHere) {
+			const { tone, label } = toneFor(0);
+			return { score: 0, tone, label, issues };
+		}
 	}
 	score += 10;
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { UnspaProjectSnapshot } from '$lib/unspa-schema';
@@ -252,5 +252,35 @@ describe('LocalFsBehaviorRepository feature reads', () => {
 		expect((await repository.loadFeature('p1', 'feat-rooms'))!.feature).toMatchObject({
 			name: 'platform copy'
 		});
+	});
+});
+
+/**
+ * Two writes to the same kernel file at once is an ordinary situation here: a
+ * section save projects into a feature while the envelope push writes the same
+ * one. They used to share a single `<path>.tmp`, so the second rename found
+ * nothing and threw ENOENT, which the section save reported as
+ * `kernel_write_failed` after having answered that the row applied.
+ */
+describe('LocalFsBehaviorRepository concurrent writes', () => {
+	it('writes through its own temporary file, never the shared name another writer holds', async () => {
+		const root = mkdtempSync(join(tmpdir(), 'lyriks-behavior-'));
+		mkdirSync(join(root, 'p1'));
+		const repository = new LocalFsBehaviorRepository(root);
+
+		// What another process mid-write leaves on disk: the shared name this
+		// repository used to claim for itself. Writing over it, or renaming it,
+		// is exactly the collision that lost a save.
+		const foreignTmp = join(root, 'p1', 'p1.project.json.tmp');
+		writeFileSync(foreignTmp, 'half a snapshot from another writer');
+
+		await repository.saveProject(snapshot('p1', 'Ours', ['f1']));
+
+		const loaded = await repository.loadProject('p1');
+		expect(loaded?.project).toMatchObject({ id: 'p1', name: 'Ours', featureIds: ['f1'] });
+		// The other writer's file is still its own, untouched and unrenamed.
+		expect(readFileSync(foreignTmp, 'utf8')).toBe('half a snapshot from another writer');
+		// And ours left nothing behind.
+		expect(readdirSync(join(root, 'p1')).filter((f) => f.endsWith('.tmp'))).toEqual(['p1.project.json.tmp']);
 	});
 });

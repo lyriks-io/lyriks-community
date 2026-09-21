@@ -1,6 +1,7 @@
 import type { EvolutionRequest, GateWaiver } from './draft';
 import type { Actor } from './draft';
 import { firstRefusal, guard, type Guarded } from './guard';
+import { pendingProposals } from './proposals';
 
 /**
  * The band at the foot of a stage: the threshold, the crossing when it is met,
@@ -43,6 +44,30 @@ export function canCrossToImplementation(
 			'A blocking finding is still undecided. Fix it, accept it as a risk, or waive the gate with a stated reason.',
 			'Refuses the crossing while a blocking finding is undecided against the existing spec.'
 		)
+	);
+}
+
+/**
+ * Leaving Specify: what the dossier proposed must have been signed.
+ *
+ * A proposal is a value a PERSON decides, and the maturity percentage next to
+ * it is inherited from the features the change touches, so a brand-new dossier
+ * on a complete product reads high before anything about the change itself has
+ * been decided. That number never blocks (it is a reading, not a gate), but
+ * walking out of Specify while the very values the dossier put up for signature
+ * are still waiting is the one case where "specified" is plainly untrue. Refuse
+ * that, and name the count.
+ *
+ * Nothing else is required here: a change that genuinely needs no new value is
+ * specified the moment it is understood, and the waiver remains the named way
+ * through when a person decides to cross anyway.
+ */
+export function canLeaveSpecification(request: EvolutionRequest): Guarded {
+	const waiting = pendingProposals(request).length;
+	return guard(
+		waiting > 0,
+		`${waiting} proposal${waiting === 1 ? '' : 's'} still await${waiting === 1 ? 's' : ''} a decision.`,
+		'A proposal is a value a person signs. Crossing with signatures pending would carry a specification nobody decided, under a maturity inherited from the features the change touches.'
 	);
 }
 

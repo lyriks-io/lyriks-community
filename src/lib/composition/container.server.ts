@@ -1290,7 +1290,7 @@ export function getServices(): AppServices {
 			loadUsersDraft,
 			loadDataDraft
 		),
-		simulateExperience: new SimulateExperienceUseCase(loadExperienceDraft),
+		simulateExperience: new SimulateExperienceUseCase(loadExperienceDraft, loadUsersDraft),
 		verifyExperience,
 		importDataCollections: new ImportDataCollectionsUseCase(
 			loadExperienceDraft,

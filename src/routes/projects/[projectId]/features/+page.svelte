@@ -18,12 +18,14 @@
 	import DeliveryDashboard from '$ui/features/sections/DeliveryDashboard.svelte';
 	import RulesPanel from '$ui/rules/RulesPanel.svelte';
 	import { RulesStore } from '$ui/rules/draft-store.svelte';
+	import EvolutionPanel from '$ui/evolution/EvolutionPanel.svelte';
 	import { YjsFeatureSync } from '$ui/features/yjs-feature-sync.client';
 	import { unspaDashboardBase } from '$ui/features/unspa-dashboard-url';
 	import type { FeatureAdvice, FeatureImplementationCoverage } from '$application/use-cases';
+	import type { FeaturesTab } from '$domain/features';
 	import { Icon } from '$ui/design-system';
 	import { browser, dev } from '$app/environment';
-	import { invalidateAll } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { env } from '$env/dynamic/public';
 	import type { PageData } from './$types';
@@ -48,11 +50,20 @@
 		() => new RulesStore(data.rulesDraft, data.session, toastNotifier, data.rulesRevision)
 	);
 
-	// Deep-link: /features?tab=behavior|rules (the folded Functional/Rules routes
-	// redirect here). A ?feature= deep-link forces the tree tab and wins. 'mvp'
-	// and 'reuse' are intentionally omitted — the MVP prioritization and Reuse
-	// library tabs are hidden (their data is kept, just no longer surfaced).
-	const FEATURE_TABS = ['tree', 'roadmap', 'behavior', 'rules', 'mywork', 'delivery'] as const;
+	// Deep-link: /features?tab=behavior|rules|evolution (the folded Functional,
+	// Rules and Evolution routes redirect here). A ?feature= deep-link forces the
+	// tree tab and wins. 'mvp' and 'reuse' are intentionally omitted — the MVP
+	// prioritization and Reuse library tabs are hidden (their data is kept, just
+	// no longer surfaced).
+	const FEATURE_TABS = [
+		'tree',
+		'roadmap',
+		'behavior',
+		'rules',
+		'evolution',
+		'mywork',
+		'delivery'
+	] as const;
 	const urlTab = untrack(() => page.url.searchParams.get('tab'));
 	if (
 		!openDeepLinkFeature &&
@@ -102,6 +113,36 @@
 		store.switchTab('behavior');
 	};
 
+	// The Evolution tab is URL-driven: its board is served by `load` only when
+	// `?tab=evolution` is on the URL, so entering or leaving it navigates instead
+	// of flipping local state. The other tabs stay local state: they are already
+	// hydrated, and navigating would re-run the heaviest load in the product for
+	// nothing.
+	async function switchTab(tab: FeaturesTab) {
+		behaviorEditorRequest = null;
+		const leavingEvolution = store.activeTab === 'evolution';
+		if (tab !== 'evolution' && !leavingEvolution) {
+			store.switchTab(tab);
+			return;
+		}
+		const next = new URL(page.url);
+		// A request being read belongs to the tab we are leaving, never to the next one.
+		next.searchParams.delete('request');
+		next.searchParams.delete('view');
+		if (tab === 'evolution') next.searchParams.set('tab', tab);
+		else next.searchParams.delete('tab');
+		// Order matters, both ways, so no tab ever paints without its data:
+		// entering waits for the board to land before showing it; leaving shows
+		// the already-hydrated tab first, then drops the evolution params.
+		if (tab === 'evolution') {
+			await goto(next, { noScroll: true, keepFocus: true });
+			store.switchTab(tab);
+			return;
+		}
+		store.switchTab(tab);
+		await goto(next, { noScroll: true, keepFocus: true });
+	}
+
 	// Rules sub-tab deep-link (?tab=rules&rtab=…) — a graph/search link to a
 	// rule or edge case lands on the panel that actually shows it.
 	const RULES_TABS = ['inventory', 'edge_cases'] as const;
@@ -135,6 +176,14 @@
 	// first read is instant (snapshot), and the engine's background refresh pushes
 	// a `features-advice` section change that re-runs this load (through the
 	// project-wide sync key) so the badges fill in live — no blocking fetch.
+	// The behavior fan-out is skipped while the Evolution tab is up (nothing there
+	// reads it), so the bar keeps the last count it was handed instead of showing
+	// a zero this project does not have.
+	let lastBehaviorCount = $state<number | undefined>(undefined);
+	$effect(() => {
+		if (!data.evolution) lastBehaviorCount = data.overview.features.length;
+	});
+
 	const advice = $derived<FeatureAdvice[]>(data.advice);
 	const advisorAvailable = $derived(data.advisorAvailable);
 
@@ -241,12 +290,10 @@
 					<TabBar
 						active={store.activeTab}
 						{store}
-						onSwitch={(tab) => {
-							behaviorEditorRequest = null;
-							store.switchTab(tab);
-						}}
-						behaviorCount={data.overview.features.length}
+						onSwitch={(tab) => void switchTab(tab)}
+						behaviorCount={lastBehaviorCount}
 						rulesCount={rulesStore.draft.inventory.length + rulesStore.draft.scenarios.length}
+						evolutionCount={data.evolution?.cards.length}
 					/>
 				</div>
 
@@ -318,6 +365,14 @@
 							)}
 							editorRequest={behaviorEditorRequest}
 						/>
+					{:else if store.activeTab === 'evolution'}
+						{#if data.evolution}
+							<EvolutionPanel
+								projectId={data.draft.projectId}
+								data={data.evolution}
+								canEdit={data.evolution.actor.role !== 'viewer'}
+							/>
+						{/if}
 					{:else if store.activeTab === 'mywork'}
 						<AssignmentsDashboard
 							{store}
@@ -370,7 +425,11 @@
 	</aside>
 {/if}
 
-<SaveBar
-	saveStatus={store.activeTab === 'rules' ? rulesStore.saveStatus : store.saveStatus}
-	coherence={store.activeTab === 'rules' ? rulesStore.coherence : store.coherence}
-/>
+<!-- The Evolution tab saves through its own dossier store and raises its own
+     bar in the full view; the features draft has nothing pending there. -->
+{#if store.activeTab !== 'evolution'}
+	<SaveBar
+		saveStatus={store.activeTab === 'rules' ? rulesStore.saveStatus : store.saveStatus}
+		coherence={store.activeTab === 'rules' ? rulesStore.coherence : store.coherence}
+	/>
+{/if}

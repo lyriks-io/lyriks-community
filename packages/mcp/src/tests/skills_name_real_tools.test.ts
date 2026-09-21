@@ -38,6 +38,7 @@ const NOT_TOOLS = new Set([
   'file_name',
   'found_entities',
   'project_id',
+  'persona_id',
   'source_id',
   'action_id',
   'surface_id',
@@ -80,6 +81,15 @@ const NOT_TOOLS = new Set([
   'block_action',
   'emit_event',
   'set_state',
+  // The six origins of a change request: enum values of `request.origin` that
+  // the evolution skill spells in backticks so a reader can copy them, never
+  // calls. Added the day the skill started listing them, because an agent that
+  // cannot see the enumeration cannot pick from it.
+  'internal_idea',
+  'customer_feedback',
+  'support_ticket',
+  'market_watch',
+  'technical_debt',
   // Enum values the skills quote (issue statuses, scope kinds, source modes).
   'accepted_risk',
   'code_to_spec',

@@ -1,4 +1,9 @@
-import { collectionKey, entityToCollection, syncEntityIntoCollections } from '$domain/experience';
+import {
+	addMissingFieldsFromModel,
+	collectionKey,
+	entityToCollection,
+	syncEntityIntoCollections
+} from '$domain/experience';
 import type { LoadExperienceDraftUseCase } from './load-experience-draft';
 import type { LoadDataDraftUseCase } from './load-data-draft';
 import type { SaveExperienceDraftUseCase } from './save-experience-draft';
@@ -15,6 +20,13 @@ export interface ImportDataCollectionsResult {
 	/** Entity names left untouched: already backed by a collection (and, in
 	 *  refresh mode, already in sync with the model). */
 	skipped: string[];
+	/**
+	 * Existing collections that GAINED the model fields they were missing, with
+	 * the field names added. A field declared on an entity after its first
+	 * import used to stop there: the row said `skipped` and the prototype kept
+	 * reading a shape the data model no longer had.
+	 */
+	reconciled: Array<{ entity: string; addedFields: string[] }>;
 	/** Total collections on the builder after the import. */
 	total: number;
 	/** Entity name → simulator collection id, including already-present selections. */
@@ -74,6 +86,7 @@ export class ImportDataCollectionsUseCase {
 		const imported: string[] = [];
 		const updated: string[] = [];
 		const skipped: string[] = [];
+		const reconciled: Array<{ entity: string; addedFields: string[] }> = [];
 		let mutated = false;
 		for (const entity of data.entities) {
 			if (want && !want.has(norm(entity.name))) continue;
@@ -90,8 +103,20 @@ export class ImportDataCollectionsUseCase {
 				else skipped.push(entity.name);
 				continue;
 			}
-			if (backingCollection(entity)) {
-				skipped.push(entity.name);
+			const backing = backingCollection(entity);
+			if (backing) {
+				// Import-once-editable, plus what the model added since: a field the
+				// entity declares and the collection does not have is appended, which
+				// destroys nothing (authored rows, seed counts and edited fields are
+				// untouched) and keeps the prototype reading the shapes the product
+				// will persist. A renamed or re-typed field still needs refresh:true.
+				const added = addMissingFieldsFromModel(backing, entity, data.fields);
+				if (added.length > 0) {
+					mutated = true;
+					reconciled.push({ entity: entity.name, addedFields: added });
+				} else {
+					skipped.push(entity.name);
+				}
 				continue;
 			}
 			const collection = entityToCollection(entity, data.fields);
@@ -141,11 +166,14 @@ export class ImportDataCollectionsUseCase {
 			imported,
 			updated,
 			skipped,
+			reconciled,
 			total: draft.builder.collections.length,
 			collectionIds,
 			fieldIds,
 			fields,
-			fixtureNotice: 'Generated rows are synthetic placeholders, not domain facts. Use seed_count:0 for new empty collections and author representative rows explicitly. Existing rows and seed counts are preserved.'
+			fixtureNotice:
+				'Generated rows are synthetic placeholders, not domain facts. Use seed_count:0 for new empty collections and author representative rows explicitly. Existing rows and seed counts are preserved. ' +
+				'An existing collection gains the model fields it was missing (reported under `reconciled`); a field the model RENAMED or re-typed needs refresh:true, which makes the collection follow the model wholesale.'
 		};
 	}
 }

@@ -1,6 +1,6 @@
 {
   "name": "lyriks",
-  "version": "0.9.32",
+  "version": "0.9.33",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.6.3",
@@ -62,7 +62,7 @@
     "marked": "^18.0.7",
     "mermaid": "^11.16.1",
     "pg": "^8.22.0",
-    "unspaghettit": "^0.24.0",
+    "unspaghettit": "^0.25.0",
     "y-websocket": "^2.0.4",
     "yjs": "^13.6.20"
   },

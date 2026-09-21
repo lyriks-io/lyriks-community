@@ -9,6 +9,7 @@ import {
 	renameSync,
 	rmSync
 } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve, sep } from 'node:path';
 
 import type { BehaviorRepositoryPort } from '$application/ports';
@@ -395,7 +396,17 @@ export class LocalFsBehaviorRepository implements BehaviorRepositoryPort {
 			mkdirSync(dir, { recursive: true, mode: 0o700 });
 			chmodSync(dir, 0o700); // pin 0o700 regardless of umask (we own it: always safe)
 		}
-		const tmp = `${path}.tmp`;
+		// One temporary file PER WRITE. A shared `<path>.tmp` is only atomic for a
+		// single writer: two writes to the same kernel feature at once (a section
+		// save projecting into it while the envelope push writes the same file)
+		// each wrote that one name, and the second `renameSync` found nothing
+		// there. It failed with ENOENT, which the section save reported as
+		// `kernel_write_failed`, or worse answered success while the row it had
+		// just applied was gone on the next read. With a name of its own, each
+		// writer renames its own bytes: concurrent writes are last-write-wins,
+		// the way a shared file always is, instead of one of them being lost or
+		// crashing. Same shape as the settings repository next door.
+		const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`;
 		writeFileSync(tmp, JSON.stringify(snapshot, null, 2), { mode: 0o600 });
 		chmodSync(tmp, 0o600);
 		renameSync(tmp, path);

@@ -62,3 +62,29 @@ export const BEHAVIOR_AUTHORING_PATTERNS = [
 		verificationBoundary: 'The model proves that the flag gates the telling. It does not prove that the runtime detects the start and the end of the episode correctly; test that detection in the implementation.'
 	}
 ] as const;
+
+/**
+ * The spellings the engine's validator enforces, and the one semantic rule an
+ * author gets wrong when nothing says it. They belong next to the operation
+ * schema, because that is where an author is when the question comes up: a
+ * refusal on the fifteenth op of a batch is an expensive way to learn that
+ * event names carry dots.
+ */
+export const BEHAVIOR_NAMING_RULES = [
+	{
+		id: 'event-names',
+		subject: 'Event names',
+		rule: 'Lowercase, dot-separated, at least one dot: schedule.opened, invoice.payment_failed. camelCase (scheduleOpened), a single word and any capital are refused, in add_event, in emittedEvents and in every emit_event effect alike.',
+		pattern: '^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)+$'
+	},
+	{
+		id: 'emitted-events-fire',
+		subject: 'Declaring an emission',
+		rule: 'An event listed in an action emittedEvents is wired to a default emit_event effect on save, so the declaration really fires it when the action succeeds and any triggeredByEvent handler cascades. Declare it when the action always emits it; when it must fire only under a condition, author the emit_event effect on the rule that carries that condition instead.'
+	},
+	{
+		id: 'state-paths',
+		subject: 'State paths',
+		rule: 'Dotted, in the product\'s own words: cart.itemCount, schedule.locked. A path is a name, not a scope: two features writing the same path write the same thing, which is what relatedElsewhere reports on a batch.'
+	}
+] as const;

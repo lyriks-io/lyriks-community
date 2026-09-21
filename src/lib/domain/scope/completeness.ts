@@ -1,8 +1,7 @@
 import {
 	scopeSectionLabel,
 	type CompletionVerdict,
-	type ProjectScopeDraft,
-	type ScopeCapability
+	type ProjectScopeDraft
 } from './draft';
 
 export type CompletionIssueSeverity = 'blocking' | 'warning';
@@ -73,6 +72,13 @@ export interface CompletionEvidence {
 		message: string;
 	}>;
 	settledApprovalIds: readonly string[];
+	/**
+	 * Approvals deposited and under review (`in_review`). A decision that has
+	 * been filed and is waiting for a human is not an omission: the gate counts
+	 * it as taken and reports the wait as debt. Optional so older evidence
+	 * readers keep compiling; absent reads as "none".
+	 */
+	pendingApprovalIds?: readonly string[];
 	coherenceReady: boolean;
 	coherenceDetail: string;
 	experienceReady: boolean;
@@ -120,12 +126,26 @@ function entityKey(name: string): string {
 	return flat.endsWith('s') ? flat.slice(0, -1) : flat;
 }
 
-function settled(capability: ScopeCapability, approvals: ReadonlySet<string>): boolean {
-	return (
-		capability.approvalId !== null &&
-		approvals.has(capability.approvalId) &&
-		capability.rationale.trim().length > 0
-	);
+/**
+ * Where a deferral stands: signed off, filed and waiting for a person, or not
+ * decided at all.
+ *
+ * An agent authoring a scope files the decision and cannot sign it: writing
+ * `accepted_risk` itself would assert that a human accepted a risk, which is
+ * false. So a rationale plus an approval under review is a decision TAKEN, and
+ * the gate reports the missing signature as debt instead of blocking on it.
+ * Only a deferral with no rationale or no approval at all is an omission.
+ */
+type ApprovalState = 'settled' | 'pending' | 'none';
+
+function approvalState(
+	item: { approvalId: string | null; rationale: string },
+	settledIds: ReadonlySet<string>,
+	pendingIds: ReadonlySet<string>
+): ApprovalState {
+	if (item.approvalId === null || item.rationale.trim().length === 0) return 'none';
+	if (settledIds.has(item.approvalId)) return 'settled';
+	return pendingIds.has(item.approvalId) ? 'pending' : 'none';
 }
 
 /**
@@ -140,6 +160,7 @@ export function assessProjectCompletion(
 	const issues: CompletionIssue[] = [];
 	const sources = new Set(evidence.sourceIds);
 	const approvals = new Set(evidence.settledApprovalIds);
+	const pendingApprovals = new Set(evidence.pendingApprovalIds ?? []);
 	const maturity = evidence.featureMaturity;
 	const capabilities = draft.capabilities;
 
@@ -238,16 +259,26 @@ export function assessProjectCompletion(
 					message:
 						`"${capability.name || 'Unnamed capability'}" cannot be ${capability.disposition} in full-product mode. ` +
 						`Either bring it into scope as "included", or switch the scope to "selected_scope", ` +
-						`which allows it once it carries a rationale and a settled approval.`,
+						`which allows it once it carries a rationale and an approval (in review is enough to file the decision).`,
 					path
 				});
-			} else if (!settled(capability, approvals)) {
-				issues.push({
-					code: 'capability-omission-unapproved',
-					severity: 'blocking',
-					message: `"${capability.name || 'Unnamed capability'}" needs a rationale and a settled approval before it can be ${capability.disposition}.`,
-					path
-				});
+			} else {
+				const state = approvalState(capability, approvals, pendingApprovals);
+				if (state === 'none') {
+					issues.push({
+						code: 'capability-omission-unapproved',
+						severity: 'blocking',
+						message: `"${capability.name || 'Unnamed capability'}" needs a rationale and an approval before it can be ${capability.disposition}.`,
+						path
+					});
+				} else if (state === 'pending') {
+					issues.push({
+						code: 'capability-omission-approval-pending',
+						severity: 'warning',
+						message: `"${capability.name || 'Unnamed capability'}" is ${capability.disposition} on an approval still in review: the decision is filed, nobody has signed it yet.`,
+						path
+					});
+				}
 			}
 		}
 	}
@@ -269,10 +300,7 @@ export function assessProjectCompletion(
 			});
 		}
 		if (assessment.applicability === 'not_applicable') {
-			const approved =
-				assessment.approvalId !== null &&
-				approvals.has(assessment.approvalId) &&
-				assessment.rationale.trim().length > 0;
+			const state = approvalState(assessment, approvals, pendingApprovals);
 			if (draft.mode === 'full_product') {
 				issues.push({
 					code: 'full-product-section-omission',
@@ -280,11 +308,18 @@ export function assessProjectCompletion(
 					message: `${sectionLabel} cannot be marked not applicable in full-product mode.`,
 					path
 				});
-			} else if (!approved) {
+			} else if (state === 'none') {
 				issues.push({
 					code: 'section-omission-unapproved',
 					severity: 'blocking',
-					message: `${sectionLabel} needs a rationale and a settled approval to be not applicable.`,
+					message: `${sectionLabel} needs a rationale and an approval to be not applicable.`,
+					path
+				});
+			} else if (state === 'pending') {
+				issues.push({
+					code: 'section-omission-approval-pending',
+					severity: 'warning',
+					message: `${sectionLabel} is not applicable on an approval still in review: the decision is filed, nobody has signed it yet.`,
 					path
 				});
 			}

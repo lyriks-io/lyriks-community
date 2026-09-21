@@ -25,6 +25,7 @@ import {
 	reachedFeatures,
 	rebriefAct,
 	refuse,
+	REQUEST_ORIGINS,
 	ruleObservationAct,
 	runCoherenceAct,
 	runImpactAct,
@@ -59,6 +60,29 @@ import { loadEvolutionView, maturityOf, requestCard, type EvolutionView } from '
  */
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+/**
+ * A value passed as an origin that is none of the six. The refusal carries the
+ * list, so a caller never has to find it in the source.
+ */
+const unknownOrigin = (value: unknown) =>
+	refuse(
+		`"${typeof value === 'string' ? value : typeof value}" is not one of the origins a change can come from.`,
+		`Pick one of: ${REQUEST_ORIGINS.map((o) => o.code).join(', ')}. get_evolution lists them as originsAvailable.`
+	);
+/**
+ * A proposal value: a string as written, or a list of lines. A field the
+ * dossier declares as `kind: "list"` is naturally sent as an array, and
+ * silently reading that as an empty string wrote an empty proposal.
+ */
+const text = (v: unknown): string => {
+	if (typeof v === 'string') return v;
+	if (Array.isArray(v))
+		return v
+			.filter((line) => typeof line === 'string' || typeof line === 'number' || typeof line === 'boolean')
+			.map((line) => String(line))
+			.join('\n');
+	return typeof v === 'number' || typeof v === 'boolean' ? String(v) : '';
+};
 const strList = (v: unknown): string[] =>
 	Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x !== '') : [];
 const num = (v: unknown, fallback: number): number =>
@@ -167,7 +191,11 @@ export async function applyEvolutionOperations(
 	for (let index = 0; index < input.operations.length; index++) {
 		const raw = input.operations[index];
 		const op = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
-		const name = str(op.op);
+		// `op` is this batch's discriminator and `kind` is the behavior batch's.
+		// Two batches, two spellings, one author switching between them: accept
+		// either rather than answer "Unknown operation \"\"" to a batch that named
+		// its operation perfectly well.
+		const name = str(op.op) || str(op.kind);
 		const requestId = str(op.requestId) || null;
 		const record = (outcome: ActOutcome | Guarded, id: string | null = requestId) => {
 			if (outcome.ok) {
@@ -186,6 +214,13 @@ export async function applyEvolutionOperations(
 
 		if (name === 'open_request') {
 			const origin = op.origin;
+			// An origin that is present but not one of the six is a typo, not an
+			// omission: say so instead of answering the "you named none" refusal,
+			// which reads as if the field had been forgotten.
+			if (origin !== undefined && origin !== null && !isRequestOrigin(origin)) {
+				record(unknownOrigin(origin), null);
+				break;
+			}
 			const ok = record(
 				openRequestAct(ctx, {
 					id: str(op.id) || undefined,
@@ -216,6 +251,12 @@ export async function applyEvolutionOperations(
 		switch (name as EvolutionOperationName) {
 			case 'update_request': {
 				const origin = op.origin;
+				// Same rule as at the door: an unknown code is refused rather than
+				// dropped, which would report a change that never happened.
+				if (origin !== undefined && origin !== null && !isRequestOrigin(origin)) {
+					outcome = unknownOrigin(origin);
+					break;
+				}
 				outcome = updateRequestAct(ctx, request, {
 					title: typeof op.title === 'string' ? op.title : undefined,
 					origin: isRequestOrigin(origin) ? origin : undefined,
@@ -233,7 +274,7 @@ export async function applyEvolutionOperations(
 					{
 						fieldPath: str(op.fieldPath),
 						leafId: str(op.leafId) || null,
-						value: str(op.value),
+						value: text(op.value),
 						reasoning: str(op.reasoning),
 						citedSourceIds: strList(op.citedSourceIds),
 						readVsInferred: typeof op.readVsInferred === 'boolean' ? op.readVsInferred : undefined
@@ -249,7 +290,7 @@ export async function applyEvolutionOperations(
 						: decision === 'refuse'
 							? ({ decision: 'refuse', comment: str(op.comment) } as const)
 							: decision === 'reword'
-								? ({ decision: 'reword', value: str(op.value) } as const)
+								? ({ decision: 'reword', value: text(op.value) } as const)
 								: null;
 				if (!decisionInput) {
 					outcome = refuse('decision must be accept, refuse or reword.', 'Four decisions exist on a proposal; a comment goes through post_on_field.');

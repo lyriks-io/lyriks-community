@@ -10,6 +10,7 @@ import {
 	loadEvolutionView
 } from '$lib/server/evolution-view.server';
 import { applyEvolutionOperations } from '$lib/server/evolution-operations.server';
+import { isImpactHypothesis } from '$domain/evolution';
 import type { RequestHandler } from './$types';
 
 /**
@@ -50,10 +51,17 @@ export const GET: RequestHandler = async (event) => {
 		if (!Number.isInteger(n) || n < 0) error(400, `${key} must be a non-negative integer`);
 		return n;
 	};
+	// Each run_impact keeps its own findings, so the three hypotheses stay
+	// readable side by side instead of only the one that ran last.
+	const hypothesis = event.url.searchParams.get('hypothesis') ?? undefined;
+	if (hypothesis !== undefined && !isImpactHypothesis(hypothesis)) {
+		error(400, `unknown hypothesis "${hypothesis}". Valid: add, change, remove`);
+	}
 	const aggregate = evolutionAggregate(view, actor, requestId, {
 		part,
 		section: event.url.searchParams.get('section') ?? undefined,
 		verdict: event.url.searchParams.get('verdict') ?? undefined,
+		hypothesis,
 		leaf: event.url.searchParams.get('leaf') ?? undefined,
 		offset: int('offset'),
 		limit: int('limit')

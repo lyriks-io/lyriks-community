@@ -122,6 +122,12 @@ export class BuildCompletionEvidenceUseCase {
 			settledApprovalIds: approvals.items
 				.filter((item) => SETTLED_APPROVAL_STATUSES.includes(item.status))
 				.map((item) => item.id),
+			// Filed and waiting for a person. The gate counts the decision as taken
+			// and reports the missing signature as debt, instead of pushing whoever
+			// authors the scope to claim a risk was accepted.
+			pendingApprovalIds: approvals.items
+				.filter((item) => item.status === 'in_review')
+				.map((item) => item.id),
 			coherenceReady,
 			coherenceDetail: coherenceReady
 				? `Readiness ${coherence.analysis.readinessScore}% with no blocking coherence gap`

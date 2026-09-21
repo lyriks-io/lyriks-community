@@ -4,6 +4,55 @@ All notable changes to Lyriks Community are documented in this file. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the platform's semantic version.
 
+## [0.9.33] - 2026-09-21
+
+The corrective lot, from a build made end to end through the tools.
+
+### Added
+
+- `patch_section` gains `append`: one new row at the end of a collection, with
+  no selector at all. Adding a row used to mean knowing an id the section had
+  not minted yet, or counting the existing rows to set an index.
+- `get_evolution` serves the six origins a change request can carry, and the
+  refusal that asks for one names them, so opening a request never means
+  guessing an enumeration.
+- `simulate_experience` answers who the run acted as, and says in words when a
+  run as a role met no access gate at all, since such a run proves nothing
+  about permissions.
+
+### Changed
+
+- An approval still `in_review` is a decision FILED: the completion gate counts
+  it and reports the missing signature as debt instead of blocking, so nobody
+  has to write `accepted_risk` on a human's behalf.
+- Evolution is a derived section: its dossiers are written through their typed
+  operations, so the completion gate no longer asks for a verdict on it, and
+  `describe_section` answers for it like any other section.
+- The rule inventory is a read-only mirror, so an empty one no longer zeroes a
+  section whose contradictions and edge cases were authored; the message names
+  the sections that fill it.
+- Specify does not close while a proposal still awaits a signature: the
+  maturity beside a dossier is inherited from the features it touches and never
+  proves the change itself was specified. A named waiver still crosses.
+- `import_data_collections` gives an existing collection the model fields it
+  was missing, instead of skipping it in silence.
+- Both batches accept `op` and `kind` as the same discriminator, a proposal
+  takes a list of lines on a list field, and the answer fields lifted out of
+  `raw` stop travelling twice.
+
+- Evolution is read where it belongs: the board and every change request move
+  into the Evolution tab of the Features capability, beside the feature tree a
+  request changes, instead of a page of their own. The old address still
+  resolves, carrying the request and the reading it named.
+
+### Fixed
+
+- A kernel write no longer shares one temporary file with whoever else writes
+  the same feature: each write renames its own. A section save could answer
+  that a row applied and lose it to another writer's rename.
+- A declared `emittedEvents` really emits (engine 0.25.0): the cascade a model
+  promises runs, and the batch says which declarations it wired.
+
 ## [0.9.32] - 2026-09-20
 
 ### Added

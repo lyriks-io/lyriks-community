@@ -39,8 +39,16 @@ export function liftBehaviorBatchAnswer(batch: BehaviorBatchResult): BehaviorBat
 	}
 
 	if (Object.keys(lifted).length === 0) return batch;
+	// Lifted once, not twice: what moves up to `batch` leaves `raw`. A lifted
+	// name IS the contract every reader was told to use, and `relatedElsewhere`
+	// or `scenarios` sent a second time under `raw` doubled the weight of the
+	// answer for nothing. Everything the engine sent and nothing lifts (the
+	// verbose maturity report, whatever a newer engine adds) stays in `raw`.
+	const withoutLifted = Object.fromEntries(
+		Object.entries(answer).filter(([key]) => !(key in lifted))
+	);
 	// `raw` stays last: verbose answers make it long, and a reader should meet the
 	// lifted fields before it.
 	const { raw: _raw, ...head } = batch;
-	return { ...head, ...lifted, raw };
+	return { ...head, ...lifted, raw: withoutLifted };
 }

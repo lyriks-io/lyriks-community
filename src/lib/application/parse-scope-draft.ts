@@ -185,14 +185,23 @@ function withCanonicalSections(draft: ProjectScopeDraft): ProjectScopeDraft {
 		// surfaces (Project health, Baselines) are seeded `derived`; the gate
 		// never asks the author to manufacture their captured or computed content.
 		sectionAssessments: SECTIONS.filter((section) => section !== 'scope').map(
-			(section): ScopeSectionAssessment =>
-				bySection.get(section) ?? {
+			(section): ScopeSectionAssessment => {
+				const seeded: ScopeSectionAssessment = {
 					section,
 					applicability: isAgentAuthorable(section) ? 'required' : 'derived',
 					status: 'unassessed',
 					rationale: '',
 					approvalId: null
-				}
+				};
+				const stored = bySection.get(section);
+				if (!stored) return seeded;
+				// The registry is the authority on who owns a section, so a row
+				// persisted as `required` for a section nobody may author is
+				// normalized back to `derived` on load. Without this, a ledger
+				// written before a section changed hands keeps blocking the gate
+				// on a verdict nothing can give.
+				return isAgentAuthorable(section) ? stored : { ...stored, applicability: 'derived' };
+			}
 		)
 	};
 }

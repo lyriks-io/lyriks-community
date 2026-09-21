@@ -93,7 +93,11 @@ option and RECORD it together with the alternative you set aside:
   names the subject on the card.
 - for scope-level decisions, an `approvals` row (`area`, `title`, `status` =
   `in_review`, `note` = the decision and the alternative), as the scope rules
-  already require for omissions.
+  already require for omissions. `in_review` is the status YOU write: the
+  decision is filed and waiting for a person. The completion gate accepts it
+  (it reports the missing signature as debt, it does not block) and you never
+  write `approved` or `accepted_risk` yourself, since both assert that a human
+  signed.
 
 That register is what the checkpoint recap reads from, and it is where the
 human reviews decisions: in the product, on their own time, not in the chat.
@@ -205,7 +209,7 @@ For a batch of projects, start with `assess_portfolio_completeness`; it is read-
 8. **`build_screen`** once per screen and reusable component. Before this step load `lyriks-design`; follow component-first and responsive-by-default on every build and edit.
 9. Targeted Experience edits with `patch_section`, then the final **users** permission pass over system, feature, journey and surface capabilities.
 10. Explicitly author/review the remaining contexts: **glossary**, **approvals**, **baselines**, **coherence**, **documents**. A context may be derived or not applicable, but it may never disappear silently: record that decision in `scope.sectionAssessments`.
-11. Update every `scope.sectionAssessments[]` row. `ready` means it was actually reviewed. `not_applicable` needs a rationale + settled approval and is forbidden in `full_product`.
+11. Update every `scope.sectionAssessments[]` row seeded `required`. `ready` means it was actually reviewed. `not_applicable` needs a rationale + an approval (yours, `in_review`) and is forbidden in `full_product`. Rows seeded `derived` (Project health, Baselines, Evolution) are not yours: the gate never asks for them.
 12. Run the local Experience/behavior verification loop below, then the global completion protocol. Any subsequent save invalidates the audit, by design.
 
 ## build_screen layout spec (the compact language)
@@ -217,7 +221,7 @@ Element: `{ el:'heading'|'text'|'input'|'button'|'link'|'list'|'form'|'container
 
 ## Authoring quality (recette-hardened — every canonical section is accounted for)
 These are the failure modes seen on real analyses (Beaba.fr). Apply them on every fill.
-- **Fill or explicitly assess every section from its `describe_section` schema.** The canonical list is `scope`, `foundation`, `users`, `features`, `experience`, `rules`, `data`, `architecture`, `coherence`, `glossary`, `approvals`, `baselines`, `documents` — 13 sections. (`contract` and `generation` were dropped from the platform; they are no longer sections and `describe_section` rejects them.) The common accidental empties are glossary, users/permissions, Foundation operations, documents and rules. A derived/not-applicable section is a recorded decision, never an omission.
+- **Fill or explicitly assess every section from its `describe_section` schema.** The canonical list is `scope`, `foundation`, `users`, `features`, `experience`, `rules`, `data`, `architecture`, `coherence`, `glossary`, `approvals`, `baselines`, `documents` — 13 sections. (`contract` and `generation` were dropped from the platform; they are no longer sections and `describe_section` rejects them.) The common accidental empties are glossary, users/permissions, Foundation operations, documents and rules. A derived/not-applicable section is a recorded decision, never an omission. `evolution` is a fourteenth key that is READ (get_evolution) and driven by its own typed operations: the gate never asks you to assess it. And the `rules` inventory fills itself from Foundation, Users and Experience: an empty one is a statement about THOSE sections, never something to write here.
 - **No orphan table, and the check is automatic.** Every `set_section` / `patch_section` on `data` answers with `coherenceIssues`; an `unrelated-entity` issue names each table that neither points at another table nor is pointed at, and `assess_project_completeness` repeats each one as a `data-entity-unrelated` warning that fails the `data` check. Read the response of EVERY data write and resolve the issue in the same pass: add the relation the product really has (ownership: a Line to its Invoice, a Member to their Workspace, a section row to its Project; reference: a Ticket to its Assignee; provenance: a row to its Source), or, for a genuinely standalone table (a lookup, a singleton setting), say so in its description. Never silence it by inventing a relation, never leave it for the next session, and never mark the section `ready` while one remains.
 - **Multi-column collections: respect column semantics; complete-row-or-none.** Each column means a distinct thing. For **Business SLAs**: `metric` = *what's measured* (e.g. "Store availability" — **no number in it**), `commitment` = *the numeric target* (e.g. "99.9%"), `penalty` = *the consequence*. Never jam the target into the metric label. Author **all** required columns of a row, or don't create the row — a half-filled row is worse than none.
 - **Never fabricate contractual / SLA / pricing / legal / penalty values.** If the brief or site doesn't state it, **leave it empty** rather than inventing a plausible-looking value (these carry quasi-contractual weight). Same for regulations/legal constraints: only what's sourced.
@@ -288,6 +292,7 @@ read source, and whenever the user wonders whether the spec matches the code.
 
 ## Verify locally, then prove global completion
 - `simulate_experience({project_id, start_screen_id, actions:[{label|nodeId, type?}]})` — drives the real run engine; check `ok`, `errors:[]`, `visited`, `state`, `activity`. (A button with a `transition` is no longer mis-flagged as "unbound".)
+- **Prove a permission, not just a flow.** The access matrix is only proven where an element carries a gate: give the elements a role must not reach `gate:{personaIds,mode,allow}` (build_screen / wire_element), then run `simulate_experience({persona_id:"<role id>", actions:[{nodeId, expectError:true}]})`. The refusal is an ordinary error, so the negative path is green. `persona_id` must be a role the users section declares (an unknown one is refused), and the answer's `persona.gatedElementsTouched` at 0, with its warning, means the run proved nothing about permissions: the rule is in the model and nowhere the simulator can enforce it.
 - `verify_experience` — per-journey `reachedFinal` + the Gherkin/acceptance spec. `get_experience_coverage` — local 0–100 Experience readiness + gaps with `ref:{screenId,nodeId}`.
 - Navigation inside a reused `componentId` group now counts toward reachability (a sidebar's links make their targets reachable).
 
@@ -322,7 +327,7 @@ Some coherence dings are expected on a sound spec; recognise them instead of bur
 ## Authoring upgrades (2026-07-21)
 - **createRecord `fieldMap`** — when an input label can't equal the collection field name, add `fieldMap: {"<field name>":"<input label>"}` on the createRecord effect (build_screen/wire_element `on` entries). A createRecord that captures zero inputs now surfaces in `simulate_experience` → `warnings`; treat that warning as a bug in your screen.
 - **simulate `expectError:true`** — put it on a step that is SUPPOSED to fail (blocked click, guard rejection): its errors are consumed (`ok` stays true, `expectedErrorMet:true` on the action), and raising no error fails instead. Script negative paths explicitly.
-- **patch_section `match`** — keyless collections (users `permissions[]`) merge/remove via `match:{roleId,capabilityId}` instead of `id`; inserts via match never inject an `id`. `collection` also takes dotted paths ("builder.collections.0.fields").
+- **patch_section `match`** — keyless collections (users `permissions[]`) merge/remove via `match:{roleId,capabilityId}` instead of `id`. ADDING a row is `append`, not `merge`: `{op:"append", collection, value, id?}` puts one row at the end with no selector at all (pass `id` to stamp one, omit it for a keyless collection, and the array is created when the section has none). It is idempotent, so a retry reports `unchanged` instead of a duplicate, and you never count existing rows to `set` an index. `merge` edits a row that already exists, and its `notApplied` reason says so. `collection` also takes dotted paths ("builder.collections.0.fields").
 - **import_data_collections** now returns `fields` per entity (id/name/kind/`options`) so you can see enum pools survived without re-reading the section.
 - **Users ordering** — author features + experience BEFORE the final permissions pass. System capabilities are optional and enter scope only when explicitly granted.
 - **verify_experience** — `engine.specGaps` items on projected mirror surfaces are flagged `mirrorDerived` and excluded from the critical count; only authored gaps are real debt. Repeated identical `coherenceIssues` on consecutive writes are collapsed to `coherenceIssuesUnchanged`.

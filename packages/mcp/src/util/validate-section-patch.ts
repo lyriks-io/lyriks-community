@@ -19,7 +19,7 @@ export function validateSectionPatch(operations: PatchOp[]): void {
   if (!Array.isArray(operations) || !operations.length || operations.length > 1000) throw new Error('A patch must contain 1 to 1000 operations.')
   for (const [index, op] of operations.entries()) {
     const invalid = (why: string): never => { throw new Error(`Invalid patch operation ${index}: ${why}`) }
-    if (!record(op) || !['set', 'merge', 'remove', ...INCREMENTAL_OPS].includes(op.op)) invalid('unknown operation')
+    if (!record(op) || !['set', 'merge', 'append', 'remove', ...INCREMENTAL_OPS].includes(op.op)) invalid('unknown operation')
     if (op.insert !== undefined && typeof op.insert !== 'boolean') invalid('insert must be a boolean')
     for (const path of [op.path, op.collection]) {
       if (path === undefined) continue
@@ -37,6 +37,13 @@ export function validateSectionPatch(operations: PatchOp[]): void {
       if (op.op === 'append_text' && !op.value) invalid('append_text requires a nonempty value')
       if (op.op === 'replace_text' && (typeof op.find !== 'string' || !op.find)) invalid('replace_text requires a nonempty find')
       if (op.separator !== undefined && typeof op.separator !== 'string') invalid('separator must be a string')
+    } else if (op.op === 'append') {
+      // No selector at all: appending is the one collection write that has
+      // nothing to point at. `id` is the id to stamp on the new row, not a
+      // row to find, and a keyless collection takes none.
+      if (!op.collection || op.path !== undefined || op.match !== undefined || op.insert !== undefined) invalid('append takes a collection and a value, with no path, match or insert selector')
+      if (op.id !== undefined && (typeof op.id !== 'string' || !op.id)) invalid('id must be a nonempty string')
+      if (!record(op.value) || Object.keys(op.value).some(key => dangerous.has(key))) invalid('append requires a safe object value')
     } else if (op.op === 'set') {
       if (!op.path || op.collection !== undefined || op.id !== undefined || op.match !== undefined || !Object.hasOwn(op, 'value')) invalid('set requires path and value, without a collection selector')
     } else if (op.op === 'merge' || op.collection !== undefined) {
