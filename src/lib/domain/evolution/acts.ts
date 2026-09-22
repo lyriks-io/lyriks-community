@@ -9,10 +9,15 @@ import {
 	type RequestStage
 } from './enums';
 import {
+	createDraftLeaf,
 	createEvolutionRequest,
 	createProposal,
+	DRAFT_LEAF_PREFIX,
 	type Actor,
 	type CoherenceFinding,
+	type DraftBehaviourNote,
+	type DraftLeaf,
+	type DraftLeafKind,
 	type EvolutionRequest,
 	type ImpactFinding,
 	type ImplementationFinding,
@@ -68,6 +73,16 @@ export interface ActContext {
 	readonly actor: Actor;
 	readonly at: string;
 	readonly newId: () => string;
+	/**
+	 * True when the workspace holds one member (ac-evo-req-13).
+	 *
+	 * Who signs follows the roster, never the size of the change. Alone, there is
+	 * nobody to sign FOR: the person talking to the client IS the workspace, so
+	 * the client carries the request through on their behalf and the timeline says
+	 * it acted through a client. From two members up, a decision is a thing one
+	 * person takes and the others can read, so it is theirs to take.
+	 */
+	readonly soloWorkspace?: boolean;
 }
 
 export type ActOutcome =
@@ -97,6 +112,21 @@ const personOnly = (actor: Actor, what: string): Guarded =>
 		'A decision belongs to a person. Relay it as the signed-in person who took it, or take it on the dossier page.'
 	);
 
+/**
+ * The same rule, read against the roster (ac-evo-req-13).
+ *
+ * These are the acts that carry a request forward. In a workspace of one they
+ * are open to the client, because asking a lone person to counter-sign what they
+ * just asked for is blocking for nothing. In a workspace of several they stay a
+ * person's, because there the decision is what the others read.
+ *
+ * Deliberately NOT extended to a waiver, to lifting one or to deleting a
+ * request: a waiver says "the gate is unmet and I am going anyway", and that
+ * sentence has to have somebody's name on it however many people are around.
+ */
+const carriesForward = (ctx: ActContext, what: string): Guarded =>
+	ctx.soloWorkspace ? ALLOW : personOnly(ctx.actor, what);
+
 const canEdit = (actor: Actor): boolean => actor.role !== 'viewer';
 
 const notFinished = (request: EvolutionRequest): Guarded =>
@@ -113,12 +143,22 @@ const notFinished = (request: EvolutionRequest): Guarded =>
 		)
 	);
 
-const unknownLeaves = (leafIds: readonly string[], known: ReadonlySet<string>): Guarded => {
-	const missing = leafIds.filter((id) => !known.has(id));
+/**
+ * A touched feature is either a leaf of the tree or a draft this request
+ * carries. Anything else is a typo, and the refusal names both doors rather
+ * than only the id that missed them.
+ */
+const unknownLeaves = (
+	leafIds: readonly string[],
+	known: ReadonlySet<string>,
+	drafts: readonly DraftLeaf[] = []
+): Guarded => {
+	const draftIds = new Set(drafts.map((d) => d.id));
+	const missing = leafIds.filter((id) => !known.has(id) && !draftIds.has(id));
 	return guard(
 		missing.length > 0,
 		`Unknown feature${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}.`,
-		'A request touches EXISTING leaf features; the features section lists them. An evolution never creates a feature of its own.'
+		'A request touches leaf features that EXIST, or drafts it carries itself. The features section lists the first; add_draft_leaf creates the second. Nothing is written into the tree before the freeze.'
 	);
 };
 
@@ -188,7 +228,7 @@ export function setLeavesAct(
 	const unique = [...new Set(leafIds)];
 	const allowed = firstRefusal(
 		notFinished(request),
-		unknownLeaves(unique, knownLeafIds),
+		unknownLeaves(unique, knownLeafIds, request.drafts),
 		guard(
 			request.frozen,
 			`The specification is frozen as version ${request.specVersion}. Rebrief the request before changing what it touches.`,
@@ -197,6 +237,264 @@ export function setLeavesAct(
 	);
 	if (!allowed.ok) return allowed;
 	return done({ ...request, leafIds: unique }, `Touches ${unique.length} feature${unique.length === 1 ? '' : 's'}`);
+}
+
+/* ───────────────────────── The change, as a draft ───────────────────────── */
+
+/**
+ * The dossier carries what the change proposes, and carries it alone. These
+ * three acts are the whole of it: nothing here reaches a section, and a request
+ * deleted with drafts on it leaves the specification exactly as it was
+ * (ac-evo-draft-4). What writes them is the freeze, once (ac-evo-draft-5).
+ */
+
+const draftsAreOpen = (request: EvolutionRequest): Guarded =>
+	guard(
+		request.frozen,
+		`The specification is frozen as version ${request.specVersion}. Rebrief the request before changing what it proposes.`,
+		'What a frozen version proposes is part of what was frozen; the code is being written against it.'
+	);
+
+export interface DraftLeafInput {
+	readonly kind?: DraftLeafKind;
+	readonly baseLeafId?: string | null;
+	readonly name?: string;
+	readonly description?: string;
+	readonly coreId?: string | null;
+	readonly parentFamilyId?: string | null;
+	readonly objective?: string;
+	readonly problem?: string;
+	readonly expectedEffect?: string;
+	readonly value?: string;
+	readonly acceptanceCriteria?: readonly string[];
+	readonly dependsOn?: readonly string[];
+	readonly sourceIds?: readonly string[];
+	readonly behaviour?: readonly { kind: DraftBehaviourNote['kind']; name: string; detail?: string }[];
+}
+
+const BEHAVIOUR_KINDS: ReadonlySet<DraftBehaviourNote['kind']> = new Set([
+	'surface',
+	'state',
+	'action',
+	'rule',
+	'scenario'
+]);
+
+/** The shape checks shared by creating a draft and amending one. */
+function draftShape(
+	kind: DraftLeafKind,
+	name: string,
+	baseLeafId: string | null,
+	knownLeafIds: ReadonlySet<string>
+): Guarded {
+	return firstRefusal(
+		guard(
+			kind === 'add' && name.trim() === '',
+			'A drafted feature needs a name.',
+			'The name is what the impact report, the coherence check and the freeze all call it; without one the draft cannot be read back.'
+		),
+		guard(
+			kind !== 'add' && (baseLeafId === null || baseLeafId.trim() === ''),
+			`A draft of kind "${kind}" stands for an existing feature: name it with baseLeafId.`,
+			'Amending or removing is done TO something. Without the feature it stands for, the draft says what the product would become without saying from what.'
+		),
+		guard(
+			kind !== 'add' &&
+				baseLeafId !== null &&
+				baseLeafId.trim() !== '' &&
+				!knownLeafIds.has(baseLeafId),
+			`Unknown feature "${baseLeafId}".`,
+			'A draft amends or removes a leaf that exists; the features section lists them.'
+		)
+	);
+}
+
+function behaviourRows(
+	ctx: ActContext,
+	rows: DraftLeafInput['behaviour']
+): { ok: true; rows: DraftBehaviourNote[] } | Refused {
+	const out: DraftBehaviourNote[] = [];
+	for (const row of rows ?? []) {
+		if (!BEHAVIOUR_KINDS.has(row.kind))
+			return refuse(
+				`"${row.kind}" is not something a behaviour row can be.`,
+				`A drafted behaviour row is one of: ${[...BEHAVIOUR_KINDS].join(', ')}.`
+			);
+		if (row.name.trim() === '')
+			return refuse(
+				'A behaviour row needs a name.',
+				'An unnamed surface, action or rule cannot be pointed at, so it cannot be discussed or built.'
+			);
+		out.push({
+			id: ctx.newId(),
+			kind: row.kind,
+			name: row.name.trim(),
+			detail: (row.detail ?? '').trim()
+		});
+	}
+	return { ok: true, rows: out };
+}
+
+/**
+ * Put what the change proposes on the dossier, and touch it: a draft counts as
+ * touched the moment it exists, because a change nobody counts as touched is a
+ * change no report computes from (ac-evo-draft-3).
+ */
+export function addDraftLeafAct(
+	ctx: ActContext,
+	request: EvolutionRequest,
+	input: DraftLeafInput,
+	knownLeafIds: ReadonlySet<string>
+): ActOutcome {
+	const kind: DraftLeafKind = input.kind ?? 'add';
+	const name = (input.name ?? '').trim();
+	const baseLeafId = input.baseLeafId ?? null;
+	const allowed = firstRefusal(
+		notFinished(request),
+		draftsAreOpen(request),
+		guard(
+			kind !== 'add' && baseLeafId !== null && request.drafts.some((d) => d.baseLeafId === baseLeafId),
+			`This request already carries a draft for "${baseLeafId}".`,
+			'One feature moves one way per request. Two drafts for the same feature would leave the freeze with no way to know which to write.'
+		),
+		draftShape(kind, name, baseLeafId, knownLeafIds),
+		unknownLeaves(input.dependsOn ?? [], knownLeafIds, request.drafts)
+	);
+	if (!allowed.ok) return allowed;
+	const behaviour = behaviourRows(ctx, input.behaviour);
+	if (!behaviour.ok) return behaviour;
+
+	const base = kind === 'add' ? null : baseLeafId;
+	const draft = createDraftLeaf({
+		id: `${DRAFT_LEAF_PREFIX}${ctx.newId()}`,
+		kind,
+		baseLeafId: base,
+		// Left empty on purpose when the change does not rename: the freeze then
+		// keeps the name the leaf already has.
+		name,
+		description: (input.description ?? '').trim(),
+		coreId: input.coreId ?? null,
+		parentFamilyId: input.parentFamilyId ?? null,
+		objective: (input.objective ?? '').trim(),
+		problem: (input.problem ?? '').trim(),
+		expectedEffect: (input.expectedEffect ?? '').trim(),
+		value: (input.value ?? '').trim(),
+		acceptanceCriteria: (input.acceptanceCriteria ?? [])
+			.map((text) => text.trim())
+			.filter((text) => text !== '')
+			.map((text) => ({ id: ctx.newId(), text })),
+		dependsOn: [...new Set(input.dependsOn ?? [])],
+		sourceIds: [...new Set(input.sourceIds ?? [])],
+		behaviour: behaviour.rows
+	});
+
+	// A draft that amends or removes a feature touches that feature too: what
+	// rested on it is what the walk has to reach.
+	const touched = new Set([...request.leafIds, draft.id]);
+	if (draft.baseLeafId) touched.add(draft.baseLeafId);
+
+	return done(
+		stamp(
+			ctx,
+			{ ...request, drafts: [...request.drafts, draft], leafIds: [...touched] },
+			'draft_change',
+			`Drafted: ${kind} "${draft.name || draft.baseLeafId}"`
+		),
+		`Drafted ${kind} "${draft.name || draft.baseLeafId}" as ${draft.id}`
+	);
+}
+
+export function updateDraftLeafAct(
+	ctx: ActContext,
+	request: EvolutionRequest,
+	draftId: string,
+	input: DraftLeafInput,
+	knownLeafIds: ReadonlySet<string>
+): ActOutcome {
+	const current = request.drafts.find((d) => d.id === draftId);
+	if (!current)
+		return refuse(
+			`This request carries no draft "${draftId}".`,
+			'get_evolution lists the drafts of a request with their ids; add_draft_leaf creates one.'
+		);
+	const kind = input.kind ?? current.kind;
+	const name = input.name !== undefined ? input.name.trim() : current.name;
+	const baseLeafId = input.baseLeafId !== undefined ? input.baseLeafId : current.baseLeafId;
+	const allowed = firstRefusal(
+		notFinished(request),
+		draftsAreOpen(request),
+		draftShape(kind, name, baseLeafId, knownLeafIds),
+		unknownLeaves(input.dependsOn ?? [], knownLeafIds, request.drafts)
+	);
+	if (!allowed.ok) return allowed;
+	const behaviour = input.behaviour === undefined ? null : behaviourRows(ctx, input.behaviour);
+	if (behaviour && !behaviour.ok) return behaviour;
+
+	const next: DraftLeaf = {
+		...current,
+		kind,
+		baseLeafId: kind === 'add' ? null : baseLeafId,
+		name,
+		description: input.description !== undefined ? input.description.trim() : current.description,
+		coreId: input.coreId !== undefined ? input.coreId : current.coreId,
+		parentFamilyId:
+			input.parentFamilyId !== undefined ? input.parentFamilyId : current.parentFamilyId,
+		objective: input.objective !== undefined ? input.objective.trim() : current.objective,
+		problem: input.problem !== undefined ? input.problem.trim() : current.problem,
+		expectedEffect:
+			input.expectedEffect !== undefined ? input.expectedEffect.trim() : current.expectedEffect,
+		value: input.value !== undefined ? input.value.trim() : current.value,
+		acceptanceCriteria:
+			input.acceptanceCriteria === undefined
+				? current.acceptanceCriteria
+				: input.acceptanceCriteria
+						.map((text) => text.trim())
+						.filter((text) => text !== '')
+						.map((text) => ({ id: ctx.newId(), text })),
+		dependsOn: input.dependsOn === undefined ? current.dependsOn : [...new Set(input.dependsOn)],
+		sourceIds: input.sourceIds === undefined ? current.sourceIds : [...new Set(input.sourceIds)],
+		behaviour: behaviour ? behaviour.rows : current.behaviour
+	};
+
+	const touched = new Set(request.leafIds);
+	if (next.baseLeafId) touched.add(next.baseLeafId);
+
+	return done(
+		{
+			...request,
+			drafts: request.drafts.map((d) => (d.id === draftId ? next : d)),
+			leafIds: [...touched]
+		},
+		`Draft "${next.name || next.baseLeafId}" updated`
+	);
+}
+
+export function removeDraftLeafAct(
+	ctx: ActContext,
+	request: EvolutionRequest,
+	draftId: string
+): ActOutcome {
+	const current = request.drafts.find((d) => d.id === draftId);
+	if (!current)
+		return refuse(
+			`This request carries no draft "${draftId}".`,
+			'get_evolution lists the drafts of a request with their ids.'
+		);
+	const allowed = firstRefusal(notFinished(request), draftsAreOpen(request));
+	if (!allowed.ok) return allowed;
+	return done(
+		{
+			...request,
+			drafts: request.drafts.filter((d) => d.id !== draftId),
+			leafIds: request.leafIds.filter((id) => id !== draftId),
+			// Dropping the draft drops what was proposed on it. The sections were
+			// never touched, so there is nothing else to undo.
+			proposals: request.proposals.filter(
+				(proposal) => !proposal.targetField.endsWith(`@${draftId}`)
+			)
+		},
+		`Draft "${current.name || current.baseLeafId}" dropped; the specification is untouched`
+	);
 }
 
 /* ───────────────────────── Proposals ───────────────────────── */
@@ -402,7 +700,7 @@ export function decideProposalAct(
 
 	if (input.decision === 'accept') {
 		const allowed = firstRefusal(
-			canAcceptProposal(ctx.actor, proposal),
+			canAcceptProposal(ctx.actor, proposal, { soloWorkspace: ctx.soloWorkspace }),
 			guard(
 				proposal.decision !== 'pending' && proposal.decision !== 'reworded',
 				'This proposal has already been decided.',
@@ -455,7 +753,7 @@ export function decideProposalAct(
 
 	if (input.decision === 'refuse') {
 		const allowed = firstRefusal(
-			canRefuseProposal(ctx.actor),
+			canRefuseProposal(ctx.actor, { soloWorkspace: ctx.soloWorkspace }),
 			guard(
 				proposal.decision !== 'pending' && proposal.decision !== 'reworded',
 				'This proposal has already been decided.',
@@ -481,7 +779,7 @@ export function decideProposalAct(
 	}
 
 	const allowed = firstRefusal(
-		personOnly(ctx.actor, 'reword a proposal'),
+		carriesForward(ctx, 'reword a proposal'),
 		canRewordProposal(proposal),
 		guard(input.value.trim() === '', 'A rewording needs a value.', 'An empty rewording offers nothing to sign.')
 	);
@@ -511,7 +809,7 @@ export function markOpenQuestionAct(
 	const key = fieldKey(fieldPath, leafId);
 	const allowed = firstRefusal(
 		notFinished(request),
-		personOnly(ctx.actor, 'declare an open question'),
+		carriesForward(ctx, 'declare an open question'),
 		guard(!blockFieldByPath(fieldPath), 'This field does not exist on the page.', 'Only the known fields can be declared open.'),
 		canMarkOpenQuestion({
 			canEdit: canEdit(ctx.actor),
@@ -536,7 +834,7 @@ export function answerOpenQuestionAct(
 	const key = fieldKey(fieldPath, leafId);
 	const allowed = firstRefusal(
 		notFinished(request),
-		personOnly(ctx.actor, 'take back an open question'),
+		carriesForward(ctx, 'take back an open question'),
 		canAnswerOpenQuestion({ canEdit: canEdit(ctx.actor), isOpen: request.openQuestionKeys.includes(key) })
 	);
 	if (!allowed.ok) return allowed;
@@ -677,7 +975,7 @@ export function crossStageAct(
 ): ActOutcome {
 	const target = nextStage(request.stage);
 	const allowed = firstRefusal(
-		personOnly(ctx.actor, 'move a request between stages'),
+		carriesForward(ctx, 'move a request between stages'),
 		guard(
 			target === null,
 			'This request has reached the end of its run.',
@@ -757,7 +1055,7 @@ export function liftWaiverAct(ctx: ActContext, request: EvolutionRequest): ActOu
 
 /** Back to Specify on purpose; a frozen spec is amended and the gate re-closes. */
 export function rebriefAct(ctx: ActContext, request: EvolutionRequest): ActOutcome {
-	const allowed = firstRefusal(personOnly(ctx.actor, 'rebrief a request'), canRebrief(request));
+	const allowed = firstRefusal(carriesForward(ctx, 'rebrief a request'), canRebrief(request));
 	if (!allowed.ok) return allowed;
 	const back = stamp(
 		ctx,
@@ -783,7 +1081,7 @@ export function decideLineAct(
 	const line = input.lineId ? request.implementationFindings.find((l) => l.id === input.lineId) : undefined;
 	const allowed = firstRefusal(
 		notFinished(request),
-		personOnly(ctx.actor, 'decide a report line'),
+		carriesForward(ctx, 'decide a report line'),
 		canDecide(request, ctx.actor),
 		guard(
 			input.decision === 'undecided',
@@ -872,7 +1170,7 @@ export function foldBackAct(
 		return refuse('This observation does not exist on the request.', 'get_evolution lists the observations with their ids.');
 	const allowed = firstRefusal(
 		notFinished(request),
-		personOnly(ctx.actor, 'fold an observation back into the spec'),
+		carriesForward(ctx, 'fold an observation back into the spec'),
 		canFoldBack(ctx.actor, observation, input.leafId),
 		guard(
 			observation.foldedBackAt !== null,
@@ -920,7 +1218,7 @@ export function foldBackAct(
 
 export function closeRequestAct(ctx: ActContext, request: EvolutionRequest): ActOutcome {
 	const allowed = firstRefusal(
-		personOnly(ctx.actor, 'close a request'),
+		carriesForward(ctx, 'close a request'),
 		guard(!canEdit(ctx.actor), 'A viewer cannot close an evolution request.', 'Closing is a write on the request.'),
 		canCloseRequest(request)
 	);

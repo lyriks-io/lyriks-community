@@ -1,6 +1,6 @@
-import type { EvolutionRequest, GateWaiver } from './draft';
+import type { DraftLeaf, EvolutionRequest, GateWaiver, ImpactFinding } from './draft';
 import type { Actor } from './draft';
-import { firstRefusal, guard, type Guarded } from './guard';
+import { ALLOW, firstRefusal, guard, type Guarded } from './guard';
 import { pendingProposals } from './proposals';
 
 /**
@@ -33,6 +33,11 @@ export function canCrossToImplementation(
 	request: EvolutionRequest,
 	criticalEmptyCount: number
 ): Guarded {
+	// A request with nothing to arbitrate has nothing for the critical fields to
+	// protect: no contradiction, no signature pending, nothing disturbed. Holding
+	// it there would be blocking for nothing, which is the one thing the gate must
+	// not do (ac-evo-req-14).
+	if (nothingToArbitrate(request)) return ALLOW;
 	return firstRefusal(
 		guard(
 			criticalEmptyCount > 0,
@@ -88,6 +93,72 @@ export function canLeaveCoherence(request: EvolutionRequest): Guarded {
 			'A blocking finding is a contradiction the existing spec cannot absorb, and fixing it is an edit now against a rewrite later.'
 		)
 	);
+}
+
+/**
+ * A draft that changes how something READS and nothing about what it does: a
+ * name, a description, a wording. It carries no criterion, no dependency, no
+ * behaviour row and none of the four "why" fields, which is precisely what
+ * distinguishes a correction from a change of behaviour.
+ *
+ * The impact graph cannot tell the two apart, because it only knows WHICH
+ * feature moved, never what about it moved. The draft knows, so it is the draft
+ * that is asked.
+ */
+export function isPresentational(draft: DraftLeaf): boolean {
+	return (
+		draft.kind === 'amend' &&
+		draft.acceptanceCriteria.length === 0 &&
+		draft.dependsOn.length === 0 &&
+		draft.behaviour.length === 0 &&
+		draft.objective.trim() === '' &&
+		draft.problem.trim() === '' &&
+		draft.expectedEffect.trim() === '' &&
+		draft.value.trim() === ''
+	);
+}
+
+/** An impact row somebody has to look at before it is followed. */
+function needsAttention(finding: ImpactFinding): boolean {
+	return (
+		finding.severity === 'blocking' ||
+		finding.severity === 'high' ||
+		finding.migrationImplied === true ||
+		finding.ruleWork === 'rewrite' ||
+		finding.codeWork === 'remove'
+	);
+}
+
+/**
+ * Whether a request has nothing left for anyone to arbitrate (ac-evo-req-12).
+ *
+ * This is the whole of the entry rule. There is no threshold at the door and no
+ * judgement about how big a change is: every change to an existing product opens
+ * a dossier, and what varies is whether the dossier costs its author anything. A
+ * request that contradicts nothing, asks nobody for a signature and disturbs
+ * nothing has nothing to discuss, so it crosses and closes in the same act,
+ * leaving only its trace.
+ *
+ * Computed, deliberately. An AI client asked to judge whether a change is "small
+ * enough" gets it wrong in the direction that hurts, so it is never asked: the
+ * readings answer, and both of them must actually have run, because an unread
+ * impact is not an empty one.
+ */
+export function nothingToArbitrate(request: EvolutionRequest): boolean {
+	if (request.status !== 'open') return false;
+	if (request.impactReport.status !== 'ready') return false;
+	if (request.coherenceReport.status !== 'ready') return false;
+	if (request.coherenceFindings.some((f) => f.published)) return false;
+	// Anything still waiting on a person is, by definition, something to arbitrate.
+	if (pendingProposals(request).length > 0) return false;
+	if (request.openQuestionKeys.length > 0) return false;
+	if (request.observations.length > 0) return false;
+	if (request.implementationFindings.length > 0) return false;
+	// A correction to the wording disturbs nothing, however well connected the
+	// feature it sits on is; the neighbourhood the walk lists is there because the
+	// feature has neighbours, not because anything about it moved.
+	if (request.drafts.length > 0 && request.drafts.every(isPresentational)) return true;
+	return !request.impactFindings.some(needsAttention);
 }
 
 /**

@@ -1,5 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createEmptyExperienceDraft } from '$domain/experience';
+import {
+	addNode,
+	createElementNode,
+	createEmptyExperienceDraft,
+	createJourney,
+	createStep,
+	ensureScreenRoot,
+	type ProjectExperienceDraft,
+	type SimAction
+} from '$domain/experience';
 import { createEmptyUsersDraft } from '$domain/users';
 import { createEmptyDataDraft } from '$domain/data';
 import type { UnspaghettitAdvisorPort } from '../ports';
@@ -171,5 +180,84 @@ describe('VerifyExperienceUseCase engine reads', () => {
 		expect(modelCheck).not.toHaveBeenCalled();
 		expect(result.engine.available).toBe(false);
 		expect(result.engine.degraded).toBe(false);
+	});
+});
+
+/**
+ * One journey whose two stops sit on the SAME screen, the shape that made a lost
+ * step script invisible: no navigation is needed, so a run with nothing to do
+ * reaches the "final" screen and passes.
+ */
+function sameScreenJourney(actions?: SimAction[]): ProjectExperienceDraft {
+	const draft = createEmptyExperienceDraft('project-1');
+	draft.screens = [
+		{
+			id: 'scr-world',
+			name: 'World',
+			templateId: null,
+			description: '',
+			category: null,
+			parentScreen: null,
+			path: '/world',
+			device: 'auto',
+			deviceW: 1024,
+			deviceH: 768
+		}
+	];
+	const root = ensureScreenRoot(draft.builder, 'scr-world');
+	const choose = createElementNode('scr-world', root, 'button');
+	choose.label = 'Choose this region';
+	choose.wiring.transitions.push({
+		id: 't1',
+		trigger: 'click',
+		effect: { kind: 'setState', target: 'world.chosen', value: 'true' }
+	});
+	addNode(draft.builder, { ...choose, id: 'choose-region' });
+
+	draft.journeys = [createJourney('core-world', 0, { id: 'J1', name: 'Choose a region' })];
+	draft.steps = [
+		createStep('J1', 0, { id: 'S1', name: 'Pick a region', linkedScreenId: 'scr-world' }),
+		createStep('J1', 1, { id: 'S2', name: 'See it selected', linkedScreenId: 'scr-world' })
+	];
+	if (actions) draft.steps[0].actions = actions;
+	return draft;
+}
+
+function useCaseOn(draft: ProjectExperienceDraft, advisor: UnspaghettitAdvisorPort) {
+	const loader = <T>(value: T) => ({ execute: async () => value }) as never;
+	return new VerifyExperienceUseCase(
+		loader(draft),
+		loader(createEmptyUsersDraft('project-1')),
+		loader(createEmptyDataDraft('project-1')),
+		advisor
+	);
+}
+
+describe('VerifyExperienceUseCase journey honesty', () => {
+	it('never lets a journey that executed nothing pass for a proven one', async () => {
+		const { advisor } = advisorSpy();
+
+		const result = await useCaseOn(sameScreenJourney(), advisor).execute('project-1');
+
+		const journey = result.journeys[0];
+		expect(journey.reachedFinal).toBe(true); // the stops share a screen, so it "arrives"
+		expect(journey.actionCount).toBe(0);
+		expect(journey.authoredActionCount).toBe(0);
+		expect(journey.exercised).toBe(false);
+		expect(result.advisories.join(' ')).toContain('"Choose a region" was verified without executing any interaction');
+	});
+
+	it('counts the interactions a step scripts, and stops warning once they run', async () => {
+		const { advisor } = advisorSpy();
+		const draft = sameScreenJourney([{ nodeId: 'choose-region', trigger: 'click' }]);
+
+		const result = await useCaseOn(draft, advisor).execute('project-1');
+
+		const journey = result.journeys[0];
+		expect(journey.actionCount).toBe(1);
+		expect(journey.authoredActionCount).toBe(1);
+		expect(journey.exercised).toBe(true);
+		expect(journey.ok).toBe(true);
+		expect(result.advisories.join(' ')).not.toContain('without executing any interaction');
 	});
 });

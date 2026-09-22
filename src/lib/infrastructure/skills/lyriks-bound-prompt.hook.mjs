@@ -3,8 +3,8 @@
 // repository by `sync_skills` next to the Lyriks skills, wired in
 // .claude/settings.json. Its presence means this repository's product is
 // specified in Lyriks: on EVERY prompt it restates that the request goes
-// through the Lyriks MCP (spec first for a change to make, Evolution for a
-// change to qualify, spec read first for a question), and names the project
+// through the Lyriks MCP (an Evolution request for anything that changes what
+// the product does, a spec read first for a question), and names the project
 // when it can find it (the last project_id
 // a Lyriks tool was given in this session, else the binding block in
 // CLAUDE.md). No dependencies, no network, well under 100 ms.
@@ -100,12 +100,12 @@ function main() {
 	const where = project ? ` (project ${project})` : '';
 	const context =
 		`Lyriks-bound repository${where}: this request goes through the Lyriks MCP without being asked. ` +
-		'If it asks to MAKE a change to what the product does: spec first (apply_behavior_batch / patch_section / ' +
-		'build_screen), then code, then index sync (sync_implementation_index), in this same turn. If it asks to ' +
-		'QUALIFY a change (what it would involve, an estimate, an impact report, a dossier to prepare, a decision ' +
-		'that belongs to someone else): Evolution (get_evolution / apply_evolution_batch), which plans and never ' +
-		'writes the sections. If it could be either ("we should add X"): ask which in one sentence, never choose ' +
-		'silently. If it asks how the product ' +
+		'If it changes what the product does, whether to make it now or only to qualify it: open an EVOLUTION ' +
+		'request first (get_evolution / apply_evolution_batch), carry the change as a draft (add_draft_leaf), read ' +
+		'the impact and the coherence, and let the freeze write the sections; then the code, then the index sync ' +
+		'(sync_implementation_index). There is no threshold and nothing for you to judge: a request that disturbs ' +
+		'nothing crosses its own gates and closes itself, so never decide a change is too small for a dossier. ' +
+		'If it asks how the product ' +
 		'behaves, whether it is right, what is missing or what broke: read the spec first (get_behavior_feature, ' +
 		'get_section, get_implementation_status / gaps / drift, simulate_experience / verify_experience). ' +
 		'Only work with no user-visible effect skips the spec; say so in one line.';

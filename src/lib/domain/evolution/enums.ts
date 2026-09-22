@@ -388,7 +388,8 @@ export const HISTORY_ENTRY_TYPES = [
 	{ code: 'field_thread', label: 'Field thread' },
 	{ code: 'readiness_exclusion', label: 'Readiness exclusion' },
 	{ code: 'spec_frozen', label: 'Spec frozen' },
-	{ code: 'spec_amended', label: 'Spec amended' }
+	{ code: 'spec_amended', label: 'Spec amended' },
+	{ code: 'draft_change', label: 'Draft change' }
 ] as const satisfies readonly Option[];
 export type HistoryEntryType = (typeof HISTORY_ENTRY_TYPES)[number]['code'];
 export const isHistoryEntryType = (v: unknown): v is HistoryEntryType =>

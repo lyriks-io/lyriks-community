@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button, Icon, Textarea } from '$ui/design-system';
+	import CitedSources from '$ui/documents/CitedSources.svelte';
 	import DossierField from './DossierField.svelte';
 	import {
 		IMPACT_NODE_KINDS,
@@ -255,16 +256,23 @@
 					{proposal.reasoning}
 				</p>
 			{/if}
-			<p class="mt-1 text-[10px] text-ink-500">
-				{proposal.citedSourceIds.length === 0
-					? 'Cites nothing, so it cannot be accepted: a value nobody can trace back cannot be signed for.'
-					: `Rests on ${proposal.citedSourceIds
-							.map((id) => sources.find((s) => s.id === id)?.title ?? id)
-							.join(', ')}.`}
-				{proposal.reasoningSeparatesReadFromInferred
-					? ''
-					: ' The reasoning does not separate what was read from what was inferred, so it cannot be accepted as it stands.'}
-			</p>
+			{#if proposal.citedSourceIds.length === 0}
+				<p class="mt-1 text-[10px] text-ink-500">
+					Cites nothing, so it cannot be accepted: a value nobody can trace back cannot be
+					signed for.
+				</p>
+			{:else}
+				<p class="mt-1 text-[10px] text-ink-500">Rests on:</p>
+				<div class="mt-1">
+					<CitedSources ids={proposal.citedSourceIds} />
+				</div>
+			{/if}
+			{#if !proposal.reasoningSeparatesReadFromInferred}
+				<p class="mt-1 text-[10px] text-ink-500">
+					The reasoning does not separate what was read from what was inferred, so it cannot
+					be accepted as it stands.
+				</p>
+			{/if}
 			{#if refusing === proposal.id}
 				<Textarea
 					value={refuseComment}

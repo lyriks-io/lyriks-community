@@ -1,6 +1,6 @@
 ---
 name: lyriks-evolution
-description: "Qualify a change to an EXISTING Lyriks product before anyone builds it, and drive its dossier (an evolution, a change request) from the raw need to acceptance, entirely through the Lyriks MCP: open the dossier, name the touched features, read the impact and the coherence the platform computes, propose the specification values a person signs, relay the person's decisions, cross the gates, judge the derived implementation report, fold the acceptance remarks back. Use when someone asks to QUALIFY a change: what it would involve, an estimate, an impact report, a dossier to prepare, a decision that belongs to someone else ('evolution', 'change request', 'what would it take to add X', 'how big is changing Y', 'prepare the dossier for Z'). NOT for a change someone asks to MAKE now: in a repository bound to its project that is a direct spec change, then the code, then the index sync (lyriks-behavior, lyriks-delivery). An ambiguous request ('we should add X') gets one clarifying sentence, never a silent choice. PLANS WITHOUT BUILDING: nothing is created in the spec sections while a request is specified. Pairs with lyriks-behavior (authoring what a reading is missing) and lyriks-delivery (the code, then the index sync the report is derived from)."
+description: "Drive EVERY change to an existing Lyriks product through its dossier (an evolution, a change request), entirely through the Lyriks MCP: open the request, carry what the change proposes as a DRAFT feature the dossier holds and no section sees, read the impact and the coherence the platform computes with that draft laid over the specification, propose the values a person signs, cross the gates (the crossing into Verify freezes the spec AND writes the drafts into the features section), judge the derived implementation report, fold the acceptance remarks back. Use for ANY request that changes what an existing product does, whether the person wants it built now or only wants to know what it would cost: add a capability, change one, remove one, correct one, "we should add X", "what would it take to add X", "how big is changing Y", "prepare the dossier for Z". There is NO threshold and nothing to judge: never decide a change is too small for a dossier, because a request that disturbs nothing and contradicts nothing crosses its own gates and closes itself in the same act. NOT for a project being written for the first time, which lyriks-build authors directly. Who signs follows the roster: alone you carry the request through yourself, from two members up a person signs each proposal. Pairs with lyriks-behavior (authoring what a reading is missing) and lyriks-delivery (the code, then the index sync the report is derived from)."
 ---
 
 # /lyriks-evolution
@@ -11,52 +11,70 @@ written into the section that owns it, and every report it shows is computed by
 the platform. You drive the dossier; a person decides; the tools refuse anything
 else with the sentence the specification wrote.
 
-## When this skill applies: a change to qualify, not a change to make
+## When this skill applies: every change to a product that exists
 
 One rule, the same in the binding block, the per-prompt hook and the MCP server
 instructions:
 
-- **A change to MAKE** ("add X", "change Y to Z", "remove W", in a repository
-  bound to its project): not this skill. It is a direct spec change
-  (`apply_behavior_batch`, `patch_section`, `build_screen`, `wire_element`),
-  then the code, then the index sync, in the same turn (the binding section of
-  lyriks-delivery).
-- **A change to QUALIFY**: this skill. Someone asks what the change would
-  involve, an estimate, an impact report, a dossier to prepare, or the decision
-  belongs to someone else (a product owner, a customer, a committee). The
-  dossier plans; it never writes the sections.
-- **Ambiguous** ("we should add X", "it would be nice if Y"): ask once, in one
-  sentence, whether to make the change now or to qualify it first. Never choose
-  silently, in either direction.
+- **A product that already EXISTS changes through a request, always.** Adding a
+  capability, changing one, removing one or correcting one opens a dossier
+  first. Whether the person wants it built today or only wants to know what it
+  would cost changes nothing about the door: it is the same dossier, and what a
+  request only meant to qualify does is stop short of the freeze.
+- **A project being written for the FIRST time is not a change.** `lyriks-build`
+  authors it directly. The door binds a project once its specification has been
+  declared finished at least once, or once code is anchored to it.
+- **There is no threshold, and nothing for you to judge.** Never decide that a
+  change is too small to deserve a dossier. That judgement is the least reliable
+  thing in the chain and it fails in the direction that hurts, calling a rule
+  change a wording change. The platform decides instead, and a request that
+  disturbs nothing and contradicts nothing crosses its own gates and closes
+  itself the moment the readings come back, so it costs the author nothing but
+  the trace it leaves.
 
-## The one law: plan without building
+## The one law: the freeze is what writes
 
-While a request is being specified, **nothing is created in the spec sections**:
-no feature, no entity, no glossary term, no rule or scenario, no screen, no grant.
+While a request is being specified, **nothing is created in the spec sections**.
 
-- The features a change touches are **existing** leaf features (`leafIds`). A
-  request never creates a feature of its own.
-- A new thing the change would need (an entity, a term, a rule) is an **impact
-  finding** the report predicts, not a row you write.
+- What the change proposes lives on the dossier as a **draft**
+  (`add_draft_leaf`): a feature that does not exist yet, an existing one in its
+  amended form, or one marked for removal. It carries what a leaf carries, and
+  it is counted among the touched features straight away.
+- The impact report, the coherence check and the prototype read the
+  specification **with the drafts laid over it**, so the change is measured and
+  walked while it is written nowhere. Exactly one request's drafts at a time.
 - A specification value (objective, problem, value, effect, acceptance criteria)
-  is a **proposal** the person signs. Acceptance is what writes it, into the
-  owning section, stamped with its origin.
-- A reading that comes back empty (a touched feature with no invariant, no
-  grant, no entity) is authored in the owning section with the owning tool
-  (`apply_behavior_batch`, users, data), and only once the person has crossed
-  into Verify or asked for it. Never during Specify.
+  is a **proposal** the person signs. Acceptance writes it into the owning
+  section, stamped with its origin.
+- **Crossing into Verify freezes the spec AND writes the drafts** into the
+  features section: an addition is created, an amendment patched, a removal
+  removed, each stamped with the request. That crossing is the only moment a
+  dossier writes the tree.
+- A new thing the change would need that is not a feature (an entity, a term, a
+  rule) is still an **impact finding** the report predicts, not a row you write.
 
-If the person asks you to "just add it" while a request is being specified,
-the change has turned from one to qualify into one to make. Say in one line that
-the dossier writes nothing, and ask whether they want it made now (a direct spec
-change in the owning section, outside the dossier) or kept as a proposal to
-sign. Never write the sections from inside the dossier.
+If the person says "just add it", that is what the dossier is for: draft it, run
+the two readings, and if nothing moves the request finishes itself in the same
+turn. You do not have to ask them anything.
+
+## Who signs: the roster answers, not the size of the change
+
+- **One member in the workspace**: there is nobody to counter-sign. You carry the
+  request through yourself, proposals included, and the timeline records that
+  the act arrived through a client.
+- **Two members or more**: every proposal is signed by a person before its value
+  is written, and you relay decisions with `as_person: true` exactly as before.
+- **Either way**, a waiver stays a person's act: it says "the gate is unmet and I
+  am going anyway", and that sentence needs somebody's name on it.
+- A gate holds a request only on a blocking finding it can name. A score, a
+  maturity tier or an empty field nobody declared critical never holds anything.
 
 ## The tools
 
 | Tool | What it is |
 |---|---|
 | `get_evolution {project_id}` | The board: one card per live request. |
+| `get_evolution {project_id, request_id, part: "drafts"}` | What the request proposes, in full. |
 | `get_evolution {project_id, request_id}` | One dossier in full: fields with their values, readings, maturity per block, coherence and impact findings, the next gate and why it refuses, the report lines, the timeline, `fieldsAvailable` (the field paths you may propose on) and `originsAvailable` (the codes `open_request` takes). |
 | `apply_evolution_batch {project_id, operations[], as_person?}` | Typed operations, atomic, guarded server-side. |
 
@@ -76,6 +94,14 @@ on `evolution`: it is refused.
   once the impact report has been read, because naming them at the door only
   buys a guess the report then has to contradict. What requires them is the
   gate to Verify, through the maturity of the dossier.
+- `add_draft_leaf {kind, baseLeafId?, name, description, objective, problem,
+  expectedEffect, value, acceptanceCriteria[], dependsOn[], behaviour[]}`: what
+  the change IS. `add` for a capability the product does not have, `amend` for an
+  existing one in the form the change would leave it, `remove` for one it takes
+  away. Do this before the readings: a request with no draft measures the hole
+  where the change would sit, not the change.
+- `update_draft_leaf`, `remove_draft_leaf`. Dropping a draft drops what was
+  proposed on it, and the specification is exactly as it was.
 - `set_leaves`, `update_request`.
 - `run_impact {hypothesis, depth}`: computed, on two planes. The spec plane
   walks the knowledge graph from the touched features (never through a role or
@@ -135,8 +161,10 @@ conversation. If they said "accept the first three", relay exactly those three.
 
 1. **Bind.** `list_wizard_projects` gives the project. `get_evolution` gives
    the board. If the request exists, open its dossier; else `open_request`.
-2. **Specify.** `set_leaves` on the existing features the change touches.
-   `run_impact` (add, then change or remove). `run_coherence`. Read the dossier:
+2. **Specify.** `add_draft_leaf` for what the change proposes, and
+   `set_leaves` for the existing features it also touches. `run_impact` (add,
+   then change or remove). `run_coherence`. If both come back with nothing, the
+   request has already crossed its gates and closed: say so and stop. Read the dossier:
    the maturity names the critical holes, the readings say what the touched
    features already hold. Propose on the open questions, then on the empty
    critical fields, one value each, sourced. Tell the person what is waiting
@@ -155,7 +183,8 @@ conversation. If they said "accept the first three", relay exactly those three.
    accepted proposal that changed the spec. A blocking finding is fixed in the
    owning section (by a person, or by you once they ask), accepted as a risk on
    the Control Center, or waived with a reason.
-4. **Verify.** The crossing froze the spec as version N. The code is written
+4. **Verify.** The crossing froze the spec as version N and wrote every draft
+   into the features section, each stamped with the request. The code is written
    against version N (lyriks-delivery), the index is synced
    (`sync_implementation_index`), then `build_implementation_report`. The
    person decides every line; an invalidated line yields a rebrief; an adopted

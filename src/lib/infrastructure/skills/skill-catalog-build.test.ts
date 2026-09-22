@@ -359,31 +359,33 @@ describe('buildBinding (the repository stays bound to its Lyriks project)', () =
 		expect(block.startsWith(BINDING_MARKERS.open)).toBe(true);
 		expect(block.endsWith(BINDING_MARKERS.close)).toBe(true);
 		expect(block).toContain('the Lyriks project `vector-rally`');
-		expect(block).toContain('spec change FIRST');
+		expect(block).toContain('EVOLUTION REQUEST first');
 		expect(block).toContain('spec READ first');
 		expect(buildBindingBlock()).toContain('its Lyriks project');
 		expect(buildBindingBlock()).not.toContain('vector-rally');
 	});
 
-	it('separates a change to make (spec, code, index) from a change to qualify (Evolution)', () => {
+	it('sends every change to what the product does through one door', () => {
 		// The MCP server instructions, this block and the per-prompt hook are loaded
 		// together by one client: they must state ONE rule, or the agent picks
-		// whichever text it read last (the field report: a direct change request
-		// sent to the Evolution flow, which plans without building).
+		// whichever text it read last.
 		const block = buildBindingBlock();
-		const make = block.split('\n').find((line) => line.includes('to MAKE a change'))!;
-		expect(make).toContain('spec change FIRST');
-		expect(make).toContain('in the same turn');
-		expect(make).not.toContain('Evolution');
-		const qualify = block.split('\n').find((line) => line.includes('to QUALIFY'))!;
-		for (const cue of ['what it would involve', 'an estimate', 'an impact report', 'a dossier to prepare', 'belongs to someone else']) {
-			expect(qualify).toContain(cue);
+		const change = block.split('\n').find((line) => line.includes('EVOLUTION REQUEST first'))!;
+		for (const cue of ['add_draft_leaf', 'the freeze is what writes the sections', 'sync_implementation_index']) {
+			expect(change).toContain(cue);
 		}
-		expect(qualify).toContain('`apply_evolution_batch`');
-		expect(qualify).toContain('never writes the sections');
-		// An ambiguous request is asked about, never settled silently.
-		expect(qualify).toContain('"we should add X"');
-		expect(qualify).toContain('ask which in one sentence');
+		// No threshold, and nothing for the client to judge: that is what stops a
+		// change being waved through as "too small for a dossier".
+		const noThreshold = block.split('\n').find((line) => line.includes('NO threshold'))!;
+		expect(noThreshold).toContain('crosses its own gates and closes itself');
+		expect(noThreshold).toContain('follows the roster');
+		// Qualifying is the same dossier, stopped short of the freeze, so there is
+		// no longer a question to ask about which of the two was meant.
+		const qualify = block.split('\n').find((line) => line.includes('to QUALIFY'))!;
+		expect(qualify).toContain('the same dossier');
+		expect(qualify).toContain('open the request either way');
+		// A project being written for the first time is not a change.
+		expect(block).toContain('`lyriks-build` authors it directly');
 	});
 
 	it('sends every runtime to the instruction file it always loads, with one shared block', () => {
@@ -537,21 +539,19 @@ describe('the bundled binding hook (Claude Code, UserPromptSubmit)', () => {
 		const out = run(JSON.stringify({ cwd: dir, prompt: 'add a nitro boost', transcript_path: transcript }));
 		expect(out.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
 		expect(out.hookSpecificOutput.additionalContext).toContain('(project vector-rally)');
-		expect(out.hookSpecificOutput.additionalContext).toContain('spec first');
+		expect(out.hookSpecificOutput.additionalContext).toContain('EVOLUTION request first');
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it('states the same make versus qualify rule as the binding block', () => {
+	it('states the same one-door rule as the binding block', () => {
 		const context = run(JSON.stringify({ cwd: tmpdir(), prompt: 'we should add a nitro boost' }))
 			.hookSpecificOutput.additionalContext;
-		expect(context).toContain('to MAKE a change to what the product does: spec first');
-		expect(context).toContain('in this same turn');
-		expect(context).toMatch(/QUALIFY a change \(what it would involve, an estimate, an impact report, a dossier to prepare, a decision that belongs to someone else\): Evolution/);
-		expect(context).toContain('never writes the sections');
-		expect(context).toContain('ask which in one sentence');
+		expect(context).toContain('open an EVOLUTION request first');
+		expect(context).toContain('whether to make it now or only to qualify it');
+		expect(context).toContain('never decide a change is too small for a dossier');
 		// The cues are the same words in both texts, so neither can drift alone.
 		const block = buildBindingBlock();
-		for (const cue of ['what it would involve', 'an estimate', 'an impact report', 'a dossier to prepare', 'a decision that belongs to someone else', '"we should add X"']) {
+		for (const cue of ['add_draft_leaf', 'sync_implementation_index', 'crosses its own gates and closes itself']) {
 			expect(context).toContain(cue);
 			expect(block).toContain(cue);
 		}
@@ -564,7 +564,7 @@ describe('the bundled binding hook (Claude Code, UserPromptSubmit)', () => {
 		expect(raw('  <system-reminder>\nnot user input')).toBe('');
 		expect(raw('[SYSTEM NOTIFICATION - NOT USER INPUT]')).toBe('');
 		// A person quoting one of those words mid-sentence is still a person asking.
-		expect(raw('why did I get a <task-notification> about the sync?')).toContain('spec first');
+		expect(raw('why did I get a <task-notification> about the sync?')).toContain('EVOLUTION request first');
 	});
 
 	it('falls back to the project named by the binding block in CLAUDE.md', () => {

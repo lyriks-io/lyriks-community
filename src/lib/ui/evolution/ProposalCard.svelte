@@ -2,6 +2,7 @@
 	import { Button, Chip, Icon, MultiSelect, TextInput, Textarea, promptDialog } from '$ui/design-system';
 	import type { BlockField } from '$domain/evolution';
 	import type { DossierFieldRow, ProposalRow } from '$lib/server/evolution-view.server';
+	import CitedSources from '$ui/documents/CitedSources.svelte';
 	import { applyEvolution, saveFieldValue } from './reading-api';
 
 	/**
@@ -19,14 +20,13 @@
 		field: FieldView;
 		meta: BlockField;
 		proposal: ProposalView | null;
-		sourceTitle: (id: string) => string;
 		canEdit: boolean;
 		/** The roster a proposal can be handed to; empty where one member is alone. */
 		members: readonly { id: string; name: string }[];
 		/** Who is reading, so the card knows whether their verdict is awaited. */
 		actorId: string;
 	}
-	let { projectId, requestId, field, meta, proposal, sourceTitle, canEdit, members, actorId }: Props = $props();
+	let { projectId, requestId, field, meta, proposal, canEdit, members, actorId }: Props = $props();
 
 	const memberOptions = $derived(members.map((m) => ({ code: m.id, label: m.name })));
 	const reviewed = $derived((proposal?.reviewerIds.length ?? 0) > 0);
@@ -151,11 +151,9 @@
 			</button>
 			{#if reasoningOpen}
 				<p class="mt-1 text-xs text-ink-700">{proposal.reasoning}</p>
-				<p class="mt-1 flex flex-wrap gap-1">
-					{#each proposal.citedSourceIds as id (id)}
-						<Chip tone="neutral">{sourceTitle(id)}</Chip>
-					{/each}
-				</p>
+				<div class="mt-1">
+					<CitedSources ids={proposal.citedSourceIds} />
+				</div>
 			{/if}
 			{#if proposal.bannedSynonymDetected}
 				<p class="mt-2 flex items-center gap-1 text-xs text-warning-700">

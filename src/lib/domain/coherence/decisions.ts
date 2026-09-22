@@ -92,6 +92,20 @@ export function canSettle(
 	return { ok: true };
 }
 
+/**
+ * Whether this author may reopen a settled gap.
+ *
+ * A reopen supersedes a standing decision and puts the finding back on every
+ * score, so it carries the same authority as taking it off: the person who
+ * owned the first decision is entitled to have it undone by a person too, not
+ * by whatever wrote to the section next.
+ */
+export function canReopen(author: { kind: 'person' | 'ai_client' }): DecisionVerdict {
+	if (author.kind !== 'person')
+		return { ok: false, why: 'Reopening supersedes a decision, and decisions belong to a person.' };
+	return { ok: true };
+}
+
 export interface DecisionInput {
 	gapId: string;
 	gapTitle: string;

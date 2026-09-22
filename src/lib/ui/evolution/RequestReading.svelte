@@ -30,7 +30,6 @@
 		report: ReportPart['report'] | null;
 		history: HistoryPart['history'];
 		leaves: readonly { id: string; name: string }[];
-		sources: readonly { id: string; title: string }[];
 		members: readonly { id: string; name: string }[];
 		actorId: string;
 		canEdit: boolean;
@@ -47,7 +46,6 @@
 		report,
 		history,
 		leaves,
-		sources,
 		members,
 		actorId,
 		canEdit,
@@ -95,7 +93,6 @@
 	const originOptions = [{ code: '', label: 'Where does it come from?' }, ...REQUEST_ORIGINS];
 	const leafOptions = $derived(leaves.map((l) => ({ code: l.id, label: l.name })));
 	const inlineFields = ALL_BLOCK_FIELDS.filter((f) => f.editor === 'inline');
-	const sourceTitle = (id: string) => sources.find((s) => s.id === id)?.title ?? id;
 	const proposalFor = (path: string, leafId: string | null) =>
 		proposals.find((p) => p.targetField === path && p.leafId === leafId) ?? null;
 	const fieldsOf = (leafId: string) => dossier.fields.filter((f) => f.leafId === leafId);
@@ -234,7 +231,7 @@
 					{#if open}
 						{#each fieldsOf(leaf.id) as field (field.path + '@' + leaf.id)}
 							{@const meta = blockFieldByPath(field.path) ?? inlineFields[0]}
-							<ProposalCard {projectId} requestId={dossier.id} {field} {meta} proposal={proposalFor(field.path, leaf.id)} {sourceTitle} {canEdit} {members} {actorId} />
+							<ProposalCard {projectId} requestId={dossier.id} {field} {meta} proposal={proposalFor(field.path, leaf.id)} {canEdit} {members} {actorId} />
 						{/each}
 					{/if}
 				</div>

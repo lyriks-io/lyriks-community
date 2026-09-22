@@ -152,11 +152,19 @@ export interface SettledGap {
  * What a person decided about a gap. Append-only: a reopen SUPERSEDES the
  * decision instead of deleting it, so the trace of "who accepted this risk and
  * why" survives the change of mind.
- *   accepted_risk = the gap stays as is, knowingly.
+ *   accepted_risk = the gap stays as is, knowingly, and the risk is owned.
+ *   by_design     = the finding is correct and deliberate: nothing is at risk.
  *   wont_fix      = the finding is not worth fixing in this product.
  *   reopened      = a previous decision no longer stands.
+ *
+ * `by_design` exists because the other three all say something is wrong. A
+ * faithful transcription gap, a screen unreachable because it is not a page, an
+ * edge the product settled on purpose: filing those as an accepted risk asserts
+ * a danger that is not there. Offered only that, an honest author leaves the
+ * gap open instead, and the register fills with things already decided, which
+ * is precisely how a coherence reading stops meaning anything.
  */
-export type GapDecisionStatus = 'accepted_risk' | 'wont_fix' | 'reopened';
+export type GapDecisionStatus = 'accepted_risk' | 'by_design' | 'wont_fix' | 'reopened';
 
 export interface GapDecision {
 	readonly id: string;
@@ -172,6 +180,32 @@ export interface GapDecision {
 	gapTitle: string;
 	/** Set when a later decision replaces this one. The original stays readable. */
 	supersededById: string | null;
+}
+
+/**
+ * A decision somebody prepared and nobody has taken yet.
+ *
+ * It is NOT a decision: the finding stays open, every score is unchanged, and
+ * nothing here settles anything. It is the reasoning done ahead of time, so the
+ * person who answers for the call reads a disposition and a why instead of
+ * writing them. That is what a client may do with a register it understands,
+ * now that it is refused the decision itself: told no and offered nothing, it
+ * reports the same findings again next session and the register never moves.
+ *
+ * At most one per gap, replaced rather than stacked: two prepared answers to
+ * one question is one question more than the person asked for.
+ */
+export interface PreparedDecision {
+	readonly id: string;
+	gapId: string;
+	/** The gap title when it was prepared, so the card reads on its own. */
+	gapTitle: string;
+	status: Exclude<GapDecisionStatus, 'reopened'>;
+	reason: string;
+	/** Who prepared it: the account email, or the client's own name. */
+	preparedById: string;
+	preparedByKind: 'person' | 'ai_client';
+	preparedAt: string;
 }
 
 export function emptyAnalysis(): CoherenceAnalysis {
@@ -242,6 +276,8 @@ export interface ProjectCoherenceDraft {
 	acknowledgedGapIds: string[];
 	/** Traced decisions over gaps, append-only (see GapDecision). */
 	decisions: GapDecision[];
+	/** Decisions prepared for a person to take, at most one per gap (see prepared.ts). */
+	prepared: PreparedDecision[];
 	artifacts: GeneratedArtifact[];
 	specsGenerated: boolean;
 	generatedAt: string | null;
@@ -255,6 +291,7 @@ export function createEmptyCoherenceDraft(projectId: string): ProjectCoherenceDr
 		threshold: DEFAULT_THRESHOLD,
 		acknowledgedGapIds: [],
 		decisions: [],
+		prepared: [],
 		artifacts: [],
 		specsGenerated: false,
 		generatedAt: null,

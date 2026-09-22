@@ -1,6 +1,8 @@
 import {
+	coherenceHeadline,
 	createEmptyCoherenceDraft,
 	type CoherenceAnalysis,
+	type CoherenceHeadline,
 	type ProjectCoherenceDraft
 } from '$domain/coherence';
 import type {
@@ -12,6 +14,15 @@ import type {
 export interface CoherenceView {
 	draft: ProjectCoherenceDraft;
 	analysis: CoherenceAnalysis;
+	/**
+	 * The coherence reading exactly as the Control Center prints it: the number,
+	 * the word beside it, and what weighs most on it. The analysis alone carries
+	 * readiness and the per-dimension table, so a client reading this project
+	 * from outside the screen had to summarise the gap list on its own, against
+	 * thresholds it guessed. It guessed differently, and reported a figure the
+	 * person in front of the panel could not find anywhere.
+	 */
+	headline: CoherenceHeadline;
 }
 
 /**
@@ -31,6 +42,10 @@ export class LoadCoherenceDraftUseCase {
 			this.drafts.load(projectId),
 			this.checker.analyze(projectId, opts)
 		]);
-		return { draft: existing ?? createEmptyCoherenceDraft(projectId), analysis };
+		return {
+			draft: existing ?? createEmptyCoherenceDraft(projectId),
+			analysis,
+			headline: coherenceHeadline(analysis.gaps)
+		};
 	}
 }

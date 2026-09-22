@@ -19,6 +19,8 @@ export * from './acceptance';
 export * from './history';
 export * from './ids';
 export * from './impact-propagation';
+export * from './overlay';
+export * from './materialise';
 export * from './coherence-mapping';
 export * from './report-derivation';
 export * from './code-impact';

@@ -143,8 +143,19 @@ export interface PropagationInput {
 	readonly request: Pick<EvolutionRequest, 'id' | 'leafIds'>;
 	readonly hypothesis: ImpactHypothesis;
 	readonly depth: number;
+	/**
+	 * The graph to walk. Under an overlay this is the graph WITH the request's
+	 * drafts in it, so the walk starts from the change rather than from the hole
+	 * where it would sit (ac-evo-ovl-1).
+	 */
 	readonly graph: PropagationGraph;
 	readonly terms?: readonly PropagationTerm[];
+	/**
+	 * The graph ids that stand for a draft. A node reached from one of them is
+	 * stamped `fromDraft`, so a reader is never left guessing whether a row is
+	 * there because of what exists or because of what is being proposed.
+	 */
+	readonly draftNodeIds?: ReadonlySet<string>;
 }
 
 /**
@@ -175,11 +186,14 @@ export function propagateImpact(input: PropagationInput): ImpactFinding[] {
 		readonly hops: number;
 		readonly path: readonly string[];
 		readonly via: string;
+		/** True when the walk that reached this node started on a drafted feature. */
+		readonly fromDraft: boolean;
 	}
+	const drafted = input.draftNodeIds ?? new Set<string>();
 	const visited = new Map<string, Visit>();
 	let frontier: { id: string; visit: Visit }[] = starts.map((id) => ({
 		id,
-		visit: { hops: 0, path: [], via: '' }
+		visit: { hops: 0, path: [], via: '', fromDraft: drafted.has(id) }
 	}));
 	for (const f of frontier) visited.set(f.id, f.visit);
 	while (frontier.length > 0) {
@@ -194,7 +208,8 @@ export function propagateImpact(input: PropagationInput): ImpactFinding[] {
 				const reached: Visit = {
 					hops: visit.hops + 1,
 					path: [...visit.path, here?.label ?? id],
-					via: kind
+					via: kind,
+					fromDraft: visit.fromDraft
 				};
 				visited.set(to, reached);
 				next.push({ id: to, visit: reached });
@@ -206,6 +221,7 @@ export function propagateImpact(input: PropagationInput): ImpactFinding[] {
 	const findings: ImpactFinding[] = [];
 	// A touched feature's own behaviour node is where it lives, not something it moves.
 	const ownBehaviour = new Set(input.request.leafIds.map((id) => `feature:beh:${id}`));
+	for (const id of drafted) ownBehaviour.add(id);
 	for (const [id, visit] of visited) {
 		if (startSet.has(id) || ownBehaviour.has(id)) continue;
 		const node = byId.get(id);
@@ -227,7 +243,8 @@ export function propagateImpact(input: PropagationInput): ImpactFinding[] {
 			depth: visit.hops,
 			severity: severityOf(input.hypothesis, visit.hops),
 			migrationImplied: isData ? migrationOf(input.hypothesis, visit.hops) : null,
-			ruleWork: isRule ? ruleWorkOf(input.hypothesis, visit.hops) : null
+			ruleWork: isRule ? ruleWorkOf(input.hypothesis, visit.hops) : null,
+			fromDraft: visit.fromDraft
 		});
 	}
 

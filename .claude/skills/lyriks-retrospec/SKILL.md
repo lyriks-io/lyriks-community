@@ -116,6 +116,25 @@ The first rendering must look like the product, not like a generic mockup.
    A screen that does not look like the product is a defect to fix in the
    same pass, not a draft to improve later.
 
+**WHEN YOU CANNOT SEE, SAY SO. Never let it pass silently.** Through the MCP
+alone there is no render: `simulate_experience` proves a flow reaches its end
+and proves nothing whatsoever about how the screen looks. So a transcription
+built without eyes on it is unverified work, and the one dishonest move is to
+report it as done. Instead:
+
+- transcribe from the SOURCE, never from what you picture: the real labels,
+  the real order, the real tokens read out of the stylesheet;
+- when the renderer cannot express something the real page does (a grid
+  placement, a sticky column, a gradient), approximate with the dominant
+  value and WRITE THE DIVERGENCE into the screen's description, in one
+  sentence naming what the product does and what the prototype does instead;
+- say in your report that the screens were not seen, and ask for a screenshot
+  or for the run to be opened. A person spends ten seconds confirming what you
+  cannot check at all.
+
+If the runtime you are in has a browser or a shell, use it: that is the whole
+difference between transcribed and verified, and the cost is one screenshot.
+
 ## Data model: behavior-complete, product-named
 
 The data section is reconciled from TWO mandatory sources; neither alone is
@@ -268,7 +287,11 @@ The user should not have to correct you; they should only decide.
 - Everything else: read, do not ask. Names come from the product, never from
   the user's patience.
 - Report at checkpoints (scope declared, features authored, screens built,
-  audits green) instead of asking questions at each step.
+  audits green) instead of asking questions at each step. "Audits green" means
+  every measure the product displays, named one by one: the completion audit AND
+  the Control Center's coherence, coverage and build readiness. One number
+  without its subject, or the best of several passed off as the only one, is a
+  report the user corrects with a screenshot.
 - This is lyriks-build's autonomous mode. When the user asks to be
   accompanied, lyriks-build's checkpoint protocol applies here too: decisions
   the product itself cannot answer are recorded in the same register and
@@ -281,6 +304,15 @@ The user should not have to correct you; they should only decide.
    web address, or the content in the note; a code file attached with
    `attach_source`, never a local path in `url`); everything you author cites
    them.
+   **`attach_source` takes a `feature_id` and a `file_name`, so it cannot run
+   here.** Attaching a code file is per feature, and the features do not exist
+   until step 4. At this step you write the `documents.sources[]` rows only:
+   the repository's web address for each file, and in `note` the verbatim
+   sentence the spec will rest on. Attach the files themselves while authoring
+   each feature's behavior, which is where *Adopting the codebase* puts them
+   anyway. Registering a source and attaching its code are two moments, not
+   one, and a skill that reads otherwise costs every agent the same failed
+   call.
 2. `scope`: the capability inventory from the UI walk, each item tied to its
    sources. Choose `scope.mode` with the user.
 3. `users`: roles and personas from real auth behavior.

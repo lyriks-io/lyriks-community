@@ -33,17 +33,26 @@ export function canGenerateProposals(
 }
 
 /**
- * Acceptance is the human signature the whole feature exists for. It is closed
- * to AI clients, needs a source in the evidence register, needs a reasoning that
- * separates what was read from what was inferred, and refuses any wording the
- * glossary bans.
+ * Acceptance needs a source in the evidence register, a reasoning that separates
+ * what was read from what was inferred, a home to write to, and no wording the
+ * glossary bans. Those four hold for everyone.
+ *
+ * Who may sign follows the roster (ac-evo-req-13). Where two or more people
+ * share the workspace, acceptance is the human signature the feature exists for
+ * and an AI client never gives it. Where one person is alone, there is nobody to
+ * sign for: the client accepts on their behalf, the timeline records that it
+ * acted through a client, and the quality bars above still every one of them.
  */
-export function canAcceptProposal(actor: Actor, proposal: Proposal): Guarded {
+export function canAcceptProposal(
+	actor: Actor,
+	proposal: Proposal,
+	options: { readonly soloWorkspace?: boolean } = {}
+): Guarded {
 	return firstRefusal(
 		guard(
-			actor.kind === 'ai_client',
+			actor.kind === 'ai_client' && !options.soloWorkspace,
 			'An AI client may create proposals but never accept one.',
-			'Acceptance is the human signature the whole feature exists for, so it is closed to non-human callers including the MCP clients that author the request.'
+			'Acceptance is the human signature the whole feature exists for, so where a workspace holds more than one member it is closed to non-human callers, including the MCP clients that author the request.'
 		),
 		guard(
 			proposal.citedSourceIds.length < 1,
@@ -68,12 +77,19 @@ export function canAcceptProposal(actor: Actor, proposal: Proposal): Guarded {
 	);
 }
 
-/** Refusal is a decision like the others and belongs to the person who owns the request. */
-export function canRefuseProposal(actor: Actor): Guarded {
+/**
+ * Refusal is a decision like the others, and follows the same roster rule as
+ * acceptance: a person's where the workspace holds several, open to the client
+ * where one person is alone with it.
+ */
+export function canRefuseProposal(
+	actor: Actor,
+	options: { readonly soloWorkspace?: boolean } = {}
+): Guarded {
 	return guard(
-		actor.kind === 'ai_client',
+		actor.kind === 'ai_client' && !options.soloWorkspace,
 		'An AI client may create proposals but never decide on one.',
-		'Refusal is a decision like the others and belongs to the person who owns the request.'
+		'Refusal is a decision like the others and, where a workspace holds more than one member, belongs to the person who owns the request.'
 	);
 }
 

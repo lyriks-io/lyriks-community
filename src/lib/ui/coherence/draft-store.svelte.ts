@@ -3,9 +3,11 @@ import {
 	canGenerateSpecs,
 	coherenceCanAdvance,
 	computeCoherenceLocal,
+	dropPreparation,
 	isGreen,
 	missingCoherenceRequirements,
 	openGaps,
+	preparedFor,
 	type CoherenceAnalysis,
 	type Gap,
 	type GeneratedArtifact,
@@ -95,13 +97,14 @@ export class CoherenceStore {
 	};
 
 	/**
-	 * Settle a gap with a traced decision (risk accepted or won't fix), or reopen
+	 * Settle a gap with a traced decision (risk accepted, deliberate by design,
+	 * or won't fix), or reopen
 	 * one. Server-side: the author is the session, the reason is mandatory, a
 	 * blocking gap is refused. The chrome and this page re-read on success.
 	 */
 	decideGap = async (
 		gap: Pick<Gap, 'id' | 'title'>,
-		status: 'accepted_risk' | 'wont_fix' | 'reopened',
+		status: 'accepted_risk' | 'by_design' | 'wont_fix' | 'reopened',
 		reason: string
 	): Promise<boolean> => {
 		try {
@@ -127,16 +130,24 @@ export class CoherenceStore {
 		}
 	};
 
-	acknowledgeGap = (gapId: string) => {
-		const gap = this.analysis.gaps.find((g) => g.id === gapId);
-		if (!gap || gap.blocking) {
-			this.notifier.notify('error', 'Blocking gaps cannot be acknowledged; fix them at the source.');
-			return;
-		}
-		if (!this.draft.acknowledgedGapIds.includes(gapId)) {
-			this.draft.acknowledgedGapIds = [...this.draft.acknowledgedGapIds, gapId];
-			this.#touch('coherence.acknowledgedGapIds');
-		}
+	/**
+	 * Take a decision somebody prepared: the disposition and the reason are
+	 * already written, so this is the one move that was never theirs to make.
+	 * It goes through the same endpoint as any other decision, with the same
+	 * refusals, and lands with the taker's name, not the preparer's.
+	 */
+	takePrepared = async (gap: Pick<Gap, 'id' | 'title'>): Promise<boolean> => {
+		const prepared = preparedFor(this.draft, gap.id);
+		if (!prepared) return false;
+		return this.decideGap(gap, prepared.status, prepared.reason);
+	};
+
+	/** Turn down a prepared decision. The finding stays open, to decide another way. */
+	dismissPrepared = (gapId: string) => {
+		const next = dropPreparation(this.draft, gapId);
+		if (next === this.draft) return;
+		this.draft.prepared = next.prepared;
+		this.#touch('coherence.prepared');
 	};
 
 	/* ──────────────────────── ANALYSIS / GENERATION ────────────────────── */
@@ -225,14 +236,5 @@ export class CoherenceStore {
 		} catch {
 			this.notifier.notify('error', 'Copy failed.');
 		}
-	};
-
-	/* ─────────────────────────────── RESET ─────────────────────────────── */
-	reset = () => {
-		this.draft.specsGenerated = false;
-		this.draft.artifacts = [];
-		this.draft.acknowledgedGapIds = [];
-		this.draft.generatedAt = null;
-		this.#touch('coherence.reset');
 	};
 }

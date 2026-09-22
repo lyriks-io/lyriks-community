@@ -9,7 +9,8 @@
 		PROVENANCE_META,
 		provenanceOf
 	} from '$domain/coherence/incoherence';
-	import type { GapProvenance } from '$domain/coherence';
+	import { preparedFor } from '$domain/coherence';
+	import type { GapDecision, GapProvenance } from '$domain/coherence';
 	import { capabilityById, resolveVisibleCapability } from '$ui/shell/capabilities';
 	import type { CoherenceStore } from '../draft-store.svelte';
 
@@ -94,7 +95,7 @@
 		resolvingId = resolvingId === gap.id ? null : gap.id;
 		rationaleDraft = '';
 	};
-	const confirmResolve = async (gap: Gap, status: 'accepted_risk' | 'wont_fix') => {
+	const confirmResolve = async (gap: Gap, status: 'accepted_risk' | 'by_design' | 'wont_fix') => {
 		deciding = true;
 		const ok = await store.decideGap(gap, status, rationaleDraft);
 		deciding = false;
@@ -103,6 +104,37 @@
 			rationaleDraft = '';
 		}
 	};
+	/**
+	 * How a settled finding reads back. "By design" is not a softer risk: the
+	 * other two words both assert that something is wrong, so without it an
+	 * author with a deliberate, correct choice to record has no honest exit and
+	 * leaves the finding open instead. The register then fills with things
+	 * already decided, which is exactly how a coherence reading stops meaning
+	 * anything.
+	 */
+	const decisionLabel = (status: GapDecision['status']): string =>
+		status === 'wont_fix'
+			? "won't fix"
+			: status === 'by_design'
+				? 'by design'
+				: status === 'reopened'
+					? 'reopened'
+					: 'risk accepted';
+
+	/**
+	 * A decision somebody prepared, shown where the finding is, so taking it is
+	 * one click and reading why it is proposed takes no clicks at all. It has
+	 * changed nothing on its own: the finding is still open, and the score still
+	 * carries it. What the card removes is the retyping, never the call.
+	 */
+	const preparedOn = (gap: Gap) => preparedFor(store.draft, gap.id);
+	let takingId = $state<string | null>(null);
+	const takePrepared = async (gap: Gap) => {
+		takingId = gap.id;
+		await store.takePrepared(gap);
+		takingId = null;
+	};
+
 	let reopeningId = $state<string | null>(null);
 	let reopenReason = $state('');
 	const confirmReopen = async (gapId: string, title: string) => {
@@ -237,6 +269,36 @@
 												<p class="mt-0.5 text-[11px] leading-snug text-ink-500">{gap.detail}</p>
 											</details>
 										{/if}
+										{#if preparedOn(gap)}
+											{@const prep = preparedOn(gap)!}
+											<div class="mt-1.5 rounded-md border border-brand-200 bg-brand-50/60 px-2 py-1.5">
+												<p class="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-brand-600">
+													<Icon name="pencil" size={11} />
+													Prepared: {decisionLabel(prep.status)}
+												</p>
+												<p class="mt-0.5 text-[11px] leading-snug text-ink-700">{prep.reason}</p>
+												<p class="mt-0.5 text-[10px] text-ink-400">
+													Written by {prep.preparedById}{prep.preparedByKind === 'ai_client' ? ' (client)' : ''}{prep.preparedAt ? ` on ${prep.preparedAt.slice(0, 10)}` : ''}. Nothing is decided until you take it.
+												</p>
+												<div class="mt-1 flex items-center gap-1.5">
+													<button
+														type="button"
+														disabled={takingId === gap.id}
+														onclick={() => takePrepared(gap)}
+														class="inline-flex items-center gap-1 rounded-md bg-brand-600 px-2 py-1 text-[10.5px] font-semibold text-white hover:bg-brand-700 disabled:opacity-40"
+													>
+														<Icon name="check" size={11} /> Take this decision
+													</button>
+													<button
+														type="button"
+														onclick={() => store.dismissPrepared(gap.id)}
+														class="rounded-md px-2 py-1 text-[10.5px] font-medium text-ink-500 hover:text-ink-800"
+													>
+														Turn it down
+													</button>
+												</div>
+											</div>
+										{/if}
 									</div>
 									<div class="flex shrink-0 items-center gap-1">
 										<button
@@ -273,7 +335,7 @@
 											id="coh-fix-{gap.id}"
 											bind:value={rationaleDraft}
 											rows="2"
-											placeholder="Why this is acceptable"
+											placeholder="Why it is acceptable, or why it is deliberate"
 											class="w-full resize-y rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs text-ink-800 placeholder:text-ink-300 focus:border-brand-300 focus:outline-none"
 										></textarea>
 										<div class="flex items-center justify-between gap-2">
@@ -293,6 +355,14 @@
 													class="rounded-md border border-line px-2.5 py-1 text-[11px] font-semibold text-ink-700 hover:bg-surface-sunken disabled:opacity-40"
 												>
 													Won't fix
+												</button>
+												<button
+													type="button"
+													disabled={deciding || !rationaleDraft.trim()}
+													onclick={() => confirmResolve(gap, 'by_design')}
+													class="rounded-md border border-line px-2.5 py-1 text-[11px] font-semibold text-ink-700 hover:bg-surface-sunken disabled:opacity-40"
+												>
+													By design
 												</button>
 												<button
 													type="button"
@@ -324,7 +394,7 @@
 				{#each settled as s (s.gap.id)}
 					<li class="text-[11px]">
 						<span class="font-medium text-ink-700">{s.gap.title}</span>
-						<span class="text-ink-400"> · {s.decision.status === 'wont_fix' ? "won't fix" : 'risk accepted'} by {s.decision.authorId}{s.decision.decidedAt ? ` on ${s.decision.decidedAt.slice(0, 10)}` : ''}{s.decision.reason ? `: ${s.decision.reason}` : ''}</span>
+						<span class="text-ink-400"> · {decisionLabel(s.decision.status)} by {s.decision.authorId}{s.decision.decidedAt ? ` on ${s.decision.decidedAt.slice(0, 10)}` : ''}{s.decision.reason ? `: ${s.decision.reason}` : ''}</span>
 						{#if reopeningId === s.gap.id}
 							<span class="mt-1 flex items-center gap-1.5">
 								<input

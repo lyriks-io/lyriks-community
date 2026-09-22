@@ -1,16 +1,15 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { Icon, openFileViewer } from '$ui/design-system';
+	import { Icon } from '$ui/design-system';
 	import {
 		brokenCitations,
 		citationCount,
 		citedSources,
 		DOCUMENT_KINDS,
-		sourceHref,
-		type DocumentKind,
-		type DocumentSource
+		type DocumentKind
 	} from '$domain/documents';
 	import { getDocumentRegistry } from './registry.svelte';
+	import CitedSources from './CitedSources.svelte';
 
 	/**
 	 * Cite evidence from the project Documents & Sources register.
@@ -46,10 +45,6 @@
 	const cited = $derived(citedSources(selected, sources));
 	const broken = $derived(brokenCitations(selected, sources));
 
-	// And a chip goes straight to the evidence. Inline files (data URLs) can't be
-	// navigated to in a new tab — browsers block that — so they open the in-app
-	// preview instead; everything else is a plain link.
-	const isInlineFile = (source: DocumentSource) => source.url.trim().startsWith('data:');
 
 	// A register grows past what a checkbox list can be scanned in, so it is
 	// searchable here exactly as it is on the Documents page — over title, URL,
@@ -141,49 +136,10 @@
 		</span>
 	</p>
 
-	{#if cited.length > 0}
-		<ul class="mt-2 flex flex-wrap gap-1">
-			{#each cited as source (source.id)}
-				{@const label = source.title || source.url || 'Untitled source'}
-				{@const href = sourceHref(source)}
-				<li
-					class="inline-flex max-w-full items-center gap-1 rounded-pill bg-success-50 py-0.5 pl-2 pr-1 text-[11px] font-medium text-success-700"
-				>
-					{#if isInlineFile(source)}
-						<button
-							type="button"
-							onclick={() => openFileViewer({ name: label, dataUrl: source.url })}
-							class="truncate underline-offset-2 hover:underline"
-							title={`Preview ${label}`}
-						>
-							{label}
-						</button>
-					{:else if href}
-						<a
-							{href}
-							target="_blank"
-							rel="noopener noreferrer"
-							class="truncate underline-offset-2 hover:underline"
-							title={`Open ${source.url}`}
-						>
-							{label}
-						</a>
-					{:else}
-						<!-- A reference with nothing to open ("Ops lead interview") — still
-						     named in full on hover, just not a dead link. -->
-						<span class="truncate" title={source.url || label}>{label}</span>
-					{/if}
-					<button
-						type="button"
-						onclick={() => onToggle(source.id)}
-						aria-label={`Remove citation ${label}`}
-						class="grid size-3.5 shrink-0 place-items-center rounded-full text-success-600 transition hover:bg-success-100 hover:text-success-800"
-					>
-						<Icon name="x" size={10} />
-					</button>
-				</li>
-			{/each}
-		</ul>
+	{#if cited.length > 0 || broken.length > 0}
+		<div class="mt-2">
+			<CitedSources ids={selected} onRemove={onToggle} />
+		</div>
 	{/if}
 
 	<!-- Only CHOOSING sources folds away: the picker is a long list plus a form,
@@ -321,11 +277,4 @@
 		</div>
 	</details>
 
-	{#if broken.length > 0}
-		<p class="mt-2 rounded-field bg-warning-50 px-2 py-1.5 text-[11px] text-warning-700">
-			{broken.length} linked {broken.length === 1
-				? 'source no longer exists'
-				: 'sources no longer exist'}.
-		</p>
-	{/if}
 </div>

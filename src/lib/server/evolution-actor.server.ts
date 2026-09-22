@@ -1,6 +1,7 @@
 import type { RequestEvent } from '@sveltejs/kit';
 import type { AppServices } from '$composition/container.server';
 import type { Actor } from '$domain/evolution';
+import { ACTOR_HEADER, callerKind } from './caller.server';
 
 /**
  * Who is acting on the Evolution section, resolved once server-side.
@@ -15,7 +16,7 @@ import type { Actor } from '$domain/evolution';
  * it came through the client. A relay with nobody signed in is refused upstream
  * (the session gate), so here the person is always known.
  */
-export const ACTOR_HEADER = 'x-lyriks-actor';
+export { ACTOR_HEADER };
 
 export async function resolveEvolutionActor(
 	services: AppServices,
@@ -27,7 +28,7 @@ export async function resolveEvolutionActor(
 	// one operator of the box is the person, under a name the history can read.
 	const personId = session.email ?? 'local-operator';
 	const role = await resolveRole(services, event.cookies.get('lyriks_active_ws'));
-	const isClient = event.request.headers.get(ACTOR_HEADER) === 'ai_client';
+	const isClient = callerKind(event.request) === 'ai_client';
 	if (!isClient) return { id: personId, kind: 'person', role, channel: 'page' };
 	if (opts.asPerson) return { id: personId, kind: 'person', role, channel: 'ai_client' };
 	return { id: personId, kind: 'ai_client', role, channel: 'ai_client' };
