@@ -8,7 +8,8 @@ import {
 	createJourney,
 	createOperation,
 	createStep,
-	type ProjectExperienceDraft
+	type ProjectExperienceDraft,
+	type SimAction
 } from '$domain/experience';
 import { createEmptyFeaturesDraft, type ProjectFeaturesDraft } from '$domain/features';
 import { createEmptyUsersDraft, createRole, type ProjectUsersDraft } from '$domain/users';
@@ -367,6 +368,38 @@ describe('buildExperienceProjection (kernel overlay / two-way binding)', () => {
 		// the per-step underlays are preserved from residue for live steps
 		expect(out.stepOperations).toHaveLength(1);
 		expect(out.stepDataReads).toHaveLength(1);
+	});
+
+	it('carries a step\'s authored actions through the kernel overlay', () => {
+		const draft = sampleDraft();
+		const script: SimAction[] = [
+			{ nodeId: 'bld-row-world', rowIndex: 0 },
+			{ label: 'Confirm', trigger: 'click', expectError: true }
+		];
+		draft.steps[0].actions = script;
+		const feature = kernelFeatureFrom(draft, usersWith());
+		// The kernel owns the step's name and reshapes it; the script is NOT its to lose.
+		const f = feature.feature as { surfaces: { id: string; actions: { id: string; name: string }[] }[] };
+		f.surfaces.find((s) => s.id === 'srf-J1')!.actions.find((a) => a.id === 'act-S1')!.name =
+			'Select an existing fixture';
+
+		const out = buildExperienceProjection('p1', experienceResidueFromDraft(draft), feature);
+		const s1 = out.steps.find((s) => s.id === 'S1')!;
+		expect(s1.name).toBe('Select an existing fixture'); // kernel identity still wins
+		expect(s1.actions).toEqual(script); // and the authored interactions survive whole
+		// A step that never carried a script does not grow one.
+		expect(out.steps.find((s) => s.id === 'S2')!.actions).toBeUndefined();
+	});
+
+	it('keeps an explicitly empty action script as an empty array', () => {
+		const draft = sampleDraft();
+		draft.steps[0].actions = [];
+		const out = buildExperienceProjection(
+			'p1',
+			experienceResidueFromDraft(draft),
+			kernelFeatureFrom(draft, usersWith())
+		);
+		expect(out.steps.find((s) => s.id === 'S1')!.actions).toEqual([]);
 	});
 
 	it('surfaces a journey + step authored purely in unspa (dashboard edit shows up)', () => {

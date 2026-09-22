@@ -7,7 +7,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { z }                        from 'zod'
 import { Client }                   from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport }        from '@modelcontextprotocol/sdk/inMemory.js'
-import { createMcpServer, MAKE_OR_QUALIFY } from '../server.js'
+import { createMcpServer, EVOLUTION_IS_THE_DOOR } from '../server.js'
 import type { BoundOverlay }         from '../enterprise/overlay.js'
 
 /** A bound overlay the way the Enterprise one behaves: it registers the five tools itself. */
@@ -115,9 +115,10 @@ describe('createMcpServer', () => {
     expect(tools.get_behavior_context.description).toContain('LEAF features')
   })
 
-  // Two texts an agent loads together used to disagree: the instructions sent
-  // every change to Evolution, the repository binding said spec then code now.
-  it('states one rule for a change to make versus a change to qualify, where a client reads it', async () => {
+  // The instructions, the binding block, the per-prompt hook and both Evolution
+  // tools are loaded together by one client: they must state ONE rule, or the
+  // agent acts on whichever text it read last.
+  it('states one door for every change to an existing product, where a client reads it', async () => {
     const server = createMcpServer(makeClient())
     const client = new Client({ name: 'instructions-check', version: '0' })
     const [clientSide, serverSide] = InMemoryTransport.createLinkedPair()
@@ -126,35 +127,41 @@ describe('createMcpServer', () => {
     const { tools } = await client.listTools()
     await client.close()
 
-    expect(instructions).toContain(MAKE_OR_QUALIFY)
-    expect(instructions).toContain('lyriks-evolution to QUALIFY a change to an existing product, not to make it')
-    // The sentence that claimed every change for Evolution is gone.
-    expect(instructions).not.toContain('when the user asks for a change to an existing product')
+    expect(instructions).toContain(EVOLUTION_IS_THE_DOOR)
+    expect(instructions).toContain('lyriks-evolution for ANY change to an existing product')
+    // The old split is gone: it is what let a change be waved past the dossier.
+    expect(instructions).not.toContain('never an Evolution request')
+    expect(instructions).not.toContain('which of the two is wanted')
     for (const phrase of [
-      'A change to MAKE now, in a repository bound to its Lyriks project, is a direct spec change',
-      'in the same turn: never an Evolution request',
-      'ask in one sentence which of the two is wanted',
-      'never choose silently',
-      'Evolution is for a change someone asks to QUALIFY',
-      'a decision that belongs to someone else (a product owner, reviewers)',
-      'Evolution never writes the sections',
-    ]) expect(MAKE_OR_QUALIFY, phrase).toContain(phrase)
+      'A product that already EXISTS changes through an Evolution request, always',
+      'opens a dossier FIRST',
+      'the freeze into Verify is what writes the sections',
+      'There is NO threshold and nothing for you to judge',
+      'crosses its own gates and closes itself',
+      'Who signs follows the roster, not the size of the change',
+      'lyriks-build authors it directly',
+    ]) expect(EVOLUTION_IS_THE_DOOR, phrase).toContain(phrase)
     // What the rule sends the agent to must exist.
     const names = new Set(tools.map((t) => t.name))
-    for (const name of ['apply_behavior_batch', 'patch_section', 'build_screen', 'wire_element']) {
-      expect(MAKE_OR_QUALIFY).toContain(name)
+    for (const name of ['add_draft_leaf', 'sync_implementation_index']) {
+      expect(EVOLUTION_IS_THE_DOOR).toContain(name)
+    }
+    for (const name of ['get_evolution', 'apply_evolution_batch', 'apply_behavior_batch', 'patch_section']) {
       expect(names.has(name), name).toBe(true)
     }
-    // Claude Code shows the first 2048 characters of the instructions: the two
-    // sentences an agent acts on (make it directly, ask when unclear) land before that.
-    const acted = instructions.indexOf('never choose silently') + 'never choose silently'.length
+    // `add_draft_leaf` is an operation of the batch, not a tool of its own, so
+    // the description has to teach it or nobody can reach it.
+    expect(tools.find((t) => t.name === 'apply_evolution_batch')?.description).toContain('add_draft_leaf {requestId')
+    // Claude Code shows the first 2048 characters of the instructions: the
+    // sentence an agent acts on has to land before that.
+    const acted = instructions.indexOf('opens a dossier FIRST') + 'opens a dossier FIRST'.length
     expect(acted).toBeGreaterThan(0)
     expect(acted).toBeLessThanOrEqual(2048)
     // The neighbours of the rewritten sentence still say what they said.
-    for (const kept of ['PLANS WITHOUT BUILDING', 'SPEC CHANGE FIRST', 'THE CONVERSATION STAYS BOUND TO ITS PROJECT', 'lyriks-delivery step 4'])
+    for (const kept of ['EVOLUTION REQUEST FIRST', 'THE CONVERSATION STAYS BOUND TO ITS PROJECT', 'lyriks-delivery step 4'])
       expect(instructions).toContain(kept)
     for (const name of ['get_evolution', 'apply_evolution_batch'])
-      expect(tools.find((t) => t.name === name)?.description, name).toContain(MAKE_OR_QUALIFY)
+      expect(tools.find((t) => t.name === name)?.description, name).toContain(EVOLUTION_IS_THE_DOOR)
   })
 
   // Field agents asked for tools the graph already is; the recipes only name arguments it accepts.

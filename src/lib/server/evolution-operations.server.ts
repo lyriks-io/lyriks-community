@@ -1,5 +1,6 @@
 import type { AppServices } from '$composition/container.server';
 import {
+	addDraftLeafAct,
 	answerOpenQuestionAct,
 	buildReportAct,
 	closeRequestAct,
@@ -9,6 +10,8 @@ import {
 	deleteRequestAct,
 	deriveCodeImpact,
 	deriveImplementationReport,
+	draftCoherence,
+	draftNodeIds,
 	foldBackAct,
 	isImpactHypothesis,
 	isImplementationVerdict,
@@ -17,24 +20,31 @@ import {
 	isRequestOrigin,
 	liftWaiverAct,
 	mapCoherenceAnalysis,
+	materialiseDrafts,
 	markOpenQuestionAct,
+	nothingToArbitrate,
 	openRequestAct,
+	overlayGraph,
 	postOnFieldAct,
 	propagateImpact,
 	proposeAct,
 	reachedFeatures,
 	rebriefAct,
 	refuse,
+	removeDraftLeafAct,
 	REQUEST_ORIGINS,
 	ruleObservationAct,
 	runCoherenceAct,
 	runImpactAct,
 	setLeavesAct,
+	STAGE_ORDER,
 	tagReviewersAct,
+	updateDraftLeafAct,
 	updateRequestAct,
 	type ActContext,
 	type ActOutcome,
 	type Actor,
+	type DraftLeafInput,
 	type EvolutionRequest,
 	type FeatureStatus,
 	type Guarded,
@@ -88,10 +98,51 @@ const strList = (v: unknown): string[] =>
 const num = (v: unknown, fallback: number): number =>
 	typeof v === 'number' && Number.isFinite(v) ? v : fallback;
 
+/**
+ * A drafted feature as it arrives from a client. Only the keys actually sent are
+ * read, so an update touches what it names and leaves the rest of the draft
+ * alone.
+ */
+const draftInput = (op: Record<string, unknown>): DraftLeafInput => {
+	const kind = op.kind === 'amend' || op.kind === 'remove' || op.kind === 'add' ? op.kind : undefined;
+	const behaviour = Array.isArray(op.behaviour)
+		? op.behaviour
+				.filter((row): row is Record<string, unknown> => !!row && typeof row === 'object')
+				.map((row) => ({
+					kind: str(row.kind) as 'surface' | 'state' | 'action' | 'rule' | 'scenario',
+					name: str(row.name),
+					detail: str(row.detail)
+				}))
+		: undefined;
+	return {
+		// `kind` is also the batch's own discriminator on other operations, so it is
+		// only read as a draft kind when it spells one of the three.
+		kind,
+		baseLeafId: op.baseLeafId === undefined ? undefined : str(op.baseLeafId) || null,
+		name: op.name === undefined ? undefined : str(op.name),
+		description: op.description === undefined ? undefined : str(op.description),
+		coreId: op.coreId === undefined ? undefined : str(op.coreId) || null,
+		parentFamilyId:
+			op.parentFamilyId === undefined ? undefined : str(op.parentFamilyId) || null,
+		objective: op.objective === undefined ? undefined : str(op.objective),
+		problem: op.problem === undefined ? undefined : str(op.problem),
+		expectedEffect: op.expectedEffect === undefined ? undefined : str(op.expectedEffect),
+		value: op.value === undefined ? undefined : text(op.value),
+		acceptanceCriteria:
+			op.acceptanceCriteria === undefined ? undefined : strList(op.acceptanceCriteria),
+		dependsOn: op.dependsOn === undefined ? undefined : strList(op.dependsOn),
+		sourceIds: op.sourceIds === undefined ? undefined : strList(op.sourceIds),
+		behaviour
+	};
+};
+
 export const EVOLUTION_OPERATIONS = [
 	'open_request',
 	'update_request',
 	'set_leaves',
+	'add_draft_leaf',
+	'update_draft_leaf',
+	'remove_draft_leaf',
 	'propose',
 	'decide_proposal',
 	'tag_reviewers',
@@ -167,7 +218,12 @@ export async function applyEvolutionOperations(
 	const ctx: ActContext = {
 		actor: input.actor,
 		at: services.clock.nowIso(),
-		newId: () => crypto.randomUUID()
+		newId: () => crypto.randomUUID(),
+		// Who signs follows the roster (ac-evo-req-13). A workspace with nobody
+		// else in it has nobody to counter-sign, so the client carries the request
+		// through on the person's behalf; the channel is stamped on the timeline
+		// either way, so a later reader always knows how the decision arrived.
+		soloWorkspace: view.members.length <= 1
 	};
 	const knownLeafIds = new Set(view.leaves.map((l) => l.id));
 	const leafNames = Object.fromEntries(view.leaves.map((l) => [l.id, l.name]));
@@ -186,6 +242,60 @@ export async function applyEvolutionOperations(
 				: [...working.evolution.requests, request]
 		};
 		working.touched.add(request.id);
+	};
+
+	/**
+	 * One gate, crossed. When the gate is the one into Verify, the crossing
+	 * freezes the specification AND writes what the request drafted into the
+	 * features section: the single moment a dossier touches a section
+	 * (ac-evo-draft-5). Everywhere else a draft stays a draft.
+	 */
+	const crossOnce = (request: EvolutionRequest, waiverReason?: string): ActOutcome => {
+		const outcome = crossStageAct(ctx, request, {
+			criticalEmptyCount: maturityOf(view, working.features, request).criticalEmptyCount,
+			waiverReason
+		});
+		if (!outcome.ok) return outcome;
+		if (outcome.request.stage !== 'implementation') return outcome;
+		const written = materialiseDrafts(working.features, outcome.request, ctx.at);
+		if (!written.changed) return outcome;
+		working.features = written.features;
+		working.featuresChanged = true;
+		return {
+			ok: true,
+			request: written.request,
+			summary: `${outcome.summary}. ${written.lines.join('. ')}`
+		};
+	};
+
+	/**
+	 * A request with nothing to arbitrate finishes its run in the same act
+	 * (ac-evo-req-12): the gates are crossed, the drafts are written, the dossier
+	 * closes. Nobody is asked anything, because there is nothing to ask.
+	 *
+	 * It runs only when the readings themselves have just come back, so it is
+	 * predictable: you asked for the impact and the coherence, they said nothing
+	 * moves, and the dossier got out of your way.
+	 */
+	const settle = (request: EvolutionRequest): ActOutcome => {
+		let current = request;
+		const summaries: string[] = [];
+		for (let guardCount = 0; guardCount < STAGE_ORDER.length; guardCount++) {
+			if (current.stage === 'delivered') break;
+			const crossed = crossOnce(current);
+			// A gate that refuses means there IS something to arbitrate after all.
+			// Leave the request where it stands rather than forcing it through.
+			if (!crossed.ok) return { ok: true, request: current, summary: summaries.join('. ') };
+			current = crossed.request;
+			summaries.push(crossed.summary);
+		}
+		const closed = closeRequestAct(ctx, current);
+		if (!closed.ok) return { ok: true, request: current, summary: summaries.join('. ') };
+		return {
+			ok: true,
+			request: closed.request,
+			summary: `Nothing moves and nothing contradicts, so this request crossed its gates and closed itself. ${summaries.join('. ')}`
+		};
 	};
 
 	for (let index = 0; index < input.operations.length; index++) {
@@ -267,6 +377,15 @@ export async function applyEvolutionOperations(
 			case 'set_leaves':
 				outcome = setLeavesAct(ctx, request, strList(op.leafIds), knownLeafIds);
 				break;
+			case 'add_draft_leaf':
+				outcome = addDraftLeafAct(ctx, request, draftInput(op), knownLeafIds);
+				break;
+			case 'update_draft_leaf':
+				outcome = updateDraftLeafAct(ctx, request, str(op.draftId), draftInput(op), knownLeafIds);
+				break;
+			case 'remove_draft_leaf':
+				outcome = removeDraftLeafAct(ctx, request, str(op.draftId));
+				break;
 			case 'propose':
 				outcome = proposeAct(
 					ctx,
@@ -329,12 +448,21 @@ export async function applyEvolutionOperations(
 				const hypothesis = isImpactHypothesis(op.hypothesis) ? op.hypothesis : request.impactReport.hypothesis;
 				const depth = num(op.depth, request.impactReport.depth);
 				const graph = await services.loadKnowledgeGraph.execute(input.projectId);
+				// The walk runs over the product as THIS request would leave it: the
+				// graph with its drafts laid on top, and nothing written anywhere
+				// (ac-evo-ovl-1, ac-evo-ovl-4). Exactly one overlay, so two requests
+				// never read each other's drafts (ac-evo-ovl-6).
+				const overlaid = overlayGraph(
+					{ nodes: graph.nodes, edges: graph.edges },
+					request.drafts
+				);
 				const spec = propagateImpact({
 					request,
 					hypothesis,
 					depth,
-					graph: { nodes: graph.nodes, edges: graph.edges },
-					terms: view.glossaryTerms.map((t) => ({ id: t.id, term: t.term, synonymsAllowed: t.synonymsAllowed }))
+					graph: overlaid,
+					terms: view.glossaryTerms.map((t) => ({ id: t.id, term: t.term, synonymsAllowed: t.synonymsAllowed })),
+					draftNodeIds: draftNodeIds(request.drafts)
 				});
 				// The code plane: the files anchoring the touched features and the
 				// features the spec plane reached, read off the synced index.
@@ -342,6 +470,9 @@ export async function applyEvolutionOperations(
 					...reachedFeatures(spec),
 					...Object.fromEntries(request.leafIds.map((id) => [id, 1]))
 				};
+				// A drafted feature has no code to anchor on, by construction: it does
+				// not exist. The code plane reads the real leaves only, and says so by
+				// leaving the draft out rather than reporting an empty file list for it.
 				const featureIds = Object.keys(depthByFeature).filter((id) => knownLeafIds.has(id));
 				const statuses = Object.fromEntries(
 					await mapLimit(featureIds, 2, async (id) => [id, await featureStatus(services, id)] as const)
@@ -352,11 +483,27 @@ export async function applyEvolutionOperations(
 			}
 			case 'run_coherence': {
 				const { analysis } = await services.loadCoherenceDraft.execute(input.projectId);
-				outcome = runCoherenceAct(
-					ctx,
+				const mapped = mapCoherenceAnalysis({ request, analysis, leafNames, at: ctx.at });
+				// The engine walks what EXISTS, so it has nothing to say about a
+				// capability that does not exist yet. What only a draft can contradict
+				// is computed here and published beside it (ac-evo-ovl-2).
+				const fromDrafts = draftCoherence({
 					request,
-					mapCoherenceAnalysis({ request, analysis, leafNames, at: ctx.at })
-				);
+					leafNames,
+					dependsOn: Object.fromEntries(
+						Object.entries(working.features.leafMeta ?? {}).map(([id, meta]) => [
+							id,
+							meta.dependsOn ?? []
+						])
+					),
+					bannedWords: view.glossaryTerms.flatMap((t) =>
+						(t.synonymsAvoid ?? []).map((avoid) => ({ avoid, prefer: t.term }))
+					)
+				});
+				outcome = runCoherenceAct(ctx, request, {
+					...mapped,
+					findings: [...mapped.findings, ...fromDrafts]
+				});
 				break;
 			}
 			case 'build_implementation_report': {
@@ -384,10 +531,10 @@ export async function applyEvolutionOperations(
 				break;
 			}
 			case 'cross_stage':
-				outcome = crossStageAct(ctx, request, {
-					criticalEmptyCount: maturityOf(view, working.features, request).criticalEmptyCount,
-					waiverReason: typeof op.waiverReason === 'string' ? op.waiverReason : undefined
-				});
+				outcome = crossOnce(
+					request,
+					typeof op.waiverReason === 'string' ? op.waiverReason : undefined
+				);
 				break;
 			case 'lift_waiver':
 				outcome = liftWaiverAct(ctx, request);
@@ -453,6 +600,18 @@ export async function applyEvolutionOperations(
 				outcome = refuse(`Unknown operation "${name}".`, `The operations are: ${EVOLUTION_OPERATIONS.join(', ')}.`);
 		}
 		if (!record(outcome)) break;
+		// The readings have just come back. If they say nothing moves and nothing
+		// contradicts, the dossier costs its author nothing further.
+		if (
+			(name === 'run_coherence' || name === 'run_impact') &&
+			outcome.ok &&
+			outcome.request.stage === 'specification' &&
+			nothingToArbitrate(outcome.request)
+		) {
+			const settled = settle(outcome.request);
+			if (settled.ok && settled.request.stage !== 'specification')
+				record(settled, settled.request.id);
+		}
 	}
 
 	if (results.some((r) => !r.ok)) return { ok: false, status: 422, results };

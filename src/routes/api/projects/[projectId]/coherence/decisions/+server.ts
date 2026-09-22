@@ -1,12 +1,14 @@
 import { json, error } from '@sveltejs/kit';
 import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
-import { canSettle, reopenGap, settleGap } from '$domain/coherence';
+import { callerKind } from '$lib/server/caller.server';
+import { canReopen, canSettle, dropPreparation, reopenGap, settleGap } from '$domain/coherence';
+import type { GapDecisionStatus } from '$domain/coherence';
 import type { RequestHandler } from './$types';
 
 /**
- * Decide about a coherence gap: accept the risk, decide not to fix it, or
- * reopen a settled one. Server-side on purpose: the author is the caller's
+ * Decide about a coherence gap: accept the risk, record that it is deliberate
+ * and correct (by design), decide not to fix it, or reopen a settled one. Server-side on purpose: the author is the caller's
  * session (never a client-supplied name), the gap must be open right now (a
  * stale card cannot settle what a fresh analysis no longer reports), and a
  * blocking gap is refused here exactly as the domain refuses it.
@@ -28,20 +30,28 @@ export const POST: RequestHandler = async (event) => {
 	};
 	const gapId = typeof body.gapId === 'string' ? body.gapId.trim() : '';
 	const reason = typeof body.reason === 'string' ? body.reason : '';
-	const status = body.status;
+	const ACCEPTED: readonly GapDecisionStatus[] = ['accepted_risk', 'by_design', 'wont_fix', 'reopened'];
+	const isDecisionStatus = (v: unknown): v is GapDecisionStatus =>
+		typeof v === 'string' && (ACCEPTED as readonly string[]).includes(v);
 	if (!gapId) error(400, 'gapId is required');
-	if (status !== 'accepted_risk' && status !== 'wont_fix' && status !== 'reopened')
-		error(400, 'status must be accepted_risk, wont_fix or reopened');
+	if (!isDecisionStatus(body.status))
+		error(400, 'status must be accepted_risk, by_design, wont_fix or reopened');
+	const status = body.status;
 
 	const services = getServices();
 	const session = services.currentSession();
-	const author = { id: session.email ?? 'local', kind: 'person' as const };
+	// Read from the request, never assumed. This was hardcoded to 'person', which
+	// made the domain's person-only guard unreachable: the MCP names itself on
+	// every call it makes, and its decisions were being recorded as a person's.
+	const author = { id: session.email ?? 'local', kind: callerKind(request) };
 	const view = await services.loadCoherenceDraft.execute(projectId);
 	const now = services.clock.nowIso();
 	const id = `decision-${crypto.randomUUID().slice(0, 8)}`;
 
 	let next;
 	if (status === 'reopened') {
+		const allowed = canReopen(author);
+		if (!allowed.ok) error(409, { message: allowed.why });
 		const settled = view.analysis.settled?.find((s) => s.gap.id === gapId);
 		if (!settled && !view.draft.acknowledgedGapIds.includes(gapId))
 			error(409, { message: 'This gap is not settled; nothing to reopen.' });
@@ -54,7 +64,10 @@ export const POST: RequestHandler = async (event) => {
 		next = settleGap(view.draft, { gapId, gapTitle, status, reason, author }, id, now);
 	}
 
-	const result = await services.saveCoherenceDraft.execute(next, {
+	// The decision is taken: whatever was prepared for that gap has served.
+	next = dropPreparation(next, gapId);
+
+	const result = await services.saveCoherenceDraft.executeDecided(next, {
 		expectedRevision: await services.sectionDocuments.currentRevision(projectId, 'coherence'),
 		origin: request.headers.get('x-lyriks-client')
 	});

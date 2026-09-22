@@ -5,6 +5,7 @@ import {
 	simulate,
 	type AcceptanceSpec,
 	type CoverageGap,
+	type JourneyFlow,
 	type RunError
 } from '$domain/experience';
 import type {
@@ -85,6 +86,16 @@ export interface JourneyVerification {
 	/** Screen the simulated run actually ended on. */
 	reachedScreenId: string | null;
 	actionCount: number;
+	/** How many of those came from the steps' own authored interactions. */
+	authoredActionCount: number;
+	/**
+	 * True when the run executed at least one interaction. A journey whose stops
+	 * share one screen needs no navigation, so once its steps carry no actions the
+	 * run reaches the final screen having done NOTHING: `ok` then says only that
+	 * nothing broke, never that the journey's controls, guards or access checks
+	 * were exercised.
+	 */
+	exercised: boolean;
 	/** True when the run reached the journey's final screen with zero errors. */
 	ok: boolean;
 	reachedFinal: boolean;
@@ -233,32 +244,35 @@ export class VerifyExperienceUseCase {
 			entityNames: data.entities.map((e) => e.name)
 		});
 
-		const journeys: JourneyVerification[] = draft.journeys
+		const flows = draft.journeys
 			.slice()
 			.sort((a, b) => a.order - b.order)
-			.map((j) => {
-				const flow = deriveJourneyFlow(draft, j);
-				// Drive the derived happy-path headlessly from the journey's first screen.
-				const run = simulate(draft.builder, {
-					startScreenId: flow.startScreenId,
-					actions: flow.script
-				});
-				const reachedFinal = flow.finalScreenId
-					? run.finalScreenId === flow.finalScreenId
-					: run.errors.length === 0;
-				return {
-					journeyId: j.id,
-					name: flow.name,
-					startScreenId: flow.startScreenId,
-					finalScreenId: flow.finalScreenId,
-					reachedScreenId: run.finalScreenId,
-					actionCount: flow.script.length,
-					ok: run.ok && reachedFinal && flow.flowGaps.length === 0,
-					reachedFinal,
-					errors: run.errors,
-					flowGaps: flow.flowGaps
-				};
+			.map((j) => deriveJourneyFlow(draft, j));
+
+		const journeys: JourneyVerification[] = flows.map((flow) => {
+			// Drive the derived happy-path headlessly from the journey's first screen.
+			const run = simulate(draft.builder, {
+				startScreenId: flow.startScreenId,
+				actions: flow.script
 			});
+			const reachedFinal = flow.finalScreenId
+				? run.finalScreenId === flow.finalScreenId
+				: run.errors.length === 0;
+			return {
+				journeyId: flow.journeyId,
+				name: flow.name,
+				startScreenId: flow.startScreenId,
+				finalScreenId: flow.finalScreenId,
+				reachedScreenId: run.finalScreenId,
+				actionCount: flow.script.length,
+				authoredActionCount: flow.authoredActionCount,
+				exercised: flow.script.length > 0,
+				ok: run.ok && reachedFinal && flow.flowGaps.length === 0,
+				reachedFinal,
+				errors: run.errors,
+				flowGaps: flow.flowGaps
+			};
+		});
 
 		// Ask Unspaghettit for the authoritative spec verdict over the projected
 		// experience feature (the kernel is already current from the last save).
@@ -275,7 +289,7 @@ export class VerifyExperienceUseCase {
 			),
 			...engineBlockers(engine)
 		];
-		const advisories = engineAdvisories(engine);
+		const advisories = [...engineAdvisories(engine), ...unexercisedAdvisories(journeys, flows)];
 		// Only journeys that actually have steps gate readiness. The engine, when
 		// reachable, is authoritative: its gated verdict must pass and no reachable
 		// invariant may break.
@@ -483,6 +497,25 @@ function engineBlockers(engine: ExperienceEngineVerdict): string[] {
 		out.push(`Invariant "${v.invariantName}" can break${path}.`);
 	}
 	return out;
+}
+
+/**
+ * Name every journey this run declared sound WITHOUT executing a single
+ * interaction. Two stops on the same screen need no navigation, so a journey
+ * whose steps carry no `actions` reaches its final screen having done nothing,
+ * and would otherwise read exactly like one whose every control was proven.
+ */
+function unexercisedAdvisories(
+	journeys: readonly JourneyVerification[],
+	flows: readonly JourneyFlow[]
+): string[] {
+	return journeys.flatMap((j, i) =>
+		j.ok && !j.exercised && flows[i].stops.length > 0
+			? [
+					`Journey "${j.name}" was verified without executing any interaction, so nothing about its controls, guards or access checks was proven. Give its steps the interactions they perform (steps[].actions).`
+				]
+			: []
+	);
 }
 
 /** Non-gating engine signals: worth fixing, but they never flip `ready`. */

@@ -21,11 +21,14 @@ import {
 	isWalkthroughTarget,
 	isCanonicalSection,
 	isFieldThreadState,
+	DRAFT_LEAF_PREFIX,
 	MAX_IMPACT_DEPTH,
 	blockById,
 	fieldKey,
 	isLeafScoped,
 	type CoherenceFinding,
+	type DraftBehaviourNote,
+	type DraftLeaf,
 	type EvolutionRequest,
 	type FieldSignature,
 	type FieldThread,
@@ -175,7 +178,59 @@ function parseImpactFinding(src: Record<string, unknown>): ImpactFinding {
 		depth: num(src.depth, 1, 1, MAX_IMPACT_DEPTH),
 		severity: isImpactSeverity(src.severity) ? src.severity : 'none',
 		migrationImplied: typeof migration === 'boolean' ? migration : null,
-		ruleWork: ruleWork === 'replay' || ruleWork === 'rewrite' ? ruleWork : null
+		ruleWork: ruleWork === 'replay' || ruleWork === 'rewrite' ? ruleWork : null,
+		fromDraft: bool(src.fromDraft)
+	};
+}
+
+const BEHAVIOUR_KINDS = ['surface', 'state', 'action', 'rule', 'scenario'] as const;
+type BehaviourKind = (typeof BEHAVIOUR_KINDS)[number];
+const isBehaviourKind = (v: unknown): v is BehaviourKind =>
+	typeof v === 'string' && (BEHAVIOUR_KINDS as readonly string[]).includes(v);
+
+function parseBehaviourNote(src: Record<string, unknown>, index: number): DraftBehaviourNote {
+	return {
+		id: str(src.id) || `beh-${index}`,
+		// A row whose kind did not survive the trip is read as a rule: it is the
+		// one kind that says "something must hold" without claiming a shape.
+		kind: isBehaviourKind(src.kind) ? src.kind : 'rule',
+		name: str(src.name),
+		detail: str(src.detail)
+	};
+}
+
+/**
+ * What the request proposes. A dossier written before drafts existed carries
+ * none, and reads back with an empty list: the specification it produced is
+ * unaffected either way, because a draft never reached a section.
+ */
+function parseDraftLeaf(src: Record<string, unknown>, index: number): DraftLeaf {
+	const kind = src.kind;
+	const base = str(src.baseLeafId);
+	return {
+		id: str(src.id) || `${DRAFT_LEAF_PREFIX}${index}`,
+		kind: kind === 'amend' || kind === 'remove' ? kind : 'add',
+		baseLeafId: base === '' ? null : base,
+		name: str(src.name),
+		description: str(src.description),
+		coreId: str(src.coreId) || null,
+		parentFamilyId: str(src.parentFamilyId) || null,
+		objective: str(src.objective),
+		problem: str(src.problem),
+		expectedEffect: str(src.expectedEffect),
+		value: str(src.value),
+		acceptanceCriteria: (Array.isArray(src.acceptanceCriteria) ? src.acceptanceCriteria : [])
+			.filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
+			.map((c, i) => ({ id: str(c.id) || `ac-draft-${i}`, text: str(c.text) }))
+			.filter((c) => c.text !== ''),
+		dependsOn: strList(src.dependsOn),
+		sourceIds: strList(src.sourceIds),
+		behaviour: (Array.isArray(src.behaviour) ? src.behaviour : [])
+			.filter((b): b is Record<string, unknown> => !!b && typeof b === 'object')
+			.map(parseBehaviourNote)
+			.filter((b) => b.name !== ''),
+		materialisedAs: str(src.materialisedAs) || null,
+		materialisedAt: str(src.materialisedAt) || null
 	};
 }
 
@@ -326,6 +381,9 @@ function parseRequest(src: Record<string, unknown>): EvolutionRequest {
 		stage: isRequestStage(src.stage) ? src.stage : 'draft',
 		status: isRequestStatus(src.status) ? src.status : 'open',
 		leafIds,
+		drafts: (Array.isArray(src.drafts) ? src.drafts : [])
+			.filter((d): d is Record<string, unknown> => !!d && typeof d === 'object')
+			.map(parseDraftLeaf),
 		iteration: num(src.iteration, 1, 1),
 		iterations: (Array.isArray(src.iterations) ? src.iterations : [])
 			.filter((i): i is Record<string, unknown> => !!i && typeof i === 'object')

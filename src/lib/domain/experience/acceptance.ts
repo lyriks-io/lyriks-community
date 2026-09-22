@@ -56,6 +56,12 @@ export interface JourneyFlow {
 	stops: { step: string; screenId: string; screen: string }[];
 	/** Derived happy-path actions to drive the journey end-to-end (best-effort). */
 	script: SimAction[];
+	/**
+	 * How many of `script` come from the steps' own authored `actions`, as opposed
+	 * to the navigation this derivation had to plan. Zero means the run proves
+	 * nothing about what happens ON the screens: it only walked between them.
+	 */
+	authoredActionCount: number;
 	startScreenId: string | null;
 	/** URL route of the first stop (entry of this journey), for E2E `goto`. */
 	entryPath: string | null;
@@ -132,14 +138,18 @@ export function deriveJourneyFlow(draft: ProjectExperienceDraft, journey: Journe
 		return s ? screenPath(s) : '/';
 	};
 	const script: SimAction[] = [];
+	let authoredActionCount = 0;
 	const flowGaps: string[] = [];
 	const hops: JourneyHop[] = [];
 	const start = stops[0]?.screenId ?? draft.builder.entryScreenId;
 	for (let i = 0; i < stops.length; i++) {
 		const from = stops[i];
 		const actions = steps.find((s) => s.id === from.stepId)?.actions;
-		if (Array.isArray(actions)) script.push(...actions);
-		else if (actions !== undefined) flowGaps.push(`Step "${from.step}" actions must be an array.`);
+		if (Array.isArray(actions)) {
+			script.push(...actions);
+			authoredActionCount += actions.length;
+		} else if (actions !== undefined)
+			flowGaps.push(`Step "${from.step}" actions must be an array.`);
 		const to = stops[i + 1];
 		if (!to) continue;
 		if (from.screenId === to.screenId) continue; // same screen, no nav needed
@@ -221,6 +231,7 @@ export function deriveJourneyFlow(draft: ProjectExperienceDraft, journey: Journe
 		name: journey.name?.trim() || 'Journey',
 		stops,
 		script,
+		authoredActionCount,
 		startScreenId: stops[0]?.screenId ?? draft.builder.entryScreenId ?? null,
 		entryPath: stops[0] ? pathOf(stops[0].screenId) : null,
 		hops,

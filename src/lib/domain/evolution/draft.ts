@@ -120,6 +120,12 @@ export interface ImpactFinding {
 	 * alike, so they are never counted together.
 	 */
 	ruleWork: 'replay' | 'rewrite' | null;
+	/**
+	 * True when the walk reached this node from one of the request's drafts
+	 * rather than from a feature that already exists (ac-evo-ovl-1). Absent on
+	 * rows computed before drafts existed, which read as "from what exists".
+	 */
+	fromDraft?: boolean;
 }
 
 /** One line of the implementation report: a requirement confronted with the code. */
@@ -305,6 +311,104 @@ export interface HistoryEntry {
 	channel: ActorChannel | null;
 }
 
+/* ───────────────────────── The change, as a draft ───────────────────────── */
+
+/**
+ * The three things a change can be. `add` is a capability the product does not
+ * have; `amend` is an existing one in the form the change would leave it in;
+ * `remove` is an existing one the change takes away.
+ */
+export type DraftLeafKind = 'add' | 'amend' | 'remove';
+
+/** The prefix that tells a draft leaf id from a real one, everywhere. */
+export const DRAFT_LEAF_PREFIX = 'draft:';
+
+/** Whether a feature id names a draft carried by a request rather than a leaf of the tree. */
+export const isDraftLeafId = (id: string): boolean => id.startsWith(DRAFT_LEAF_PREFIX);
+
+/** One testable statement the draft must satisfy, shaped like a leaf criterion. */
+export interface DraftCriterion {
+	readonly id: string;
+	text: string;
+}
+
+/**
+ * One row of the draft's behaviour: a surface, a state, an action, a rule or a
+ * scenario, named and described.
+ *
+ * It is deliberately prose rather than the kernel's own shape. The kernel models
+ * what EXISTS; a draft is a thing that does not exist yet, and giving it kernel
+ * rows would put it in the engine, which is the one thing the dossier must not
+ * do. What is written here is what the freeze hands to the behaviour tools.
+ */
+export interface DraftBehaviourNote {
+	readonly id: string;
+	kind: 'surface' | 'state' | 'action' | 'rule' | 'scenario';
+	name: string;
+	detail: string;
+}
+
+/**
+ * What the request proposes, held by the dossier and written nowhere else.
+ *
+ * A draft is named among the features the request touches, exactly like an
+ * existing leaf, so the impact report, the coherence check and the prototype can
+ * be computed FROM the change instead of from the hole where it would sit
+ * (ac-evo-draft-3, ac-evo-ovl-1). It carries what a leaf carries, so the freeze
+ * has everything it needs to write it into the features section and nothing has
+ * to be retyped (ac-evo-draft-2, ac-evo-draft-5).
+ *
+ * Deleting the request deletes its drafts, and the specification is exactly as
+ * it was (ac-evo-draft-4).
+ */
+export interface DraftLeaf {
+	/** `draft:<something>`; usable as a leafId for as long as the request lives. */
+	readonly id: string;
+	kind: DraftLeafKind;
+	/** The existing leaf this stands for. Null on an addition, required otherwise. */
+	baseLeafId: string | null;
+	name: string;
+	description: string;
+	/** Where it would hang in the tree. Null until someone says. */
+	coreId: string | null;
+	parentFamilyId: string | null;
+	objective: string;
+	problem: string;
+	expectedEffect: string;
+	value: string;
+	acceptanceCriteria: DraftCriterion[];
+	/** Existing leaf ids, or other drafts of the same request. */
+	dependsOn: string[];
+	sourceIds: string[];
+	behaviour: DraftBehaviourNote[];
+	/** Set by the freeze that wrote it into the sections, with the id it took. */
+	materialisedAs: string | null;
+	materialisedAt: string | null;
+}
+
+export function createDraftLeaf(overrides: Partial<DraftLeaf> = {}): DraftLeaf {
+	return {
+		id: `${DRAFT_LEAF_PREFIX}${crypto.randomUUID()}`,
+		kind: 'add',
+		baseLeafId: null,
+		name: '',
+		description: '',
+		coreId: null,
+		parentFamilyId: null,
+		objective: '',
+		problem: '',
+		expectedEffect: '',
+		value: '',
+		acceptanceCriteria: [],
+		dependsOn: [],
+		sourceIds: [],
+		behaviour: [],
+		materialisedAs: null,
+		materialisedAt: null,
+		...overrides
+	};
+}
+
 /** One numbered attempt, with the report it produced. */
 export interface Iteration {
 	readonly number: number;
@@ -334,6 +438,12 @@ export interface EvolutionRequest {
 	 * reports as the hole it is.
 	 */
 	leafIds: string[];
+	/**
+	 * What the change proposes, held here and written into no section until the
+	 * freeze. A draft's id appears in `leafIds` like any other touched feature,
+	 * which is what lets the reports be computed from the change itself.
+	 */
+	drafts: DraftLeaf[];
 	/** Numbered from one, only ever moving forward. */
 	iteration: number;
 	iterations: Iteration[];
@@ -421,6 +531,7 @@ export function createEvolutionRequest(
 		stage: 'draft',
 		status: 'open',
 		leafIds: [],
+		drafts: [],
 		iteration: 1,
 		iterations: [],
 		specVersion: 0,

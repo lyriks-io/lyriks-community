@@ -20,7 +20,13 @@
 		type IncoherenceKind,
 		type SettledIncoherence
 	} from '$domain/coherence/incoherence';
-	import { coverageScoreOf, type FormalEngineStatus, type GapProvenance } from '$domain/coherence';
+	import {
+		coverageScoreOf,
+		verdictFor,
+		type CoherenceVerdict,
+		type FormalEngineStatus,
+		type GapProvenance
+	} from '$domain/coherence';
 	import { FOCUS_META, focusList, type CoherenceFocus, type ScorePoint, type VisitDelta } from '$domain/coherence';
 	import { UNPLANNED_RELEASE_ID, type MaturityBreakdownRow } from '$domain/features/trl-breakdown';
 	import { projectSyncKey } from '$lib/shared/section-sync';
@@ -290,7 +296,16 @@
 		if (v >= 60) return { label: 'Watch', cls: 'text-warning-400' };
 		return { label: 'Critical', cls: 'text-danger-400' };
 	}
-	const headerVerdict = $derived(verdict(coherence.coherenceScore));
+	// The COHERENCE word comes from the domain, the same call the MCP section
+	// read serves, so what is shown here and what an agent reports cannot drift.
+	const VERDICT_CHROME: Record<CoherenceVerdict, { label: string; cls: string }> = {
+		strong: { label: 'Strong', cls: 'text-success-400' },
+		watch: { label: 'Watch', cls: 'text-warning-400' },
+		critical: { label: 'Critical', cls: 'text-danger-400' }
+	};
+	const headerVerdict = $derived(
+		VERDICT_CHROME[verdictFor(coherence.coherenceScore, blockingCount, highSeverityCount)]
+	);
 	function barColor(s: number): string {
 		return s >= 80 ? '#10b981' : s >= 50 ? '#f59e0b' : '#ec4899';
 	}

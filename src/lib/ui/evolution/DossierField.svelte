@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Icon } from '$ui/design-system';
+	import { sourceHref } from '$domain/documents';
 	import SignatureStrip from './SignatureStrip.svelte';
 	import type { BlockField, Guarded } from '$domain/evolution';
 
@@ -124,8 +125,12 @@
 
 	const sourceOf = (id: string) => sources.find((s) => s.id === id);
 	const titleOf = (id: string) => sourceOf(id)?.title ?? id;
-	/** A link when the row points at one, otherwise the register itself. */
-	const isLink = (id: string) => /^https?:\/\//i.test(sourceOf(id)?.url ?? '');
+	/**
+	 * A link when the row points at one, otherwise the register itself. The test
+	 * is the register's own, so an uploaded file and a mail address open here too
+	 * instead of falling through to "go and look it up yourself".
+	 */
+	const isLink = (id: string) => sourceHref({ url: sourceOf(id)?.url ?? '' }) !== null;
 	const isList = $derived(field.kind === 'list');
 	const rows = $derived(isList ? 4 : field.multiline ? 3 : 2);
 </script>
@@ -258,7 +263,7 @@
 				<!-- A citation nobody can open is a citation nobody can check. -->
 				{#if isLink(id)}
 					<a
-						href={source?.url}
+						href={sourceHref({ url: source?.url ?? '' })}
 						target="_blank"
 						rel="noreferrer"
 						title={source?.note || source?.url}

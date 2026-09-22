@@ -421,6 +421,7 @@ export const ALL_ROWS = Number.MAX_SAFE_INTEGER;
  */
 export const DOSSIER_PARTS = [
 	'summary',
+	'drafts',
 	'fields',
 	'proposals',
 	'impact',
@@ -554,6 +555,55 @@ export function dossierFieldRows(view: EvolutionView, request: EvolutionRequest)
 /** Keeps what belongs to one touched feature, when the reader named one. */
 const forLeaf = <T extends { leafId: string | null }>(items: readonly T[], leaf?: string) =>
 	leaf ? items.filter((item) => item.leafId === leaf) : items;
+
+/**
+ * What the request proposes, in full.
+ *
+ * A draft is the only thing on a dossier a client has to read back WHOLE before
+ * it can amend it: everything else on the page is a reading of a section that
+ * can be read where it lives. Paged like the other lists, for the same reason.
+ */
+export function draftsPart(
+	view: EvolutionView,
+	request: EvolutionRequest,
+	opts: DossierOptions = {}
+) {
+	const all = request.drafts;
+	const kept = opts.leaf ? all.filter((d) => d.id === opts.leaf || d.baseLeafId === opts.leaf) : all;
+	const paged = page(kept, opts);
+	return {
+		...headOf(request),
+		drafts: {
+			leaf: opts.leaf ?? null,
+			total: all.length,
+			matched: kept.length,
+			offset: paged.offset,
+			limit: paged.limit,
+			entries: paged.returned.map((draft) => ({
+				id: draft.id,
+				kind: draft.kind,
+				baseLeafId: draft.baseLeafId,
+				baseLeafName: draft.baseLeafId
+					? (view.leaves.find((l) => l.id === draft.baseLeafId)?.name ?? draft.baseLeafId)
+					: null,
+				name: draft.name,
+				description: draft.description,
+				coreId: draft.coreId,
+				parentFamilyId: draft.parentFamilyId,
+				objective: draft.objective,
+				problem: draft.problem,
+				expectedEffect: draft.expectedEffect,
+				value: draft.value,
+				acceptanceCriteria: draft.acceptanceCriteria,
+				dependsOn: draft.dependsOn,
+				sourceIds: draft.sourceIds,
+				behaviour: draft.behaviour,
+				materialisedAs: draft.materialisedAs,
+				materialisedAt: draft.materialisedAt
+			}))
+		}
+	};
+}
 
 /** The fields of a request, narrowed to one touched feature and paged. */
 export function fieldsPart(view: EvolutionView, request: EvolutionRequest, opts: DossierOptions = {}) {
@@ -711,6 +761,8 @@ export function requestPart(
 	opts: DossierOptions & { part: Exclude<DossierPart, 'summary'> }
 ) {
 	switch (opts.part) {
+		case 'drafts':
+			return draftsPart(view, request, opts);
 		case 'fields':
 			return fieldsPart(view, request, opts);
 		case 'proposals':
@@ -754,7 +806,25 @@ export function requestSummary(view: EvolutionView, request: EvolutionRequest, a
 		shownStage: supportedStage(request, maturity.criticalEmptyCount),
 		createdAt: request.createdAt,
 		leafIds: request.leafIds,
-		leaves: request.leafIds.map((id) => ({ id, name: view.leaves.find((l) => l.id === id)?.name ?? id })),
+		leaves: request.leafIds.map((id) => ({
+			id,
+			name:
+				view.leaves.find((l) => l.id === id)?.name ??
+				request.drafts.find((d) => d.id === id)?.name ??
+				id,
+			// A touched feature that does not exist yet says so, so a reader never
+			// goes looking for it in the tree.
+			drafted: request.drafts.some((d) => d.id === id)
+		})),
+		// ac-evo-draft-6: what the request proposes, counted here and read in full
+		// through part "drafts".
+		drafts: {
+			total: request.drafts.length,
+			added: request.drafts.filter((d) => d.kind === 'add').length,
+			amended: request.drafts.filter((d) => d.kind === 'amend').length,
+			removed: request.drafts.filter((d) => d.kind === 'remove').length,
+			written: request.drafts.filter((d) => d.materialisedAs !== null).length
+		},
 		iteration: request.iteration,
 		specVersion: request.specVersion,
 		frozen: request.frozen,

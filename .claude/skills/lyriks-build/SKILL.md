@@ -65,6 +65,9 @@ scope declared; foundation written; feature tree built; each leaf's behavior
 depth authored (each core when leaves are many); data reconciled; experience
 scaffold and screens built; audits green; and right before `finish_project`.
 The recap lists every product decision taken since the previous checkpoint.
+"Audits green" is never one number: it is every measure the product displays,
+each named (see *Verify locally, then prove global completion*). A recap that
+carries the flattering one and drops the low one is not a recap.
 
 **Two kinds of choice.** Modeling MECHANICS (enum or boolean, which surface
 holds a state, a rule's category, an effect's shape, how many scenarios, ids)
@@ -270,6 +273,15 @@ read source, and whenever the user wonders whether the spec matches the code.
 - **Continuously**: `get_provenance` answers "where does this element come
   from"; use it before asserting that a modeled behavior matches the code.
 
+**Read your own work back before you report on it.** You wrote the spec, so you
+are the worst judge of whether it says what you meant: the memory of writing it
+fills the gaps a reader will fall into. `get_implementation_context({project_id,
+screen_id})` returns the brief a builder would get from your screen,
+`get_provenance` says where an element claims to come from, and
+`get_view`/`get_knowledge_graph` show what the spec looks like from outside your
+own authoring order. A claim you have not read back from the product's side is
+a claim about your intentions, not about the spec.
+
 ## Sources & citations — document where every claim came from (MANDATORY)
 `documents` is THE project evidence register and the **single source of truth for evidence**: no other section keeps its own list of links. Everything else cites it by stable id through a `sourceIds: string[]` field. An analysis whose claims cite nothing is unauditable — and Lyriks exists to be auditable.
 
@@ -304,7 +316,12 @@ Global protocol:
 2. Resolve every blocking `issues[]` item through the owning section. Re-run until the only possible blocker is audit freshness.
 3. `audit_project_scope({project_id})` to snapshot the current external scope and every project-section revision.
 4. Re-read `assess_project_completeness`. If anything changed after the audit, it is stale: fix/re-audit.
-5. Call `finish_project({project_id})` only when the user asked to complete the project. Only a response with `completed:true` authorizes saying it is complete. A high section score, 100% Experience coverage, a clean simulation, generated evidence, or an agent's own review does not.
+5. **Read every headline the product itself shows, before writing a single number.** The completion tools answer with ONE measure; the Control Center beside the spec shows several others, and they do not move together. A project can audit at `score: 100`, `status: "ready"`, `canFinish: true` and read **COHERENCE 59, "Critical"** on the very same screen, because the audit asks "is this spec complete and auditable" while coherence counts **what is still waiting for a human**. Read `get_section(coherence)` (`analysis.readinessScore`, `analysis.dimensions`, and the length of `analysis.gaps`) and say which dimension is lowest and why.
+6. Call `finish_project({project_id})` only when the user asked to complete the project. Only a response with `completed:true` authorizes saying it is complete. A high section score, 100% Experience coverage, a clean simulation, generated evidence, or an agent's own review does not.
+
+**Never write a bare score.** "100/100" is a number missing its subject. Name the measure, and give the others beside it: completion audit, coherence, coverage, build readiness. Picking the most flattering of several measures and presenting it as *the* result is the same failure as filling an empty field with a plausible value: it makes the work look finished to someone who cannot check, and the person opening the Control Center five minutes later reads a different number and stops trusting the whole report. When several measures disagree, the disagreement IS the finding: say which one is low, what it counts, and what would move it.
+
+**A low coherence score is often the PRICE of an honest register, and must be reported as such, never hidden.** Every issue authored in `rules.issues[]` is an incoherence the Control Center counts; an agent that leaves the register empty ships a better-looking score and a worse spec. So report the number together with its cause ("59, because 13 items await a decision: 5 real gaps in the product, 2 modelling decisions I took for you, 4 already settled, 1 deliberate transcription gap"), and never close an issue to move a score.
 
 When work stops before `finish_project`, report the exact persisted status and blockers: “authored”, “authored to TRL x” (a user-set depth cap, see `/lyriks-behavior`), “locally verified”, “ready for audit”, or “blocked by …”. Never translate one of those into “complete.”
 
@@ -318,6 +335,8 @@ Some coherence dings are expected on a sound spec; recognise them instead of bur
 - **Foundation "No roll-out strategy chosen" on a greenfield product** — there is nothing to migrate; leaving `operations.migration.strategy` empty is correct.
 - **Rules < 100 with "N issues still open"** — open/accepted-risk issues are a healthy spec, not a defect.
 - **Readiness/TRL 85–95, not 100** — 60% is gated on production maturity; a spec is not production-proven. Report this as "100% of what an analysis can assert," not a failure.
+
+**Recognising noise is not the same as hiding the number.** The three above are reasons not to burn passes chasing a score; they are never reasons to leave the score out of what you report. Give the number, then give the reason. "Coherence reads 59 because the register holds 13 items awaiting a decision, and here they are" is a finding; silence about the 59 is a report the user will correct with a screenshot.
 
 ## Gotchas
 - `tabs` presentation selects the active panel by **numeric index** stored at `tabsKey` (default 0), not by a label. Seed `{path:tabsKey, value:'0'}` or prefer stacked groups for always-visible content.

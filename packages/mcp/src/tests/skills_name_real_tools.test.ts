@@ -115,6 +115,10 @@ const NOT_TOOLS = new Set([
   'lift_waiver',
   'close_request',
   'delete_request',
+  // What a request PROPOSES, authored on the dossier by the same batch.
+  'add_draft_leaf',
+  'update_draft_leaf',
+  'remove_draft_leaf',
   // apply_behavior_batch op kind whose siblings are listed above.
   'remove_action',
   // Payload fields of a batch, not calls.

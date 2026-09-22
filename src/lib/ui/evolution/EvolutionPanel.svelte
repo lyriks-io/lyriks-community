@@ -117,7 +117,6 @@
 		report={data.reading.report}
 		history={data.reading.history}
 		leaves={data.leaves}
-		sources={data.sources}
 		members={data.members}
 		actorId={data.actor.id}
 		{canEdit}

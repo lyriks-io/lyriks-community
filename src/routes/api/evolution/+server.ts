@@ -18,7 +18,7 @@ import type { RequestHandler } from './$types';
  * calls, so an MCP client runs a request from the raw need to acceptance
  * without recomputing the dossier's rules from the raw section document.
  *
- *   GET  /api/evolution?projectId=<id>[&requestId=<id>][&part=fields|proposals|impact|report|readings|history]
+ *   GET  /api/evolution?projectId=<id>[&requestId=<id>][&part=drafts|fields|proposals|impact|report|readings|history]
  *        -> the board (every live request as a card), one dossier in counts,
  *           or one list of it, narrowed by `leaf` / `section` / `verdict` and
  *           paged by `offset` / `limit`.

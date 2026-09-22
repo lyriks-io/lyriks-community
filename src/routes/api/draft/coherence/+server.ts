@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { getServices } from '$composition/container.server';
 import { parseCoherenceDraft } from '$application/parse-coherence-draft';
 import { requireProjectAccess } from '$lib/server/project-access.server';
+import { callerKind } from '$lib/server/caller.server';
 import { saveSectionDraft } from '$lib/server/section-save.server';
 import type { RequestHandler } from './$types';
 
@@ -32,7 +33,13 @@ export const PUT: RequestHandler = (event) =>
 	saveSectionDraft(event, {
 		section: 'coherence',
 		parse: parseCoherenceDraft,
+		// Who is writing is read from the request, never from the body: it is what
+		// stamps a prepared decision with its author, and what keeps the section
+		// from being a way around the person-only rule on decisions.
 		persist: (draft, services, _projectId, save) =>
-			services.saveCoherenceDraft.execute(draft, save),
+			services.saveCoherenceDraft.execute(draft, save, {
+				id: services.currentSession().email ?? 'local',
+				kind: callerKind(event.request)
+			}),
 		atomic: true
 	});

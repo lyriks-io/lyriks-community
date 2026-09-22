@@ -9,6 +9,7 @@ import { HttpStatusError } from '../util/http-error.js'
 
 export const DOSSIER_PARTS = [
   'summary',
+  'drafts',
   'fields',
   'proposals',
   'impact',
@@ -26,7 +27,7 @@ export interface GetEvolutionArgs {
   verdict?: string
   /** impact: which run to read. The three hypotheses are all kept. */
   hypothesis?: string
-  /** fields, proposals, readings: keep what belongs to one touched feature. */
+  /** fields, proposals, readings, drafts: keep what belongs to one touched feature. */
   leaf?: string
   offset?: number
   limit?: number

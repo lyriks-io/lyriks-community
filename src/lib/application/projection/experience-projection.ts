@@ -33,7 +33,8 @@ import { experienceFeatureId } from './aux-feature-ids';
  * screen links → workflow surfaces/actions/transitions) plus personas; but the rich
  * authoring surface the kernel is a lossy projection of — the builder layout trees,
  * wiring, run state, the design library, brand, and the Lyriks-only per-step detail
- * (coreId, actorRoleIds, descriptions, `stepOperations`, `stepDataReads`) —
+ * (coreId, actorRoleIds, descriptions, `stepOperations`, `stepDataReads` and the
+ * `actions` a step scripts on its screen) —
  * lives here, keyed by the same kernel ids. On read the kernel journey layer is
  * overlaid onto this so dashboard/MCP edits round-trip (two-way binding); everything
  * else is served verbatim. Stored under section "experience".
@@ -53,9 +54,10 @@ export function experienceResidueFromDraft(draft: ProjectExperienceDraft): Exper
  * page (two-way binding). Kernel workflow surfaces are authoritative for which
  * journeys/steps exist and their names/order/screen links; the residue decorates
  * each with the Lyriks-only facet (coreId, actorRoleIds, description, operations,
- * data reads) keyed by id. Pure and framework-free; `derivedCores` is left empty
- * (the load use-case recomputes it). Layout/library/brand detail comes from residue;
- * kernel screen names and action identity overlay it so structural edits round-trip.
+ * data reads, and the step's authored `actions` script) keyed by id. Pure and
+ * framework-free; `derivedCores` is left empty (the load use-case recomputes it).
+ * Layout/library/brand detail comes from residue; kernel screen names and action
+ * identity overlay it so structural edits round-trip.
  */
 export function buildExperienceProjection(
 	projectId: string,
@@ -234,6 +236,9 @@ function overlayJourneyLayer(
 		if (!journeyId) return;
 		const bj = baseJourneyById.get(journeyId);
 		journeys.push({
+			// The residue decorates FIRST so no Lyriks-owned facet is lost by being
+			// forgotten from this list; the kernel-owned identity then overwrites it.
+			...bj,
 			id: journeyId,
 			coreId: bj?.coreId ?? '',
 			name: srf.name ?? bj?.name ?? '',
@@ -247,6 +252,11 @@ function overlayJourneyLayer(
 			const bs = baseStepById.get(stepId);
 			liveStepIds.add(stepId);
 			steps.push({
+				// Same law as the journeys above, and the one this overlay once broke.
+				// `actions` (the exact interactions authored ON this step's screen) is
+				// Lyriks-owned residue, so a step reshaped in the kernel comes back
+				// still carrying its script instead of silently losing it.
+				...bs,
 				id: stepId,
 				journeyId,
 				name: act.name ?? bs?.name ?? '',

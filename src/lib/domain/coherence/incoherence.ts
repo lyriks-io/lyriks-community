@@ -150,6 +150,36 @@ export interface CapabilityRef {
 
 /** Penalty (and recoverable gain) per severity. */
 const PENALTY: Record<GapSeverity, number> = { high: 20, medium: 10, low: 4 };
+
+/**
+ * How much a gap costs depending on WHO says so, as a share of its severity.
+ *
+ * A DECLARED gap is an author naming, in the register, something they chose not
+ * to invent: a threshold nobody decided, a retention nobody set, an edge the
+ * product does not handle. A DETECTED one is the spec contradicting itself
+ * without anyone noticing. Charging them the same makes the score anti-correlated
+ * with the behaviour it exists to encourage: a spec that hides its problems reads
+ * better than the same spec that names them, so the cheapest way to a good number
+ * is an empty register. That is the one thing this reading must never teach.
+ *
+ * So a declaration still costs (an open question is real debt, and a register
+ * nobody ever empties is its own problem), but a fraction of what a contradiction
+ * costs. `proven`, `reviewed` and `behavior` come from a check that ran, so they
+ * weigh like a detection.
+ */
+const PROVENANCE_WEIGHT: Record<GapProvenance, number> = {
+	declared: 0.4,
+	detected: 1,
+	proven: 1,
+	reviewed: 1,
+	behavior: 1
+};
+
+/** What one gap takes off the score: its severity, weighted by who says so. */
+export function penaltyOf(gap: Pick<Gap, 'id' | 'severity' | 'provenance'>): number {
+	return PENALTY[gap.severity] * PROVENANCE_WEIGHT[provenanceOf(gap)];
+}
+
 const SEVERITY_RANK: Record<GapSeverity, number> = { high: 0, medium: 1, low: 2 };
 
 const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
@@ -288,7 +318,7 @@ export function coherenceByDimension(
 		const entry = key ? byKey.get(key) : undefined;
 		if (!entry) continue;
 		entry.gapCount += 1;
-		entry.penalty += PENALTY[g.severity];
+		entry.penalty += penaltyOf(g);
 	}
 	for (const entry of byKey.values()) entry.score = clamp(100 - entry.penalty);
 	return byKey;
@@ -305,11 +335,15 @@ export function coherenceByDimension(
  * `SATURATION` is the half-life: at a summed penalty equal to it the score is
  * 50. Lower = harsher. Orthogonal to readiness (breadth): this is correctness.
  *
+ * Each gap is weighted by PROVENANCE before it is summed, so naming a problem
+ * in the register never costs as much as leaving the spec to contradict itself.
+ * See PROVENANCE_WEIGHT for why that asymmetry is the point of the reading.
+ *
  * THE single correctness formula — shared by the Control Center, the global
  * Coherence page, and the portfolio card so the number never drifts.
  */
 const SATURATION = 100;
 export function coherenceScoreOf(gaps: readonly Gap[]): number {
-	const penalty = gaps.reduce((sum, g) => sum + PENALTY[g.severity], 0);
+	const penalty = gaps.reduce((sum, g) => sum + penaltyOf(g), 0);
 	return clamp((100 * SATURATION) / (SATURATION + penalty));
 }

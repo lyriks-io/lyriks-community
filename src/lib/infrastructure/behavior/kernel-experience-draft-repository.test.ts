@@ -12,7 +12,8 @@ import {
 	createEmptyExperienceDraft,
 	createJourney,
 	createStep,
-	type ProjectExperienceDraft
+	type ProjectExperienceDraft,
+	type SimAction
 } from '$domain/experience';
 import { createEmptyDataDraft, type ProjectDataDraft } from '$domain/data';
 import { createEmptyFeaturesDraft, type ProjectFeaturesDraft } from '$domain/features';
@@ -159,6 +160,29 @@ describe('KernelExperienceDraftRepository (Phase 4 Experience flip)', () => {
 			{ id: 'J1', name: 'Checkout', coreId: 'coreA' }
 		]);
 		expect(back.steps.map((s) => s.id)).toEqual(['S1', 'S2']);
+	});
+
+	it('round-trips the interactions authored on a step, and keeps them across a re-save', async () => {
+		const { repo } = makeRepo();
+		const script: SimAction[] = [
+			{ nodeId: 'bld-row-world', rowIndex: 0 },
+			{ label: 'Amount', type: '42' },
+			{ label: 'Confirm', trigger: 'click', expectError: true }
+		];
+		const draft = sampleDraft('p1');
+		draft.steps[0].actions = script;
+		await repo.save(draft);
+
+		const back = (await repo.load('p1'))!;
+		expect(back.steps.find((s) => s.id === 'S1')!.actions).toEqual(script);
+
+		// The dangerous cycle: an unrelated edit re-saves what was just LOADED. A
+		// lossy load would quietly write the truncated steps back over the residue.
+		back.journeys[0].name = 'Checkout, renamed';
+		await repo.save(back);
+		const again = (await repo.load('p1'))!;
+		expect(again.journeys[0].name).toBe('Checkout, renamed');
+		expect(again.steps.find((s) => s.id === 'S1')!.actions).toEqual(script);
 	});
 
 	it('writes the central Experience feature and lists it in the project', async () => {

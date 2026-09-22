@@ -4,6 +4,70 @@ All notable changes to Lyriks Community are documented in this file. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the platform's semantic version.
 
+## [Unreleased]
+
+## [0.9.34] - 2026-09-22
+
+Who decides what leaves a score, and readings that disagreed with the screen.
+
+### Added
+
+- A coherence finding can be settled **by design**: the finding is correct and
+  the choice was deliberate, so nothing is at risk. The only exits until now all
+  asserted that something was wrong, and an author with a deliberate choice to
+  record left the finding open instead, which is how a register fills with
+  things already decided.
+- A client can PREPARE a decision on a finding: it names the disposition and
+  writes the reason, changes no score and takes nothing off the list. The person
+  reads it on the finding itself and takes it in one click, or turns it down.
+  Refusing a client the decision without offering it anything meant the same
+  findings came back, unargued, the next session.
+- The coherence section read carries the headline the panel prints: the score,
+  the word beside it, how many findings block, how many are severe, and the five
+  that weigh most on the number. A client that could not read it summarised the
+  list on its own, against thresholds it had guessed, and contradicted the
+  screen the person was looking at.
+- A change request carries what it PROPOSES: a draft feature to add, an existing
+  one in its amended form, or one marked for removal. The impact report, the
+  coherence check and the readings all run with those drafts laid over the
+  specification, so the impact walk starts from the change itself. Nothing
+  reaches a section before the crossing into Verify.
+- A journey reports how many actions it was authored with and whether it
+  exercised any. One verified without executing a single interaction is named in
+  the advisories instead of passing for a proof.
+
+### Changed
+
+- The coherence score weights a finding by WHO says so: one the author declared
+  costs 40 percent of one the engine detected. Charged the same, the reading
+  rewarded an empty register and taught every author to say nothing.
+- The COHERENCE verdict follows what the list holds, not how long it is.
+  "Critical" is kept for something blocking or of high severity; a register of
+  low and medium findings with nothing severe is a queue of decisions.
+- Deciding on a coherence finding is now refused to anything but a person at
+  every way in, and reopening is refused the same way, because it supersedes a
+  decision somebody took.
+- The authoring skills say to read every headline the product shows before
+  writing a number, to read their own work back before reporting on it, and to
+  say so plainly when they cannot see a screen instead of letting it pass.
+
+### Fixed
+
+- A finding could be settled by an AI client and recorded, and signed, as a
+  person's decision: the endpoint built its author without asking who was
+  calling, and the whole section could be written with decisions inside it,
+  author kind included. Both doors now read the caller from the request.
+- A step lost the actions it had been authored with when the journeys were read
+  back, and every later save wrote the loss down. The check that should have
+  caught it reported a successful run on a journey that executed nothing.
+- A permission row naming a capability that no longer exists no longer wedges
+  the access matrix shut. A stored dead grant is dropped on the next save and
+  named in the answer; one being introduced is still refused, with the canonical
+  id suggested.
+- A source citation resolves to the source on every surface, the Evolution
+  dossier included, instead of printing a bare title or a raw id with nothing to
+  click.
+
 ## [0.9.33] - 2026-09-21
 
 The corrective lot, from a build made end to end through the tools.

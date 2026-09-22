@@ -235,6 +235,18 @@ rebuild), the identity is not yours to design, it is theirs to extract: Rule 0
 overrides this rule entirely. Verify side by side (`verify_experience` frames
 against the real screens) and fix any divergence in the same pass.
 
+### Seeing is part of the job, and its absence is reportable
+
+`simulate_experience` proves a flow reaches its end. It proves NOTHING about
+how a screen looks, so a rule that says "verify visually" is not satisfied by a
+green run. Through the MCP alone there is no render, and that is a limit to
+declare, never one to paper over: build from the source, record every
+divergence the renderer forced in the screen's own description, and state in
+your report that the screens were not seen, asking for a screenshot or for the
+run to be opened. Reporting a transcription as verified when nothing was looked
+at is the one move this rule exists to prevent. If the runtime has a browser or
+a shell, use it before claiming anything.
+
 ## Verify design, not just flows
 
 After building, `simulate_experience` proves the flow; but also sanity-check the
