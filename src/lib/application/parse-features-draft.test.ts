@@ -110,4 +110,25 @@ describe('parseFeaturesDraft — requirement sources', () => {
 			f1: { sourceIds: ['source-1'], sourceLink: 'Legacy citation' }
 		});
 	});
+
+	it('keeps the row a value signed on a draft is waiting in', () => {
+		// An evolution request writes a signed value through to the features
+		// section under its draft's own id, because the feature it amends may not
+		// exist yet. Pruning it as an orphan destroyed what somebody signed.
+		const draft = parseFeaturesDraft(
+			{
+				features: [{ id: 'f1', name: 'Feature', coreId: '' }],
+				leafMeta: {
+					f1: { objective: 'Hold the product.' },
+					'draft:9f2': { objective: 'Signed, waiting for the freeze.' },
+					'feat-gone': { objective: 'A feature that no longer exists.' }
+				}
+			},
+			'p'
+		);
+
+		expect(draft.leafMeta?.['draft:9f2']?.objective).toBe('Signed, waiting for the freeze.');
+		// The prune still does the job it was written for.
+		expect(draft.leafMeta?.['feat-gone']).toBeUndefined();
+	});
 });

@@ -83,6 +83,55 @@ function criteriaOf(draft: DraftLeaf): { readonly id: string; text: string }[] {
 }
 
 /**
+ * A row of the features section keyed by a draft id rather than a feature id.
+ *
+ * It is where a value signed on a draft waits for the freeze: the dossier writes
+ * every field through to its canonical section (ac-evo-wt-2), and for a feature
+ * that does not exist yet that section has nowhere else to put it. The row is
+ * removed here, the moment the draft becomes a leaf, and by `pruneDraftMeta`
+ * when the request that carried it is deleted.
+ */
+export const DRAFT_META_PREFIX = 'draft:';
+
+/** Rows left behind by drafts that can no longer be signed. */
+export function pruneDraftMeta<T extends Tree>(
+	features: T,
+	draftIds: readonly string[]
+): { features: T; changed: boolean } {
+	const meta = { ...(features.leafMeta ?? {}) };
+	let changed = false;
+	for (const id of draftIds) {
+		if (id in meta) {
+			delete meta[id];
+			changed = true;
+		}
+	}
+	return changed ? { features: { ...features, leafMeta: meta }, changed } : { features, changed };
+}
+
+/**
+ * Acceptance criteria signed on a draft are ADDED to the ones the feature
+ * already carries, never substituted for them: an amendment that says one more
+ * thing must not silently drop the lines nobody questioned. An identical text is
+ * kept once, in the order it was first met.
+ */
+function mergeCriteria(
+	...lists: (readonly { readonly id: string; text: string }[] | undefined)[]
+): { readonly id: string; text: string }[] {
+	const out: { readonly id: string; text: string }[] = [];
+	const seen = new Set<string>();
+	for (const list of lists) {
+		for (const criterion of list ?? []) {
+			const key = criterion.text.trim().toLowerCase();
+			if (!key || seen.has(key)) continue;
+			seen.add(key);
+			out.push(criterion);
+		}
+	}
+	return out;
+}
+
+/**
  * What a draft's behaviour rows become once it is real: prose on the leaf, so
  * nothing the author wrote is lost between the dossier and the tree. The rows
  * themselves are for the behaviour tools to author against; this keeps them
@@ -134,6 +183,7 @@ export function materialiseDrafts<T extends Tree>(
 			if (!target) continue;
 			list = list.filter((f) => f.id !== target);
 			delete meta[target];
+			delete meta[draft.id];
 			became.set(draft.id, target);
 			written.push(draft);
 			lines.push(`Removed "${draft.name || target}" (${target})`);
@@ -178,20 +228,28 @@ export function materialiseDrafts<T extends Tree>(
 		}
 
 		const before = meta[id] ?? {};
+		// What a person signed on the draft. It arrives here rather than on the
+		// draft object whenever it came through a proposal, which is the ordinary
+		// road: the freeze writes what was SIGNED, not only what was typed.
+		const signed = meta[draft.id] ?? {};
 		const note = behaviourNote(draft);
 		meta[id] = {
 			...before,
 			status: before.status ?? 'backlog',
-			objective: draft.objective || before.objective,
-			problem: draft.problem || before.problem,
-			expectedEffect: draft.expectedEffect || before.expectedEffect,
-			value: draft.value || before.value,
-			acceptanceCriteria:
-				draft.acceptanceCriteria.length > 0 ? criteriaOf(draft) : before.acceptanceCriteria,
+			objective: draft.objective || signed.objective || before.objective,
+			problem: draft.problem || signed.problem || before.problem,
+			expectedEffect: draft.expectedEffect || signed.expectedEffect || before.expectedEffect,
+			value: draft.value || signed.value || before.value,
+			acceptanceCriteria: mergeCriteria(
+				before.acceptanceCriteria,
+				criteriaOf(draft),
+				signed.acceptanceCriteria
+			),
 			dependsOn: [...new Set([...(before.dependsOn ?? []), ...draft.dependsOn.map(resolve)])],
 			sourceIds: [...new Set([...(before.sourceIds ?? []), ...draft.sourceIds])],
 			code: note || before.code
 		};
+		delete meta[draft.id];
 		written.push(draft);
 		lines.push(
 			draft.kind === 'add'

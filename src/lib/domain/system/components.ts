@@ -69,20 +69,12 @@ export function host(components: readonly ComponentVersion[]): ComponentVersion[
 }
 
 /**
- * One line an operator can paste into a support ticket. Deliberately plain
- * text: it must survive a chat client, an email and a screenshot.
- */
-export function componentsDigest(components: readonly ComponentVersion[]): string {
-	return components
-		.map((c) => `${c.name}: ${c.version ?? statusWord(c.status)}`)
-		.join('\n');
-}
-
-/**
  * Everything the Versions screen knows, as plain text: version, status, the
- * component's own explanation and its build facts. This is the debugging
- * context a feedback report carries; `componentsDigest` stays the short form
- * for a chat message.
+ * component's own explanation and its build facts, the machine included. It is
+ * what the copy control on that screen puts on the clipboard and what a feedback
+ * report carries, so a support conversation starts from one paste and folding
+ * the machine away on screen costs the reader nothing. Deliberately plain text:
+ * it must survive a chat client, an email and a screenshot.
  */
 export function componentsReport(components: readonly ComponentVersion[]): string {
 	return components

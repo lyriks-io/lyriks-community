@@ -1,4 +1,11 @@
 <script lang="ts">
+	import Icon from './Icon.svelte';
+
+	// One boolean standing on its own, or one option of a pick-all-that-apply.
+	// Either way it is ticked, never pointed at: a round dot is the mark of one
+	// choice among several and reads as a decision already taken, so nobody sees
+	// that it is theirs to withdraw.
+
 	interface Props {
 		title: string;
 		hint?: string;
@@ -18,12 +25,12 @@
 		: 'border-line bg-surface hover:border-line-strong'}"
 >
 	<span
-		class="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border {selected
-			? 'border-accent-500 bg-accent-500'
+		class="mt-0.5 grid size-4 shrink-0 place-items-center rounded-sm border {selected
+			? 'border-accent-500 bg-accent-500 text-white'
 			: 'border-line-strong'}"
 	>
 		{#if selected}
-			<span class="size-1.5 rounded-full bg-white"></span>
+			<Icon name="check" size={12} />
 		{/if}
 	</span>
 	<span class="min-w-0">
