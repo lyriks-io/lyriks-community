@@ -6,6 +6,30 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.35] - 2026-09-23
+
+A signature that survives, and two screens that say what they mean.
+
+### Changed
+
+- The Versions panel opens on the versions and folds the machine away. What
+  runs is one sentence anyone can read, and a single gesture copies the whole
+  panel, hardware included, for a bug report. The machine's figures used to be
+  the first thing the page showed, to a reader who had come for a version
+  number.
+
+### Fixed
+
+- A value signed on a draft feature now reaches the specification. It was
+  written on a line whose key names a draft rather than an existing feature, so
+  the next write of the features section pruned it, and the freeze read the
+  draft object instead of the signed line. Signed values were lost with no
+  alarm while the dossier went on counting the field as decided. The freeze also
+  merges acceptance criteria now instead of replacing them, which had erased
+  seven criteria of an existing feature.
+- A lone option is a tick box, not a radio dot. A single choice drawn as a radio
+  button cannot be unticked, so a reader who had turned it on had no way back.
+
 ## [0.9.34] - 2026-09-22
 
 Who decides what leaves a score, and readings that disagreed with the screen.

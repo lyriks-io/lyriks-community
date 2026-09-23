@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { componentsDigest, componentsReport, type ComponentVersion } from './components';
+import { componentsReport, type ComponentVersion } from './components';
 
 const components: ComponentVersion[] = [
 	{
@@ -18,6 +18,15 @@ const components: ComponentVersion[] = [
 		version: null,
 		status: 'not-configured',
 		detail: 'Optional and not wired in this install.'
+	},
+	{
+		id: 'host-machine',
+		name: 'Machine',
+		origin: 'host',
+		version: '8 cores, 16 GB',
+		status: 'recorded',
+		detail: 'Read on the host at the last install or update.',
+		build: { taken: '2026-09-20' }
 	}
 ];
 
@@ -31,7 +40,11 @@ describe('componentsReport', () => {
 		expect(report).toContain('Lyriks back: not configured (not configured)');
 	});
 
-	it('says strictly more than the digest', () => {
-		expect(componentsReport(components).length).toBeGreaterThan(componentsDigest(components).length);
+	it('carries the machine, which the screen folds away', () => {
+		// The fold is a reading choice on screen; what support receives never
+		// depends on it, so the report is the whole panel or it is nothing.
+		const report = componentsReport(components);
+		expect(report).toContain('Machine: 8 cores, 16 GB (recorded)');
+		expect(report).toContain('  taken: 2026-09-20');
 	});
 });

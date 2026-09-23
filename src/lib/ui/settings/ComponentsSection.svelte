@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Icon } from '$ui/design-system';
 	import {
-		componentsDigest,
+		componentsReport,
 		firstParty,
 		host,
 		runtime,
@@ -21,6 +21,11 @@
 	const stack = $derived(runtime(components));
 	const machine = $derived(host(components));
 
+	// The machine arrives folded: nobody opens Versions to read their hardware,
+	// they open it to read which Lyriks they run. Folding spares the reader and
+	// never the copy, which carries the whole panel either way.
+	let machineOpen = $state(false);
+
 	const CHIP: Record<ComponentStatus, string> = {
 		running: 'bg-success-50 text-success-700',
 		reachable: 'bg-success-50 text-success-700',
@@ -39,9 +44,9 @@
 	};
 
 	let copied = $state(false);
-	async function copyDigest() {
+	async function copyPanel() {
 		try {
-			await navigator.clipboard.writeText(componentsDigest(components));
+			await navigator.clipboard.writeText(componentsReport(components));
 			copied = true;
 			setTimeout(() => (copied = false), 2000);
 		} catch {
@@ -51,11 +56,21 @@
 </script>
 
 <div class="space-y-4">
-	<p class="text-xs text-ink-500">
-		Every component reports its own version to this screen. A component that does not report one is
-		shown as unknown rather than guessed, and an optional component this install does not use reads
-		<em>not configured</em>.
-	</p>
+	<div class="flex flex-wrap items-start justify-between gap-3">
+		<p class="max-w-prose text-xs text-ink-500">
+			Every component reports its own version to this screen. A component that does not report one
+			is shown as unknown rather than guessed, and an optional component this install does not use
+			reads <em>not configured</em>.
+		</p>
+		<button
+			type="button"
+			onclick={copyPanel}
+			class="inline-flex shrink-0 items-center gap-1.5 rounded-field border border-line px-2.5 py-1.5 text-xs font-medium text-ink-600 hover:bg-surface-sunken"
+		>
+			<Icon name={copied ? 'check' : 'copy'} class="h-3.5 w-3.5" />
+			{copied ? 'Copied' : 'Copy for a support ticket'}
+		</button>
+	</div>
 
 	{#snippet row(c: ComponentVersion)}
 		<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-field border border-line bg-surface-sunken px-3 py-2.5">
@@ -91,23 +106,35 @@
 	{/if}
 
 	{#if machine.length > 0}
-		<div class="space-y-2">
-			<p class="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-400">Host</p>
-			<p class="text-xs text-ink-500">
-				What this install runs on. A container cannot see its own machine, so these facts are read on
-				the host when Lyriks is installed and at every update; only the container's own figures are
-				live.
-			</p>
-			{#each machine as c (c.id)}{@render row(c)}{/each}
+		<div class="rounded-field border border-line">
+			<button
+				type="button"
+				onclick={() => (machineOpen = !machineOpen)}
+				aria-expanded={machineOpen}
+				aria-controls="versions-host"
+				class="flex w-full items-start gap-2 rounded-field px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
+			>
+				<span class="min-w-0">
+					<span class="block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-400">
+						Host
+					</span>
+					<span class="block text-xs text-ink-500">
+						What Lyriks could gather about the hardware it runs on.
+					</span>
+				</span>
+				<Icon
+					name="chevron-down"
+					size={16}
+					class="ml-auto mt-0.5 shrink-0 text-ink-400 transition-transform {machineOpen
+						? 'rotate-180'
+						: ''}"
+				/>
+			</button>
+			{#if machineOpen}
+				<div id="versions-host" class="space-y-2 px-3 pb-3">
+					{#each machine as c (c.id)}{@render row(c)}{/each}
+				</div>
+			{/if}
 		</div>
 	{/if}
-
-	<button
-		type="button"
-		onclick={copyDigest}
-		class="inline-flex items-center gap-1.5 rounded-field border border-line px-2.5 py-1.5 text-xs font-medium text-ink-600 hover:bg-surface-sunken"
-	>
-		<Icon name={copied ? 'check' : 'copy'} class="h-3.5 w-3.5" />
-		{copied ? 'Copied' : 'Copy for a support ticket'}
-	</button>
 </div>

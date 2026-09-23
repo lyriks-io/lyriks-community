@@ -21,6 +21,7 @@ import {
 	liftWaiverAct,
 	mapCoherenceAnalysis,
 	materialiseDrafts,
+	pruneDraftMeta,
 	markOpenQuestionAct,
 	nothingToArbitrate,
 	openRequestAct,
@@ -593,9 +594,23 @@ export async function applyEvolutionOperations(
 			case 'close_request':
 				outcome = closeRequestAct(ctx, request);
 				break;
-			case 'delete_request':
+			case 'delete_request': {
 				outcome = deleteRequestAct(ctx, request);
+				// The rows its drafts were holding signed values in can never be
+				// signed again, so they go with the request rather than sitting in
+				// the features section naming nothing.
+				if (outcome.ok) {
+					const pruned = pruneDraftMeta(
+						working.features,
+						request.drafts.map((d) => d.id)
+					);
+					if (pruned.changed) {
+						working.features = pruned.features;
+						working.featuresChanged = true;
+					}
+				}
 				break;
+			}
 			default:
 				outcome = refuse(`Unknown operation "${name}".`, `The operations are: ${EVOLUTION_OPERATIONS.join(', ')}.`);
 		}

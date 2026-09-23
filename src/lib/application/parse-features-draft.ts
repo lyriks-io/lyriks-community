@@ -216,7 +216,13 @@ export function parseFeaturesDraft(input: unknown, projectId: string): ProjectFe
 			return Boolean(assignment.featureId && featureIds.has(assignment.featureId));
 		});
 	const leafMeta = record(src.leafMeta, parseLeafMeta);
-	for (const id of Object.keys(leafMeta)) if (!featureIds.has(id)) delete leafMeta[id];
+	// Orphan rows go, except the ones a live request is using: a value signed on
+	// a draft is stored under the draft's own id until the freeze moves it onto
+	// the feature. Pruning those here silently destroyed what somebody signed.
+	// The evolution side removes them, when the draft is materialised or when the
+	// request that carried it is deleted.
+	for (const id of Object.keys(leafMeta))
+		if (!featureIds.has(id) && !id.startsWith('draft:')) delete leafMeta[id];
 
 	return {
 		...base,
