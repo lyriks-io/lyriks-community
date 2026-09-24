@@ -61,6 +61,7 @@ import { canRunCheck } from './coherence';
 import { withImpactReading } from './impact-propagation';
 import { withCoherenceReading, type CoherenceMapping } from './coherence-mapping';
 import { withDerivedReport } from './report-derivation';
+import { withoutQuotations } from './quotations';
 
 /**
  * The acts of the lifecycle as pure functions: one request in, one request
@@ -232,7 +233,14 @@ export function setLeavesAct(
 	leafIds: readonly string[],
 	knownLeafIds: ReadonlySet<string>
 ): ActOutcome {
-	const unique = [...new Set(leafIds)];
+	// Naming the touched features is about the features that ALREADY exist. What
+	// the request proposes is never something this act can drop: a draft stays
+	// among the touched features, and so does the leaf an amendment stands for,
+	// because what rests on that leaf is what the walk has to reach. Without
+	// this, picking a feature on the page silently takes the change itself out
+	// of both readings, which is the failure the invariant forbids.
+	const carried = request.drafts.flatMap((d) => (d.baseLeafId ? [d.id, d.baseLeafId] : [d.id]));
+	const unique = [...new Set([...leafIds, ...carried])];
 	const allowed = firstRefusal(
 		notFinished(request),
 		unknownLeaves(unique, knownLeafIds, request.drafts),
@@ -529,8 +537,12 @@ export interface ProposeInput {
 
 export interface ProposeChecks {
 	readonly sourceExists: (id: string) => boolean;
-	/** Words the glossary bans; a proposal using one is flagged before it is offered. */
-	readonly bannedWords: readonly string[];
+	/**
+	 * Words the glossary bans, with the agreed term each stands in for; a proposal
+	 * using one is flagged before it is offered. A bare string is a word whose
+	 * agreed term is not known.
+	 */
+	readonly bannedWords: readonly (string | { readonly avoid: string; readonly prefer: string })[];
 }
 
 const escapeWord = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -548,10 +560,24 @@ export function proposableFieldPaths(): string {
 		.join(', ');
 }
 
-export function usesBannedWord(value: string, bannedWords: readonly string[]): boolean {
-	const words = bannedWords.map((w) => w.trim()).filter((w) => w.length > 1);
-	if (words.length === 0) return false;
-	return new RegExp(`\\b(${words.map(escapeWord).join('|')})\\b`, 'i').test(value);
+/** Every banned word the prose uses, each with the agreed term it stands in for. */
+export function flaggedWordsIn(
+	value: string,
+	bannedWords: ProposeChecks['bannedWords']
+): { word: string; prefer: string }[] {
+	const prose = withoutQuotations(value);
+	const found: { word: string; prefer: string }[] = [];
+	for (const entry of bannedWords) {
+		const word = (typeof entry === 'string' ? entry : entry.avoid).trim();
+		if (word.length < 2 || found.some((f) => f.word.toLowerCase() === word.toLowerCase())) continue;
+		if (new RegExp(`\\b${escapeWord(word)}\\b`, 'i').test(prose))
+			found.push({ word, prefer: typeof entry === 'string' ? '' : entry.prefer });
+	}
+	return found;
+}
+
+export function usesBannedWord(value: string, bannedWords: ProposeChecks['bannedWords']): boolean {
+	return flaggedWordsIn(value, bannedWords).length > 0;
 }
 
 /** One proposal for one empty field, offered to a person (ac-evo-llm-1..3, -7). */
@@ -611,6 +637,7 @@ export function proposeAct(
 	// Structural, never linguistic: the two halves are either named or they are
 	// not. No language is privileged, because a check that only passes in English
 	// switches the sourcing discipline off wherever the product is actually used.
+	const flagged = flaggedWordsIn(input.value, checks.bannedWords);
 	const read = input.whatWasRead?.trim() ?? '';
 	const inferred = input.whatWasInferred?.trim() ?? '';
 	const readVsInferred = input.readVsInferred ?? (read !== '' && inferred !== '');
@@ -628,7 +655,9 @@ export function proposeAct(
 		whatWasInferred: inferred,
 		reasoningSeparatesReadFromInferred: readVsInferred,
 		citedSourceIds: [...new Set(input.citedSourceIds)],
-		bannedSynonymDetected: usesBannedWord(input.value, checks.bannedWords)
+		bannedSynonymDetected: flagged.length > 0,
+		flaggedWords: flagged,
+		proposedBy: ctx.actor.id
 	});
 	return done(
 		{ ...request, proposals: [...request.proposals, proposal] },
@@ -646,7 +675,12 @@ export function leafOf(proposal: Proposal): string | null {
 }
 
 export type ProposalDecisionInput =
-	| { readonly decision: 'accept' }
+	/**
+	 * `sense`: when the value carries a flagged word, the person may say it was
+	 * used in another sense than the one the glossary guards; it is recorded
+	 * beside the value (a3960bf7).
+	 */
+	| { readonly decision: 'accept'; readonly sense?: string }
 	| { readonly decision: 'refuse'; readonly comment: string }
 	| { readonly decision: 'reword'; readonly value: string };
 
@@ -773,17 +807,19 @@ export function decideProposalAct(
 		const field = blockFieldByPath(proposal.targetField);
 		const holds = field ? holdsValue(field, proposal.value) : proposal.value.trim() !== '';
 		const signed = proposal;
+		const sense = proposal.bannedSynonymDetected ? (input.sense ?? '').trim() : '';
 		const accepted: EvolutionRequest = {
 			...request,
 			proposals: request.proposals.map((p) =>
 				p.id === proposalId
-					? { ...signed, decision: 'accepted', acceptedBy: ctx.actor.id, acceptedAt: ctx.at }
+					? { ...signed, decision: 'accepted', acceptedBy: ctx.actor.id, acceptedAt: ctx.at, keptWordingSense: sense }
 					: p
 			),
-			openQuestionKeys: holds ? request.openQuestionKeys.filter((k) => k !== key) : request.openQuestionKeys
+			openQuestionKeys: holds ? request.openQuestionKeys.filter((k) => k !== key) : request.openQuestionKeys,
+			answeredKeys: request.answeredKeys.includes(key) ? request.answeredKeys : [...request.answeredKeys, key]
 		};
 		return done(
-			stamp(ctx, accepted, 'accepted_proposal', `Accepted the proposed ${proposal.targetField}`, {
+			stamp(ctx, accepted, 'accepted_proposal', `Accepted the proposed ${proposal.targetField}${keptWording(proposal, sense)}`, {
 				proposalId,
 				acceptedByPersonId: ctx.actor.id
 			}),
@@ -830,11 +866,66 @@ export function decideProposalAct(
 			// A new wording is a new thing to stand behind: the verdicts given so far go.
 			proposals: request.proposals.map((p) =>
 				p.id === proposalId
-					? { ...p, value: input.value.trim(), decision: 'reworded', bannedSynonymDetected: false, verdicts: [] }
+					? { ...p, value: input.value.trim(), decision: 'reworded', bannedSynonymDetected: false, flaggedWords: [], verdicts: [] }
 					: p
 			)
 		},
 		`Reworded the proposed ${proposal.targetField}`
+	);
+}
+
+/**
+ * What the timeline says when a flagged wording is kept: the word, the term it
+ * stands in for, and the person's reason when they gave one. Accepting with a
+ * flag is a person's judgement, recorded as such.
+ */
+function keptWording(proposal: Proposal, sense: string): string {
+	if (!proposal.bannedSynonymDetected) return '';
+	const words = proposal.flaggedWords
+		.map((f) => (f.prefer ? `"${f.word}" (the glossary says "${f.prefer}")` : `"${f.word}"`))
+		.join(', ');
+	const what = words || 'a flagged word';
+	return sense ? `, keeping ${what}: ${sense}` : `, keeping ${what} as written`;
+}
+
+/**
+ * Take back a proposal nobody has decided (54d6ab98). Only the caller that made
+ * it, and only while it waits: a flagged wording must never leave a field held
+ * by a value nobody can sign. A person turns one down with refuse instead, which
+ * is a decision and stays on the record as one.
+ */
+export function withdrawProposalAct(ctx: ActContext, request: EvolutionRequest, proposalId: string): ActOutcome {
+	const proposal = request.proposals.find((p) => p.id === proposalId);
+	if (!proposal)
+		return refuse('This proposal does not exist on the request.', 'get_evolution lists the pending proposals with their ids.');
+	const allowed = firstRefusal(
+		notFinished(request),
+		guard(
+			proposal.decision !== 'pending' && proposal.decision !== 'reworded',
+			'This proposal has already been decided.',
+			'A decided proposal is a signed decision; only one still waiting can be taken back.'
+		),
+		guard(
+			proposal.verdicts.length > 0,
+			'A reviewer has already given a verdict on this proposal.',
+			'Once somebody has stood behind it or against it, taking it back would erase their act; a person refuses it instead.'
+		),
+		guard(
+			proposal.proposedBy !== '' ? proposal.proposedBy !== ctx.actor.id : ctx.actor.kind !== 'ai_client',
+			'Only the caller that made this proposal can withdraw it.',
+			'A person turns a proposal down with refuse, which is a decision and stays on the record as one.'
+		)
+	);
+	if (!allowed.ok) return allowed;
+	return done(
+		stamp(
+			ctx,
+			{ ...request, proposals: request.proposals.filter((p) => p.id !== proposalId) },
+			'withdrawn_proposal',
+			`Withdrew the proposed ${proposal.targetField}; the field is free for another proposal`,
+			{ proposalId }
+		),
+		`Withdrew the proposed ${proposal.targetField}`
 	);
 }
 

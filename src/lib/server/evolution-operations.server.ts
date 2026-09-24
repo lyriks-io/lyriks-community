@@ -42,6 +42,7 @@ import {
 	tagReviewersAct,
 	updateDraftLeafAct,
 	updateRequestAct,
+	withdrawProposalAct,
 	type ActContext,
 	type ActOutcome,
 	type Actor,
@@ -49,7 +50,9 @@ import {
 	type EvolutionRequest,
 	type FeatureStatus,
 	type Guarded,
-	type ProjectEvolutionDraft
+	type ProjectEvolutionDraft,
+	requestPagePath,
+	type PagePlace
 } from '$domain/evolution';
 import { saveDossierField } from '$application/use-cases/save-dossier-field';
 import type { ProjectFeaturesDraft } from '$domain/features';
@@ -146,6 +149,7 @@ export const EVOLUTION_OPERATIONS = [
 	'remove_draft_leaf',
 	'propose',
 	'decide_proposal',
+	'withdraw_proposal',
 	'tag_reviewers',
 	'mark_open_question',
 	'answer_open_question',
@@ -171,6 +175,22 @@ export interface OperationResult {
 	readonly ok: boolean;
 	readonly summary: string;
 	readonly detail?: string;
+	/** On a refusal a person resolves: where on the page they do it. */
+	readonly href?: string;
+}
+
+/**
+ * Where a person resolves what a refused operation asked for: the proposal it
+ * named, the report line, the observation, or the next gate for a crossing.
+ * An operation that names none of these opens the request itself.
+ */
+export function refusalPlace(op: Record<string, unknown>, name: string): PagePlace | undefined {
+	const id = (key: string) => (typeof op[key] === 'string' && op[key] ? (op[key] as string) : null);
+	if (id('proposalId')) return { kind: 'proposal', id: id('proposalId')! };
+	if (id('lineId')) return { kind: 'line', id: id('lineId')! };
+	if (id('observationId')) return { kind: 'observation', id: id('observationId')! };
+	if (name === 'cross_stage' || name === 'lift_waiver' || name === 'rebrief' || name === 'close_request') return { kind: 'next-step' };
+	return undefined;
 }
 
 export type ApplyOutcome =
@@ -229,7 +249,11 @@ export async function applyEvolutionOperations(
 	const knownLeafIds = new Set(view.leaves.map((l) => l.id));
 	const leafNames = Object.fromEntries(view.leaves.map((l) => [l.id, l.name]));
 	const sourceIds = new Set(view.sources.map((s) => s.id));
-	const bannedWords = view.glossaryTerms.flatMap((t) => t.synonymsAvoid ?? []);
+	// Each banned word travels with the agreed term it stands in for, so a flag
+	// names the sense it guards rather than only saying "banned".
+	const bannedWords = view.glossaryTerms.flatMap((t) =>
+		(t.synonymsAvoid ?? []).map((avoid) => ({ avoid, prefer: t.term }))
+	);
 
 	const results: OperationResult[] = [];
 	const findRequest = (id: string): EvolutionRequest | undefined =>
@@ -314,7 +338,15 @@ export async function applyEvolutionOperations(
 				results.push({ index, op: name, requestId: 'request' in outcome ? outcome.request.id : id, ok: true, summary: 'summary' in outcome ? outcome.summary : 'ok' });
 				return true;
 			}
-			results.push({ index, op: name, requestId: id, ok: false, summary: outcome.reason, detail: outcome.detail });
+			results.push({
+				index,
+				op: name,
+				requestId: id,
+				ok: false,
+				summary: outcome.reason,
+				detail: outcome.detail,
+				...(id ? { href: requestPagePath(input.projectId, id, refusalPlace(op as Record<string, unknown>, name)) } : {})
+			});
 			return false;
 		};
 
@@ -409,7 +441,7 @@ export async function applyEvolutionOperations(
 				const decision = str(op.decision);
 				const decisionInput =
 					decision === 'accept'
-						? ({ decision: 'accept' } as const)
+						? ({ decision: 'accept', sense: op.sense === undefined ? undefined : str(op.sense) } as const)
 						: decision === 'refuse'
 							? ({ decision: 'refuse', comment: str(op.comment) } as const)
 							: decision === 'reword'
@@ -436,6 +468,9 @@ export async function applyEvolutionOperations(
 				});
 				break;
 			}
+			case 'withdraw_proposal':
+				outcome = withdrawProposalAct(ctx, request, str(op.proposalId));
+				break;
 			case 'tag_reviewers':
 				outcome = tagReviewersAct(ctx, request, str(op.proposalId), strList(op.reviewerIds), roster);
 				break;

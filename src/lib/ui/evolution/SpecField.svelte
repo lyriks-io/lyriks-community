@@ -219,9 +219,9 @@
 				{#if proposal.bannedSynonymDetected}
 					<span
 						class="rounded-pill bg-warning-50 px-1.5 py-0.5 text-[9px] font-semibold text-warning-700"
-						title="The glossary bans a word this value uses; reword it first"
+						title="A word the glossary keeps for another sense: reword it, or accept it if you meant another sense"
 					>
-						banned wording
+						flagged wording
 					</span>
 				{/if}
 			</div>

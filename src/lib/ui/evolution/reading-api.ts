@@ -54,13 +54,15 @@ export async function saveFieldValue(
 	projectId: string,
 	fieldPath: string,
 	leafId: string,
-	value: string
+	value: string,
+	/** The dossier it was typed on, so the answer is counted as the request's own. */
+	requestId?: string
 ): Promise<boolean> {
 	const res = await fetch('/api/draft/evolution/field', {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		// The sources the value rests on stay as the feature holds them.
-		body: JSON.stringify({ projectId, fieldPath, leafId, value })
+		body: JSON.stringify({ projectId, fieldPath, leafId, value, ...(requestId ? { requestId } : {}) })
 	}).catch(() => null);
 	if (!res || !res.ok) {
 		pushToast({

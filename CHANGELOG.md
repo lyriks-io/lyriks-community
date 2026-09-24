@@ -6,6 +6,51 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.38] - 2026-09-24
+
+The dossier of an evolution request reads as one answer, and says where to act.
+
+### Changed
+
+- The impact report is one reading, not three hypotheses. It used to print three
+  columns, "if we add it / change it / remove it", and leave the reader to pick,
+  although the request already says what it does. On a request that both adds and
+  amends, none of the three columns described it. Each row now carries the verb of
+  the draft behind it, and a node the walk only reached carries what the request
+  does overall.
+- A row says what it rests on. The "knock-on" chip is gone; a row two links out
+  now names the thing it depends on, for example rests on "Model the behavior".
+- A row says the work to do instead of "re-check": walk it again, replay it, set
+  who may, read it again, check the shape holds, write it, edit it, delete it. A
+  removal still reads "may break", the one case that is a risk and not a task.
+- A row of the impact report says what is true of it. A feature the change only
+  reaches is never told to be written or deleted, the line under a row says in
+  plain words what joined it to the change, a node reached from an amended
+  feature reads as a change even when the request also adds something, and the
+  sentence on top counts exactly the rows shown.
+- A dossier reads once per feature. An amendment and the feature it stands for
+  are one row, a draft is shown by its name, and a proposal on an existing value
+  shows what it adds, what it removes and how many lines it keeps.
+- Every place a person acts on is a link. The request, a field, a proposal, the
+  next gate, a report line and a refused result carry the address of the page
+  opening on that exact place, and an AI client hands it over as a link.
+
+- A glossary flag warns and never blocks. It names the agreed term the word
+  stands in for, a word between quotation marks is never flagged, and a person
+  can keep the wording by saying which sense they meant, which is recorded
+  beside the value. An AI client can take back a proposal nobody has decided.
+- The dossier opens on what is owed: the questions to answer and the values to
+  sign come first, answers already given are folded, and the maturity says how
+  many of its answers were given in the request and how many the features
+  already held.
+- The impact report runs the walks the request asks for, and what it would cost
+  to take the change back out is a separate reading, asked when wanted. A
+  report that reached nothing says why.
+
+### Fixed
+
+- Ticking a feature on a dossier could take a draft out of its own request.
+
 ## [0.9.37] - 2026-09-24
 
 ### Fixed

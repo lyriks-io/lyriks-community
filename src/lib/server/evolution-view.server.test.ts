@@ -7,6 +7,8 @@ import {
 	readingsPart,
 	requestSummary,
 	filledInlineKeys,
+	proposedKinds,
+	inheritanceOf,
 	type EvolutionView
 } from './evolution-view.server';
 import {
@@ -235,5 +237,179 @@ describe('excerpting is the caller decision, not the reading', () => {
 			(r) => r.path === '01-origin.objective'
 		);
 		expect(objective?.value).toBe(long);
+	});
+});
+
+/**
+ * One row per touched FEATURE.
+ *
+ * A request holds both sides of an amendment internally, because the readings
+ * start from what is proposed and have to reach what rests on the leaf. A
+ * person must never be shown that twice: two rows of the same name, one of them
+ * empty, read as two features, they ask the same five questions twice, and they
+ * count the same hole twice in the maturity.
+ */
+describe('a touched feature is read once, whichever side of it the request holds', () => {
+	const withDrafts = (base: EvolutionRequest): EvolutionRequest => {
+		const amend = createDraftLeaf({
+			id: 'draft:amend',
+			kind: 'amend',
+			baseLeafId: leafId(0),
+			name: 'Feature 0, amended'
+		});
+		const add = createDraftLeaf({ id: 'draft:add', kind: 'add', name: 'A capability that does not exist' });
+		return { ...base, drafts: [amend, add], leafIds: [amend.id, leafId(0), add.id, leafId(1)] };
+	};
+
+	it('folds an amendment onto the leaf it stands for, and keeps an addition of its own', () => {
+		const { view, request } = viewWith(2);
+		const summary = requestSummary(view, withDrafts(request), person);
+
+		expect(summary.leaves.map((l) => l.id)).toEqual([leafId(0), 'draft:add', leafId(1)]);
+		expect(summary.leaves.map((l) => l.name)).toEqual([
+			'Feature 0, amended',
+			'A capability that does not exist',
+			'Feature 1'
+		]);
+		// What the request would do to each one, so a feature that exists is never
+		// read as a proposal, nor a proposal as a feature that exists.
+		expect(summary.leaves.map((l) => l.change)).toEqual(['amend', 'add', null]);
+		expect(summary.leaves.map((l) => l.drafted)).toEqual([false, true, false]);
+	});
+
+	it('asks the five questions once per feature, not once per side', () => {
+		const { view, request } = viewWith(2);
+		const drafted = withDrafts(request);
+		const rows = dossierFieldRows(view, drafted);
+
+		expect([...new Set(rows.map((r) => r.leafId))]).toEqual([leafId(0), 'draft:add', leafId(1)]);
+		// The answers of an amended feature are the ones the leaf already holds,
+		// which is where the freeze patches them: never an empty second set.
+		expect(rows.some((r) => r.leafId === 'draft:amend')).toBe(false);
+	});
+});
+
+/**
+ * The impact report is ONE reading, derived from what the request proposes.
+ *
+ * Reported from the screen on 2026-09-24 (request d17092da): three columns, "if
+ * we add it / change it / remove it", on a request that had already declared
+ * what it does. On a request that both adds and amends, none of the three
+ * described it, and the reader was asked to redo an arbitration the dossier had
+ * already made.
+ */
+describe('the verb of a row comes from the draft that stands for it', () => {
+	const requestWith = (drafts: Parameters<typeof createDraftLeaf>[0][]) =>
+		createEvolutionRequest({ id: 'r', drafts: drafts.map((d) => createDraftLeaf(d)) });
+
+	it('reads an amendment as a change and an addition as an addition, on the same request', () => {
+		const { byLeaf, main } = proposedKinds(
+			requestWith([
+				{ id: 'draft:new', kind: 'add', name: 'Une capacite neuve' },
+				{ id: 'draft:amended', kind: 'amend', baseLeafId: 'feat-existing', name: 'Existante' }
+			])
+		);
+		expect(byLeaf['draft:new']).toBe('add');
+		expect(byLeaf['draft:amended']).toBe('change');
+		// The feature an amendment stands for reads with the draft's verb.
+		expect(byLeaf['feat-existing']).toBe('change');
+		// A mixed request does something overall, and it is not "all three".
+		expect(main).toBe('add');
+	});
+
+	it('lets a removal set what the request does overall, being the most consequential', () => {
+		const { main } = proposedKinds(
+			requestWith([
+				{ id: 'draft:gone', kind: 'remove', baseLeafId: 'feat-old', name: 'Retiree' },
+				{ id: 'draft:new', kind: 'add', name: 'Neuve' }
+			])
+		);
+		expect(main).toBe('remove');
+	});
+
+	it('reads a request that drafts nothing as a change', () => {
+		const { byLeaf, main } = proposedKinds(createEvolutionRequest({ id: 'r2', leafIds: ['feat-a'] }));
+		expect(main).toBe('change');
+		expect(Object.keys(byLeaf)).toHaveLength(0);
+	});
+});
+
+/**
+ * Where a person acts, as a link.
+ *
+ * Whoever tells a person that something waits on them hands over the place
+ * itself: every row a person acts on carries the address of the page opening
+ * on it, relative to the installation (the MCP server makes it whole).
+ */
+describe('every place a person acts on carries the address that opens on it', () => {
+	const at = (href: string) => new URL(href, 'http://x').searchParams.get('at');
+
+	it('points a field waiting for a signature at its proposal, and an unanswered one at itself', () => {
+		const { view, request } = viewWith(2);
+		const withProposal: EvolutionRequest = {
+			...request,
+			proposals: [
+				createProposal({
+					id: 'prop-0',
+					targetField: '01-origin.objective',
+					canonicalPath: `features.leafMeta.${leafId(0)}.objective`,
+					value: 'A value',
+					reasoning: 'READ from the interview; INFERRED nothing.',
+					decision: 'pending'
+				})
+			]
+		};
+		const rows = dossierFieldRows(view, withProposal);
+		const signing = rows.find((r) => r.leafId === leafId(0) && r.path === '01-origin.objective')!;
+		const open = rows.find((r) => r.leafId === leafId(1) && r.path === '01-origin.objective')!;
+		expect(signing.href.startsWith('/projects/proj/features?tab=evolution&request=req-1')).toBe(true);
+		expect(at(signing.href)).toBe('proposal__prop-0');
+		expect(at(open.href)).toBe(`field__${leafId(1)}__01-origin.objective`);
+	});
+
+	it('gives each proposal, the first one waiting and the next gate their own address', () => {
+		const { view, request } = viewWith(1);
+		const withProposal: EvolutionRequest = {
+			...request,
+			proposals: [
+				createProposal({
+					id: 'prop-9',
+					targetField: '02-problem.value',
+					canonicalPath: `features.leafMeta.${leafId(0)}.value`,
+					value: 'Worth it',
+					reasoning: 'READ from the interview; INFERRED nothing.',
+					decision: 'pending'
+				})
+			]
+		};
+		const part = proposalsPart(view, withProposal, person);
+		expect(at(part.proposals.entries[0].href)).toBe('proposal__prop-9');
+		const summary = requestSummary(view, withProposal, person);
+		expect(summary.href).toBe('/projects/proj/features?tab=evolution&request=req-1');
+		expect(at(summary.proposals.href!)).toBe('proposal__prop-9');
+		expect(at(summary.gate.href)).toBe('next-step');
+	});
+
+	it('has no first proposal to point at when nothing waits', () => {
+		const { view, request } = viewWith(1);
+		expect(requestSummary(view, request, person).proposals.href).toBeNull();
+	});
+});
+
+/**
+ * 2a9716f2: a value the request inherited from a feature it touches is shown as
+ * a reading of that feature, never as an answer this request gave. On a
+ * complete product the maturity read 43 while nothing of the change had been
+ * decided at all.
+ */
+describe('the maturity says how much of what it counts was inherited', () => {
+	it('tells a value the feature already held from one given in this request', () => {
+		const { view, request } = viewWith(1);
+		view.features.leafMeta = {
+			[leafId(0)]: { objective: 'Held by the feature before the request.', problem: 'Typed on the dossier.' }
+		};
+		const answered = { ...request, answeredKeys: [`02-problem.statement@${leafId(0)}`] };
+		expect(inheritanceOf(view.features, answered)).toEqual({ answeredHere: 1, inherited: 1 });
+		expect(inheritanceOf(view.features, request)).toEqual({ answeredHere: 0, inherited: 2 });
 	});
 });

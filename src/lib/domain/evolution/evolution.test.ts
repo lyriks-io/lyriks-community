@@ -956,14 +956,16 @@ describe('the LLM completion', () => {
 		expect(canAcceptProposal(person, p).ok).toBe(false);
 	});
 
-	it('refuses a proposal flagged on the glossary', () => {
+	// a2a01f3a: the glossary flag warns and names its term; it never blocks the
+	// decision, because the check matches a word and only the person knows its sense.
+	it('lets a person accept a proposal flagged on the glossary', () => {
 		const p = createProposal({
 			citedSourceIds: ['s1', 's2', 's3'],
 			bannedSynonymDetected: true,
 			reasoningSeparatesReadFromInferred: true,
 			canonicalPath: 'x'
 		});
-		expect(canAcceptProposal(person, p).ok).toBe(false);
+		expect(canAcceptProposal(person, p).ok).toBe(true);
 	});
 
 	it('refuses a proposal whose reasoning does not separate read from inferred', () => {

@@ -159,6 +159,53 @@ export interface PropagationInput {
 }
 
 /**
+ * What a relation of the graph means, in words a reader of the report uses. The
+ * walk follows links both ways, so each phrase reads the same from either end.
+ */
+const RELATION_WORDS: Readonly<Record<string, string>> = {
+	depends_on: 'one depends on the other',
+	dependency: 'one depends on the other',
+	contains: 'one is part of the other',
+	belongs_to: 'one is part of the other',
+	accesses: 'this role can use it',
+	reads: 'one reads the other',
+	writes: 'one writes the other',
+	uses: 'one uses the other',
+	binds: 'one is bound to the other',
+	shows: 'one shows the other',
+	navigate: 'one leads to the other',
+	transitions: 'a change of state joins them',
+	relates: 'the data model relates them',
+	tests: 'one tests the other',
+	guards: 'one guards the other',
+	emits: 'one emits the other',
+	triggers: 'one triggers the other',
+	performs: 'one performs the other',
+	flags: 'one flags the other',
+	derives: 'one is derived from the other',
+	supersedes: 'one replaces the other',
+	exception_to: 'one is an exception to the other'
+};
+
+/**
+ * Why a node is in the list, in one sentence a person reads without the graph
+ * open (ac-evo-imp: every line says what joined it to the change). It used to
+ * print the node kind and the raw relation name, `feature reached in 1 link
+ * from X, through "depends_on"`, which is the graph talking to itself.
+ */
+export function reachedSentence(path: readonly string[], hops: number, via: string): string {
+	const from = path[0] ?? 'the change';
+	if (hops <= 1) {
+		const relation = RELATION_WORDS[via] ?? `linked as "${via.replace(/_/g, ' ')}"`;
+		return `Next to "${from}": ${relation}.`;
+	}
+	const restsOn = path[path.length - 1] ?? from;
+	return hops === 2
+		? `Rests on "${restsOn}", which is next to "${from}".`
+		: `Rests on "${restsOn}", ${hops} links from "${from}".`;
+}
+
+/**
  * Breadth-first over the graph, both directions, from every touched feature,
  * stopping at `depth` links. Each reached node becomes one finding under the
  * hypothesis, carrying the path that reached it.
@@ -188,12 +235,14 @@ export function propagateImpact(input: PropagationInput): ImpactFinding[] {
 		readonly via: string;
 		/** True when the walk that reached this node started on a drafted feature. */
 		readonly fromDraft: boolean;
+		/** The touched node the walk started from. */
+		readonly origin: string;
 	}
 	const drafted = input.draftNodeIds ?? new Set<string>();
 	const visited = new Map<string, Visit>();
 	let frontier: { id: string; visit: Visit }[] = starts.map((id) => ({
 		id,
-		visit: { hops: 0, path: [], via: '', fromDraft: drafted.has(id) }
+		visit: { hops: 0, path: [], via: '', fromDraft: drafted.has(id), origin: id }
 	}));
 	for (const f of frontier) visited.set(f.id, f.visit);
 	while (frontier.length > 0) {
@@ -209,7 +258,8 @@ export function propagateImpact(input: PropagationInput): ImpactFinding[] {
 					hops: visit.hops + 1,
 					path: [...visit.path, here?.label ?? id],
 					via: kind,
-					fromDraft: visit.fromDraft
+					fromDraft: visit.fromDraft,
+					origin: visit.origin
 				};
 				visited.set(to, reached);
 				next.push({ id: to, visit: reached });
@@ -238,13 +288,14 @@ export function propagateImpact(input: PropagationInput): ImpactFinding[] {
 			nodeLabel: node.label,
 			nodeKind: placement.nodeKind,
 			groupPath: [...visit.path],
-			note: `${node.kind} reached in ${visit.hops} ${visit.hops === 1 ? 'link' : 'links'} from ${visit.path[0] ?? 'the request'}, through "${visit.via}".`,
+			note: reachedSentence(visit.path, visit.hops, visit.via),
 			codeWork: codeWorkOf(input.hypothesis, visit.hops),
 			depth: visit.hops,
 			severity: severityOf(input.hypothesis, visit.hops),
 			migrationImplied: isData ? migrationOf(input.hypothesis, visit.hops) : null,
 			ruleWork: isRule ? ruleWorkOf(input.hypothesis, visit.hops) : null,
-			fromDraft: visit.fromDraft
+			fromDraft: visit.fromDraft,
+			fromLeafId: visit.origin.replace(/^feature:(beh:)?/, '')
 		});
 	}
 

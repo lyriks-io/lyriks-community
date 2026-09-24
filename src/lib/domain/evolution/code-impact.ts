@@ -117,11 +117,11 @@ const VERBS: Record<ImpactHypothesis, Record<string, string>> = {
 	},
 	change: {
 		screens: 'to rework',
-		features: 'to re-check',
+		features: 'to edit',
 		cores: 'concerned',
 		entities: 'to migrate if their shape changes',
 		rules: 'to rewrite',
-		roles: 'to re-check',
+		roles: 'to set',
 		terms: 'whose definition to re-read',
 		code: 'to change'
 	},
@@ -142,20 +142,47 @@ export function impactVerb(f: ImpactFinding): string {
 	if (f.section === 'code') return f.codeWork === 'remove' ? 'remove' : f.codeWork === 'at_risk' ? 'at risk' : 'change';
 	// A migration is a migration however far the entity sits.
 	if (f.section === 'entities_and_fields' && f.migrationImplied) return 'migrate';
-	if (f.depth > 1) return f.hypothesis === 'remove' ? 'may break' : f.hypothesis === 'change' ? 're-check' : 're-read';
+	// Two links out, nothing is edited here: it rests on something that is, so it
+	// has to be trusted again. WHAT that takes depends on what the node IS, not on
+	// how far the walk came: replaying a rule and rereading a definition are not
+	// the same afternoon. This used to answer "re-check" for every one of them,
+	// which named the distance and left the reader to guess the work.
+	if (f.depth > 1) {
+		if (f.hypothesis === 'remove') return 'may break';
+		switch (f.section) {
+			case 'screens_and_journeys':
+				return 'walk it again';
+			case 'rules_and_scenarios':
+				return 'replay it';
+			case 'permissions':
+				return 'check who may';
+			case 'glossary_terms':
+				return 'read the definition again';
+			case 'entities_and_fields':
+				return 'check the shape holds';
+			default:
+				return 'read its spec again';
+		}
+	}
 	switch (f.section) {
 		case 'screens_and_journeys':
 			return f.hypothesis === 'add' ? 'extend' : f.hypothesis === 'change' ? 'rework' : 'strip';
 		case 'rules_and_scenarios':
 			return f.ruleWork === 'rewrite' ? (f.hypothesis === 'remove' ? 'rewrite or retire' : 'rewrite') : 'replay';
 		case 'permissions':
-			return f.hypothesis === 'add' ? 'grant' : f.hypothesis === 'change' ? 're-check' : 'revoke';
+			return f.hypothesis === 'add' ? 'grant' : f.hypothesis === 'change' ? 'set who may' : 'revoke';
 		case 'glossary_terms':
 			return f.hypothesis === 'add' ? 'extend' : f.hypothesis === 'change' ? 're-read' : 'retire or narrow';
 		case 'entities_and_fields':
-			return f.migrationImplied ? 'migrate' : f.hypothesis === 'add' ? 'may gain a field' : 're-check';
+			return f.migrationImplied ? 'migrate' : f.hypothesis === 'add' ? 'may gain a field' : 'change its shape';
 		default:
-			return f.nodeKind === 'core' ? 'concerned' : f.hypothesis === 'remove' ? 'may break' : 're-check';
+			if (f.nodeKind === 'core') return 'concerned';
+			// A feature in this list is never one the request edits: the touched
+			// features are where the walk STARTS and are left out of it. So a feature
+			// row is one the change reached, and "write it" or "delete it" told the
+			// reader to edit something nobody proposed to touch. What it takes is to
+			// check that its spec still holds, and under a removal that it may break.
+			return f.hypothesis === 'remove' ? 'may break' : 'read its spec again';
 	}
 }
 
@@ -189,9 +216,9 @@ export function impactSummaryLine(findings: readonly ImpactFinding[], hypothesis
 	if (hypothesis === 'change') {
 		if (screens) parts.push(`${n(screens, 'screen', 'screens')} to rework`);
 		if (rules) parts.push(`${n(rules, 'rule', 'rules')} to rewrite`);
-		if (roles) parts.push(`${n(roles, 'role', 'roles')} to re-check`);
+		if (roles) parts.push(`${n(roles, 'role', 'roles')} to set`);
 		if (entities) parts.push(`${n(entities, 'entity', 'entities')} that may migrate`);
-		if (knockOns) parts.push(`${n(knockOns, 'knock-on', 'knock-ons')} to re-check`);
+		if (knockOns) parts.push(`${n(knockOns, 'knock-on', 'knock-ons')} to check`);
 		if (terms) parts.push(`${n(terms, 'term', 'terms')} to re-read`);
 		if (files) parts.push(`${n(files, 'file', 'files')} to change`);
 		return parts.length === 0 ? 'Nothing beyond the touched features moves.' : `${parts.join(', ')}.`;
@@ -237,4 +264,71 @@ export function impactInPlainWords(
 		);
 	}
 	return lines;
+}
+
+const SECTION_NOUNS: Readonly<Record<string, readonly [string, string]>> = {
+	leaves: ['feature', 'features'],
+	screens_and_journeys: ['screen', 'screens'],
+	entities_and_fields: ['entity', 'entities'],
+	rules_and_scenarios: ['rule', 'rules'],
+	permissions: ['role', 'roles'],
+	glossary_terms: ['term', 'terms'],
+	code: ['file', 'files']
+};
+
+/**
+ * The sentence on top of the report, counted from the rows it SHOWS (ac: what
+ * the report counts is what it shows). It used to be the summary of one walk,
+ * so on a request that adds one feature and amends another it said "5 roles to
+ * grant" above five rows reading "set who may".
+ */
+export function shownImpactSentence(rows: readonly { section: string; verb: string }[]): string {
+	if (rows.length === 0) return 'Nothing that exists moves.';
+	const counts = new Map<string, { section: string; verb: string; n: number }>();
+	for (const row of rows) {
+		const key = `${row.section}|${row.verb}`;
+		const entry = counts.get(key) ?? { section: row.section, verb: row.verb, n: 0 };
+		entry.n += 1;
+		counts.set(key, entry);
+	}
+	const order = Object.keys(SECTION_NOUNS);
+	const parts = [...counts.values()]
+		.sort((a, b) => order.indexOf(a.section) - order.indexOf(b.section) || b.n - a.n)
+		.map(({ section, verb, n }) => {
+			const [one, many] = SECTION_NOUNS[section] ?? ['item', 'items'];
+			// The verb is written for one row; counted, "read its spec again" becomes
+			// "read their spec again" and "walk it again" becomes "walk them again".
+			const said = n === 1 ? verb : verb.replace(/\bits\b/g, 'their').replace(/\bit\b/g, 'them');
+			const what = said.startsWith('may ') || said === 'at risk' ? `that ${said}` : `to ${said}`;
+			return `${n} ${n === 1 ? one : many} ${what}`;
+		});
+	const breaks = rows.some((r) => r.verb === 'may break' || r.verb === 'at risk');
+	return `${breaks ? '' : 'Nothing that exists breaks. '}${parts.join(', ')}.`;
+}
+
+/**
+ * Why a report came back with nothing in it (c62c57a6). A change that declares
+ * nothing to walk from has an empty report for THAT reason, which is not the
+ * same as a change with no consequence, and the two are never allowed to read
+ * alike: an addition with no dependency has no neighbours in the graph yet, so
+ * silence there means "nothing was said", not "nothing follows".
+ */
+export function emptyImpactReason(request: {
+	readonly leafIds: readonly string[];
+	readonly drafts: readonly {
+		readonly kind: string;
+		readonly name: string;
+		readonly dependsOn: readonly string[];
+		readonly behaviour: readonly unknown[];
+		readonly acceptanceCriteria: readonly unknown[];
+	}[];
+}): string {
+	if (request.leafIds.length === 0 && request.drafts.length === 0)
+		return 'The request names no feature yet, so there is nothing to walk from.';
+	const silentAdds = request.drafts.filter((d) => d.kind === 'add' && d.dependsOn.length === 0);
+	if (silentAdds.length > 0 && silentAdds.length === request.drafts.length && request.leafIds.every((id) => id.startsWith('draft:')))
+		return `${silentAdds.map((d) => `"${d.name}"`).join(', ')} ${silentAdds.length === 1 ? 'declares' : 'declare'} nothing it depends on, so the walk had nowhere to go. This says nothing was declared, not that nothing follows: name what it depends on and compute again.`;
+	if (request.drafts.length > 0 && request.drafts.every((d) => d.kind === 'amend' && d.dependsOn.length === 0 && d.behaviour.length === 0 && d.acceptanceCriteria.length === 0))
+		return 'The change only rewords what it touches: a wording moves nothing else in the specification.';
+	return 'Nothing in the specification is linked to the touched features, so nothing moves with them.';
 }
