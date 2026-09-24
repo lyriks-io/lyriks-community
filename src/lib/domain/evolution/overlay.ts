@@ -2,6 +2,7 @@ import type { CoherenceFinding, DraftLeaf, EvolutionRequest } from './draft';
 import { isDraftLeafId } from './draft';
 import type { PropagationGraph, PropagationNode, PropagationEdge } from './impact-propagation';
 import { stableId } from './ids';
+import { withoutQuotations } from './quotations';
 
 /**
  * The product as this request would leave it.
@@ -173,7 +174,7 @@ export function draftCoherence(input: DraftCoherenceInput): CoherenceFinding[] {
 			const avoid = banned.avoid.trim();
 			if (avoid.length < 2) continue;
 			const pattern = new RegExp(`\\b${avoid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-			if (!pattern.test(`${draft.name} ${draft.description}`)) continue;
+			if (!pattern.test(withoutQuotations(`${draft.name} ${draft.description}`))) continue;
 			findings.push({
 				id: stableId('coh-draft-word', request.id, draft.id, avoid),
 				axis: 'semantic',

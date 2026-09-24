@@ -2,6 +2,7 @@ import { error, json } from '@sveltejs/kit';
 import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { readDossierField, saveDossierField } from '$application/use-cases/save-dossier-field';
+import { fieldKey } from '$domain/evolution';
 import type { RequestHandler } from './$types';
 
 /**
@@ -59,5 +60,33 @@ export const POST: RequestHandler = async (event) => {
 	}
 
 	const saved = await services.saveFeaturesDraft.execute(result.draft);
+	// Typed on a dossier: the value is the request's own answer, not one the
+	// feature already held (2a9716f2). The dossier keeps the key, never the value.
+	const requestId = str(input.requestId);
+	if (requestId) await markAnswered(services, projectId, requestId, fieldKey(str(input.fieldPath), str(input.leafId) || null));
 	return json({ status: 'accepted', path: result.path, savedAt: saved?.savedAt ?? null });
+};
+
+async function markAnswered(
+	services: ReturnType<typeof getServices>,
+	projectId: string,
+	requestId: string,
+	key: string
+): Promise<void> {
+	const [evolution, revision] = await Promise.all([
+		services.loadEvolutionDraft.execute(projectId),
+		services.sectionDocuments.currentRevision(projectId, 'evolution')
+	]);
+	const request = evolution?.requests.find((r) => r.id === requestId);
+	if (!evolution || !request || request.answeredKeys.includes(key)) return;
+	// Under the revision it was read at: a concurrent write wins, and the answer
+	// is then simply not counted as the request's own, which errs on the side of
+	// calling it inherited rather than inventing a decision.
+	await services.saveEvolutionDraft.execute(
+		{
+			...evolution,
+			requests: evolution.requests.map((r) => (r.id === requestId ? { ...r, answeredKeys: [...r.answeredKeys, key] } : r))
+		},
+		{ expectedRevision: revision, origin: null }
+	);
 };

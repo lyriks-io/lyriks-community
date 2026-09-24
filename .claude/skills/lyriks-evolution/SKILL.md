@@ -107,11 +107,16 @@ on `evolution`: it is refused.
   walks the knowledge graph from the touched features (never through a role or
   a core); the code plane lists the files the implementation index anchors on
   the touched and reached features, so sync the index from the checkout first.
-  Run the three hypotheses in one batch: they read differently (add extends,
-  change reworks, remove strips). Each run keeps its own findings, so the
-  three stay readable side by side: the summary counts them under
-  `impact.byHypothesis`, and `get_evolution {part:"impact", hypothesis}` reads
-  any of them in full. The dossier opens on one plain line per plane: read
+  Run the hypotheses the request ASKS for, one per kind of draft it carries
+  (add for an addition, change for an amendment, remove for a removal), in
+  one batch: the report reads each row with the verb of the draft behind the
+  feature it was reached from. What taking the change back out would cost is
+  a reading of its own: run `remove` on a request that removes nothing only
+  when the person asks that question. Each run keeps its own findings:
+  `impact.byHypothesis` counts them and `get_evolution {part:"impact",
+  hypothesis}` reads any of them in full. A report that ran and reached
+  nothing says why in `impact.emptyBecause`: read it, because "nothing was
+  declared" (an addition with no `dependsOn`) is not "nothing follows". The dossier opens on one plain line per plane: read
   those to the person before any list.
 - `run_coherence`: computed by the coherence engine over the whole project.
   The findings that name a touched feature are published with the other node
@@ -137,8 +142,11 @@ on `evolution`: it is refused.
 to**, with `as_person: true` on the batch. The act lands as theirs, with the
 channel stamped on the timeline:
 
-- `decide_proposal {proposalId, decision: accept|refuse|reword}`: accept
-  writes the value into its section. On a proposal handed to tagged
+- `decide_proposal {proposalId, decision: accept|refuse|reword, sense?}`:
+  accept writes the value into its section. On a value the glossary flagged,
+  `sense` carries the person's own words when they keep the wording in
+  another sense than the one the glossary guards; it is recorded beside the
+  value. On a proposal handed to tagged
   reviewers, accept is that reviewer's validation and the value is written
   once every reviewer validated; refuse is an invalidation that refuses it.
 - `tag_reviewers {proposalId, reviewerIds[]}`: hand a proposal to named
@@ -198,6 +206,18 @@ conversation. If they said "accept the first three", relay exactly those three.
    acceptance criteria on the touched feature.
 6. **Delivered, then closed.** `close_request` once nothing is owed.
 
+## Hand the person a link, every time
+
+Whenever you tell the person something waits on them (a proposal to sign, an
+open question, a gate to cross or waive, a report line, a remark to rule), give
+them the `href` the answer carries for that exact place, as a clickable
+markdown link, one per thing. The request card, the dossier, `proposals.href`,
+`gate.href`, each proposal, each field row, each report line, each observation
+and each refused result a person resolves carry one. The link opens the page ON
+that place, unfolded and highlighted, and survives the way through sign-in.
+Never describe where to click instead, and never build a page address yourself:
+only the server knows which installation the person uses.
+
 ## Reading a refusal
 
 A refused batch applies nothing. Each result names the operation, the reason
@@ -206,6 +226,12 @@ person as it is; do not work around it with `set_section`.
 
 ## Language
 
-Proposals are written in the vocabulary of the project glossary; a value using
-a banned synonym is flagged before it is offered, and the person rewords it.
+Proposals are written in the vocabulary of the project glossary. A value using
+a banned synonym is flagged before it is offered, and the flag names the agreed
+term it stands in for (`flaggedWords`). A flag WARNS and never blocks: the
+person rewords it, or accepts it as it stands when they meant another sense.
+A word between quotation marks is a citation of what the product or a source
+says and is never flagged. If you made a proposal nobody has decided yet and it
+is wrong, take it back with `withdraw_proposal {proposalId}` instead of leaving
+the field held by a value nobody will sign.
 Names that face the code stay in English (data, states, events, actions).

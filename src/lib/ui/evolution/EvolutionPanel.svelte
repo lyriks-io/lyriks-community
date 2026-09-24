@@ -114,6 +114,7 @@
 		dossier={data.reading.dossier}
 		proposals={data.reading.proposals}
 		impacts={data.reading.impacts}
+		proposes={data.reading.proposes}
 		report={data.reading.report}
 		history={data.reading.history}
 		leaves={data.leaves}

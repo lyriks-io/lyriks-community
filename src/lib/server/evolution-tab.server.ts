@@ -7,6 +7,7 @@ import {
 	impactPart,
 	loadEvolutionView,
 	proposalsPart,
+	proposedKinds,
 	reportPart,
 	requestCard,
 	requestSummary
@@ -64,13 +65,19 @@ export async function loadEvolutionTab(
 					fields: fieldsPart(view, request, { limit: ALL_ROWS, excerpt: false }).fields.entries
 				},
 				proposals: proposalsPart(view, request, actor, { limit: ALL_ROWS }).proposals.entries,
-				// The three readings at once (ac-evo-imp-11); the page shows them as panels.
+				// The three walks are still computed, because adding, changing and
+				// removing reach different things; the page reads ONE of them per row,
+				// the one the request actually proposes (d17092da).
 				impacts: {
 					add: impactPart(request, { hypothesis: 'add' }).impact,
 					change: impactPart(request, { hypothesis: 'change' }).impact,
 					remove: impactPart(request, { hypothesis: 'remove' }).impact
 				},
-				report: codeExists ? reportPart(request).report : null,
+				// What the request PROPOSES, so every row can carry the verb of the
+				// draft that stands for it instead of three columns among which none
+				// describes a request that both adds and amends.
+				proposes: proposedKinds(request),
+				report: codeExists ? reportPart(projectId, request).report : null,
 				history: historyPart(request).history
 			}
 		: null;

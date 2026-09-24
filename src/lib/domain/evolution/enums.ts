@@ -381,6 +381,7 @@ export const HISTORY_ENTRY_TYPES = [
 	{ code: 'stage_crossing', label: 'Stage crossing' },
 	{ code: 'waiver', label: 'Waiver' },
 	{ code: 'accepted_proposal', label: 'Accepted proposal' },
+	{ code: 'withdrawn_proposal', label: 'Withdrawn proposal' },
 	{ code: 'proposal_verdict', label: 'Proposal verdict' },
 	{ code: 'verdict_decision', label: 'Verdict decision' },
 	{ code: 'acceptance_ruling', label: 'Acceptance ruling' },
