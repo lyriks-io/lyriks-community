@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { createEvolutionRequest } from './draft';
-import { propagateImpact, withImpactReading } from './impact-propagation';
+import { propagateImpact, reachedSentence, withImpactReading } from './impact-propagation';
 import { mapCoherenceAnalysis, touchedLeafOf, withCoherenceReading } from './coherence-mapping';
 import { deriveImplementationReport, withDerivedReport } from './report-derivation';
 import { stableId } from './ids';
-import { deriveCodeImpact, impactInPlainWords, impactSummaryLine, impactVerb, reachedFeatures } from './code-impact';
+import { deriveCodeImpact, impactInPlainWords, impactSummaryLine, impactVerb, reachedFeatures, shownImpactSentence } from './code-impact';
 
 /**
  * The three reports are DERIVED: from the knowledge graph, from the engine's
@@ -359,7 +359,7 @@ describe('deriveCodeImpact', () => {
 		expect(lines).toEqual([
 			'1 screen or journey to rework: Cart page.',
 			'1 rule to rewrite: Total never negative.',
-			'1 role to re-check: Admin.',
+			'1 role to set: Admin.',
 			'2 files across 2 features: 2 to change, 0 at risk.'
 		]);
 		// The verb follows the hypothesis (ac-evo-imp-12).
@@ -374,5 +374,103 @@ describe('deriveCodeImpact', () => {
 			'Nothing in the specification moves beyond the touched features.',
 			'No file is anchored on the touched features yet: sync the implementation index from the checkout to read the code plane.'
 		]);
+	});
+});
+
+/**
+ * What a row two links out asks OF THE READER.
+ *
+ * It answered "re-check" for every node whatever it was, which named the
+ * distance the walk had covered and left the reader to guess the work. Replaying
+ * a rule and rereading a definition are not the same afternoon.
+ */
+describe('a knock-on says what it takes to trust it again', () => {
+	const at = (section: string, hypothesis: 'add' | 'change' | 'remove' = 'change') =>
+		impactVerb({
+			id: 'f',
+			hypothesis,
+			section,
+			nodeId: 'n',
+			nodeLabel: 'Whatever',
+			nodeKind: 'screen',
+			groupPath: ['Something'],
+			note: '',
+			codeWork: null,
+			depth: 2,
+			severity: 'low',
+			migrationImplied: null,
+			ruleWork: null
+		} as Parameters<typeof impactVerb>[0]);
+
+	it('names the work, and a different one per kind of node', () => {
+		expect(at('screens_and_journeys')).toBe('walk it again');
+		expect(at('rules_and_scenarios')).toBe('replay it');
+		expect(at('permissions')).toBe('check who may');
+		expect(at('glossary_terms')).toBe('read the definition again');
+		expect(at('entities_and_fields')).toBe('check the shape holds');
+		expect(at('leaves')).toBe('read its spec again');
+	});
+
+	it('never says re-check again, which named the distance and not the work', () => {
+		const everywhere = ['screens_and_journeys', 'rules_and_scenarios', 'permissions', 'glossary_terms', 'entities_and_fields', 'leaves'];
+		expect(everywhere.map((s) => at(s))).not.toContain('re-check');
+	});
+
+	it('still says a removal may break it, which is the one case that is not work but risk', () => {
+		expect(at('screens_and_journeys', 'remove')).toBe('may break');
+	});
+});
+
+/**
+ * Seen on the screen on 2026-09-24, with the merged dossier work: a feature
+ * reached through "depends_on" read "write it", the line under it read
+ * `feature reached in 1 link from X, through "depends_on"`, and five roles
+ * reached from an AMENDED feature read "grant" because the same request also
+ * added something.
+ */
+describe('a reached row says what is true of it, in words', () => {
+	const request = createEvolutionRequest({ id: 'req-2', leafIds: ['feat-a'] });
+
+	it('never tells the reader to write, edit or delete a feature the request does not touch', () => {
+		for (const hypothesis of ['add', 'change', 'remove'] as const) {
+			const invoicing = propagateImpact({ request, hypothesis, depth: 3, graph }).find(
+				(f) => f.nodeId === 'feature:feat-b'
+			);
+			if (!invoicing) continue;
+			expect(['write it', 'edit it', 'delete it']).not.toContain(impactVerb(invoicing));
+		}
+		const change = propagateImpact({ request, hypothesis: 'change', depth: 3, graph });
+		expect(impactVerb(change.find((f) => f.nodeId === 'feature:feat-b')!)).toBe('read its spec again');
+		const remove = propagateImpact({ request, hypothesis: 'remove', depth: 3, graph });
+		expect(impactVerb(remove.find((f) => f.nodeId === 'feature:feat-b')!)).toBe('may break');
+	});
+
+	it('says what joined a node to the change without the name of a graph relation', () => {
+		const change = propagateImpact({ request, hypothesis: 'change', depth: 2, graph });
+		const admin = change.find((f) => f.nodeId === 'role:admin')!;
+		expect(admin.note).toBe('Next to "Checkout": this role can use it.');
+		const order = change.find((f) => f.nodeId === 'entity:e1')!;
+		expect(order.note).toBe('Rests on "Cart page", which is next to "Checkout".');
+		expect(change.every((f) => !/depends_on|accesses|contains|reached in/.test(f.note))).toBe(true);
+		expect(reachedSentence(['X'], 1, 'some_new_link')).toBe('Next to "X": linked as "some new link".');
+	});
+
+	it('remembers which touched feature a node was reached from', () => {
+		const change = propagateImpact({ request, hypothesis: 'change', depth: 2, graph });
+		expect(change.find((f) => f.nodeId === 'role:admin')!.fromLeafId).toBe('feat-a');
+	});
+
+	it('counts on top exactly the rows it shows, verb by verb', () => {
+		expect(
+			shownImpactSentence([
+				{ section: 'leaves', verb: 'read its spec again' },
+				{ section: 'leaves', verb: 'read its spec again' },
+				{ section: 'screens_and_journeys', verb: 'extend' },
+				{ section: 'permissions', verb: 'set who may' },
+				{ section: 'permissions', verb: 'set who may' },
+				{ section: 'code', verb: 'change' }
+			])
+		).toBe('Nothing that exists breaks. 2 features to read their spec again, 1 screen to extend, 2 roles to set who may, 1 file to change.');
+		expect(shownImpactSentence([{ section: 'leaves', verb: 'may break' }])).toBe('1 feature that may break.');
 	});
 });

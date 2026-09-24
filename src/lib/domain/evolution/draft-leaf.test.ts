@@ -11,7 +11,9 @@ import {
 import {
 	createEvolutionRequest,
 	createProposal,
+	draftFor,
 	isDraftLeafId,
+	touchedLeafIds,
 	type Actor,
 	type EvolutionRequest
 } from './draft';
@@ -113,6 +115,33 @@ describe('a request carries what it proposes', () => {
 			'feat-a',
 			draftId
 		]);
+	});
+
+	it('keeps the change among the touched features when someone names only the others', () => {
+		// The invariant: a draft that fell out of the touched set would be invisible
+		// to both readings. Naming the touched features is about the features that
+		// already exist, so it can never take the change itself out.
+		const request = ok(
+			addDraftLeafAct(ctx(), opened(), { kind: 'amend', baseLeafId: 'feat-a', name: 'Book a seat' }, known)
+		);
+		const after = ok(setLeavesAct(ctx(), request, ['feat-b'], known));
+		expect(after.leafIds).toContain(request.drafts[0].id);
+		expect(after.leafIds).toContain('feat-a');
+		expect(after.leafIds).toContain('feat-b');
+	});
+
+	it('reads an amendment and the leaf it stands for as ONE touched feature', () => {
+		const amended = ok(
+			addDraftLeafAct(ctx(), opened(), { kind: 'amend', baseLeafId: 'feat-a', name: 'Book a seat' }, known)
+		);
+		const both = ok(addDraftLeafAct(ctx(), amended, { name: 'Cancel a booking' }, known));
+		const addition = both.drafts[1].id;
+		// Two drafts, three ids internally, and two features a person reads: the
+		// amendment IS feat-a in its proposed form, and the addition stands alone.
+		expect(both.leafIds).toHaveLength(3);
+		expect([...touchedLeafIds(both)]).toEqual(['feat-a', addition]);
+		expect(draftFor(both, 'feat-a')?.kind).toBe('amend');
+		expect(draftFor(both, addition)?.kind).toBe('add');
 	});
 
 	it('still refuses a leaf that is neither in the tree nor drafted', () => {

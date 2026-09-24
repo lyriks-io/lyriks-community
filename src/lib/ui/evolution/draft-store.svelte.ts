@@ -1022,7 +1022,7 @@ export class EvolutionStore {
 			...r,
 			proposals: r.proposals.map((p) =>
 				p.id === proposalId
-					? { ...p, value, decision: 'reworded' as const, bannedSynonymDetected: false }
+					? { ...p, value, decision: 'reworded' as const, bannedSynonymDetected: false, flaggedWords: [] }
 					: p
 			)
 		}));

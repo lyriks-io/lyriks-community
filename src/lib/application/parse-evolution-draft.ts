@@ -179,7 +179,10 @@ function parseImpactFinding(src: Record<string, unknown>): ImpactFinding {
 		severity: isImpactSeverity(src.severity) ? src.severity : 'none',
 		migrationImplied: typeof migration === 'boolean' ? migration : null,
 		ruleWork: ruleWork === 'replay' || ruleWork === 'rewrite' ? ruleWork : null,
-		fromDraft: bool(src.fromDraft)
+		fromDraft: bool(src.fromDraft),
+		// Which touched feature the walk reached it from: the row reads with that
+		// feature's draft. Kept only when present, so an older reading stays as it was.
+		...(typeof src.fromLeafId === 'string' && src.fromLeafId ? { fromLeafId: src.fromLeafId } : {})
 	};
 }
 
@@ -270,6 +273,11 @@ function parseProposal(src: Record<string, unknown>): Proposal {
 		reasoningSeparatesReadFromInferred: bool(src.reasoningSeparatesReadFromInferred),
 		citedSourceIds: strList(src.citedSourceIds),
 		bannedSynonymDetected: bool(src.bannedSynonymDetected),
+		flaggedWords: (Array.isArray(src.flaggedWords) ? src.flaggedWords : [])
+			.filter((f): f is Record<string, unknown> => !!f && typeof f === 'object' && typeof (f as Record<string, unknown>).word === 'string')
+			.map((f) => ({ word: str(f.word), prefer: str(f.prefer) })),
+		keptWordingSense: str(src.keptWordingSense),
+		proposedBy: str(src.proposedBy),
 		decision: isProposalDecision(src.decision) ? src.decision : 'pending',
 		comment: str(src.comment),
 		acceptedBy: nullableStr(src.acceptedBy),
@@ -403,6 +411,7 @@ function parseRequest(src: Record<string, unknown>): EvolutionRequest {
 		openQuestionKeys: [
 			...new Set([...strList(src.openQuestionKeys), ...openQuestionsOfParkedBlocks(src, leafIds)])
 		],
+		answeredKeys: [...new Set(strList(src.answeredKeys))],
 		// A signature with no signer or no home stands behind nothing: dropped.
 		fieldSignatures: rows(src.fieldSignatures)
 			.map(parseSignature)

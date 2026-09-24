@@ -107,6 +107,14 @@ export interface ImpactFinding {
 	codeWork: CodeWork | null;
 	/** How many steps from the touched node it sits. */
 	depth: number;
+	/**
+	 * The touched feature (or draft) the walk reached this node from. A node
+	 * takes the verb of the draft that stands for the feature it hangs under,
+	 * so a role reached from an amended feature reads as a change even when the
+	 * same request also adds something. Absent on readings computed before it
+	 * was recorded, which then read with what the request does overall.
+	 */
+	fromLeafId?: string;
 	severity: 'none' | 'low' | 'medium' | 'high' | 'blocking';
 	/**
 	 * Entities only: whether following this impact implies a data migration. An
@@ -182,6 +190,20 @@ export interface Proposal {
 	citedSourceIds: string[];
 	/** Raised before the card is offered, when the value uses a word the glossary bans. */
 	bannedSynonymDetected: boolean;
+	/**
+	 * Each flagged word and the agreed term it stands in for, so the flag names
+	 * the sense it guards instead of only saying "banned". A flag warns and never
+	 * blocks the decision: only the person knows which sense they meant.
+	 */
+	flaggedWords: { word: string; prefer: string }[];
+	/**
+	 * The person's own words when they keep a flagged wording, saying the word was
+	 * used in another sense. Recorded beside the value it came with. Empty when
+	 * nothing was flagged or nothing was said.
+	 */
+	keptWordingSense: string;
+	/** Who made the proposal: the only caller that may withdraw it while undecided. */
+	proposedBy: string;
 	decision: ProposalDecision;
 	comment: string;
 	acceptedBy: string | null;
@@ -471,6 +493,13 @@ export interface EvolutionRequest {
 	 * is what the guided fill walks and what the completion targets first.
 	 */
 	openQuestionKeys: string[];
+	/**
+	 * The fields THIS request answered, keyed like `fieldKey`: a value typed on
+	 * the dossier or a proposal accepted on it. The value itself lives in the
+	 * owning section; this only says whose decision it was, so a value the touched
+	 * feature already held is never read as an answer the request gave (2a9716f2).
+	 */
+	answeredKeys: string[];
 	/** Who stands behind which value, field home by field home. */
 	fieldSignatures: FieldSignature[];
 	/** The conversations held next to the fields, oldest first. */
@@ -546,6 +575,7 @@ export function createEvolutionRequest(
 		frozenVersions: [],
 		createdAt: '',
 		openQuestionKeys: [],
+		answeredKeys: [],
 		fieldSignatures: [],
 		fieldThreads: [],
 		readinessExclusions: [],
@@ -563,6 +593,28 @@ export function createEvolutionRequest(
 		...overrides
 	};
 }
+
+/**
+ * The features a request touches, one entry each, in the order they were named.
+ *
+ * `leafIds` deliberately holds BOTH sides of an amendment: the draft, because
+ * every reading starts from what the change proposes, and the leaf it stands
+ * for, because what rests on that leaf is what the walk has to reach. Neither
+ * belongs in a list a person reads, though: an amendment IS that leaf in its
+ * proposed form, so the two collapse onto the leaf that exists, which is also
+ * where the freeze patches it and where its answers already live. An addition
+ * stands for no existing leaf and stays an entry of its own.
+ */
+export const touchedLeafIds = (request: EvolutionRequest): readonly string[] => {
+	const standIns = new Set(
+		request.drafts.filter((d) => d.baseLeafId !== null).map((d) => d.id)
+	);
+	return request.leafIds.filter((id) => !standIns.has(id));
+};
+
+/** The draft a request carries for one touched feature, whichever side names it. */
+export const draftFor = (request: EvolutionRequest, leafId: string): DraftLeaf | null =>
+	request.drafts.find((d) => d.id === leafId || d.baseLeafId === leafId) ?? null;
 
 export function createObservation(overrides: Partial<Observation> = {}): Observation {
 	return {
@@ -601,6 +653,9 @@ export function createProposal(overrides: Partial<Proposal> = {}): Proposal {
 		reasoningSeparatesReadFromInferred: false,
 		citedSourceIds: [],
 		bannedSynonymDetected: false,
+		flaggedWords: [],
+		keptWordingSense: '',
+		proposedBy: '',
 		reviewerIds: [],
 		verdicts: [],
 		decision: 'pending',

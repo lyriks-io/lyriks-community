@@ -19,12 +19,18 @@ import {
 	supportedStage,
 	trlFromMaturityScore,
 	undecidedCount,
+	blockFieldByPath,
 	canCloseReport,
 	canAcceptProposal,
 	currentLines,
+	draftFor,
+	listDelta,
+	requestPagePath,
+	touchedLeafIds,
 	acceptanceDebt,
 	findingsForCurrentHypothesis,
 	impactInPlainWords,
+	emptyImpactReason,
 	impactSummaryLine,
 	impactVerb,
 	timeline,
@@ -38,7 +44,6 @@ import {
 	type ProjectEvolutionDraft,
 	type Proposal
 } from '$domain/evolution';
-import { blockFieldByPath } from '$domain/evolution';
 import { readDossierField } from '$application/use-cases/save-dossier-field';
 import { leafFeatures, type ProjectFeaturesDraft } from '$domain/features';
 import type { GlossaryTerm } from '$domain/glossary';
@@ -181,6 +186,43 @@ function draftValue(request: EvolutionRequest, leafId: string, fieldPath: string
 	if (key === 'acceptanceCriteria') return draft.acceptanceCriteria.map((c) => c.text).join('\n');
 	const raw = key ? (draft as unknown as Record<string, unknown>)[key] : undefined;
 	return typeof raw === 'string' ? raw : '';
+}
+
+/**
+ * What the request PROPOSES, read from its own drafts.
+ *
+ * The impact report used to print three columns, one per hypothesis, and ask the
+ * reader to pick. That question is already answered: a draft declares its kind.
+ * On a request that both adds and amends, which is the ordinary case, none of the
+ * three columns described what the request does, and the reader could not choose.
+ *
+ * `byLeaf` gives the verb a touched feature carries; `main` is what the request
+ * does overall, used for the nodes the walk merely reached, which belong to no
+ * draft of their own.
+ */
+export function proposedKinds(request: EvolutionRequest): {
+	byLeaf: Record<string, ImpactHypothesis>;
+	main: ImpactHypothesis;
+} {
+	const verbOf = (kind: string): ImpactHypothesis =>
+		kind === 'add' ? 'add' : kind === 'remove' ? 'remove' : 'change';
+	const byLeaf: Record<string, ImpactHypothesis> = {};
+	for (const draft of request.drafts) {
+		byLeaf[draft.id] = verbOf(draft.kind);
+		// An amendment stands for the feature it amends, so that feature reads with
+		// the draft's verb rather than with the request's overall one.
+		if (draft.baseLeafId) byLeaf[draft.baseLeafId] = verbOf(draft.kind);
+		if (draft.materialisedAs) byLeaf[draft.materialisedAs] = verbOf(draft.kind);
+	}
+	const kinds = new Set(Object.values(byLeaf));
+	// Removing is the most consequential, then adding; a request that only amends
+	// reads as a change, which is also the fallback when it drafts nothing at all.
+	const main: ImpactHypothesis = kinds.has('remove')
+		? 'remove'
+		: kinds.has('add')
+			? 'add'
+			: 'change';
+	return { byLeaf, main };
 }
 
 /** The inline fields of a request that hold a value, in their owning section or on the draft. */
@@ -410,6 +452,35 @@ export function filledKeysOf(
 	]);
 }
 
+/**
+ * How much of what the maturity counts this request answered itself, and how
+ * much it inherited from the features it touches (2a9716f2). A value is the
+ * request's own when it was typed or accepted on this dossier, or when only a
+ * draft of this request carries it; anything else the touched feature already
+ * held. An inherited value still counts against the holes, because it is not a
+ * hole, but it is never an answer the request gave.
+ */
+export function inheritanceOf(
+	features: ProjectFeaturesDraft,
+	request: EvolutionRequest
+): { answeredHere: number; inherited: number } {
+	const answered = new Set(request.answeredKeys);
+	let answeredHere = 0;
+	let inherited = 0;
+	for (const leafId of request.leafIds) {
+		for (const field of ALL_BLOCK_FIELDS) {
+			if (field.editor !== 'inline') continue;
+			const key = fieldKey(field.path, leafId);
+			const written = readDossierField(features, field.path, leafId).value;
+			const heldBySection = holdsValue(field, written);
+			if (!heldBySection && !holdsValue(field, draftValue(request, leafId, field.path))) continue;
+			if (answered.has(key) || !heldBySection) answeredHere += 1;
+			else inherited += 1;
+		}
+	}
+	return { answeredHere, inherited };
+}
+
 export function maturityOf(
 	view: EvolutionView,
 	features: ProjectFeaturesDraft,
@@ -488,14 +559,19 @@ const compactFinding = (f: EvolutionRequest['impactFindings'][number]) => ({
 	nodeId: f.nodeId,
 	label: f.nodeLabel,
 	depth: f.depth,
+	...(f.fromLeafId ? { from: f.fromLeafId } : {}),
 	verb: impactVerb(f),
+	// Why this node is in the list at all. The walk computes the sentence; a row
+	// that shows only a verb leaves the reader to guess what joined this node to
+	// the change, which is the one thing they cannot guess.
+	note: f.note,
 	work: f.codeWork,
 	...(f.migrationImplied !== null ? { migration: f.migrationImplied } : {}),
 	...(f.ruleWork !== null ? { rules: f.ruleWork } : {}),
 	...(f.depth > 1 && f.groupPath.length > 0 ? { via: f.groupPath[f.groupPath.length - 1] } : {})
 });
 
-const compactLine = (l: EvolutionRequest['implementationFindings'][number]) => ({
+const compactLine = (l: EvolutionRequest['implementationFindings'][number], href: string) => ({
 	id: l.id,
 	verdict: l.verdict,
 	requirement: l.requirement,
@@ -504,7 +580,9 @@ const compactLine = (l: EvolutionRequest['implementationFindings'][number]) => (
 	specStatement: l.specStatement,
 	codeStatement: l.codeStatement,
 	acceptanceTestPassing: l.acceptanceTestPassing,
-	decision: l.decision
+	decision: l.decision,
+	// Where a person decides this line.
+	href
 });
 
 const countBy = <T,>(items: readonly T[], key: (item: T) => string): Record<string, number> => {
@@ -557,7 +635,11 @@ export function dossierFieldRows(
 	return blocksFor(request).flatMap((block) =>
 		block.fields.flatMap((field) => {
 			if (field.editor !== 'inline') return [];
-			const homes = request.leafIds.length > 0 ? request.leafIds : [null];
+			// One home per touched FEATURE: an amendment and the leaf it stands for
+			// are one feature, so the five questions are asked once, on the leaf
+			// that exists and already holds the answers.
+			const touched = touchedLeafIds(request);
+			const homes = touched.length > 0 ? [...touched] : [null];
 			return homes.map((leafId) => {
 				const key = fieldKey(field.path, leafId);
 				const read = leafId ? readDossierField(features, field.path, leafId) : { value: '', sourceIds: [] };
@@ -578,7 +660,14 @@ export function dossierFieldRows(
 					filled: holdsValue(field, read.value),
 					openQuestion: request.openQuestionKeys.includes(key),
 					pendingProposalId: proposal?.id ?? null,
-					thread: thread ? { id: thread.id, state: thread.state, messages: thread.messages } : null
+					thread: thread ? { id: thread.id, state: thread.state, messages: thread.messages } : null,
+					// Where a person answers or signs this field: the proposal when one
+					// waits, the field itself otherwise.
+					href: requestPagePath(
+						view.projectId,
+						request.id,
+						proposal ? { kind: 'proposal', id: proposal.id } : { kind: 'field', leafId, path: field.path }
+					)
 				};
 			});
 		})
@@ -661,6 +750,31 @@ export function fieldsPart(
 }
 
 /** The pending proposals in full: value, reasoning, sources, reviewers, and whether a person may accept each as it stands. */
+/**
+ * What a proposal would CHANGE about a field made of statements.
+ *
+ * Computed here because the full held value lives here: a field row carries an
+ * excerpt, and a delta measured against an excerpt invents additions. Prose
+ * fields get nothing: there is no statement to line up.
+ */
+function listProposalDelta(
+	view: EvolutionView,
+	p: { readonly targetField: string; readonly leafId: string | null; readonly value: string }
+) {
+	const field = blockFieldByPath(p.targetField);
+	if (!field || field.kind !== 'list' || !p.leafId) return null;
+	const held = readDossierField(view.features, p.targetField, p.leafId).value;
+	const delta = listDelta(held, p.value);
+	return {
+		delta: {
+			added: delta.added,
+			removed: delta.removed,
+			keptCount: delta.kept.length,
+			identical: delta.identical
+		}
+	};
+}
+
 export function proposalsPart(
 	view: EvolutionView,
 	request: EvolutionRequest,
@@ -686,13 +800,23 @@ export function proposalsPart(
 				leafId: p.leafId,
 				canonicalPath: p.canonicalPath,
 				value: p.value,
+				// What the proposal would CHANGE, on a field made of statements. It is
+				// computed here because the full held value lives here: the field row
+				// carries an excerpt, and a delta against an excerpt invents additions.
+				...(listProposalDelta(view, p) ?? {}),
 				reasoning: p.reasoning,
 				citedSourceIds: p.citedSourceIds,
 				bannedSynonymDetected: p.bannedSynonymDetected,
+				// Each flagged word with the agreed term it stands in for: the flag warns
+				// and names the sense it guards, it never blocks the decision.
+				flaggedWords: p.flaggedWords,
+				keptWordingSense: p.keptWordingSense,
 				decision: p.decision,
 				reviewerIds: p.reviewerIds,
 				reviewers: reviewersOf(view, p),
-				acceptable: canAcceptProposal({ ...actor, kind: 'person' }, p)
+				acceptable: canAcceptProposal({ ...actor, kind: 'person' }, p),
+				// Where a person signs it, opening on the card itself.
+				href: requestPagePath(view.projectId, request.id, { kind: 'proposal', id: p.id })
 			}))
 		}
 	};
@@ -712,6 +836,7 @@ export function impactPart(request: EvolutionRequest, opts: DossierOptions = {})
 			hypothesis,
 			depth: request.impactReport.depth,
 			ranAt: current ? request.impactReport.ranAt : null,
+			emptyBecause: all.length === 0 && (current ? request.impactReport.status === 'ready' : false) ? emptyImpactReason(request) : null,
 			total: all.length,
 			bySection: countBy(all, (f) => f.section),
 			summary: impactSummaryLine(all, hypothesis),
@@ -726,7 +851,7 @@ export function impactPart(request: EvolutionRequest, opts: DossierOptions = {})
 }
 
 /** Every line of the current iteration's report, filtered by verdict and paged. */
-export function reportPart(request: EvolutionRequest, opts: DossierOptions = {}) {
+export function reportPart(projectId: string, request: EvolutionRequest, opts: DossierOptions = {}) {
 	const all = currentLines(request);
 	const kept = opts.verdict ? all.filter((l) => l.verdict === opts.verdict) : all;
 	const paged = page(kept, opts);
@@ -744,7 +869,7 @@ export function reportPart(request: EvolutionRequest, opts: DossierOptions = {})
 			matched: kept.length,
 			offset: paged.offset,
 			limit: paged.limit,
-			lines: paged.returned.map(compactLine)
+			lines: paged.returned.map((l) => compactLine(l, requestPagePath(projectId, request.id, { kind: 'line', id: l.id })))
 		}
 	};
 }
@@ -807,7 +932,7 @@ export function requestPart(
 		case 'impact':
 			return impactPart(request, opts);
 		case 'report':
-			return reportPart(request, opts);
+			return reportPart(view.projectId, request, opts);
 		case 'readings':
 			return readingsPart(view, request, opts);
 		case 'history':
@@ -838,21 +963,29 @@ export function requestSummary(view: EvolutionView, request: EvolutionRequest, a
 
 	return {
 		...head,
+		// The request's page, for a person to open it.
+		href: requestPagePath(view.projectId, request.id),
 		origin: request.origin,
 		requester: request.requester,
 		shownStage: supportedStage(request, maturity.criticalEmptyCount),
 		createdAt: request.createdAt,
-		leafIds: request.leafIds,
-		leaves: request.leafIds.map((id) => ({
-			id,
-			name:
-				view.leaves.find((l) => l.id === id)?.name ??
-				request.drafts.find((d) => d.id === id)?.name ??
+		leafIds: [...touchedLeafIds(request)],
+		leaves: touchedLeafIds(request).map((id) => {
+			const draft = draftFor(request, id);
+			const existing = view.leaves.find((l) => l.id === id);
+			return {
 				id,
-			// A touched feature that does not exist yet says so, so a reader never
-			// goes looking for it in the tree.
-			drafted: request.drafts.some((d) => d.id === id)
-		})),
+				// An amendment that renames says the new name; one that does not keeps
+				// the name the leaf already has, which is what the freeze will keep too.
+				name: draft?.name || existing?.name || id,
+				// A touched feature that does not exist yet says so, so a reader never
+				// goes looking for it in the tree.
+				drafted: existing === undefined,
+				// What the request would do to it, so a feature that exists is never
+				// read as a proposal, nor a proposal as a feature that exists.
+				change: draft?.kind ?? null
+			};
+		}),
 		// ac-evo-draft-6: what the request proposes, counted here and read in full
 		// through part "drafts".
 		drafts: {
@@ -872,6 +1005,7 @@ export function requestSummary(view: EvolutionView, request: EvolutionRequest, a
 			criticalEmptyFields: maturity.criticalEmptyFields,
 			openQuestionCount: maturity.openQuestionCount,
 			statement: maturity.statement,
+			...inheritanceOf(features, request),
 			blocks: maturity.perBlock.map((b) => ({
 				id: b.block.id,
 				title: b.block.title,
@@ -915,6 +1049,10 @@ export function requestSummary(view: EvolutionView, request: EvolutionRequest, a
 			bySection: countBy(impactAll, (f) => f.section),
 			// One line per plane, read without the spec open (ac-evo-imp-10).
 			plain: impactInPlainWords(impactAll),
+			// Why a report that ran came back empty (c62c57a6): "nothing was
+			// declared" and "nothing follows" must never read alike.
+			emptyBecause:
+				request.impactReport.status === 'ready' && impactAll.length === 0 ? emptyImpactReason(request) : null,
 			direct: impactAll.filter((f) => f.depth <= 1).slice(0, DIRECT_IMPACT_SHOWN).map(compactFinding)
 		},
 		// The fields in numbers. The rows themselves are one part away
@@ -946,13 +1084,17 @@ export function requestSummary(view: EvolutionView, request: EvolutionRequest, a
 			pending: pending.length,
 			flagged: pending.filter((p) => p.bannedSynonymDetected).length,
 			tagged: pending.filter((p) => p.reviewerIds.length > 0).length,
-			blocked: pending.filter((p) => !canAcceptProposal({ ...actor, kind: 'person' }, p).ok).length
+			blocked: pending.filter((p) => !canAcceptProposal({ ...actor, kind: 'person' }, p).ok).length,
+			// Where a person starts signing: the first proposal that waits.
+			href: pending[0] ? requestPagePath(view.projectId, request.id, { kind: 'proposal', id: pending[0].id }) : null
 		},
 		gate: {
 			next: gate.next,
 			ok: gate.verdict.ok,
 			reason: gate.verdict.ok ? null : gate.verdict.reason,
-			detail: gate.verdict.ok ? null : gate.verdict.detail
+			detail: gate.verdict.ok ? null : gate.verdict.detail,
+			// Where a person crosses it, or waives it with a reason.
+			href: requestPagePath(view.projectId, request.id, { kind: 'next-step' })
 		},
 		waiver: openWaiver(request),
 		// The report in short; the lines are one part away (part=report, optionally per verdict).
@@ -972,7 +1114,8 @@ export function requestSummary(view: EvolutionView, request: EvolutionRequest, a
 			ruling: o.ruling,
 			rulingReason: o.rulingReason,
 			foldedBackAt: o.foldedBackAt,
-			foldedBackLeafId: o.foldedBackLeafId
+			foldedBackLeafId: o.foldedBackLeafId,
+			href: requestPagePath(view.projectId, request.id, { kind: 'observation', id: o.id })
 		})),
 		acceptanceDebt: acceptanceDebt(request),
 		history: timeline(request)
@@ -1043,7 +1186,8 @@ export function requestCard(view: EvolutionView, request: EvolutionRequest) {
 		blockingFindings: publishedFindings(request).filter((f) => f.severity === 'blocking').length,
 		undecidedLines: undecidedCount(request),
 		acceptanceDebt: acceptanceDebt(request),
-		waived: openWaiver(request) !== null
+		waived: openWaiver(request) !== null,
+		href: requestPagePath(view.projectId, request.id)
 	};
 }
 

@@ -34,8 +34,13 @@ export function canGenerateProposals(
 
 /**
  * Acceptance needs a source in the evidence register, a reasoning that separates
- * what was read from what was inferred, a home to write to, and no wording the
- * glossary bans. Those four hold for everyone.
+ * what was read from what was inferred, and a home to write to. Those three hold
+ * for everyone.
+ *
+ * A word the glossary bans is NOT among them. The check matches a word and not
+ * its sense, so it refused "in progress" quoted from what the product displays
+ * exactly as if it had called coverage progress. It warns, names the term it
+ * guards, and the person decides (a2a01f3a).
  *
  * Who may sign follows the roster (ac-evo-req-13). Where two or more people
  * share the workspace, acceptance is the human signature the feature exists for
@@ -58,11 +63,6 @@ export function canAcceptProposal(
 			proposal.citedSourceIds.length < 1,
 			'This proposal cites no source.',
 			'A value nobody can trace back to a source in the evidence register cannot be signed for, because the audit later has nothing to read.'
-		),
-		guard(
-			proposal.bannedSynonymDetected,
-			'This proposal uses a word the glossary bans.',
-			'The flagged wording has to be reworded first, otherwise the banned synonym enters the canonical spec through the back door.'
 		),
 		guard(
 			!proposal.reasoningSeparatesReadFromInferred,
