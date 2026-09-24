@@ -6,9 +6,16 @@ import {
 	proposalsPart,
 	readingsPart,
 	requestSummary,
+	filledInlineKeys,
 	type EvolutionView
 } from './evolution-view.server';
-import { createEvolutionRequest, createProposal, type Actor, type EvolutionRequest } from '$domain/evolution';
+import {
+	createDraftLeaf,
+	createEvolutionRequest,
+	createProposal,
+	type Actor,
+	type EvolutionRequest
+} from '$domain/evolution';
 import { createEmptyFeaturesDraft, createFeature } from '$domain/features';
 
 /**
@@ -154,5 +161,79 @@ describe('every list of a dossier is read on its own', () => {
 		expect(one.proposals.total).toBe(2);
 		expect(one.proposals.matched).toBe(1);
 		expect(one.proposals.entries[0].id).toBe('prop-0');
+	});
+});
+
+/**
+ * A draft's own values count as filled.
+ *
+ * Proven on the studio on 2026-09-23: a draft opened with a problem, a value and
+ * acceptance criteria still reported four critical fields empty, because the
+ * count read only the owning section. So the maturity understated what had been
+ * written, and a person was asked to sign values that already existed.
+ */
+describe('filled fields include the ones the draft carries', () => {
+	const features = createEmptyFeaturesDraft('p1');
+
+	it('counts a value typed on the draft, with nothing written in the section', () => {
+		const request = createEvolutionRequest({
+			id: 'r1',
+			leafIds: ['draft:d1'],
+			drafts: [
+				createDraftLeaf({
+					id: 'draft:d1',
+					kind: 'add',
+					name: 'Rappel',
+					objective: 'Typed on the draft.',
+					acceptanceCriteria: [{ id: 'c1', text: 'Une ligne verifiable.' }]
+				})
+			]
+		});
+		const keys = filledInlineKeys(features, request);
+		expect(keys).toContain('01-origin.objective@draft:d1');
+		expect(keys).toContain('05-functional.acceptance@draft:d1');
+		expect(keys).not.toContain('02-problem.statement@draft:d1');
+	});
+
+	it('still reads the owning section first, so a signed value is what counts', () => {
+		const request = createEvolutionRequest({
+			id: 'r2',
+			leafIds: ['draft:d2'],
+			drafts: [createDraftLeaf({ id: 'draft:d2', kind: 'add', name: 'Rappel' })]
+		});
+		const signed = {
+			...features,
+			leafMeta: { 'draft:d2': { objective: 'Signed in the section.' } }
+		};
+		expect(filledInlineKeys(signed, request)).toContain('01-origin.objective@draft:d2');
+	});
+});
+
+/**
+ * Reported from the screen on 2026-09-24 (request 9c15b7d2): an acceptance
+ * criterion was displayed cut in mid-word, ending in three dots, because the page
+ * was served the excerpt a tool answer needs.
+ */
+describe('excerpting is the caller decision, not the reading', () => {
+	const long = 'x'.repeat(400);
+	const longValue = () => {
+		const { view, request } = viewWith(1);
+		view.features.leafMeta = { [leafId(0)]: { objective: long } };
+		return { view, request };
+	};
+
+	it('shortens by default, so a tool answer stays one size', () => {
+		const { view, request } = longValue();
+		const objective = dossierFieldRows(view, request).find((r) => r.path === '01-origin.objective');
+		expect(objective?.value.endsWith('...')).toBe(true);
+		expect(objective?.value.length).toBeLessThan(long.length);
+	});
+
+	it('gives the value whole when the caller asks for it', () => {
+		const { view, request } = longValue();
+		const objective = dossierFieldRows(view, request, { excerpt: false }).find(
+			(r) => r.path === '01-origin.objective'
+		);
+		expect(objective?.value).toBe(long);
 	});
 });

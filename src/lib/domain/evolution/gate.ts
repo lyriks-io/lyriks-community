@@ -158,6 +158,15 @@ export function nothingToArbitrate(request: EvolutionRequest): boolean {
 	// feature it sits on is; the neighbourhood the walk lists is there because the
 	// feature has neighbours, not because anything about it moved.
 	if (request.drafts.length > 0 && request.drafts.every(isPresentational)) return true;
+	// An ADDITION is never eligible, however quiet the walk came back.
+	//
+	// A feature the product does not have yet has no neighbours to disturb, so the
+	// impact finds nothing to report, and that silence says nothing whatsoever
+	// about the consequences of adding it: an empty report on an addition means
+	// nothing was declared, not that nothing follows. Reproduced on 2026-09-23,
+	// where a drafted capability crossed both gates alone, froze a version and
+	// wrote itself into the tree with nobody deciding anything.
+	if (request.drafts.some((draft) => draft.kind === 'add')) return false;
 	return !request.impactFindings.some(needsAttention);
 }
 

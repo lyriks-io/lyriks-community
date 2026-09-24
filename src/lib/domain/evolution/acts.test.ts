@@ -134,6 +134,8 @@ describe('proposals: a client proposes, a person decides', () => {
 				leafId: 'feat-a',
 				value: 'Let a shopper apply a coupon before paying.',
 				reasoning: 'Read in the support tickets; inferred the wording from the glossary.',
+				whatWasRead: 'The support tickets ask for it in these words.',
+				whatWasInferred: 'The wording follows the glossary.',
 				citedSourceIds: ['src-1'],
 				...over
 			},
@@ -157,7 +159,11 @@ describe('proposals: a client proposes, a person decides', () => {
 		const request = opened();
 		expect(reasonOf(propose(request, client, { citedSourceIds: [] }))).toBe('A proposal cites at least one source of the evidence register.');
 		expect(reasonOf(propose(request, client, { citedSourceIds: ['src-9'] }))).toBe('Unknown source: src-9.');
-		expect(reasonOf(propose(request, client, { fieldPath: 'nope.field' }))).toBe('This field does not exist on the page.');
+		// A refusal names the path it got AND the paths it takes, so a client fixes it
+		// without reading another tool (5e8b1c47 / 3f61d8a9).
+		const unknownField = reasonOf(propose(request, client, { fieldPath: 'nope.field' }));
+		expect(unknownField).toContain('No field is named "nope.field"');
+		expect(unknownField).toContain('01-origin.objective');
 		expect(reasonOf(propose(request, client, { fieldPath: '06-behavioural.rules' }))).toBe(
 			'This block is a reading, not a field: author it in the section that owns it.'
 		);
@@ -242,6 +248,8 @@ describe('proposals handed to tagged reviewers', () => {
 					leafId: 'feat-a',
 					value: 'Let a shopper apply a coupon before paying.',
 					reasoning: 'Read in the tickets; inferred the wording.',
+					whatWasRead: 'The support tickets ask for it in these words.',
+					whatWasInferred: 'The wording follows the glossary.',
 					citedSourceIds: ['src-1']
 				},
 				checks
@@ -354,6 +362,8 @@ describe('the reports are computed, and the gates decide', () => {
 					leafId: 'feat-a',
 					value: 'Let a shopper apply a coupon before paying.',
 					reasoning: 'Read in the support tickets; inferred the wording from the glossary.',
+					whatWasRead: 'The support tickets ask for it in these words.',
+					whatWasInferred: 'The wording follows the glossary.',
 					citedSourceIds: ['src-1']
 				},
 				checks

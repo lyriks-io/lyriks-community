@@ -6,6 +6,52 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.37] - 2026-09-24
+
+### Fixed
+
+- The engine moves with the platform. The platform runs the engine's own
+  mcp-server, not only the behaviour dashboard does, so a fix shipped in the
+  engine reached the dashboard and not the answers the platform itself gives. The
+  dependency now moves with the release, which is how the corrected hint on an
+  orphan index key actually arrives. Caught on the release candidate, where the
+  new answer and the old hint came back in the same response.
+
+## [0.9.36] - 2026-09-24
+
+Eight things that made the tool argue with the person using it.
+
+### Fixed
+
+- A value signed by a person is the value the feature carries. It used to lose to
+  the text typed on the draft, so two of four signed values reached nothing, with
+  nothing on screen saying which of the two had been kept. A signed list of
+  acceptance criteria now replaces the typed one instead of joining it, which is
+  what put two wordings of the same criterion side by side.
+- A value carried by a draft counts as filled. The maturity read only the owning
+  section, so it reported four critical fields empty on a draft that held them,
+  and asked a person to sign values that already existed.
+- A reasoning is judged in any language. The separation of what was read from what
+  was inferred was guessed by searching the text for the English words "read" and
+  "infer", so a reasoning written in French said exactly that and was told it did
+  not, which no rewording could fix. It is now two named fields, judged on being
+  filled.
+- An addition never crosses its own gates. A feature the product does not have yet
+  has no neighbours, so the impact walk finds nothing, and that silence was read as
+  "nothing follows": a drafted capability crossed both gates alone, froze a version
+  and wrote itself into the tree with nobody deciding anything.
+- A refused field path names the path it received and the paths it accepts, instead
+  of pointing at another tool for a list the caller already holds.
+- The dossier page shows every value whole. A criterion longer than 160 characters
+  was displayed cut in mid-word, ending in three dots, because the page was served
+  the excerpt a tool answer needs to stay one size.
+- The freeze says, per written feature, how many of the draft's acceptance criteria
+  that feature already carried word for word, and which therefore keep the
+  identifier the feature gave them.
+- Registering a source says which of the two registers is meant: the project's
+  evidence register that proposals cite, or the engine's attachments an analysis
+  read.
+
 ## [0.9.35] - 2026-09-23
 
 A signature that survives, and two screens that say what they mean.

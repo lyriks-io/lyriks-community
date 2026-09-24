@@ -45,7 +45,7 @@ export interface SyncIndexArgs {
  * what the engine counts, so the answer carries the definitions with it.
  */
 export const SYNC_SEMANTICS = {
-  ok: 'true only when every report succeeded, no orphan key was found and at least one report landed.',
+  ok: 'true only when every report succeeded, no orphan key was found and something actually landed. An index carrying only acceptance criteria posts no action or surface report, and that counts as landing: read `criteria.indexed` and an empty `orphans`.',
   synced: 'Implementation reports written: one per action and one per surface that has its own entry in the index you sent.',
   successes: 'Reports the engine accepted.',
   failures: 'Reports the engine refused; their rows are in failedAcks.',

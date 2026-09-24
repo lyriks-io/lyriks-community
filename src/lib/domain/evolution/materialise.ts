@@ -114,7 +114,35 @@ export function pruneDraftMeta<T extends Tree>(
  * already carries, never substituted for them: an amendment that says one more
  * thing must not silently drop the lines nobody questioned. An identical text is
  * kept once, in the order it was first met.
+ *
+ * Identical is read generously, ignoring case, the amount of space between words
+ * and the punctuation a sentence ends on, because the same line retyped by hand
+ * differs from the first one by exactly those three things and by nothing that
+ * changes its meaning.
  */
+const criterionKey = (text: string) =>
+	text
+		.trim()
+		.toLowerCase()
+		.replace(/\s+/g, ' ')
+		.replace(/[.!;:,]+$/, '');
+
+/**
+ * How many of the second list the first already states word for word.
+ *
+ * Printed on the freeze, because the identifier that survives a repeat is the one
+ * the FEATURE gave it, and nothing used to say so: whoever had noted the draft's
+ * identifiers and anchored an index on them found them attached to nothing, and
+ * concluded that the freeze renumbers criteria. It does not.
+ */
+function repeatedCriteria(
+	before: readonly { readonly id: string; text: string }[] | undefined,
+	fromDraft: readonly { readonly id: string; text: string }[]
+): number {
+	const held = new Set((before ?? []).map((criterion) => criterionKey(criterion.text)));
+	return fromDraft.filter((criterion) => held.has(criterionKey(criterion.text))).length;
+}
+
 function mergeCriteria(
 	...lists: (readonly { readonly id: string; text: string }[] | undefined)[]
 ): { readonly id: string; text: string }[] {
@@ -122,7 +150,7 @@ function mergeCriteria(
 	const seen = new Set<string>();
 	for (const list of lists) {
 		for (const criterion of list ?? []) {
-			const key = criterion.text.trim().toLowerCase();
+			const key = criterionKey(criterion.text);
 			if (!key || seen.has(key)) continue;
 			seen.add(key);
 			out.push(criterion);
@@ -231,19 +259,27 @@ export function materialiseDrafts<T extends Tree>(
 		// What a person signed on the draft. It arrives here rather than on the
 		// draft object whenever it came through a proposal, which is the ordinary
 		// road: the freeze writes what was SIGNED, not only what was typed.
+		//
+		// And the signed value WINS over the one typed on the draft. A signature is
+		// a person's act; the draft's text is a client's opening move. The other way
+		// round, a person signed a value and the feature carried something else,
+		// with nothing on screen to say which of the two had been kept.
 		const signed = meta[draft.id] ?? {};
 		const note = behaviourNote(draft);
 		meta[id] = {
 			...before,
 			status: before.status ?? 'backlog',
-			objective: draft.objective || signed.objective || before.objective,
-			problem: draft.problem || signed.problem || before.problem,
-			expectedEffect: draft.expectedEffect || signed.expectedEffect || before.expectedEffect,
-			value: draft.value || signed.value || before.value,
+			objective: signed.objective || draft.objective || before.objective,
+			problem: signed.problem || draft.problem || before.problem,
+			expectedEffect: signed.expectedEffect || draft.expectedEffect || before.expectedEffect,
+			value: signed.value || draft.value || before.value,
+			// Same rule for the list: a signed list REPLACES the typed one rather than
+			// joining it, or the two say the same thing twice in different words. The
+			// merge stays for what the EXISTING feature already carried, which an
+			// amendment must never silently drop.
 			acceptanceCriteria: mergeCriteria(
 				before.acceptanceCriteria,
-				criteriaOf(draft),
-				signed.acceptanceCriteria
+				signed.acceptanceCriteria?.length ? signed.acceptanceCriteria : criteriaOf(draft)
 			),
 			dependsOn: [...new Set([...(before.dependsOn ?? []), ...draft.dependsOn.map(resolve)])],
 			sourceIds: [...new Set([...(before.sourceIds ?? []), ...draft.sourceIds])],
@@ -251,10 +287,19 @@ export function materialiseDrafts<T extends Tree>(
 		};
 		delete meta[draft.id];
 		written.push(draft);
+		const repeated = repeatedCriteria(
+			before.acceptanceCriteria,
+			signed.acceptanceCriteria?.length ? signed.acceptanceCriteria : criteriaOf(draft)
+		);
+		// Said only when it happened, so the ordinary line stays one sentence.
+		const kept =
+			repeated === 0
+				? ''
+				: `, ${repeated} acceptance ${repeated === 1 ? 'criterion' : 'criteria'} it already carried kept the id the feature gave it`;
 		lines.push(
 			draft.kind === 'add'
-				? `Created "${draft.name}" (${id}) from request ${request.id}`
-				: `Amended "${draft.name || id}" (${id}) from request ${request.id}`
+				? `Created "${draft.name}" (${id}) from request ${request.id}${kept}`
+				: `Amended "${draft.name || id}" (${id}) from request ${request.id}${kept}`
 		);
 	}
 

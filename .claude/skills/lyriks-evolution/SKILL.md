@@ -116,13 +116,17 @@ on `evolution`: it is refused.
 - `run_coherence`: computed by the coherence engine over the whole project.
   The findings that name a touched feature are published with the other node
   at fault and a Fix now target.
-- `propose {fieldPath, leafId, value, reasoning, citedSourceIds[]}`: one
-  proposal per empty field, targeting the **open questions first** (amber
-  fields the author declared), then the empty **critical** fields the maturity
-  names. The reasoning says what you **read** and what you **inferred**. Every
-  proposal cites at least one row of the documents register; register the
-  source first when it is not there (a web address, or the verbatim content in
-  the note).
+- `propose {fieldPath, leafId, value, whatWasRead, whatWasInferred,
+  citedSourceIds[]}`: one proposal per empty field, targeting the **open
+  questions first** (amber fields the author declared), then the empty
+  **critical** fields the maturity names. Say what you **read** in
+  `whatWasRead` and what you **inferred** in `whatWasInferred`: two fields, in
+  the project's own language, and a proposal that fills only the older free-text
+  `reasoning` cannot be accepted. Nothing is looked for in your wording, so
+  French, Spanish or any other language passes exactly as English does. Every
+  proposal cites at least one row of the documents register; register the source
+  first when it is not there (a web address, or the verbatim content in the
+  note).
 - `post_on_field {fieldPath, leafId, body}`: ask the person a question where
   the field stands.
 - `build_implementation_report`: in Verify, after `sync_implementation_index`

@@ -60,7 +60,8 @@ export async function loadEvolutionTab(
 					...requestSummary(view, request, actor),
 					// The summary counts the fields so a tool answer stays one size
 					// whatever the request touches; the page shows them all, per leaf.
-					fields: fieldsPart(view, request, { limit: ALL_ROWS }).fields.entries
+					// The page, not a tool answer: the value comes whole (9c15b7d2).
+					fields: fieldsPart(view, request, { limit: ALL_ROWS, excerpt: false }).fields.entries
 				},
 				proposals: proposalsPart(view, request, actor, { limit: ALL_ROWS }).proposals.entries,
 				// The three readings at once (ac-evo-imp-11); the page shows them as panels.

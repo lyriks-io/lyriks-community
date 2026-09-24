@@ -117,7 +117,10 @@ describe('a value signed on a draft reaches the feature', () => {
 		expect(texts.filter((t) => t === 'Each switch is a square carrying a tick.')).toHaveLength(1);
 	});
 
-	it('prefers what was typed on the draft over what a row still holds', () => {
+	// Reversed on 2026-09-23 by request 5e8b1c47: a signature is a person's act and
+	// the draft's text is a client's opening move, so the signed row wins. The other
+	// way round, a person signed a value and the feature carried something else.
+	it('prefers what a row holds, signed, over what was typed on the draft', () => {
 		const request = ok(
 			addDraftLeafAct(
 				ctx(),
@@ -132,7 +135,7 @@ describe('a value signed on a draft reaches the feature', () => {
 			request,
 			'2026-09-23T12:00:00.000Z'
 		);
-		expect(out.features.leafMeta?.['feat-a']?.objective).toBe('Typed on the draft.');
+		expect(out.features.leafMeta?.['feat-a']?.objective).toBe('Signed in the row.');
 	});
 
 	it('forgets the rows of a request that no longer exists', () => {

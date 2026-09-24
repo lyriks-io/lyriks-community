@@ -24,7 +24,14 @@ import {
 	type Proposal
 } from './draft';
 import { ALLOW, firstRefusal, guard, refuse, type Guarded, type Refused } from './guard';
-import { blockFieldByPath, canonicalPathsFor, fieldKey, holdsValue, isLeafScoped } from './blocks';
+import {
+	ALL_BLOCK_FIELDS,
+	blockFieldByPath,
+	canonicalPathsFor,
+	fieldKey,
+	holdsValue,
+	isLeafScoped
+} from './blocks';
 import {
 	acceptanceDebt,
 	canAdvance,
@@ -505,7 +512,18 @@ export interface ProposeInput {
 	readonly value: string;
 	readonly reasoning: string;
 	readonly citedSourceIds: readonly string[];
-	/** Whether the reasoning says what was read and what was inferred; detected when omitted. */
+	/**
+	 * The two halves of the reasoning, named rather than looked for in the prose:
+	 * what was READ in the sources, and what was INFERRED from it.
+	 *
+	 * They exist because the separation used to be guessed by searching the free
+	 * text for the English words "read" and "infer". A reasoning written in the
+	 * project's own language said exactly what had been read and what had been
+	 * inferred, and was told that it did not, which no rewording could fix.
+	 */
+	readonly whatWasRead?: string;
+	readonly whatWasInferred?: string;
+	/** Asserted by the caller when it fills the single free-text reasoning instead. */
 	readonly readVsInferred?: boolean;
 }
 
@@ -516,6 +534,19 @@ export interface ProposeChecks {
 }
 
 const escapeWord = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * The paths a proposal can fill, listed in the refusal that rejects one.
+ *
+ * A refusal naming neither what it received nor what it accepts costs a round
+ * trip, and pointing at another tool costs a second one when the caller is
+ * holding a reading that already lists them.
+ */
+export function proposableFieldPaths(): string {
+	return ALL_BLOCK_FIELDS.filter((f) => f.editor === 'inline')
+		.map((f) => f.path)
+		.join(', ');
+}
 
 export function usesBannedWord(value: string, bannedWords: readonly string[]): boolean {
 	const words = bannedWords.map((w) => w.trim()).filter((w) => w.length > 1);
@@ -538,8 +569,8 @@ export function proposeAct(
 		notFinished(request),
 		guard(
 			!field,
-			'This field does not exist on the page.',
-			'Only the fields of the known blocks can be proposed; describe_section(evolution) lists them.'
+			`No field is named "${input.fieldPath}". The fields a proposal can fill are ${proposableFieldPaths()}.`,
+			'The same list comes back as `fieldsAvailable` on the reading you already have, so the accepted paths never have to be looked up elsewhere.'
 		),
 		guard(
 			field?.editor === 'capability',
@@ -577,15 +608,24 @@ export function proposeAct(
 	if (!allowed.ok || !field) return allowed as Refused;
 
 	const path = canonicalPathsFor(field, input.leafId ? [input.leafId] : [])[0]?.path ?? '';
-	const readVsInferred =
-		input.readVsInferred ?? (/\bread\b/i.test(input.reasoning) && /\binfer/i.test(input.reasoning));
+	// Structural, never linguistic: the two halves are either named or they are
+	// not. No language is privileged, because a check that only passes in English
+	// switches the sourcing discipline off wherever the product is actually used.
+	const read = input.whatWasRead?.trim() ?? '';
+	const inferred = input.whatWasInferred?.trim() ?? '';
+	const readVsInferred = input.readVsInferred ?? (read !== '' && inferred !== '');
 	const proposal: Proposal = createProposal({
 		id: ctx.newId(),
 		targetField: input.fieldPath,
 		canonicalSection: field.section,
 		canonicalPath: path,
 		value: input.value.trim(),
-		reasoning: input.reasoning.trim(),
+		// The free text stays what a reader reads. When only the two halves were
+		// given, it is composed from them rather than left blank, so the dossier
+		// never shows a proposal with no reasoning at all.
+		reasoning: input.reasoning.trim() || [read, inferred].filter((part) => part !== '').join('\n\n'),
+		whatWasRead: read,
+		whatWasInferred: inferred,
 		reasoningSeparatesReadFromInferred: readVsInferred,
 		citedSourceIds: [...new Set(input.citedSourceIds)],
 		bannedSynonymDetected: usesBannedWord(input.value, checks.bannedWords)
@@ -810,7 +850,11 @@ export function markOpenQuestionAct(
 	const allowed = firstRefusal(
 		notFinished(request),
 		carriesForward(ctx, 'declare an open question'),
-		guard(!blockFieldByPath(fieldPath), 'This field does not exist on the page.', 'Only the known fields can be declared open.'),
+		guard(
+			!blockFieldByPath(fieldPath),
+			`No field is named "${fieldPath}". The fields that can be declared open are ${proposableFieldPaths()}.`,
+			'The same list comes back as `fieldsAvailable` on the reading you already have.'
+		),
 		canMarkOpenQuestion({
 			canEdit: canEdit(ctx.actor),
 			fieldSelected: fieldPath !== '',
@@ -857,7 +901,11 @@ export function postOnFieldAct(
 	const startsNew = current === undefined || current.state === 'turned_into_change';
 	const allowed = firstRefusal(
 		notFinished(request),
-		guard(!blockFieldByPath(fieldPath), 'This field does not exist on the page.', 'A thread hangs under a known field.'),
+		guard(
+			!blockFieldByPath(fieldPath),
+			`No field is named "${fieldPath}". The fields that can be carry a thread are ${proposableFieldPaths()}.`,
+			'The same list comes back as `fieldsAvailable` on the reading you already have.'
+		),
 		guard(body.trim() === '', 'A message needs a body.', 'An empty message says nothing.'),
 		canPostOnField(ctx.actor, { canComment: true, thread: startsNew ? undefined : current })
 	);
