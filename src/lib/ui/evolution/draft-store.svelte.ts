@@ -48,6 +48,7 @@ import {
 	protectedLineIds,
 	readCoherence,
 	readMaturity,
+	touchedLeafIds,
 	readReadiness,
 	record,
 	restoreToReadiness,
@@ -232,7 +233,7 @@ export class EvolutionStore {
 		readMaturity(
 			this.filledKeysOf(request),
 			request.openQuestionKeys,
-			request.leafIds,
+			[...touchedLeafIds(request)],
 			blocksFor(request)
 		);
 

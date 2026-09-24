@@ -86,9 +86,22 @@ export function canFlagRegression(finding: ImplementationFinding): Guarded {
 	);
 }
 
-/** How many lines of the current iteration still carry no decision. */
+/** A line this request answers for: everything but what the touched features already held. */
+export const isRequestLine = (line: ImplementationFinding): boolean => line.scope !== 'inherited';
+
+/**
+ * How many lines of the current iteration still carry no decision and hold
+ * the report open. Inherited lines are the touched features' own standing:
+ * they are shown, and decidable, but a change is not held hostage to the
+ * backlog of the feature it amends.
+ */
 export function undecidedCount(request: EvolutionRequest): number {
-	return currentLines(request).filter((l) => l.decision === 'undecided').length;
+	return currentLines(request).filter((l) => isRequestLine(l) && l.decision === 'undecided').length;
+}
+
+/** Inherited lines still undecided: context, never a gate. */
+export function inheritedUndecidedCount(request: EvolutionRequest): number {
+	return currentLines(request).filter((l) => !isRequestLine(l) && l.decision === 'undecided').length;
 }
 
 /** The report lines of the iteration in flight. Past iterations keep their own. */

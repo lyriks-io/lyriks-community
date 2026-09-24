@@ -63,7 +63,7 @@ describe('propagateImpact', () => {
 		expect(impactSummaryLine(add, 'add')).toBe('Nothing that exists breaks. 1 screen to extend, 1 role to grant, 1 rule to replay.');
 		const remove = propagateImpact({ request, hypothesis: 'remove', depth: 3, graph });
 		expect(impactSummaryLine(remove, 'remove')).toBe(
-			'1 screen to strip, 1 role to revoke, 1 rule to rewrite or retire, 2 entities to migrate, 3 knock-ons that may break.'
+			'1 screen to strip, 1 role to revoke, 1 rule to rewrite or retire, 2 entities to migrate, 3 nodes further out that may break.'
 		);
 		expect(impactVerb(remove.find((f) => f.nodeId === 'screen:s1')!)).toBe('strip');
 		expect(impactVerb(remove.find((f) => f.nodeId === 'entity:e1')!)).toBe('migrate');
@@ -472,5 +472,21 @@ describe('a reached row says what is true of it, in words', () => {
 			])
 		).toBe('Nothing that exists breaks. 2 features to read their spec again, 1 screen to extend, 2 roles to set who may, 1 file to change.');
 		expect(shownImpactSentence([{ section: 'leaves', verb: 'may break' }])).toBe('1 feature that may break.');
+	});
+});
+
+/**
+ * Seen through the MCP on rc.studio on 2026-09-25: the per-walk lines an AI
+ * client reads said "1 feature to edit" of a feature the request only reached,
+ * while the row itself read "read its spec again".
+ */
+describe('the plain lines a client reads agree with the rows', () => {
+	it('never tells a client to edit a feature the request only reached', () => {
+		const request = createEvolutionRequest({ id: 'req-3', leafIds: ['feat-a'] });
+		const change = propagateImpact({ request, hypothesis: 'change', depth: 3, graph });
+		const lines = impactInPlainWords(change, 'change').join(' ');
+		expect(lines).not.toContain('to edit');
+		expect(lines).toContain('feature to read again');
+		expect(impactSummaryLine(change, 'change')).not.toContain('knock-on');
 	});
 });

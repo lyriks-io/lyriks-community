@@ -190,7 +190,12 @@ export function draftCoherence(input: DraftCoherenceInput): CoherenceFinding[] {
 
 		// An addition nobody can test. Not a contradiction with the existing spec,
 		// so it is worth knowing about without holding the request.
-		if (draft.kind !== 'remove' && draft.acceptanceCriteria.length === 0)
+		// An amendment that only rewords or retires criteria says what changes.
+		if (
+			draft.kind !== 'remove' &&
+			draft.acceptanceCriteria.length === 0 &&
+			(draft.changeCriteria?.length ?? 0) + (draft.retireCriteria?.length ?? 0) === 0
+		)
 			findings.push({
 				id: stableId('coh-draft-untestable', request.id, draft.id),
 				axis: 'functional',

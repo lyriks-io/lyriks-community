@@ -2,16 +2,21 @@
 // Lyriks helper (installed by `sync_skills` under .lyriks/tools/).
 //   node .lyriks/tools/sync-index.mjs [--feature <featureId>] [--project <id>] [--url URL] [--token TOKEN]
 // Sends `.unspa.json` to `sync_implementation_index`, because a large index
-// cannot be typed as a tool argument. The project comes from the index file
-// (`projectId`) unless --project names it. Prints the counters and what each
-// one means, never the whole answer.
+// cannot be typed as a tool argument. The project comes from --project, else
+// from the index file (`projectId`), else from the binding block of CLAUDE.md
+// (or AGENTS.md...). When the index and the binding block name two different
+// projects and --project is not given, nothing is sent and the exact command to
+// run is printed; any other disagreement is a warning on stderr and in
+// `projectWarnings`. Prints the counters and what each one means, never the
+// whole answer.
 //
 // --feature sends one feature's slice. The engine leaves untouched every action
 // and surface absent from what it receives, but a report REPLACES what was
 // located for an action or surface: an action must travel with all of its
 // children. The index does not record parentage, so the server is asked which
 // keys belong to the feature (get_behavior_feature with index_keys:true).
-import { indexEntries, loadIndexFile } from './index-file.mjs';
+import { indexEntries, isMainModule, loadIndexFile } from './index-file.mjs';
+import { projectForWrite } from './index-project.mjs';
 import { ENDPOINT_FLAGS, callToolJson, openSession, parseArgs, resolveEndpoint, runScript } from './mcp-client.mjs';
 
 /** Every index key the feature declares, following the paging of a very large feature. */
@@ -36,7 +41,7 @@ async function featureKeys(session, projectId, featureId) {
 }
 
 /** The entries to send for one feature, or a refusal that says what to do instead. */
-async function sliceForFeature(session, projectId, featureId, entries) {
+export async function sliceForFeature(session, projectId, featureId, entries) {
 	const keys = await featureKeys(session, projectId, featureId);
 	if (keys) return entries.filter(([key]) => keys.has(key));
 	// Fallback for a gateway without index_keys: the entries' own `featureId`
@@ -63,7 +68,7 @@ function sizeOf(block) {
 }
 
 /** What an agent needs from a sync answer: the counters, what is actionable, and the definitions. */
-function summarize(answer, sent, featureId) {
+export function summarize(answer, sent, featureId) {
 	const counters = {};
 	for (const [name, value] of Object.entries(answer)) {
 		if (typeof value === 'number' || typeof value === 'boolean') counters[name] = value;
@@ -80,29 +85,41 @@ function summarize(answer, sent, featureId) {
 	return summary;
 }
 
-runScript(async () => {
-	const { flags } = parseArgs(process.argv.slice(2), [...ENDPOINT_FLAGS, 'feature', 'project']);
-	const loaded = loadIndexFile();
-	const projectId = typeof flags.project === 'string' ? flags.project : loaded.projectId;
-	if (!projectId) {
-		throw new Error(`${loaded.path} names no projectId: pass --project <id> (the Lyriks project this repository is specified in).`);
-	}
-	const entries = indexEntries(loaded.index);
-	const session = await openSession(resolveEndpoint(flags));
-	const featureId = typeof flags.feature === 'string' ? flags.feature : null;
-	const slice = featureId ? await sliceForFeature(session, projectId, featureId, entries) : entries;
-	if (slice.length === 0) {
-		throw new Error(
-			featureId
-				? `No entry of ${loaded.path} belongs to feature ${featureId}: nothing to send.`
-				: `${loaded.path} holds no entry: nothing to send.`
-		);
-	}
+/** The project a sync addresses, with every disagreement about it (throws on a conflict). */
+export function projectForSync(flags, loaded) {
+	return projectForWrite({ flag: flags.project, indexProject: loaded.projectId, indexPath: loaded.path, dirs: [loaded.dir, process.cwd()] });
+}
+
+/** Sends entries as a (partial) index and returns what an agent reads of the answer. */
+export async function sendEntries(session, project, slice, featureId) {
 	const answer = await callToolJson(session, 'sync_implementation_index', {
-		project_id: projectId,
+		project_id: project.projectId,
 		index: Object.fromEntries(slice)
 	});
-	console.log(JSON.stringify(summarize(answer, slice.length, featureId), null, 2));
-	// `ok:false` means orphan keys or refused reports: worth a failing exit code.
-	return answer.ok === false ? 1 : 0;
-});
+	const summary = { project: project.projectId, projectSource: project.source, ...summarize(answer, slice.length, featureId) };
+	if (project.warnings.length > 0) summary.projectWarnings = project.warnings;
+	return { answer, summary };
+}
+
+if (isMainModule(import.meta.url)) {
+	runScript(async () => {
+		const { flags } = parseArgs(process.argv.slice(2), [...ENDPOINT_FLAGS, 'feature', 'project']);
+		const loaded = loadIndexFile();
+		const project = projectForSync(flags, loaded);
+		const entries = indexEntries(loaded.index);
+		const session = await openSession(resolveEndpoint(flags));
+		const featureId = typeof flags.feature === 'string' ? flags.feature : null;
+		const slice = featureId ? await sliceForFeature(session, project.projectId, featureId, entries) : entries;
+		if (slice.length === 0) {
+			throw new Error(
+				featureId
+					? `No entry of ${loaded.path} belongs to feature ${featureId}: nothing to send.`
+					: `${loaded.path} holds no entry: nothing to send.`
+			);
+		}
+		const { answer, summary } = await sendEntries(session, project, slice, featureId);
+		console.log(JSON.stringify(summary, null, 2));
+		// `ok:false` means orphan keys or refused reports: worth a failing exit code.
+		return answer.ok === false ? 1 : 0;
+	});
+}

@@ -107,7 +107,7 @@ export function reachedFeatures(findings: readonly ImpactFinding[]): Record<stri
 const VERBS: Record<ImpactHypothesis, Record<string, string>> = {
 	add: {
 		screens: 'to extend',
-		features: 'to re-read',
+		features: 'to read again',
 		cores: 'concerned',
 		entities: 'that store something new',
 		rules: 'to replay',
@@ -117,7 +117,7 @@ const VERBS: Record<ImpactHypothesis, Record<string, string>> = {
 	},
 	change: {
 		screens: 'to rework',
-		features: 'to edit',
+		features: 'to read again',
 		cores: 'concerned',
 		entities: 'to migrate if their shape changes',
 		rules: 'to rewrite',
@@ -218,7 +218,7 @@ export function impactSummaryLine(findings: readonly ImpactFinding[], hypothesis
 		if (rules) parts.push(`${n(rules, 'rule', 'rules')} to rewrite`);
 		if (roles) parts.push(`${n(roles, 'role', 'roles')} to set`);
 		if (entities) parts.push(`${n(entities, 'entity', 'entities')} that may migrate`);
-		if (knockOns) parts.push(`${n(knockOns, 'knock-on', 'knock-ons')} to check`);
+		if (knockOns) parts.push(`${n(knockOns, 'node', 'nodes')} further out to check again`);
 		if (terms) parts.push(`${n(terms, 'term', 'terms')} to re-read`);
 		if (files) parts.push(`${n(files, 'file', 'files')} to change`);
 		return parts.length === 0 ? 'Nothing beyond the touched features moves.' : `${parts.join(', ')}.`;
@@ -227,7 +227,7 @@ export function impactSummaryLine(findings: readonly ImpactFinding[], hypothesis
 	if (roles) parts.push(`${n(roles, 'role', 'roles')} to revoke`);
 	if (rules) parts.push(`${n(rules, 'rule', 'rules')} to rewrite or retire`);
 	if (entities) parts.push(`${n(entities, 'entity', 'entities')} to migrate`);
-	if (knockOns) parts.push(`${n(knockOns, 'knock-on', 'knock-ons')} that may break`);
+	if (knockOns) parts.push(`${n(knockOns, 'node', 'nodes')} further out that may break`);
 	if (terms) parts.push(`${n(terms, 'term', 'terms')} to retire or narrow`);
 	if (files) parts.push(`${n(files, 'file', 'files')} to remove`);
 	return parts.length === 0 ? 'Nothing beyond the touched features depends on it.' : `${parts.join(', ')}.`;

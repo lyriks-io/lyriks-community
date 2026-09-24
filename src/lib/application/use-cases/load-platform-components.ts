@@ -72,7 +72,7 @@ export class LoadPlatformComponentsUseCase {
 		]);
 
 		const components: ComponentVersion[] = [
-			this.#platform(),
+			this.#platform(host?.release ?? null),
 			this.#engineRow(engineVersion),
 			...this.#backRows(back),
 			this.#datastoreRow(datastoreVersion),
@@ -93,8 +93,14 @@ export class LoadPlatformComponentsUseCase {
 		return components;
 	}
 
-	#platform(): ComponentVersion {
+	/**
+	 * `release` is the release the install runs, as the kit recorded it: the
+	 * image tag alone says "stable", which names what the install follows and
+	 * not what it runs (ac-adm-2).
+	 */
+	#platform(release: string | null): ComponentVersion {
 		const build: Record<string, string> = {};
+		if (release && release !== this.build.imageTag) build.Release = release;
 		if (this.build.imageTag) build['Image tag'] = this.build.imageTag;
 		if (this.build.commit) build.Commit = this.build.commit;
 		if (this.build.builtAt) build.Built = this.build.builtAt;

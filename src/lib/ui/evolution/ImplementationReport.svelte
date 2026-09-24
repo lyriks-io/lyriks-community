@@ -14,6 +14,7 @@
 		linesInBucket,
 		protectedLineIds,
 		undecidedCount,
+		inheritedUndecidedCount,
 		type EvolutionRequest,
 		type ImplementationVerdict
 	} from '$domain/evolution';
@@ -51,6 +52,7 @@
 		)
 	);
 	const undecided = $derived(undecidedCount(request));
+	const inheritedOpen = $derived(inheritedUndecidedCount(request));
 	const closable = $derived(canCloseReport(request));
 	const awaitingRecheck = $derived(rechallengePending(request));
 
@@ -146,7 +148,9 @@
 		/>
 		<div class="flex flex-wrap items-center gap-2">
 			<span class="text-[11px] text-ink-500">
-				Iteration {request.iteration} · {undecided} undecided
+				Iteration {request.iteration} · {undecided} undecided{inheritedOpen > 0
+					? ` · ${inheritedOpen} already in the features, not blocking`
+					: ''}
 			</span>
 			<Button
 				variant="outline"
@@ -238,6 +242,14 @@
 								<span class="min-w-0 flex-1 text-sm font-medium text-ink-800">
 									{line.requirement}
 								</span>
+								{#if line.scope === 'inherited'}
+									<span
+										class="shrink-0 rounded-pill bg-surface-sunken px-1.5 py-0.5 text-[9px] font-semibold text-ink-500"
+										title="The feature already held this before the request. It is the feature's own backlog: decide it if you wish, it does not hold this report open."
+									>
+										already in the feature
+									</span>
+								{/if}
 								{#if protectedIds.has(line.id)}
 									<span
 										class="shrink-0 rounded-pill bg-success-50 px-1.5 py-0.5 text-[9px] font-semibold text-success-700"

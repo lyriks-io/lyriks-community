@@ -6,13 +6,15 @@
 // real batch (tens of kilobytes) cannot be typed as a tool argument. Dry-run
 // first, then commit the token it returns: the operations are not resent, and
 // what is saved is exactly what was validated. The project comes from
-// `.unspa.json` (`projectId`) unless --project names it.
+// --project, else `.unspa.json` (`projectId`), else the binding block of
+// CLAUDE.md; when those two name different projects, nothing is sent.
 // With --expect, the batch carries the feature `updatedAt` it was written
 // against: when another writer moved the feature in between, nothing is applied
 // and the answer names what changed. Pass it whenever someone else may be
 // editing the same feature.
 import { readFileSync } from 'node:fs';
-import { loadIndexFile } from './index-file.mjs';
+import { findIndexFile, loadIndexFile } from './index-file.mjs';
+import { projectForWrite } from './index-project.mjs';
 import { ENDPOINT_FLAGS, callToolJson, openSession, parseArgs, resolveEndpoint, runScript } from './mcp-client.mjs';
 
 const USAGE =
@@ -34,11 +36,10 @@ function readOperations(path) {
 }
 
 function resolveProject(flags) {
-	if (typeof flags.project === 'string') return flags.project;
-	// Without --project the index file is the only place that names the project.
-	const { projectId, path } = loadIndexFile();
-	if (!projectId) throw new Error(`${path} names no projectId: pass --project <id>.`);
-	return projectId;
+	// A repository without an index yet can still name its project in the binding block.
+	const loaded = findIndexFile() ? loadIndexFile() : null;
+	const dirs = loaded ? [loaded.dir, process.cwd()] : [process.cwd()];
+	return projectForWrite({ flag: flags.project, indexProject: loaded?.projectId ?? null, indexPath: loaded?.path, dirs }).projectId;
 }
 
 runScript(async () => {

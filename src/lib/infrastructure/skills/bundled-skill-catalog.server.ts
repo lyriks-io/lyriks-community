@@ -57,7 +57,7 @@ export class BundledSkillCatalog implements SkillCatalogPort {
 		// and helper scripts included, inlined at build time like the skills).
 		return {
 			...diffSkillCatalog(this.catalog, installed, client, options),
-			binding: buildBinding(bindingHookScript, client, projectId, bundledTools)
+			binding: buildBinding(bindingHookScript, client, projectId, bundledTools, options?.installedTools)
 		};
 	}
 }

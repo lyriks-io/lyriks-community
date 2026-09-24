@@ -178,6 +178,30 @@ function behaviourNote(draft: DraftLeaf): string {
 		.join('; ');
 }
 
+/**
+ * The base description with an amendment's patches and appended text applied.
+ * A passage that no longer occurs (the feature moved since the draft was
+ * checked) is left alone rather than guessed at.
+ */
+export function editedDescription(base: string, draft: Pick<DraftLeaf, 'descriptionPatch' | 'descriptionAppend'>): string {
+	let out = base;
+	for (const p of draft.descriptionPatch ?? []) if (out.includes(p.find)) out = out.replace(p.find, p.replace);
+	const append = draft.descriptionAppend?.trim();
+	return append ? (out.trim() ? `${out.trimEnd()}\n\n${append}` : append) : out;
+}
+
+/** The feature's criteria less what the amendment retires, with its rewordings, ids kept. */
+function delta(
+	criteria: readonly { readonly id: string; text: string }[] | undefined,
+	draft: Pick<DraftLeaf, 'retireCriteria' | 'changeCriteria'>
+): { readonly id: string; text: string }[] {
+	const retired = new Set(draft.retireCriteria ?? []);
+	const reworded = new Map((draft.changeCriteria ?? []).map((c) => [c.id, c.text]));
+	return (criteria ?? [])
+		.filter((c) => !retired.has(c.id))
+		.map((c) => (reworded.has(c.id) ? { id: c.id, text: reworded.get(c.id) as string } : c));
+}
+
 export function materialiseDrafts<T extends Tree>(
 	features: T,
 	request: EvolutionRequest,
@@ -246,7 +270,7 @@ export function materialiseDrafts<T extends Tree>(
 					? {
 							...f,
 							name: draft.name || f.name,
-							description: draft.description || f.description,
+							description: draft.description || editedDescription(f.description, draft),
 							coreId: core,
 							parentFamilyId:
 								draft.parentFamilyId !== null ? draft.parentFamilyId : f.parentFamilyId
@@ -278,7 +302,7 @@ export function materialiseDrafts<T extends Tree>(
 			// merge stays for what the EXISTING feature already carried, which an
 			// amendment must never silently drop.
 			acceptanceCriteria: mergeCriteria(
-				before.acceptanceCriteria,
+				delta(before.acceptanceCriteria, draft),
 				signed.acceptanceCriteria?.length ? signed.acceptanceCriteria : criteriaOf(draft)
 			),
 			dependsOn: [...new Set([...(before.dependsOn ?? []), ...draft.dependsOn.map(resolve)])],
@@ -296,10 +320,16 @@ export function materialiseDrafts<T extends Tree>(
 			repeated === 0
 				? ''
 				: `, ${repeated} acceptance ${repeated === 1 ? 'criterion' : 'criteria'} it already carried kept the id the feature gave it`;
+		const retired = draft.retireCriteria?.length ?? 0;
+		const reworded = draft.changeCriteria?.length ?? 0;
+		const edits =
+			retired + reworded === 0
+				? ''
+				: `, ${[retired ? `${retired} criteria retired` : '', reworded ? `${reworded} reworded` : ''].filter(Boolean).join(' and ')}`;
 		lines.push(
 			draft.kind === 'add'
 				? `Created "${draft.name}" (${id}) from request ${request.id}${kept}`
-				: `Amended "${draft.name || id}" (${id}) from request ${request.id}${kept}`
+				: `Amended "${draft.name || id}" (${id}) from request ${request.id}${edits}${kept}`
 		);
 	}
 
