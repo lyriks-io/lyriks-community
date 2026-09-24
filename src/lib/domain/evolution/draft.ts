@@ -169,6 +169,13 @@ export interface Proposal {
 	canonicalPath: string;
 	value: string;
 	reasoning: string;
+	/**
+	 * The two halves of the reasoning, each named: what was read in the sources,
+	 * and what was inferred from it. Empty on a proposal made before they existed,
+	 * whose verdict is then carried by the flag below exactly as it was.
+	 */
+	whatWasRead: string;
+	whatWasInferred: string;
 	/** True when the reasoning says which part was read and which part was inferred. */
 	reasoningSeparatesReadFromInferred: boolean;
 	/** Source ids from the evidence register. A proposal citing none cannot be accepted. */
@@ -589,6 +596,8 @@ export function createProposal(overrides: Partial<Proposal> = {}): Proposal {
 		canonicalPath: '',
 		value: '',
 		reasoning: '',
+		whatWasRead: '',
+		whatWasInferred: '',
 		reasoningSeparatesReadFromInferred: false,
 		citedSourceIds: [],
 		bannedSynonymDetected: false,

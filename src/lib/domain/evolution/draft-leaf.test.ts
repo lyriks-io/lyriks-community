@@ -412,6 +412,29 @@ describe('a request with nothing to arbitrate gets out of the way', () => {
 		).toBe(false);
 	});
 
+	// Reproduced live on the sandbox on 2026-09-23 (request 8b3e9947): a drafted
+	// capability whose impact walk found nothing crossed both gates alone, froze a
+	// version and wrote itself into the tree, with nobody deciding anything.
+	it('never lets an ADDITION through, however quiet the walk came back', () => {
+		const request = ok(
+			addDraftLeafAct(
+				ctx(),
+				opened(),
+				{ kind: 'add', name: 'Une capacite neuve', description: 'Ce que le produit ne fait pas encore.' },
+				known
+			)
+		);
+		expect(request.drafts[0].kind).toBe('add');
+		expect(nothingToArbitrate(read(request))).toBe(false);
+	});
+
+	it('still lets an amendment through when the walk found nothing to attend to', () => {
+		const request = ok(
+			addDraftLeafAct(ctx(), opened(), { kind: 'amend', baseLeafId: 'feat-a', description: 'Clearer words.' }, known)
+		);
+		expect(nothingToArbitrate(read(request))).toBe(true);
+	});
+
 	it('lets a correction to the wording through, however connected the feature is', () => {
 		const request = ok(
 			addDraftLeafAct(ctx(), opened(), { kind: 'amend', baseLeafId: 'feat-a', description: 'Clearer words.' }, known)

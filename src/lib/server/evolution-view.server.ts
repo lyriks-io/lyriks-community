@@ -38,6 +38,7 @@ import {
 	type ProjectEvolutionDraft,
 	type Proposal
 } from '$domain/evolution';
+import { blockFieldByPath } from '$domain/evolution';
 import { readDossierField } from '$application/use-cases/save-dossier-field';
 import { leafFeatures, type ProjectFeaturesDraft } from '$domain/features';
 import type { GlossaryTerm } from '$domain/glossary';
@@ -164,14 +165,33 @@ const filledValue = (value: unknown): boolean =>
 			? value.trim() !== '' && value !== 'none'
 			: false;
 
-/** The inline fields of a request that hold a value in their owning section. */
+/**
+ * A value carried by the DRAFT itself, for a field the owning section has not
+ * been written for yet.
+ *
+ * A draft opened with an objective, a problem and a value holds them on its own
+ * row, and the maturity used to read only the section, so it reported those
+ * fields empty and asked a person to sign values that already existed. Read from
+ * both, and the count says what is actually written.
+ */
+function draftValue(request: EvolutionRequest, leafId: string, fieldPath: string): string {
+	const draft = request.drafts.find((d) => d.id === leafId);
+	if (!draft) return '';
+	const key = blockFieldByPath(fieldPath)?.canonicalPath.split('.').pop();
+	if (key === 'acceptanceCriteria') return draft.acceptanceCriteria.map((c) => c.text).join('\n');
+	const raw = key ? (draft as unknown as Record<string, unknown>)[key] : undefined;
+	return typeof raw === 'string' ? raw : '';
+}
+
+/** The inline fields of a request that hold a value, in their owning section or on the draft. */
 export function filledInlineKeys(features: ProjectFeaturesDraft, request: EvolutionRequest): string[] {
 	const keys: string[] = [];
 	for (const leafId of request.leafIds) {
 		for (const field of ALL_BLOCK_FIELDS) {
 			if (field.editor !== 'inline') continue;
-			if (holdsValue(field, readDossierField(features, field.path, leafId).value))
-				keys.push(fieldKey(field.path, leafId));
+			const written = readDossierField(features, field.path, leafId).value;
+			const value = holdsValue(field, written) ? written : draftValue(request, leafId, field.path);
+			if (holdsValue(field, value)) keys.push(fieldKey(field.path, leafId));
 		}
 	}
 	return keys;
@@ -518,7 +538,20 @@ function reviewersOf(view: EvolutionView, p: Proposal) {
  * features is a hundred rows, which is why it is read a leaf at a time
  * (fieldsPart) and only counted in the summary.
  */
-export function dossierFieldRows(view: EvolutionView, request: EvolutionRequest) {
+/**
+ * One row per inline field per touched feature.
+ *
+ * `excerpt` belongs to the CALLER, not to the reading. A tool answer has to stay
+ * one size whatever the request touches, so it shortens a long value; a screen has
+ * room and a reader has eyes, so the page asks for the value whole. Serving the
+ * page the shortened one showed an acceptance criterion cut in mid-word, and a
+ * reader cannot tell a truncation from a badly written criterion.
+ */
+export function dossierFieldRows(
+	view: EvolutionView,
+	request: EvolutionRequest,
+	{ excerpt = true }: { excerpt?: boolean } = {}
+) {
 	const features = view.features;
 	const pending = pendingProposals(request);
 	return blocksFor(request).flatMap((block) =>
@@ -530,7 +563,7 @@ export function dossierFieldRows(view: EvolutionView, request: EvolutionRequest)
 				const read = leafId ? readDossierField(features, field.path, leafId) : { value: '', sourceIds: [] };
 				const proposal = pending.find((p) => p.targetField === field.path && leafOf(p) === leafId) ?? null;
 				const thread = latestThread(request, key) ?? null;
-				const excerpted = read.value.length > FIELD_EXCERPT;
+				const excerpted = excerpt && read.value.length > FIELD_EXCERPT;
 				return {
 					path: field.path,
 					block: block.id,
@@ -606,8 +639,12 @@ export function draftsPart(
 }
 
 /** The fields of a request, narrowed to one touched feature and paged. */
-export function fieldsPart(view: EvolutionView, request: EvolutionRequest, opts: DossierOptions = {}) {
-	const all = dossierFieldRows(view, request);
+export function fieldsPart(
+	view: EvolutionView,
+	request: EvolutionRequest,
+	opts: DossierOptions & { excerpt?: boolean } = {}
+) {
+	const all = dossierFieldRows(view, request, { excerpt: opts.excerpt });
 	const kept = forLeaf(all, opts.leaf);
 	const paged = page(kept, opts);
 	return {

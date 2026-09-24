@@ -262,6 +262,11 @@ function parseProposal(src: Record<string, unknown>): Proposal {
 		canonicalPath: str(src.canonicalPath),
 		value: str(src.value),
 		reasoning: str(src.reasoning),
+		// Empty on a proposal stored before the two halves were named. Its verdict
+		// travels on the flag below, which was computed when it was made, so nothing
+		// already waiting for a signature is invalidated by reading it back.
+		whatWasRead: str(src.whatWasRead),
+		whatWasInferred: str(src.whatWasInferred),
 		reasoningSeparatesReadFromInferred: bool(src.reasoningSeparatesReadFromInferred),
 		citedSourceIds: strList(src.citedSourceIds),
 		bannedSynonymDetected: bool(src.bannedSynonymDetected),

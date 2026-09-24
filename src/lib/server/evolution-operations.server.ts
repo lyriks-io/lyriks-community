@@ -397,6 +397,9 @@ export async function applyEvolutionOperations(
 						value: text(op.value),
 						reasoning: str(op.reasoning),
 						citedSourceIds: strList(op.citedSourceIds),
+						whatWasRead: op.whatWasRead === undefined ? undefined : text(op.whatWasRead),
+						whatWasInferred:
+							op.whatWasInferred === undefined ? undefined : text(op.whatWasInferred),
 						readVsInferred: typeof op.readVsInferred === 'boolean' ? op.readVsInferred : undefined
 					},
 					{ sourceExists: (id) => sourceIds.has(id), bannedWords }

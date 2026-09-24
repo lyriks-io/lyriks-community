@@ -66,8 +66,8 @@ export function canAcceptProposal(
 		),
 		guard(
 			!proposal.reasoningSeparatesReadFromInferred,
-			'The reasoning does not say what was read and what was inferred.',
-			'Without that separation the reader cannot tell a quoted fact from a guess, and the decision is not an informed one.'
+			'Say what was read and what was inferred in their own fields: whatWasRead and whatWasInferred.',
+			'Without that separation the reader cannot tell a quoted fact from a guess, and the decision is not an informed one. The two are named fields, in any language: nothing is looked for in the wording.'
 		),
 		guard(
 			proposal.canonicalPath.trim() === '',
