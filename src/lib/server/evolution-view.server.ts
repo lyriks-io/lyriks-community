@@ -19,9 +19,12 @@ import {
 	supportedStage,
 	trlFromMaturityScore,
 	undecidedCount,
+	inheritedUndecidedCount,
+	isRequestLine,
 	blockFieldByPath,
 	canCloseReport,
 	canAcceptProposal,
+	findRequestByRef,
 	currentLines,
 	draftFor,
 	listDelta,
@@ -38,6 +41,7 @@ import {
 	type CapabilityReading,
 	type EdgeCaseSentence,
 	type EvolutionRequest,
+	type FindingScope,
 	type ImpactHypothesis,
 	type LeafBehaviour,
 	type MaturityReading,
@@ -180,7 +184,13 @@ const filledValue = (value: unknown): boolean =>
  * both, and the count says what is actually written.
  */
 function draftValue(request: EvolutionRequest, leafId: string, fieldPath: string): string {
-	const draft = request.drafts.find((d) => d.id === leafId);
+	// An amendment stands for the feature it amends: the freeze writes its values
+	// there, so a field the draft fills is filled on that feature too. Read only
+	// on the draft's own id, the base feature kept asking for values the draft
+	// already carried, and the author proposed them a second time to be counted.
+	const draft =
+		request.drafts.find((d) => d.id === leafId) ??
+		request.drafts.find((d) => d.kind === 'amend' && d.baseLeafId === leafId && d.materialisedAs === null);
 	if (!draft) return '';
 	const key = blockFieldByPath(fieldPath)?.canonicalPath.split('.').pop();
 	if (key === 'acceptanceCriteria') return draft.acceptanceCriteria.map((c) => c.text).join('\n');
@@ -228,7 +238,7 @@ export function proposedKinds(request: EvolutionRequest): {
 /** The inline fields of a request that hold a value, in their owning section or on the draft. */
 export function filledInlineKeys(features: ProjectFeaturesDraft, request: EvolutionRequest): string[] {
 	const keys: string[] = [];
-	for (const leafId of request.leafIds) {
+	for (const leafId of touchedLeafIds(request)) {
 		for (const field of ALL_BLOCK_FIELDS) {
 			if (field.editor !== 'inline') continue;
 			const written = readDossierField(features, field.path, leafId).value;
@@ -486,7 +496,11 @@ export function maturityOf(
 	features: ProjectFeaturesDraft,
 	request: EvolutionRequest
 ): MaturityReading {
-	return readMaturity(filledKeysOf(view, features, request), request.openQuestionKeys, request.leafIds, blocksFor(request));
+	// Over the touched FEATURES: an amendment and the leaf it stands for are one
+	// feature, as the fields list already reads them. Counted twice, the draft's
+	// own id asked for the problem and the value the leaf already held, and the
+	// gate into Verify refused a request whose every field was filled.
+	return readMaturity(filledKeysOf(view, features, request), request.openQuestionKeys, [...touchedLeafIds(request)], blocksFor(request));
 }
 
 /* ───────────────────────── The aggregate the MCP reads ───────────────────────── */
@@ -518,7 +532,10 @@ export const DOSSIER_PARTS = [
 	'impact',
 	'report',
 	'readings',
-	'history'
+	'history',
+	// Without a request: the board's own lists.
+	'leaves',
+	'sources'
 ] as const;
 export type DossierPart = (typeof DOSSIER_PARTS)[number];
 export const isDossierPart = (v: unknown): v is DossierPart =>
@@ -542,6 +559,8 @@ export interface DossierOptions {
 	readonly limit?: number;
 	/** impact: read one hypothesis instead of the current one. */
 	readonly hypothesis?: ImpactHypothesis;
+	/** report: the request's own lines, or what the touched features already held. */
+	readonly scope?: FindingScope;
 }
 
 /** One page of a long list, with what a reader needs to ask for the next one. */
@@ -550,6 +569,10 @@ function page<T>(items: readonly T[], opts: DossierOptions) {
 	const limit = Math.max(1, Math.floor(opts.limit ?? PAGE_DEFAULT));
 	return { offset, limit, returned: items.slice(offset, offset + limit) };
 }
+
+/** The plain lines of a report, with the reason it is empty in place of a calm "nothing moves". */
+const withEmptyReason = (lines: string[], reason: string | null): string[] =>
+	reason ? lines.map((line) => (line.startsWith('Nothing in the specification moves') ? reason : line)) : lines;
 
 /** One impacted node, short: what it is, how far, what the code has to do; the rest only when it says something. */
 const compactFinding = (f: EvolutionRequest['impactFindings'][number]) => ({
@@ -581,6 +604,7 @@ const compactLine = (l: EvolutionRequest['implementationFindings'][number], href
 	codeStatement: l.codeStatement,
 	acceptanceTestPassing: l.acceptanceTestPassing,
 	decision: l.decision,
+	scope: l.scope ?? 'request',
 	// Where a person decides this line.
 	href
 });
@@ -642,7 +666,12 @@ export function dossierFieldRows(
 			const homes = touched.length > 0 ? [...touched] : [null];
 			return homes.map((leafId) => {
 				const key = fieldKey(field.path, leafId);
-				const read = leafId ? readDossierField(features, field.path, leafId) : { value: '', sourceIds: [] };
+				const written = leafId ? readDossierField(features, field.path, leafId) : { value: '', sourceIds: [] };
+				// What the amendment carries counts too: the freeze writes it on this leaf.
+				const read =
+					leafId && !holdsValue(field, written.value) && holdsValue(field, draftValue(request, leafId, field.path))
+						? { ...written, value: draftValue(request, leafId, field.path) }
+						: written;
 				const proposal = pending.find((p) => p.targetField === field.path && leafOf(p) === leafId) ?? null;
 				const thread = latestThread(request, key) ?? null;
 				const excerpted = excerpt && read.value.length > FIELD_EXCERPT;
@@ -717,6 +746,10 @@ export function draftsPart(
 				expectedEffect: draft.expectedEffect,
 				value: draft.value,
 				acceptanceCriteria: draft.acceptanceCriteria,
+				...(draft.retireCriteria ? { retireCriteria: draft.retireCriteria } : {}),
+				...(draft.changeCriteria ? { changeCriteria: draft.changeCriteria } : {}),
+				...(draft.descriptionPatch ? { descriptionPatch: draft.descriptionPatch } : {}),
+				...(draft.descriptionAppend ? { descriptionAppend: draft.descriptionAppend } : {}),
 				dependsOn: draft.dependsOn,
 				sourceIds: draft.sourceIds,
 				behaviour: draft.behaviour,
@@ -773,6 +806,19 @@ function listProposalDelta(
 			identical: delta.identical
 		}
 	};
+}
+
+/** The pending proposals a person could not accept yet, grouped by the reason. */
+function blockedProposals(pending: readonly Proposal[], actor: Actor) {
+	const because: Record<string, number> = {};
+	let count = 0;
+	for (const p of pending) {
+		const verdict = canAcceptProposal({ ...actor, kind: 'person' }, p);
+		if (verdict.ok) continue;
+		count++;
+		because[verdict.reason] = (because[verdict.reason] ?? 0) + 1;
+	}
+	return { count, because: Object.entries(because).map(([reason, n]) => ({ reason, count: n })) };
 }
 
 export function proposalsPart(
@@ -840,7 +886,10 @@ export function impactPart(request: EvolutionRequest, opts: DossierOptions = {})
 			total: all.length,
 			bySection: countBy(all, (f) => f.section),
 			summary: impactSummaryLine(all, hypothesis),
-			plain: impactInPlainWords(all, hypothesis),
+			plain: withEmptyReason(
+				impactInPlainWords(all, hypothesis),
+				all.length === 0 && current && request.impactReport.status === 'ready' ? emptyImpactReason(request) : null
+			),
 			section: opts.section ?? null,
 			matched: kept.length,
 			offset: paged.offset,
@@ -851,9 +900,35 @@ export function impactPart(request: EvolutionRequest, opts: DossierOptions = {})
 }
 
 /** Every line of the current iteration's report, filtered by verdict and paged. */
+/**
+ * A report's counts, the request's own lines apart from what the touched
+ * features already held. Only the first hold the report open; the second are
+ * the features' backlog, shown so nobody mistakes them for this change.
+ */
+function reportCounts(request: EvolutionRequest, lines: readonly EvolutionRequest['implementationFindings'][number][]) {
+	const own = lines.filter(isRequestLine);
+	const inherited = lines.filter((l) => !isRequestLine(l));
+	return {
+		counts: countBy(own, (l) => l.verdict),
+		undecided: undecidedCount(request),
+		inherited: {
+			counts: countBy(inherited, (l) => l.verdict),
+			undecided: inheritedUndecidedCount(request),
+			gates: false
+		},
+		baseline: request.baselineKeys
+			? 'Lines on elements the touched features already held at the first freeze are inherited: shown, never a gate.'
+			: 'This request was frozen before the baseline existed, so every line is counted as its own.'
+	};
+}
+
 export function reportPart(projectId: string, request: EvolutionRequest, opts: DossierOptions = {}) {
 	const all = currentLines(request);
-	const kept = opts.verdict ? all.filter((l) => l.verdict === opts.verdict) : all;
+	const kept = all.filter(
+		(l) =>
+			(!opts.verdict || l.verdict === opts.verdict) &&
+			(!opts.scope || (opts.scope === 'inherited') === !isRequestLine(l))
+	);
 	const paged = page(kept, opts);
 	const canClose = canCloseReport(request);
 	return {
@@ -862,10 +937,10 @@ export function reportPart(projectId: string, request: EvolutionRequest, opts: D
 		specVersion: request.specVersion,
 		report: {
 			status: request.iterations.find((i) => i.number === request.iteration)?.reportStatus ?? 'building',
-			counts: countBy(all, (l) => l.verdict),
-			undecided: undecidedCount(request),
+			...reportCounts(request, all),
 			canClose: canClose.ok ? null : canClose.reason,
 			verdict: opts.verdict ?? null,
+			scope: opts.scope ?? null,
 			matched: kept.length,
 			offset: paged.offset,
 			limit: paged.limit,
@@ -920,7 +995,7 @@ export function requestPart(
 	view: EvolutionView,
 	request: EvolutionRequest,
 	actor: Actor,
-	opts: DossierOptions & { part: Exclude<DossierPart, 'summary'> }
+	opts: DossierOptions & { part: Exclude<DossierPart, 'summary' | 'leaves' | 'sources'> }
 ) {
 	switch (opts.part) {
 		case 'drafts':
@@ -1048,9 +1123,13 @@ export function requestSummary(view: EvolutionView, request: EvolutionRequest, a
 			byHypothesis: countBy(request.impactFindings, (f) => f.hypothesis),
 			bySection: countBy(impactAll, (f) => f.section),
 			// One line per plane, read without the spec open (ac-evo-imp-10).
-			plain: impactInPlainWords(impactAll),
 			// Why a report that ran came back empty (c62c57a6): "nothing was
-			// declared" and "nothing follows" must never read alike.
+			// declared" and "nothing follows" must never read alike, so the plain
+			// line says the reason instead of a calm "nothing moves".
+			plain: withEmptyReason(
+				impactInPlainWords(impactAll),
+				request.impactReport.status === 'ready' && impactAll.length === 0 ? emptyImpactReason(request) : null
+			),
 			emptyBecause:
 				request.impactReport.status === 'ready' && impactAll.length === 0 ? emptyImpactReason(request) : null,
 			direct: impactAll.filter((f) => f.depth <= 1).slice(0, DIRECT_IMPACT_SHOWN).map(compactFinding)
@@ -1084,7 +1163,10 @@ export function requestSummary(view: EvolutionView, request: EvolutionRequest, a
 			pending: pending.length,
 			flagged: pending.filter((p) => p.bannedSynonymDetected).length,
 			tagged: pending.filter((p) => p.reviewerIds.length > 0).length,
-			blocked: pending.filter((p) => !canAcceptProposal({ ...actor, kind: 'person' }, p).ok).length,
+			blocked: blockedProposals(pending, actor).count,
+			// Why, in the sentence the refusal would give, with how many it holds
+			// back: a bare count sent readers accepting them one by one to learn it.
+			blockedBecause: blockedProposals(pending, actor).because,
 			// Where a person starts signing: the first proposal that waits.
 			href: pending[0] ? requestPagePath(view.projectId, request.id, { kind: 'proposal', id: pending[0].id }) : null
 		},
@@ -1101,9 +1183,8 @@ export function requestSummary(view: EvolutionView, request: EvolutionRequest, a
 		report: {
 			iteration: request.iteration,
 			status: request.iterations.find((i) => i.number === request.iteration)?.reportStatus ?? 'building',
-			counts: countBy(lines, (l) => l.verdict),
+			...reportCounts(request, lines),
 			total: lines.length,
-			undecided: undecidedCount(request),
 			canClose: canClose.ok ? null : canClose.reason
 		},
 		observations: request.observations.map((o) => ({
@@ -1140,7 +1221,8 @@ export function requestDossier(
 	opts: DossierOptions = {}
 ) {
 	const part = opts.part ?? 'summary';
-	return part === 'summary'
+	// The board's lists have no meaning on one request: its summary names its own.
+	return part === 'summary' || part === 'leaves' || part === 'sources'
 		? requestSummary(view, request, actor)
 		: requestPart(view, request, actor, { ...opts, part });
 }
@@ -1198,9 +1280,10 @@ export function evolutionAggregate(
 	opts: DossierOptions = {}
 ) {
 	const live = view.draft.requests.filter((r) => r.status !== 'deleted');
-	const one = requestId ? live.find((r) => r.id === requestId) ?? null : null;
+	const lookup = requestId ? findRequestByRef(live, requestId) : null;
+	const one = lookup?.kind === 'found' ? lookup.request : null;
 	// One part of one dossier: nothing else travels with it.
-	if (one && opts.part && opts.part !== 'summary') {
+	if (one && opts.part && opts.part !== 'summary' && opts.part !== 'leaves' && opts.part !== 'sources') {
 		return { projectId: view.projectId, revision: view.revision, requests: [], request: requestDossier(view, one, actor, opts) };
 	}
 	// One dossier in short: the board's lists (every leaf, every source) stay on
@@ -1219,17 +1302,37 @@ export function evolutionAggregate(
 			request: requestSummary(view, one, actor)
 		};
 	}
+	// The board's own lists, one at a time and paged, when asked for by name.
+	if (!requestId && (opts.part === 'leaves' || opts.part === 'sources')) {
+		const all: readonly { id: string; name?: string; title?: string }[] =
+			opts.part === 'leaves'
+				? view.leaves
+				: view.sources.map((s) => ({ id: s.id, title: s.title }));
+		const paged = page(all, opts);
+		return {
+			projectId: view.projectId,
+			revision: view.revision,
+			requests: [],
+			request: null,
+			[opts.part]: { total: all.length, offset: paged.offset, limit: paged.limit, entries: paged.returned }
+		};
+	}
+	// The board: the requests FIRST, because "is there already a request for
+	// this?" is what it is read for. Every leaf and every source used to come
+	// before them, and on a real project the answer was capped with the requests
+	// cut at fourteen of twenty-one. The two lists are counted here and read
+	// with part=leaves or part=sources.
 	return {
 		projectId: view.projectId,
 		productName: view.productName,
 		revision: view.revision,
-		actor: { id: actor.id, kind: actor.kind, role: actor.role, channel: actor.channel ?? 'page' },
-		leaves: view.leaves,
-		sources: view.sources.map((s) => ({ id: s.id, title: s.title })),
-		fieldsAvailable: fieldsAvailable(),
-		originsAvailable: originsAvailable(),
 		requests: live.map((r) => requestCard(view, r)),
-		request: null
+		request: null,
+		actor: { id: actor.id, kind: actor.kind, role: actor.role, channel: actor.channel ?? 'page' },
+		leaves: { total: view.leaves.length, read: 'get_evolution part=leaves' },
+		sources: { total: view.sources.length, read: 'get_evolution part=sources' },
+		fieldsAvailable: fieldsAvailable(),
+		originsAvailable: originsAvailable()
 	};
 }
 

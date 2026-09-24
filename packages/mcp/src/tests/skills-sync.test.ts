@@ -87,3 +87,44 @@ it('leaves an answer that fits exactly as the platform sent it', async () => {
   const client = { post: vi.fn().mockResolvedValue(answer) } as unknown as LyriksClient
   expect(await syncSkillsHandler({ client: 'claude' }, client, 1000)).toBe(answer)
 })
+
+// The helper scripts ride along on every sync; a client that already holds them
+// says so, and gets back only what changed.
+it('forwards installed_tools as installedTools, and sends nothing when the client says nothing', async () => {
+  const post = vi.fn().mockResolvedValue({ skills: [] })
+  const client = { post } as unknown as LyriksClient
+  await syncSkillsHandler({
+    client: 'claude',
+    installed_tools: [
+      { path: '.lyriks/tools/sync-index.mjs', content_hash: '1a2b3c4d' },
+      { path: '.claude/hooks/lyriks-bound-prompt.mjs' },
+    ],
+  }, client)
+  expect(post.mock.calls[0][1].installedTools).toEqual([
+    { path: '.lyriks/tools/sync-index.mjs', contentHash: '1a2b3c4d' },
+    { path: '.claude/hooks/lyriks-bound-prompt.mjs', contentHash: undefined },
+  ])
+  await syncSkillsHandler({ client: 'claude' }, client)
+  expect(post.mock.calls[1][1]).not.toHaveProperty('installedTools')
+})
+
+it('declares installed_tools and tells agents how to read the hash each installed file carries', () => {
+  // @ts-expect-error testing the registered tool
+  const tool = createMcpServer(null)._registeredTools.sync_skills as { description: string; inputSchema: { shape: Record<string, unknown> } }
+  expect(tool.inputSchema.shape).toHaveProperty('installed_tools')
+  expect(tool.description).toContain('`installed_tools`')
+  expect(tool.description).toContain('`// contentHash: <hash>` line')
+  expect(tool.description).toContain('`.claude/hooks/lyriks-bound-prompt.mjs`')
+  expect(tool.description).toContain('`unchanged: true` has no `content`')
+  expect(tool.description).toContain('Omit `installed_tools` and every file comes back with its content')
+})
+
+it('relays an unchanged helper as the platform sent it, without content', async () => {
+  const answer = {
+    skills: [],
+    unknown: [],
+    binding: { targets: [], tools: [{ path: '.lyriks/tools/sync-index.mjs', contentHash: '1a2b3c4d', unchanged: true, purpose: 'node .lyriks/tools/sync-index.mjs' }] },
+  }
+  const client = { post: vi.fn().mockResolvedValue(answer) } as unknown as LyriksClient
+  expect(await syncSkillsHandler({ installed_tools: [{ path: '.lyriks/tools/sync-index.mjs', content_hash: '1a2b3c4d' }] }, client)).toBe(answer)
+})

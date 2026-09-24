@@ -1,6 +1,6 @@
 ---
 name: lyriks-evolution
-description: "Drive EVERY change to an existing Lyriks product through its dossier (an evolution, a change request), entirely through the Lyriks MCP: open the request, carry what the change proposes as a DRAFT feature the dossier holds and no section sees, read the impact and the coherence the platform computes with that draft laid over the specification, propose the values a person signs, cross the gates (the crossing into Verify freezes the spec AND writes the drafts into the features section), judge the derived implementation report, fold the acceptance remarks back. Use for ANY request that changes what an existing product does, whether the person wants it built now or only wants to know what it would cost: add a capability, change one, remove one, correct one, "we should add X", "what would it take to add X", "how big is changing Y", "prepare the dossier for Z". There is NO threshold and nothing to judge: never decide a change is too small for a dossier, because a request that disturbs nothing and contradicts nothing crosses its own gates and closes itself in the same act. NOT for a project being written for the first time, which lyriks-build authors directly. Who signs follows the roster: alone you carry the request through yourself, from two members up a person signs each proposal. Pairs with lyriks-behavior (authoring what a reading is missing) and lyriks-delivery (the code, then the index sync the report is derived from)."
+description: "Carry a change to an existing Lyriks product through a dossier (an evolution, a change request) WHEN THE PERSON ASKS FOR ONE, entirely through the Lyriks MCP: open the request, carry what the change proposes as a DRAFT feature the dossier holds and no section sees, read the impact and the coherence the platform computes with that draft laid over the specification, propose the values a person signs, cross the gates (the crossing into Verify freezes the spec AND writes the drafts into the features section), judge the derived implementation report, fold the acceptance remarks back. Evolution is OPTIONAL: an ordinary change is made directly (spec through the section tools, then code, then index sync). Use this skill when the person asks for a dossier or wants a change QUALIFIED before it is decided: \"prepare the dossier for Z\", \"what would it take to add X\", \"how big is changing Y\", \"open an evolution request\", or when a change is already carried by an open request. Who signs follows the roster: alone you carry the request through yourself, from two members up a person signs each proposal. Pairs with lyriks-behavior (authoring what a reading is missing) and lyriks-delivery (the code, then the index sync the report is derived from)."
 ---
 
 # /lyriks-evolution
@@ -11,26 +11,21 @@ written into the section that owns it, and every report it shows is computed by
 the platform. You drive the dossier; a person decides; the tools refuse anything
 else with the sentence the specification wrote.
 
-## When this skill applies: every change to a product that exists
+## When this skill applies: when the person asks for a dossier
 
-One rule, the same in the binding block, the per-prompt hook and the MCP server
-instructions:
+Evolution is optional. The same rule stands in the binding block, the
+per-prompt hook and the MCP server instructions:
 
-- **A product that already EXISTS changes through a request, always.** Adding a
-  capability, changing one, removing one or correcting one opens a dossier
-  first. Whether the person wants it built today or only wants to know what it
-  would cost changes nothing about the door: it is the same dossier, and what a
-  request only meant to qualify does is stop short of the freeze.
-- **A project being written for the FIRST time is not a change.** `lyriks-build`
-  authors it directly. The door binds a project once its specification has been
-  declared finished at least once, or once code is anchored to it.
-- **There is no threshold, and nothing for you to judge.** Never decide that a
-  change is too small to deserve a dossier. That judgement is the least reliable
-  thing in the chain and it fails in the direction that hurts, calling a rule
-  change a wording change. The platform decides instead, and a request that
-  disturbs nothing and contradicts nothing crosses its own gates and closes
-  itself the moment the readings come back, so it costs the author nothing but
-  the trace it leaves.
+- **An ordinary change is made directly.** Spec first through the section tools
+  (`apply_behavior_batch`, `patch_section`, `build_screen`, `wire_element`),
+  then the code, then `sync_implementation_index`. No dossier is needed, and
+  none is opened on your own initiative.
+- **A dossier is opened when the person asks for one**, or asks for a change to
+  be QUALIFIED before anyone decides it: what it would involve, an estimate, an
+  impact report, a decision that belongs to someone else, several people to
+  sign. That is what this skill is for.
+- **A change already carried by an open request continues in it**, rather than
+  being written a second time around it.
 
 ## The one law: the freeze is what writes
 
@@ -53,9 +48,8 @@ While a request is being specified, **nothing is created in the spec sections**.
 - A new thing the change would need that is not a feature (an entity, a term, a
   rule) is still an **impact finding** the report predicts, not a row you write.
 
-If the person says "just add it", that is what the dossier is for: draft it, run
-the two readings, and if nothing moves the request finishes itself in the same
-turn. You do not have to ask them anything.
+If the person says "just add it" and no dossier is open for it, add it
+directly: spec, code, index. A dossier is for a change they want weighed first.
 
 ## Who signs: the roster answers, not the size of the change
 
@@ -73,13 +67,18 @@ turn. You do not have to ask them anything.
 
 | Tool | What it is |
 |---|---|
-| `get_evolution {project_id}` | The board: one card per live request. |
+| `get_evolution {project_id}` | The board: one card per live request, first. Leaves and sources are only counted there; read them with `part: "leaves"` or `part: "sources"`. |
 | `get_evolution {project_id, request_id, part: "drafts"}` | What the request proposes, in full. |
 | `get_evolution {project_id, request_id}` | One dossier in full: fields with their values, readings, maturity per block, coherence and impact findings, the next gate and why it refuses, the report lines, the timeline, `fieldsAvailable` (the field paths you may propose on) and `originsAvailable` (the codes `open_request` takes). |
 | `apply_evolution_batch {project_id, operations[], as_person?}` | Typed operations, atomic, guarded server-side. |
 
 Read `get_evolution` before every batch. Never `set_section` or `patch_section`
 on `evolution`: it is refused.
+
+A request is named by its full id or by any unique prefix of four characters or
+more, the eight-character ids the board and every report quote included. A list
+part that would not fit the result cap comes back shorter, in the same shape,
+with `nextOffset`: read on from there.
 
 ## Who does what
 
@@ -100,6 +99,27 @@ on `evolution`: it is refused.
   existing one in the form the change would leave it, `remove` for one it takes
   away. Do this before the readings: a request with no draft measures the hole
   where the change would sit, not the change.
+  - **An amendment is a delta.** On `amend`, `acceptanceCriteria[]` are the
+    criteria it ADDS; the feature's other criteria stay. `retireCriteria[]`
+    names by id the ones it retires, `changeCriteria[]` (`{id, text}`) rewords
+    one under its own id, `descriptionPatch` (`{find, replace}`, `find`
+    occurring exactly once) and `descriptionAppend` edit the description
+    without resending it. Every id and passage is checked when the draft is
+    made. Never resend a fifty-criterion feature to change two lines.
+  - Values typed on an amend draft (objective, problem, value, criteria) count
+    as filled for the feature it amends: do not propose them again.
+  - `behaviour[]` rows say what the change does in the kernel's words, so the
+    readings see it: `[{"kind":"action","name":"Walk To Clicked Spot","detail":"a
+    left click on the play field"}, {"kind":"rule","name":"Right click on bare
+    ground opens the grass menu"}, {"kind":"state","name":"exploration.gait"}]`
+    (kinds: surface, state, action, rule, scenario). The freeze keeps them on
+    the leaf; the depth itself is authored with `apply_behavior_batch` after
+    the freeze.
+  - To find the feature that owns a behaviour, `get_knowledge_graph
+    {kinds:["feature"], q:"<word>"}` also matches the feature's criteria,
+    actions and rules, and `matchedVia` names the one that matched. Search the
+    triggers the change redefines too (a key, a click): an existing action on
+    the same trigger is the collision to settle before the freeze.
 - `update_draft_leaf`, `remove_draft_leaf`. Dropping a draft drops what was
   proposed on it, and the specification is exactly as it was.
 - `set_leaves`, `update_request`.
@@ -130,13 +150,20 @@ on `evolution`: it is refused.
   `reasoning` cannot be accepted. Nothing is looked for in your wording, so
   French, Spanish or any other language passes exactly as English does. Every
   proposal cites at least one row of the documents register; register the source
-  first when it is not there (a web address, or the verbatim content in the
-  note).
+  first when it is not there, in the same batch: `register_source {title, url?,
+  note?, id?}` (a web address anyone can open, or the person's words verbatim in
+  the note) answers the id to cite. A proposal missing either half is REFUSED
+  when it is proposed, and an atomic batch stops there: send proposals in a
+  batch of their own, before the decisions.
 - `post_on_field {fieldPath, leafId, body}`: ask the person a question where
   the field stands.
 - `build_implementation_report`: in Verify, after `sync_implementation_index`
   from the checkout. It is derived from the index against the frozen version.
-  Never write a line yourself.
+  Never write a line yourself. Each line carries `scope`: `request` for an
+  element this request brought, `inherited` for one the touched features
+  already held at the first freeze (their backlog). Only request lines hold the
+  report open; read them with `part:"report", scope:"request"`, and tell the
+  person how many inherited lines exist without asking them to rule on them.
 
 **The person** decides, and you relay the decision **only when they told you
 to**, with `as_person: true` on the batch. The act lands as theirs, with the
@@ -199,8 +226,26 @@ conversation. If they said "accept the first three", relay exactly those three.
    into the features section, each stamped with the request. The code is written
    against version N (lyriks-delivery), the index is synced
    (`sync_implementation_index`), then `build_implementation_report`. The
-   person decides every line; an invalidated line yields a rebrief; an adopted
-   out-of-scope line amends the spec and Challenge runs again.
+   person decides every request line; an invalidated line yields a rebrief; an
+   adopted out-of-scope line amends the spec and Challenge runs again.
+   - Write index entries with `node .lyriks/tools/index-file.mjs upsert
+     <entries.json> [--sync --feature <featureId>]`, never by rewriting
+     `.unspa.json` with another tool: it keeps the file's formatting. A
+     `criterion:` key syncs alone; any other key syncs with its whole feature
+     (`--feature`), because a report replaces an action or surface with all of
+     its children. The ids to index come back in the `created` rows of
+     `apply_behavior_batch` (each with its `.unspa.json` key), and a state the
+     batch renamed comes back in `renamed`: move its entry with `index-file.mjs
+     remove` and `upsert`.
+   - A criterion reads verified only when its entry records what proved it.
+     Run the tests, then `node .lyriks/tools/ingest-results.mjs <report.json>`
+     with a `[criterion:<id>]` token in each test title (or `--criteria
+     <map.json>`): it writes `verification.lastResult` on the criterion entries.
+     A browser check or a measurement goes in the same block by hand
+     (`verification: {kind: "visual" | "measurement", command, artifacts,
+     lastResult: {passed, at, summary}}`). Then sync.
+   - The helper scripts refuse to sync when `.unspa.json` names another project
+     than the binding block, and print the command to run instead.
 5. **Accept.** The walkthrough happens on the page (captures, anchored
    observations). You relay rulings and fold validated observations back as
    acceptance criteria on the touched feature.

@@ -54,6 +54,26 @@ export interface ReportDerivationInput {
 	/** The engine status of the other features, to detect what the change disturbed. */
 	readonly neighbours: Readonly<Record<string, FeatureStatus | null>>;
 	readonly leafNames: Readonly<Record<string, string>>;
+	/**
+	 * The elements the touched features held at the request's first freeze
+	 * (`<entityType>:<entityId>`). A line on one of them is inherited; null or
+	 * absent, every line is the request's.
+	 */
+	readonly baseline?: ReadonlySet<string> | null;
+}
+
+/** The keys a baseline is taken of: every element the engine expects on these statuses. */
+export function baselineKeysOf(statuses: readonly (FeatureStatus | null)[]): string[] {
+	const keys = new Set<string>();
+	for (const status of statuses)
+		for (const row of rowsOf(status))
+			for (const entity of [
+				...(row.expectedEntities ?? []),
+				...(row.foundEntities ?? []),
+				...(row.missingEntities ?? [])
+			])
+				keys.add(`${entity.entityType}:${entity.entityId}`);
+	return [...keys].sort();
 }
 
 const rowsOf = (status: FeatureStatus | null): StatusRow[] => [
@@ -139,7 +159,8 @@ export function deriveImplementationReport(input: ReportDerivationInput): Implem
 							: 'Nothing was located for it in the synced index.',
 						hasRequirementAnchor: true,
 						anchorForeignLeaf: false,
-						acceptanceTestPassing: proven(hit, testPassing)
+						acceptanceTestPassing: proven(hit, testPassing),
+						scope: input.baseline?.has(key) ? 'inherited' : 'request'
 					})
 				);
 			}

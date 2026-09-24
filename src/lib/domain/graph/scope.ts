@@ -52,6 +52,13 @@ export interface ScopedGraph extends KnowledgeGraph {
 	 * "bad reference, search with q= instead", not "the node has no neighbors".
 	 */
 	focusNodeId?: string | null;
+	/**
+	 * Present when `q` and `kinds` were both given and some node of the asked
+	 * kinds is kept because something it OWNS matched rather than itself: its id,
+	 * to the owned nodes that matched (id and label). "jog" lives in a criterion
+	 * of a feature whose name and description never say it.
+	 */
+	matchedVia?: Record<string, { id: string; kind: GraphNodeKind; label: string }[]>;
 }
 
 /** node id -> degree, counting both directions. */
@@ -136,11 +143,28 @@ export function scopeGraph(graph: KnowledgeGraph, scope: GraphScope): ScopedGrap
 		const keep = new Set(scope.contexts);
 		nodes = nodes.filter((node) => keep.has(node.context));
 	}
+	const candidates = nodes;
 	if (scope.kinds?.length) {
 		const keep = new Set(scope.kinds);
 		nodes = nodes.filter((node) => keep.has(node.kind));
 	}
-	if (scope.q) nodes = nodes.filter((node) => matchesQuery(node, scope.q ?? ''));
+	let matchedVia: ScopedGraph['matchedVia'];
+	if (scope.q && scope.kinds?.length) {
+		// Asked for features (say) about a word: a feature is about it when one of
+		// its criteria, actions or rules says it, not only its own label.
+		const wanted = new Set(scope.kinds);
+		const direct = nodes.filter((node) => matchesQuery(node, scope.q ?? ''));
+		const owners = ownersOfKinds(graph, candidates.filter((node) => !wanted.has(node.kind) && matchesQuery(node, scope.q ?? '')), wanted);
+		const kept = new Set(direct.map((node) => node.id));
+		const allowed = new Set(nodes.map((node) => node.id));
+		for (const [ownerId, via] of owners) {
+			if (!allowed.has(ownerId)) continue;
+			matchedVia ??= {};
+			matchedVia[ownerId] = via.slice(0, 5).map((n) => ({ id: n.id, kind: n.kind, label: n.label }));
+			kept.add(ownerId);
+		}
+		nodes = nodes.filter((node) => kept.has(node.id));
+	} else if (scope.q) nodes = nodes.filter((node) => matchesQuery(node, scope.q ?? ''));
 
 	const matchedNodeCount = nodes.length;
 	let truncated = false;
@@ -163,8 +187,52 @@ export function scopeGraph(graph: KnowledgeGraph, scope: GraphScope): ScopedGrap
 		stats: graphStats(nodes, edges),
 		matchedNodeCount,
 		truncated,
-		...(focusNodeId !== undefined ? { focusNodeId } : {})
+		...(focusNodeId !== undefined ? { focusNodeId } : {}),
+		...(matchedVia ? { matchedVia } : {})
 	};
+}
+
+/** How far up the ownership tree a match climbs: rule, action, surface, feature. */
+const OWNER_DEPTH = 5;
+
+/**
+ * The nearest owners of the asked kinds for each matched node, climbing
+ * `contains` edges from child to parent, and crossing `binds` either way
+ * (a Lyriks feature and its behavior counterpart are one thing seen twice).
+ */
+function ownersOfKinds(
+	graph: KnowledgeGraph,
+	matched: readonly GraphNode[],
+	wanted: ReadonlySet<GraphNodeKind>
+): Map<string, GraphNode[]> {
+	const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+	const up = new Map<string, string[]>();
+	const link = (from: string, to: string) => up.set(from, [...(up.get(from) ?? []), to]);
+	for (const edge of graph.edges) {
+		if (edge.kind === 'contains') link(edge.to, edge.from);
+		else if (edge.kind === 'binds') {
+			link(edge.to, edge.from);
+			link(edge.from, edge.to);
+		}
+	}
+	const owners = new Map<string, GraphNode[]>();
+	for (const node of matched) {
+		const seen = new Set([node.id]);
+		let frontier = [node.id];
+		for (let level = 0; level < OWNER_DEPTH && frontier.length > 0; level++) {
+			const next: string[] = [];
+			for (const id of frontier)
+				for (const parent of up.get(id) ?? []) {
+					if (seen.has(parent)) continue;
+					seen.add(parent);
+					const owner = byId.get(parent);
+					if (owner && wanted.has(owner.kind)) owners.set(parent, [...(owners.get(parent) ?? []), node]);
+					else next.push(parent);
+				}
+			frontier = next;
+		}
+	}
+	return owners;
 }
 
 /** A cheap first look at a graph: full stats + its best-connected nodes. */

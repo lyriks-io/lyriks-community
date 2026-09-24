@@ -65,6 +65,16 @@ export interface InstalledSkillRef {
 	contentHash?: string;
 }
 
+/**
+ * What a client reports about one binding file it already holds: a helper
+ * script under `.lyriks/tools/` or the Claude Code hook, by its install path,
+ * with the hash its `// contentHash:` line carries.
+ */
+export interface InstalledToolRef {
+	path: string;
+	contentHash?: string;
+}
+
 export type SkillSyncStatus = 'up-to-date' | 'update' | 'new';
 
 export interface SkillSyncEntry {
@@ -94,10 +104,16 @@ export interface SkillSyncEntry {
 export interface BindingHookInstall {
 	/** Where the script goes, relative to the workspace root. */
 	path: string;
-	/** The script, written verbatim. */
-	content: string;
-	/** Fingerprint of `content`, so a client can tell a stale copy. */
+	/**
+	 * The script, written verbatim. Its second line (after the shebang) is
+	 * `// contentHash: <contentHash>`, so the installed copy self-reports its
+	 * version. Absent when the client reported that same hash for `path`.
+	 */
+	content?: string;
+	/** Fingerprint of the script, so a client can tell a stale copy. */
 	contentHash: string;
+	/** The client already holds this exact version: nothing to write, `content` is left out. */
+	unchanged?: true;
 	/** The Claude Code project settings file the hook is wired in. */
 	settingsPath: string;
 	/** The hook event the entry belongs to. */
@@ -130,10 +146,16 @@ export interface BindingInstallTarget {
 export interface BindingToolInstall {
 	/** Where the script goes, relative to the workspace root. */
 	path: string;
-	/** The script, written verbatim. */
-	content: string;
-	/** Fingerprint of `content`, so a client can tell a stale copy. */
+	/**
+	 * The script, written verbatim. Its first line (its second after a shebang)
+	 * is `// contentHash: <contentHash>`, so the installed copy self-reports its
+	 * version. Absent when the client reported that same hash for `path`.
+	 */
+	content?: string;
+	/** Fingerprint of the script, so a client can tell a stale copy. */
 	contentHash: string;
+	/** The client already holds this exact version: nothing to write, `content` is left out. */
+	unchanged?: true;
 	/** One sentence: what it does and how it is invoked. */
 	purpose: string;
 }
@@ -179,4 +201,10 @@ export interface SkillCatalogPort {
 export interface SkillSyncOptions {
 	skillIds?: readonly string[];
 	includeContent?: boolean;
+	/**
+	 * The binding files the client holds. A file reported with the published
+	 * hash comes back `unchanged` without its content; absent, every file
+	 * comes back whole (the original contract).
+	 */
+	installedTools?: readonly InstalledToolRef[];
 }

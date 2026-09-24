@@ -163,10 +163,21 @@ export interface ImplementationFinding {
 	 * is refused at the door, never read.
 	 */
 	specVersion: number;
+	/**
+	 * Whose line it is. `request`: an element this request brought, or one it
+	 * cannot tell apart from one (absent reads as `request`, which is what every
+	 * line was before the distinction). `inherited`: an element the touched
+	 * feature already held when the spec was first frozen for this request, so
+	 * its standing is the feature's backlog, not this change. Only request lines
+	 * hold the report open.
+	 */
+	scope?: FindingScope;
 	decision: LineDecision;
 	decidedBy: string | null;
 	decidedAt: string | null;
 }
+
+export type FindingScope = 'request' | 'inherited';
 
 /** A value the model suggested for one empty spec field, waiting for a person. */
 export interface Proposal {
@@ -406,6 +417,22 @@ export interface DraftLeaf {
 	expectedEffect: string;
 	value: string;
 	acceptanceCriteria: DraftCriterion[];
+	/**
+	 * An amendment said as a delta rather than restated whole. `acceptanceCriteria`
+	 * are the criteria it ADDS; these name, by id, the base feature's criteria it
+	 * retires and the ones it rewords (same id, new text). Stating a fifty-line
+	 * feature again to change two lines is how lines nobody meant to touch get
+	 * lost or retyped wrong.
+	 */
+	retireCriteria?: string[];
+	changeCriteria?: DraftCriterion[];
+	/**
+	 * The base description edited in place instead of resent whole: each patch
+	 * replaces one exact passage, then the appended text follows. Ignored when
+	 * `description` is set, which replaces the description outright.
+	 */
+	descriptionPatch?: { find: string; replace: string }[];
+	descriptionAppend?: string;
 	/** Existing leaf ids, or other drafts of the same request. */
 	dependsOn: string[];
 	sourceIds: string[];
@@ -485,6 +512,15 @@ export interface EvolutionRequest {
 	/** True between a freeze and an amendment. Verify implies a frozen spec. */
 	frozen: boolean;
 	frozenVersions: FrozenVersion[];
+	/**
+	 * The elements the touched features already held at the FIRST freeze, keyed
+	 * `<entityType>:<entityId>` as the implementation index resolves them. It is
+	 * what tells a report line this request introduced from one it inherited:
+	 * without it, amending a feature of fifty criteria put the whole feature's
+	 * backlog in front of the person asked to accept an eight-line change.
+	 * Absent on requests frozen before it existed; every line then counts.
+	 */
+	baselineKeys?: string[];
 	createdAt: string;
 	/**
 	 * The fields the author marked as questions they cannot answer yet, keyed

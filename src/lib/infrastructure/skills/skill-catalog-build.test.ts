@@ -21,7 +21,8 @@ import {
 	BINDING_TOOLS_DIR,
 	buildBinding,
 	buildBindingBlock,
-	buildBindingTools
+	buildBindingTools,
+	injectScriptHash
 } from './skill-catalog-build';
 
 const skillFile = (name: string, description: string, body = '# Playbook\nDo the thing.') =>
@@ -359,33 +360,28 @@ describe('buildBinding (the repository stays bound to its Lyriks project)', () =
 		expect(block.startsWith(BINDING_MARKERS.open)).toBe(true);
 		expect(block.endsWith(BINDING_MARKERS.close)).toBe(true);
 		expect(block).toContain('the Lyriks project `vector-rally`');
-		expect(block).toContain('EVOLUTION REQUEST first');
+		expect(block).toContain('SPEC CHANGE first');
 		expect(block).toContain('spec READ first');
 		expect(buildBindingBlock()).toContain('its Lyriks project');
 		expect(buildBindingBlock()).not.toContain('vector-rally');
 	});
 
-	it('sends every change to what the product does through one door', () => {
+	it('makes a change spec first, and leaves Evolution to the person who asks for it', () => {
 		// The MCP server instructions, this block and the per-prompt hook are loaded
 		// together by one client: they must state ONE rule, or the agent picks
 		// whichever text it read last.
 		const block = buildBindingBlock();
-		const change = block.split('\n').find((line) => line.includes('EVOLUTION REQUEST first'))!;
-		for (const cue of ['add_draft_leaf', 'the freeze is what writes the sections', 'sync_implementation_index']) {
+		const change = block.split('\n').find((line) => line.includes('SPEC CHANGE first'))!;
+		for (const cue of ['apply_behavior_batch', 'patch_section', 'sync_implementation_index']) {
 			expect(change).toContain(cue);
 		}
-		// No threshold, and nothing for the client to judge: that is what stops a
-		// change being waved through as "too small for a dossier".
-		const noThreshold = block.split('\n').find((line) => line.includes('NO threshold'))!;
-		expect(noThreshold).toContain('crosses its own gates and closes itself');
-		expect(noThreshold).toContain('follows the roster');
-		// Qualifying is the same dossier, stopped short of the freeze, so there is
-		// no longer a question to ask about which of the two was meant.
-		const qualify = block.split('\n').find((line) => line.includes('to QUALIFY'))!;
-		expect(qualify).toContain('the same dossier');
-		expect(qualify).toContain('open the request either way');
-		// A project being written for the first time is not a change.
-		expect(block).toContain('`lyriks-build` authors it directly');
+		// Evolution is a tool the person reaches for, not a toll on every change.
+		const optional = block.split('\n').find((line) => line.includes('Evolution is OPTIONAL'))!;
+		expect(optional).toContain('only when the person asks for one');
+		expect(optional).toContain('QUALIFIED');
+		expect(optional).toContain('Never open a dossier on your own');
+		for (const gone of ['NO threshold', 'EVOLUTION REQUEST first', 'The door binds'])
+			expect(block).not.toContain(gone);
 	});
 
 	it('sends every runtime to the instruction file it always loads, with one shared block', () => {
@@ -400,7 +396,8 @@ describe('buildBinding (the repository stays bound to its Lyriks project)', () =
 	it('gives Claude Code, and only it, the per-prompt hook wired in the project settings', () => {
 		const hook = of('claude').hook!;
 		expect(hook.path).toBe(BINDING_HOOK_PATH);
-		expect(hook.content).toBe(script);
+		expect(hook.content).toBe(injectScriptHash(script, fnv1aHash(script)));
+		expect(hook.unchanged).toBeUndefined();
 		expect(hook.settingsPath).toBe('.claude/settings.json');
 		expect(hook.settingsEvent).toBe('UserPromptSubmit');
 		expect(hook.settingsEntry.command).toContain(BINDING_HOOK_PATH);
@@ -434,8 +431,8 @@ describe('the helper scripts ship with the binding, for every runtime', () => {
 		expect(BINDING_TOOLS_DIR).toBe('.lyriks/tools');
 		for (const tool of tools) {
 			const file = tool.path.slice(BINDING_TOOLS_DIR.length + 1);
-			expect(tool.content).toBe(bundled[`./tools/${file}`]);
-			expect(tool.contentHash).toBe(fnv1aHash(tool.content));
+			expect(tool.contentHash).toBe(fnv1aHash(bundled[`./tools/${file}`]));
+			expect(tool.content).toBe(injectScriptHash(bundled[`./tools/${file}`], tool.contentHash));
 			expect(tool.purpose.length).toBeGreaterThan(20);
 		}
 	});
@@ -447,7 +444,7 @@ describe('the helper scripts ship with the binding, for every runtime', () => {
 			BINDING_TOOLS.map(({ file }) => file).sort()
 		);
 		for (const [path, content] of Object.entries(bundled)) {
-			for (const imported of content.matchAll(/from '\.\/([^']+)'/g)) {
+			for (const imported of content.matchAll(/(?:from |import\()'\.\/([^']+)'/g)) {
 				expect(Object.keys(bundled), `${path} imports ${imported[1]}`).toContain(`./tools/${imported[1]}`);
 			}
 			// Dependency free: only Node built-ins and the sibling scripts.
@@ -464,7 +461,13 @@ describe('the helper scripts ship with the binding, for every runtime', () => {
 		expect(ingest, 'ingest-results.mjs is installed').toBeDefined();
 		// An agent picks a script from its purpose alone: the command line, the token
 		// it looks for, and that a located entry is not a proven one.
-		expect(ingest!.purpose).toContain('node .lyriks/tools/ingest-results.mjs <report.json> [--dry-run] [--json]');
+		expect(ingest!.purpose).toContain(
+			'node .lyriks/tools/ingest-results.mjs <report.json> [--criteria <map.json>] [--kind <kind>] [--revision <sha>] [--dry-run] [--json]'
+		);
+		// The Verify step: this is how an acceptance criterion becomes verified.
+		expect(ingest!.purpose).toContain('how an acceptance criterion becomes verified');
+		expect(ingest!.purpose).toContain('[criterion:<id>]');
+		expect(ingest!.purpose).toContain('verification.lastResult { passed, at, summary, revision }');
 		expect(ingest!.purpose).toContain('[unspa:<surfaceId>:<actionId>:<scenarioId>]');
 		expect(ingest!.purpose).toContain('verifiedAt');
 		expect(ingest!.purpose).toContain('Located and proven are two claims');
@@ -498,7 +501,77 @@ describe('the helper scripts ship with the binding, for every runtime', () => {
 		expect(line).toContain('`check-index.mjs --fix`');
 		expect(line).toContain('`sync-index.mjs`');
 		expect(line).toContain('`apply-batch.mjs`');
+		expect(line).toContain('`index-file.mjs upsert`');
+		expect(line).toContain('`// contentHash:` line');
+		expect(line).toContain('`installed_tools`');
 		expect(line.match(/\. /g) ?? []).toHaveLength(0);
+	});
+
+	it('names index-file.mjs as the command that edits the index, with its whole syntax', () => {
+		const { purpose } = BINDING_TOOLS.find(({ file }) => file === 'index-file.mjs')!;
+		expect(purpose).toContain(
+			'`node .lyriks/tools/index-file.mjs upsert <entries.json | -> [--sync [--feature <featureId>]] [--project <id>] [--dry-run] [--json]`'
+		);
+		expect(purpose).toContain('`... remove <key...>`');
+		expect(purpose).toContain('`... set-project <id>`');
+		expect(purpose).toContain('never rewrite the index with another tool');
+		expect(purpose).not.toMatch(/^Not run directly/);
+	});
+});
+
+describe('installed tools: a sync sends only the scripts the client lacks', () => {
+	const toolsDir = fileURLToPath(new URL('./tools/', import.meta.url));
+	const bundled = Object.fromEntries(
+		readdirSync(toolsDir)
+			.filter((file) => file.endsWith('.mjs'))
+			.map((file) => [`./tools/${file}`, readFileSync(join(toolsDir, file), 'utf8')])
+	);
+	const hookScript = '#!/usr/bin/env node\n// the hook\n';
+	/** What a client reads back from its installed copy: the `// contentHash:` line, as the binding text says. */
+	const reportedHash = (content: string) => /^\/\/ contentHash: (\S+)$/m.exec(content.split('\n').slice(0, 2).join('\n'))?.[1];
+
+	it('puts the hash line first, or second after a shebang, and changes nothing else', () => {
+		expect(injectScriptHash('#!/usr/bin/env node\nrun();\n', 'abc')).toBe('#!/usr/bin/env node\n// contentHash: abc\nrun();\n');
+		expect(injectScriptHash('// a library\n', 'abc')).toBe('// contentHash: abc\n// a library\n');
+		expect(injectScriptHash('#!/usr/bin/env node', 'abc')).toBe('#!/usr/bin/env node\n// contentHash: abc\n');
+	});
+
+	it('sends every file whole when the client reports nothing (the original contract)', () => {
+		const binding = buildBinding(hookScript, 'claude', null, bundled);
+		expect(binding.tools.every((tool) => typeof tool.content === 'string' && tool.unchanged === undefined)).toBe(true);
+		expect(binding.targets[0].hook!.content).toBeDefined();
+	});
+
+	it('leaves out the content of every file reported with its published hash, read from the installed copy', () => {
+		const first = buildBinding(hookScript, 'claude', null, bundled);
+		const held = [...first.tools, first.targets[0].hook!].map((file) => ({ path: file.path, contentHash: reportedHash(file.content!) }));
+		expect(held.every((ref) => typeof ref.contentHash === 'string')).toBe(true);
+		const second = buildBinding(hookScript, 'claude', null, bundled, held);
+		for (const tool of second.tools) {
+			expect(tool).toEqual({ path: tool.path, contentHash: tool.contentHash, unchanged: true, purpose: tool.purpose });
+		}
+		const hook = second.targets[0].hook!;
+		expect(hook.content).toBeUndefined();
+		expect(hook.unchanged).toBe(true);
+		// Still wired: the settings entry comes back whatever the content does.
+		expect(hook.settingsEntry.command).toContain(BINDING_HOOK_PATH);
+		// The point of it all: a routine sync weighs a fraction of a first one.
+		expect(JSON.stringify(second).length).toBeLessThan(JSON.stringify(first).length / 5);
+	});
+
+	it('sends a file again when its hash differs, is missing, or was never reported', () => {
+		const first = buildBinding(hookScript, 'claude', null, bundled);
+		const [stale, unhashed, ...rest] = first.tools;
+		const held = [
+			{ path: stale.path, contentHash: 'deadbeef' },
+			{ path: unhashed.path },
+			...rest.slice(1).map((tool) => ({ path: `./${tool.path}`, contentHash: tool.contentHash }))
+		];
+		const tools = buildBinding(hookScript, 'claude', null, bundled, held).tools;
+		expect(tools[0].content).toBe(stale.content);
+		expect(tools[1].content).toBe(unhashed.content);
+		expect(tools[2].content).toBe(rest[0].content);
+		expect(tools.slice(3).every((tool) => tool.unchanged === true && tool.content === undefined)).toBe(true);
 	});
 });
 
@@ -539,19 +612,19 @@ describe('the bundled binding hook (Claude Code, UserPromptSubmit)', () => {
 		const out = run(JSON.stringify({ cwd: dir, prompt: 'add a nitro boost', transcript_path: transcript }));
 		expect(out.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
 		expect(out.hookSpecificOutput.additionalContext).toContain('(project vector-rally)');
-		expect(out.hookSpecificOutput.additionalContext).toContain('EVOLUTION request first');
+		expect(out.hookSpecificOutput.additionalContext).toContain('spec first');
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it('states the same one-door rule as the binding block', () => {
+	it('states the same rule as the binding block: spec first, Evolution optional', () => {
 		const context = run(JSON.stringify({ cwd: tmpdir(), prompt: 'we should add a nitro boost' }))
 			.hookSpecificOutput.additionalContext;
-		expect(context).toContain('open an EVOLUTION request first');
-		expect(context).toContain('whether to make it now or only to qualify it');
-		expect(context).toContain('never decide a change is too small for a dossier');
+		expect(context).toContain('spec first');
+		expect(context).toContain('is optional');
+		expect(context).not.toContain('too small for a dossier');
 		// The cues are the same words in both texts, so neither can drift alone.
 		const block = buildBindingBlock();
-		for (const cue of ['add_draft_leaf', 'sync_implementation_index', 'crosses its own gates and closes itself']) {
+		for (const cue of ['apply_behavior_batch', 'sync_implementation_index', 'get_evolution']) {
 			expect(context).toContain(cue);
 			expect(block).toContain(cue);
 		}
@@ -564,7 +637,7 @@ describe('the bundled binding hook (Claude Code, UserPromptSubmit)', () => {
 		expect(raw('  <system-reminder>\nnot user input')).toBe('');
 		expect(raw('[SYSTEM NOTIFICATION - NOT USER INPUT]')).toBe('');
 		// A person quoting one of those words mid-sentence is still a person asking.
-		expect(raw('why did I get a <task-notification> about the sync?')).toContain('EVOLUTION request first');
+		expect(raw('why did I get a <task-notification> about the sync?')).toContain('spec first');
 	});
 
 	it('falls back to the project named by the binding block in CLAUDE.md', () => {
@@ -578,5 +651,66 @@ describe('the bundled binding hook (Claude Code, UserPromptSubmit)', () => {
 	it('still answers, without a project, on garbage input', () => {
 		const out = run('not json');
 		expect(out.hookSpecificOutput.additionalContext).toMatch(/^Lyriks-bound repository: /);
+	});
+
+	// Agents were told to go through Lyriks while the Lyriks MCP refused every
+	// connection. The transcript already says so: no network needed to read it.
+	describe('when the Lyriks MCP is down', () => {
+		const call = (id: string, name = 'mcp__lyriks__get_section') =>
+			JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name, input: { project_id: 'vector-rally' } }] } });
+		const result = (id: string, content: unknown, isError: boolean, timestamp = '2026-09-24T10:12:03.120Z') =>
+			JSON.stringify({ type: 'user', timestamp, message: { role: 'user', content: [{ tool_use_id: id, type: 'tool_result', content, is_error: isError }] } });
+		const contextFor = (lines: string[]) => {
+			const dir = mkdtempSync(join(tmpdir(), 'lyriks-hook-'));
+			try {
+				const transcript = join(dir, 'session.jsonl');
+				writeFileSync(transcript, lines.join('\n'));
+				return run(JSON.stringify({ cwd: dir, prompt: 'what does the boost do?', transcript_path: transcript })).hookSpecificOutput.additionalContext;
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		};
+
+		it('says first that the MCP failed, when, why, and what to do, and keeps the rest', () => {
+			const context = contextFor([
+				call('t1'),
+				result('t1', '{"ok":true}', false, '2026-09-24T09:00:00Z'),
+				call('t2'),
+				result('t2', [{ type: 'text', text: 'Error: connect ECONNREFUSED 127.0.0.1:3000' }], true)
+			]);
+			expect(context).toMatch(/^The Lyriks MCP failed at 2026-09-24 10:12 UTC \(connection refused\) and no Lyriks call has succeeded since: /);
+			expect(context).toContain('tell the person now and point them to /mcp');
+			expect(context).toContain('do not guess specified behavior from the code');
+			expect(context).toContain('Lyriks-bound repository (project vector-rally)');
+			expect(context).toContain('spec first');
+		});
+
+		it('names the other ways a server goes missing', () => {
+			for (const [text, reason] of [
+				['MCP error -32000: Connection closed', 'server not connected'],
+				['TypeError: fetch failed', 'fetch failed'],
+				['MCP server "lyriks" is not connected', 'server not connected'],
+				['502 Bad Gateway', 'server unavailable']
+			]) {
+				expect(contextFor([call('t1'), result('t1', text, true)])).toContain(`(${reason})`);
+			}
+		});
+
+		it('forgets the failure once a later Lyriks call came back, even with a tool error', () => {
+			const recovered = contextFor([call('t1'), result('t1', 'fetch failed', true), call('t2'), result('t2', '{"ok":true}', false)]);
+			expect(recovered).toMatch(/^Lyriks-bound repository/);
+			const refused = contextFor([call('t1'), result('t1', 'fetch failed', true), call('t2'), result('t2', 'feature_id is required', true)]);
+			expect(refused).toMatch(/^Lyriks-bound repository/);
+		});
+
+		it('ignores the failures of other tools and servers', () => {
+			const context = contextFor([
+				call('t1'),
+				result('t1', '{"ok":true}', false),
+				call('t2', 'mcp__github__get_issue'),
+				result('t2', 'connect ECONNREFUSED', true)
+			]);
+			expect(context).toMatch(/^Lyriks-bound repository/);
+		});
 	});
 });

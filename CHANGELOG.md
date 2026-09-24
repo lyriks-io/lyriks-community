@@ -6,6 +6,59 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.39] - 2026-09-25
+
+Evolution becomes optional, and what agents reported from the field is fixed.
+
+### Changed
+
+- Evolution is optional. The binding block, the per-prompt hook and the skills
+  sent every change to an existing product through an Evolution dossier, with no
+  threshold, and a dossier for a two-line fix cost more than the fix. A change is
+  now made directly: the spec first through the section tools, then the code,
+  then the index sync. A dossier is opened when the person asks for one or wants
+  a change qualified before it is decided. The module itself is unchanged.
+- An implementation report judges the change, not the feature it lands in. The
+  first freeze of a request records what the touched features already hold; a
+  line on one of those elements is `inherited`, shown apart and marked on the
+  page, and only the request's own lines hold the report open.
+- The board answers the requests first; leaves and sources are counted there and
+  read one list at a time (`part=leaves`, `part=sources`).
+
+### Added
+
+- An amendment can be a delta: criteria retired or reworded by id, and the
+  description patched by an exact passage or appended to, each checked against
+  the feature when the draft is made and applied at the freeze.
+- `register_source` registers a documents register row inside the batch that
+  cites it.
+- A request is named by any unique prefix of four characters or more.
+- Searching the knowledge graph for features also matches their criteria,
+  actions and rules, and `matchedVia` names what matched.
+- Helper scripts: `index-file.mjs upsert` and `remove` edit `.unspa.json`
+  without reformatting it; the sync refuses to run when the index names another
+  project than the binding block; `ingest-results.mjs` records a criterion's
+  `verification.lastResult`; the hook says when the Lyriks MCP stopped answering;
+  `sync_skills` sends a helper script only when it changed.
+
+### Fixed
+
+- The summary lines an AI client reads for an impact walk agree with the rows:
+  a feature the change only reaches is to be read again, not edited, and an
+  empty report says why.
+- A proposal missing what was read or what was inferred is refused when it is
+  proposed, not when someone tries to accept it; the summary groups the blocked
+  proposals by their reason.
+- An amendment and the feature it amends are one feature for the maturity: a
+  value typed on the amendment counts as filled, and the gate into Verify no
+  longer refuses a request whose every field is filled.
+- Settings > Versions names the release the install runs (for example
+  2026.09-62) beside the channel it follows, and Lyriks-back reports its real
+  version instead of 0.4.1.
+- Engine 0.25.2: a surface marked `partial` in the index resolves its states and
+  invariants instead of reporting them all missing, and a behavior batch names
+  every id it minted and every state it renamed.
+
 ## [0.9.38] - 2026-09-24
 
 The dossier of an evolution request reads as one answer, and says where to act.

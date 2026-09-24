@@ -1,17 +1,21 @@
 #!/usr/bin/env node
 // Lyriks helper (installed by `sync_skills` under .lyriks/tools/).
-//   node .lyriks/tools/check-index.mjs [--fix] [--json]
+//   node .lyriks/tools/check-index.mjs [--fix] [--json] [--project <id>]
 // Checks that every entry of `.unspa.json` still points at its code, the way
 // the engine does: a signature is found by its TEXT, and `line` is only a hint.
 // A checker that compares the signature with the text at exactly `line` makes
 // every clean edit above an entry look like a fault, and people then pad
 // existing lines rather than shift their neighbours. This one reports every
 // problem of the whole index in one run, and `--fix` rewrites the line numbers
-// that moved. Exit code 0 when nothing is wrong or everything was fixed, else 1.
+// that moved. It also warns (stderr, and `projectWarnings` in --json) when the
+// projectId of the index differs from --project or from the project the binding
+// block of CLAUDE.md names: a sync would then go to the wrong project.
+// Exit code 0 when nothing is wrong or everything was fixed, else 1.
 // No dependencies, no network, Node 18+.
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { indexEntries, loadIndexFile, writeIndexFile } from './index-file.mjs';
+import { printProjectWarnings, resolveProject } from './index-project.mjs';
 
 // The engine's own constants (implementationStatus.ts): an entry within two
 // lines of its signature is fresh, and a signature under six characters is
@@ -122,6 +126,9 @@ function main() {
 	const args = process.argv.slice(2);
 	const fix = args.includes('--fix');
 	const loaded = loadIndexFile();
+	const flag = args.includes('--project') ? args[args.indexOf('--project') + 1] : undefined;
+	const project = resolveProject({ flag, indexProject: loaded.projectId, indexPath: loaded.path, dirs: [loaded.dir, process.cwd()] });
+	printProjectWarnings(project.warnings);
 	const cache = new Map();
 	// Index paths are relative to the index file, and may leave the repository.
 	const readLines = (file) => {
@@ -158,7 +165,8 @@ function main() {
 	}
 
 	const ok = problems.every((problem) => problem.fixed);
-	const report = { indexFile: loaded.path, checked, skipped: entries.length - checked, fixed, ok, problems };
+	const report = { indexFile: loaded.path, projectId: loaded.projectId, checked, skipped: entries.length - checked, fixed, ok, problems };
+	if (project.warnings.length > 0) report.projectWarnings = project.warnings;
 	if (args.includes('--json')) console.log(JSON.stringify(report, null, 2));
 	else printReport(report);
 	return ok ? 0 : 1;

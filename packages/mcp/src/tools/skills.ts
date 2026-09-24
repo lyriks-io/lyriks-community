@@ -8,6 +8,11 @@
 // Installation is not Claude-specific: every response carries `installTargets`,
 // one layout per agent runtime. A client that names itself in `client` gets its
 // own layout alone; one that stays anonymous gets them all and picks.
+//
+// The binding's helper scripts and hook weigh tens of kilobytes and rarely
+// change: `installed_tools` reports the ones the client holds (the hash read
+// from each file's `// contentHash:` line) so the platform sends back only the
+// stale or missing ones, the rest as `{ path, contentHash, unchanged: true }`.
 
 import type { LyriksClient } from '../lyriks-client.js'
 
@@ -72,6 +77,7 @@ export function budgetSkillContent(answer: unknown, cap = SKILL_SYNC_CONTENT_CAP
 export async function syncSkillsHandler(
   args: {
     installed?: Array<{ id: string; content_hash?: string }>
+    installed_tools?: Array<{ path: string; content_hash?: string }>
     client?: string
     project_id?: string
     skill_ids?: string[]
@@ -91,6 +97,9 @@ export async function syncSkillsHandler(
     projectId: args.project_id,
     ...(args.skill_ids !== undefined ? { skillIds: args.skill_ids } : {}),
     ...(args.include_content !== undefined ? { includeContent: args.include_content } : {}),
+    ...(args.installed_tools !== undefined
+      ? { installedTools: args.installed_tools.map((ref) => ({ path: ref.path, contentHash: ref.content_hash })) }
+      : {}),
   })
   return budgetSkillContent(answer, cap)
 }

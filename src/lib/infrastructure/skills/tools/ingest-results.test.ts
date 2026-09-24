@@ -199,7 +199,7 @@ describe('ingest-results.mjs (test results come back into the index)', () => {
 		const file = reportFile(dir, [['a test of the team', 'passed']]);
 		const result = run(dir, [file]);
 		expect(result.status).toBe(0);
-		expect(result.stdout).toContain('no test title carries an [unspa:<surface>:<action>:<scenario>] token');
+		expect(result.stdout).toContain('no test title carries an [unspa:<surface>:<action>:<scenario>] or [criterion:<id>] token');
 		expect(json(dir, [file]).report).toMatchObject({ tested: 0, actions: [], indexFile: null, written: false });
 	});
 
@@ -231,5 +231,76 @@ describe('ingest-results.mjs (test results come back into the index)', () => {
 		const noIndex = run(bare, [file]);
 		expect(noIndex.status).toBe(1);
 		expect(noIndex.stderr).toContain('No .unspa.json found');
+	});
+});
+
+// An acceptance criterion is verified when its index entry carries
+// `verification.lastResult`; nothing wrote it but a hand edit until now.
+describe('ingest-results.mjs (acceptance criteria get their lastResult)', () => {
+	type Verification = { kind: string; command?: string; files?: string[]; lastResult?: { passed: boolean; at: string; summary?: string; revision?: string } };
+	type CriterionRow = { key: string; criterionId: string; passed: number; total: number; outcome: string };
+	const criteriaOf = (cwd: string, args: string[]) => {
+		const result = run(cwd, [...args, '--json']);
+		return { status: result.status, rows: (JSON.parse(result.stdout) as { criteria: CriterionRow[] }).criteria };
+	};
+	const verificationOf = (dir: string, id: string) => (readIndex(dir)[`criterion:${id}`] as unknown as { verification: Verification }).verification;
+
+	it('writes passed:true on a criterion whose every test passed, keeping what the entry already said', () => {
+		const existing = { verification: { kind: 'integration', command: 'npx vitest run tests/boost.spec.ts' } };
+		const dir = repo({ 'action:act-boost': located, 'criterion:c-boost': existing as Entry });
+		const file = reportFile(dir, [
+			['[criterion:c-boost] boosts a fuelled car', 'passed'],
+			['[criterion:c-boost] [criterion:c-new] refuses an empty tank', 'passed'],
+			['[criterion:c-boost] a skipped check proves nothing', 'skipped']
+		]);
+		const { status, rows } = criteriaOf(dir, [file, '--revision', 'abc1234']);
+		expect(status).toBe(0);
+		expect(rows).toEqual([
+			expect.objectContaining({ key: 'criterion:c-boost', passed: 2, total: 2, outcome: 'verified' }),
+			expect.objectContaining({ key: 'criterion:c-new', passed: 1, total: 1, outcome: 'created-verified' })
+		]);
+		const kept = verificationOf(dir, 'c-boost');
+		expect(kept).toMatchObject({ kind: 'integration', command: existing.verification.command, files: ['tests/boost.spec.ts'] });
+		expect(kept.lastResult).toMatchObject({ passed: true, summary: '2/2 tests passed (report.json)', revision: 'abc1234' });
+		expect(Date.parse(kept.lastResult!.at)).not.toBeNaN();
+		// A criterion the index lacked is created from the run: the test file is where it is checked.
+		expect(verificationOf(dir, 'c-new')).toMatchObject({ kind: 'unit', files: ['tests/boost.spec.ts'], lastResult: { passed: true } });
+		expect(readIndex(dir)['action:act-boost']).toEqual(located);
+	});
+
+	it('writes passed:false as soon as one test of the criterion fails, with the kind --kind names', () => {
+		const dir = repo({ 'action:act-boost': located });
+		const file = reportFile(dir, [
+			['[criterion:c-1] one', 'passed'],
+			['[criterion:c-1] two', 'failed']
+		]);
+		const { rows } = criteriaOf(dir, [file, '--kind', 'e2e', '--revision', 'r1']);
+		expect(rows[0]).toMatchObject({ outcome: 'created-failing', passed: 1, total: 2 });
+		expect(verificationOf(dir, 'c-1')).toMatchObject({ kind: 'e2e', lastResult: { passed: false, summary: '1/2 tests passed (report.json)' } });
+		expect(run(dir, [file, '--kind', 'guess']).stderr).toContain('--kind must be one of unit, integration, e2e, visual, measurement, manual.');
+	});
+
+	it('maps tests whose titles cannot change with --criteria, by title or full name', () => {
+		const dir = repo({ 'action:act-boost': located });
+		const file = reportFile(dir, [
+			['boosts a fuelled car', 'passed'],
+			['refuses an empty tank', 'passed']
+		]);
+		writeFileSync(join(dir, 'criteria.json'), JSON.stringify({ 'criterion:c-a': ['boosts a fuelled car'], 'c-b': 'boost refuses an empty tank' }));
+		const { rows } = criteriaOf(dir, [file, '--criteria', 'criteria.json', '--revision', 'r1']);
+		expect(rows.map((row) => [row.key, row.outcome])).toEqual([
+			['criterion:c-a', 'created-verified'],
+			['criterion:c-b', 'created-verified']
+		]);
+	});
+
+	it('prints one line per criterion and counts them in the summary; --dry-run writes nothing', () => {
+		const dir = repo({ 'action:act-boost': located });
+		const before = readFileSync(join(dir, '.unspa.json'), 'utf8');
+		const file = reportFile(dir, [['[criterion:c-1] one', 'passed']]);
+		const lines = run(dir, [file, '--dry-run', '--revision', 'r1']).stdout.trimEnd().split('\n');
+		expect(lines[0]).toBe('criterion:c-1  1/1 passed  lastResult written (entry created), verified');
+		expect(lines[1]).toContain('; 1 criteria given a lastResult (dry run: nothing written).');
+		expect(readFileSync(join(dir, '.unspa.json'), 'utf8')).toBe(before);
 	});
 });

@@ -6,6 +6,7 @@
 
 import type { LyriksClient } from '../lyriks-client.js'
 import { HttpStatusError } from '../util/http-error.js'
+import { RESULT_CAP } from '../util/shape.js'
 
 export const DOSSIER_PARTS = [
   'summary',
@@ -16,6 +17,9 @@ export const DOSSIER_PARTS = [
   'report',
   'readings',
   'history',
+  // Without request_id: the board's own lists, paged.
+  'leaves',
+  'sources',
 ] as const
 export type DossierPart = (typeof DOSSIER_PARTS)[number]
 
@@ -25,6 +29,8 @@ export interface GetEvolutionArgs {
   part?: DossierPart
   section?: string
   verdict?: string
+  /** report: the request's own lines, or what the touched features already held. */
+  scope?: 'request' | 'inherited'
   /** impact: which run to read. The three hypotheses are all kept. */
   hypothesis?: string
   /** fields, proposals, readings, drafts: keep what belongs to one touched feature. */
@@ -69,17 +75,94 @@ export function withPageLinks<T>(answer: T, origin: string = pageOrigin()): T {
  * and paged, so the answer stays under the result cap however many features
  * the request touches.
  */
-export async function getEvolutionHandler(args: GetEvolutionArgs, lyriks: LyriksClient): Promise<unknown> {
-  const q = new URLSearchParams({ projectId: args.project_id })
-  if (args.request_id) q.set('requestId', args.request_id)
-  if (args.part && args.part !== 'summary') q.set('part', args.part)
-  if (args.section) q.set('section', args.section)
-  if (args.verdict) q.set('verdict', args.verdict)
-  if (args.hypothesis) q.set('hypothesis', args.hypothesis)
-  if (args.leaf) q.set('leaf', args.leaf)
-  if (args.offset !== undefined) q.set('offset', String(args.offset))
-  if (args.limit !== undefined) q.set('limit', String(args.limit))
-  return withPageLinks(await lyriks.get(`/api/evolution?${q.toString()}`))
+export async function getEvolutionHandler(
+  args: GetEvolutionArgs,
+  lyriks: LyriksClient,
+  budget: number = RESULT_CAP - PAGE_MARGIN,
+): Promise<unknown> {
+  const read = async (limit: number | undefined) => {
+    const q = new URLSearchParams({ projectId: args.project_id })
+    if (args.request_id) q.set('requestId', args.request_id)
+    if (args.part && args.part !== 'summary') q.set('part', args.part)
+    if (args.section) q.set('section', args.section)
+    if (args.verdict) q.set('verdict', args.verdict)
+    if (args.scope) q.set('scope', args.scope)
+    if (args.hypothesis) q.set('hypothesis', args.hypothesis)
+    if (args.leaf) q.set('leaf', args.leaf)
+    if (args.offset !== undefined) q.set('offset', String(args.offset))
+    if (limit !== undefined) q.set('limit', String(limit))
+    return withPageLinks(await lyriks.get(`/api/evolution?${q.toString()}`))
+  }
+  return fitPage(read, args.limit, budget)
+}
+
+/** Room kept under the result cap for the tool's own wrapping. */
+const PAGE_MARGIN = 1500
+/** Attempts at a smaller page before letting the cap's safety net have it. */
+const PAGE_TRIES = 6
+
+/** Where a paged list sits in an answer, and what its rows are called. */
+function pagedList(answer: unknown): { block: Record<string, unknown>; rows: unknown[] } | null {
+  if (!answer || typeof answer !== 'object') return null
+  const top = answer as Record<string, unknown>
+  const holder = top.request && typeof top.request === 'object' ? (top.request as Record<string, unknown>) : top
+  for (const [owner, rowsKey] of LIST_HOMES) {
+    const block = holder[owner] ?? top[owner]
+    if (block && typeof block === 'object' && Array.isArray((block as Record<string, unknown>)[rowsKey]))
+      return { block: block as Record<string, unknown>, rows: (block as Record<string, unknown>)[rowsKey] as unknown[] }
+  }
+  return null
+}
+
+const LIST_HOMES: ReadonlyArray<readonly [string, string]> = [
+  ['drafts', 'entries'],
+  ['fields', 'entries'],
+  ['proposals', 'entries'],
+  ['readings', 'entries'],
+  ['impact', 'findings'],
+  ['report', 'lines'],
+  ['leaves', 'entries'],
+  ['sources', 'entries'],
+]
+
+/**
+ * A paged part that does not fit the result cap is read again with a smaller
+ * page, so the answer keeps ITS OWN shape and says where the next page starts.
+ * Left to the cap's safety net, the same list came back as `{total, returned,
+ * items}` wrapped in `partial`, a different shape from one page to the next,
+ * and every reader broke on it once.
+ */
+export async function fitPage(
+  read: (limit: number | undefined) => Promise<unknown>,
+  asked: number | undefined,
+  budget: number,
+): Promise<unknown> {
+  let answer = await read(asked)
+  for (let tries = 0; tries < PAGE_TRIES; tries++) {
+    const size = JSON.stringify(answer)?.length ?? 0
+    const list = pagedList(answer)
+    if (!list) return answer
+    if (size <= budget) return withNextOffset(answer, list, tries > 0)
+    if (list.rows.length <= 1) return answer
+    const smaller = Math.max(1, Math.min(list.rows.length - 1, Math.floor((list.rows.length * budget) / size * 0.9)))
+    answer = await read(smaller)
+  }
+  return answer
+}
+
+/** The page answer with `nextOffset` on its list block when rows remain beyond it. */
+function withNextOffset(
+  answer: unknown,
+  list: { block: Record<string, unknown>; rows: unknown[] },
+  shrunk: boolean,
+): unknown {
+  const offset = typeof list.block.offset === 'number' ? list.block.offset : 0
+  const matched = [list.block.matched, list.block.total].find((n): n is number => typeof n === 'number')
+  const next = offset + list.rows.length
+  if (matched === undefined || next >= matched) return answer
+  list.block.nextOffset = next
+  if (shrunk) list.block.pageNote = `Page shortened to ${list.rows.length} rows to stay under the result cap; read on with offset ${next}.`
+  return answer
 }
 
 export interface ApplyEvolutionBatchArgs {

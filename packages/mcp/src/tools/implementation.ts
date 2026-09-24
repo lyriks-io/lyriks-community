@@ -75,21 +75,72 @@ function headEntries(block: unknown): unknown {
  * its head like the other lists; an older engine sends neither and neither is
  * invented.
  */
-export function shapeSyncAnswer(answer: unknown, verbose = false): unknown {
+export function shapeSyncAnswer(answer: unknown, verbose = false, sentKeys?: readonly string[]): unknown {
   if (!isRow(answer) || !(Array.isArray(answer.acks) || typeof answer.synced === 'number')) return answer
-  const { acks, orphans, shared, criteria, ...rest } = answer
+  const { acks, orphans, shared, criteria, featureIds, ...rest } = answer
   const rows = Array.isArray(acks) ? acks : []
   const failed = rows.filter((ack) => isRow(ack) && ack.ok === false)
+  const sent = sentKeys ? aboutSentKeys(sentKeys, criteria, orphans) : undefined
   return {
+    // What the keys you sent came to, first: eight keys sent used to come back
+    // under the project's ninety feature ids and fifty unrelated criteria.
+    ...(sent ? { sent } : {}),
     ...rest,
+    ...(Array.isArray(featureIds)
+      ? verbose
+        ? { featureIds }
+        : { projectFeatures: featureIds.length }
+      : {}),
     ...(orphans !== undefined ? { orphans: headEntries(orphans) } : {}),
     ...(shared !== undefined ? { shared: headEntries(shared) } : {}),
-    ...(criteria !== undefined ? { criteria: headEntries(criteria) } : {}),
+    ...(criteria !== undefined
+      ? { criteria: verbose || !sentKeys?.some((k) => k.startsWith('criterion:')) ? headEntries(criteria) : criteriaOfSent(criteria, sentKeys) }
+      : {}),
     ...(verbose
       ? { acks: rows }
       : { failedAcks: failed.slice(0, LIST_HEAD), ...(failed.length > LIST_HEAD ? { failedAcksReturned: LIST_HEAD } : {}) }),
     semantics: SYNC_SEMANTICS,
   }
+}
+
+/**
+ * The part of a sync answer about the keys the caller sent: how many, how many
+ * the spec did not recognise, and for the `criterion:` keys among them how
+ * many are verified, failing or only recorded. The engine's own counters stay
+ * below it and are about the whole project.
+ */
+function aboutSentKeys(keys: readonly string[], criteria: unknown, orphans: unknown): Row {
+  const sent = new Set(keys)
+  const orphanRows = isRow(orphans) && Array.isArray(orphans.entries) ? orphans.entries : []
+  const orphaned = orphanRows.filter((o) => isRow(o) && typeof o.key === 'string' && sent.has(o.key)).length
+  const entries = isRow(criteria) && Array.isArray(criteria.entries) ? criteria.entries.filter(isRow) : []
+  const mine = entries.filter((e) => typeof e.key === 'string' && sent.has(e.key))
+  const result = (e: Row) => (isRow(e.verification) && isRow(e.verification.lastResult) ? e.verification.lastResult.passed : undefined)
+  const criterionKeys = keys.filter((k) => k.startsWith('criterion:')).length
+  return {
+    keys: keys.length,
+    orphans: orphaned,
+    ...(criterionKeys > 0
+      ? {
+          criteria: {
+            sent: criterionKeys,
+            verified: mine.filter((e) => result(e) === true).length,
+            failing: mine.filter((e) => result(e) === false).length,
+            unverified: mine.filter((e) => e.indexed === true && result(e) === undefined).length,
+            howToVerify:
+              'A criterion reads verified when its index entry carries verification.lastResult.passed:true (what ran, when). Record the test that proves it there, then sync again.',
+          },
+        }
+      : {}),
+  }
+}
+
+/** The criteria block with its rows cut to the criteria the caller sent; the project counters stay. */
+function criteriaOfSent(criteria: unknown, keys: readonly string[]): unknown {
+  if (!isRow(criteria) || !Array.isArray(criteria.entries)) return criteria
+  const sent = new Set(keys)
+  const entries = criteria.entries.filter((e) => isRow(e) && typeof e.key === 'string' && sent.has(e.key))
+  return { ...criteria, entries: entries.slice(0, LIST_HEAD), entriesScope: 'the criterion keys you sent; verbose:true lists the project' }
 }
 
 /** Push coverage for a whole project from the index you hold. */
@@ -98,7 +149,7 @@ export async function syncIndexHandler(args: SyncIndexArgs, lyriks: LyriksClient
     projectId: args.project_id,
     index: args.index,
   })
-  return shapeSyncAnswer(answer, args.verbose === true)
+  return shapeSyncAnswer(answer, args.verbose === true, Object.keys(args.index ?? {}))
 }
 
 export interface FoundEntityArg {

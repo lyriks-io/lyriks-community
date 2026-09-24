@@ -9,6 +9,7 @@ import {
 	decideProposalAct,
 	deleteRequestAct,
 	deriveCodeImpact,
+	baselineKeysOf,
 	deriveImplementationReport,
 	draftCoherence,
 	draftNodeIds,
@@ -52,10 +53,19 @@ import {
 	type Guarded,
 	type ProjectEvolutionDraft,
 	requestPagePath,
-	type PagePlace
+	type PagePlace,
+	findRequestByRef,
+	unresolvedRequestReason
 } from '$domain/evolution';
 import { saveDossierField } from '$application/use-cases/save-dossier-field';
 import type { ProjectFeaturesDraft } from '$domain/features';
+import {
+	createDocumentSource,
+	isDocumentKind,
+	sourceAccess,
+	sourceAccessIssues,
+	type ProjectDocumentsDraft
+} from '$domain/documents';
 import { mapLimit } from '$lib/shared/map-limit';
 import { loadEvolutionView, maturityOf, requestCard, type EvolutionView } from './evolution-view.server';
 
@@ -136,12 +146,30 @@ const draftInput = (op: Record<string, unknown>): DraftLeafInput => {
 			op.acceptanceCriteria === undefined ? undefined : strList(op.acceptanceCriteria),
 		dependsOn: op.dependsOn === undefined ? undefined : strList(op.dependsOn),
 		sourceIds: op.sourceIds === undefined ? undefined : strList(op.sourceIds),
-		behaviour
+		behaviour,
+		retireCriteria: op.retireCriteria === undefined ? undefined : strList(op.retireCriteria),
+		changeCriteria:
+			op.changeCriteria === undefined
+				? undefined
+				: records(op.changeCriteria).map((c) => ({ id: str(c.id), text: str(c.text) })),
+		// One patch or several: a single `{find, replace}` is the ordinary case.
+		descriptionPatch:
+			op.descriptionPatch === undefined
+				? undefined
+				: records(Array.isArray(op.descriptionPatch) ? op.descriptionPatch : [op.descriptionPatch]).map((p) => ({
+						find: str(p.find),
+						replace: str(p.replace)
+					})),
+		descriptionAppend: op.descriptionAppend === undefined ? undefined : str(op.descriptionAppend)
 	};
 };
 
+const records = (v: unknown): Record<string, unknown>[] =>
+	Array.isArray(v) ? v.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object') : [];
+
 export const EVOLUTION_OPERATIONS = [
 	'open_request',
+	'register_source',
 	'update_request',
 	'set_leaves',
 	'add_draft_leaf',
@@ -203,6 +231,9 @@ export type ApplyOutcome =
 	  }
 	| { readonly ok: false; readonly status: 409 | 422; readonly results: OperationResult[] };
 
+/** An act that succeeded without touching a request, and says what it did. */
+type Said = { readonly ok: true; readonly summary: string };
+
 interface Working {
 	evolution: ProjectEvolutionDraft;
 	features: ProjectFeaturesDraft;
@@ -247,6 +278,15 @@ export async function applyEvolutionOperations(
 		soloWorkspace: view.members.length <= 1
 	};
 	const knownLeafIds = new Set(view.leaves.map((l) => l.id));
+	// What an amendment's delta is checked against: the feature as it stands now.
+	const baseLeaf = (leafId: string) => {
+		const leaf = working.features.features.find((f) => f.id === leafId);
+		if (!leaf) return null;
+		return {
+			description: leaf.description,
+			criteria: working.features.leafMeta?.[leafId]?.acceptanceCriteria ?? []
+		};
+	};
 	const leafNames = Object.fromEntries(view.leaves.map((l) => [l.id, l.name]));
 	const sourceIds = new Set(view.sources.map((s) => s.id));
 	// Each banned word travels with the agreed term it stands in for, so a flag
@@ -256,8 +296,49 @@ export async function applyEvolutionOperations(
 	);
 
 	const results: OperationResult[] = [];
-	const findRequest = (id: string): EvolutionRequest | undefined =>
-		working.evolution.requests.find((r) => r.id === id);
+
+	/**
+	 * A source registered in the same batch that cites it. The documents register
+	 * is where a proposal's evidence lives, and a batch that could not write it
+	 * sent the author out to patch_section and back, with the dossier nowhere
+	 * saying so. The register row obeys the register's own rule: a reader can
+	 * reach what it cites, through a web address or through the note that
+	 * carries the words themselves.
+	 */
+	let documents: ProjectDocumentsDraft | null = null;
+	const registerSource = async (op: Record<string, unknown>): Promise<Guarded | Said> => {
+		const title = str(op.title).trim();
+		const url = str(op.url).trim();
+		const note = str(op.note).trim();
+		if (!title) return refuse('A source needs a title.', 'The title is how a proposal and a reader name it.');
+		const access = sourceAccess({ url, note });
+		if (access === 'unreachable' || access === 'empty')
+			return refuse(
+				sourceAccessIssues([{ id: title, title, url, note }])[0].message,
+				'A citation is evidence only if someone other than its author can reach it.'
+			);
+		if (!documents) {
+			// The revision first: the save below lands only on the register as it was read.
+			documentsRevision = await services.sectionDocuments.currentRevision(input.projectId, 'documents');
+			documents = await services.loadDocumentRegister.execute(input.projectId);
+		}
+		const id = str(op.id).trim() || `src-${ctx.newId()}`;
+		const existing = documents.sources.find((s) => s.id === id);
+		if (existing) {
+			if (existing.title === title && (existing.url ?? '') === url && (existing.note ?? '') === note)
+				return { ok: true, summary: `Source ${id} is already registered` };
+			return refuse(`A source "${id}" already exists with other content.`, 'Pick another id, or cite the existing one.');
+		}
+		const kind = isDocumentKind(op.kind) ? op.kind : url ? 'link' : 'evidence';
+		documents = { ...documents, sources: [...documents.sources, createDocumentSource({ id, title, kind, url, note })] };
+		documentsChanged = true;
+		sourceIds.add(id);
+		return { ok: true, summary: `Registered source ${id} ("${title}"): cite it as citedSourceIds ["${id}"]` };
+	};
+	let documentsChanged = false;
+	let documentsRevision: number | null = null;
+	// Any unique prefix names a request, as the board and every report shorten it.
+	const lookupRequest = (ref: string) => findRequestByRef(working.evolution.requests, ref);
 	const put = (request: EvolutionRequest) => {
 		const exists = working.evolution.requests.some((r) => r.id === request.id);
 		working.evolution = {
@@ -275,7 +356,7 @@ export async function applyEvolutionOperations(
 	 * features section: the single moment a dossier touches a section
 	 * (ac-evo-draft-5). Everywhere else a draft stays a draft.
 	 */
-	const crossOnce = (request: EvolutionRequest, waiverReason?: string): ActOutcome => {
+	const crossOnce = async (request: EvolutionRequest, waiverReason?: string): Promise<ActOutcome> => {
 		const outcome = crossStageAct(ctx, request, {
 			criticalEmptyCount: maturityOf(view, working.features, request).criticalEmptyCount,
 			waiverReason
@@ -283,14 +364,25 @@ export async function applyEvolutionOperations(
 		if (!outcome.ok) return outcome;
 		if (outcome.request.stage !== 'implementation') return outcome;
 		const written = materialiseDrafts(working.features, outcome.request, ctx.at);
-		if (!written.changed) return outcome;
-		working.features = written.features;
-		working.featuresChanged = true;
-		return {
-			ok: true,
-			request: written.request,
-			summary: `${outcome.summary}. ${written.lines.join('. ')}`
-		};
+		if (written.changed) {
+			working.features = written.features;
+			working.featuresChanged = true;
+		}
+		const frozen = await withBaseline(written.request);
+		return written.changed
+			? { ok: true, request: frozen, summary: `${outcome.summary}. ${written.lines.join('. ')}` }
+			: { ...outcome, request: frozen };
+	};
+
+	/**
+	 * What the touched features already held, photographed at the FIRST freeze
+	 * only: a rebrief that freezes again must not turn what this request added
+	 * in its first iteration into something it inherited.
+	 */
+	const withBaseline = async (request: EvolutionRequest): Promise<EvolutionRequest> => {
+		if (request.baselineKeys) return request;
+		const statuses = await mapLimit(request.leafIds, 2, (id) => featureStatus(services, id));
+		return { ...request, baselineKeys: baselineKeysOf(statuses) };
 	};
 
 	/**
@@ -302,12 +394,12 @@ export async function applyEvolutionOperations(
 	 * predictable: you asked for the impact and the coherence, they said nothing
 	 * moves, and the dossier got out of your way.
 	 */
-	const settle = (request: EvolutionRequest): ActOutcome => {
+	const settle = async (request: EvolutionRequest): Promise<ActOutcome> => {
 		let current = request;
 		const summaries: string[] = [];
 		for (let guardCount = 0; guardCount < STAGE_ORDER.length; guardCount++) {
 			if (current.stage === 'delivered') break;
-			const crossed = crossOnce(current);
+			const crossed = await crossOnce(current);
 			// A gate that refuses means there IS something to arbitrate after all.
 			// Leave the request where it stands rather than forcing it through.
 			if (!crossed.ok) return { ok: true, request: current, summary: summaries.join('. ') };
@@ -331,8 +423,10 @@ export async function applyEvolutionOperations(
 		// either rather than answer "Unknown operation \"\"" to a batch that named
 		// its operation perfectly well.
 		const name = str(op.op) || str(op.kind);
-		const requestId = str(op.requestId) || null;
-		const record = (outcome: ActOutcome | Guarded, id: string | null = requestId) => {
+		const lookup = str(op.requestId) ? lookupRequest(str(op.requestId)) : null;
+		// Results and links carry the full id whatever the caller typed.
+		const requestId = lookup?.kind === 'found' ? lookup.request.id : str(op.requestId) || null;
+		const record = (outcome: ActOutcome | Guarded | Said, id: string | null = requestId) => {
 			if (outcome.ok) {
 				if ('request' in outcome) put(outcome.request);
 				results.push({ index, op: name, requestId: 'request' in outcome ? outcome.request.id : id, ok: true, summary: 'summary' in outcome ? outcome.summary : 'ok' });
@@ -379,13 +473,20 @@ export async function applyEvolutionOperations(
 			continue;
 		}
 
-		const request = requestId ? findRequest(requestId) : undefined;
+		if (name === 'register_source') {
+			const outcome = await registerSource(op);
+			if (!record(outcome, null)) break;
+			continue;
+		}
+
+		const request = lookup?.kind === 'found' ? lookup.request : undefined;
 		if (!request) {
 			record(
 				refuse(
-					requestId ? `Request "${requestId}" does not exist on this project.` : 'requestId is required.',
-					'get_evolution lists the requests with their ids; open_request creates one.'
-				)
+					lookup ? unresolvedRequestReason(str(op.requestId), lookup) : 'requestId is required.',
+					'get_evolution lists the requests with their ids (any unique prefix of four characters or more names one); open_request creates one.'
+				),
+				null
 			);
 			break;
 		}
@@ -411,10 +512,10 @@ export async function applyEvolutionOperations(
 				outcome = setLeavesAct(ctx, request, strList(op.leafIds), knownLeafIds);
 				break;
 			case 'add_draft_leaf':
-				outcome = addDraftLeafAct(ctx, request, draftInput(op), knownLeafIds);
+				outcome = addDraftLeafAct(ctx, request, draftInput(op), knownLeafIds, baseLeaf);
 				break;
 			case 'update_draft_leaf':
-				outcome = updateDraftLeafAct(ctx, request, str(op.draftId), draftInput(op), knownLeafIds);
+				outcome = updateDraftLeafAct(ctx, request, str(op.draftId), draftInput(op), knownLeafIds, baseLeaf);
 				break;
 			case 'remove_draft_leaf':
 				outcome = removeDraftLeafAct(ctx, request, str(op.draftId));
@@ -564,13 +665,14 @@ export async function applyEvolutionOperations(
 					request,
 					statuses: Object.fromEntries(own),
 					neighbours: Object.fromEntries(near),
-					leafNames
+					leafNames,
+					baseline: request.baselineKeys ? new Set(request.baselineKeys) : null
 				});
 				outcome = buildReportAct(ctx, request, lines);
 				break;
 			}
 			case 'cross_stage':
-				outcome = crossOnce(
+				outcome = await crossOnce(
 					request,
 					typeof op.waiverReason === 'string' ? op.waiverReason : undefined
 				);
@@ -661,7 +763,7 @@ export async function applyEvolutionOperations(
 			outcome.request.stage === 'specification' &&
 			nothingToArbitrate(outcome.request)
 		) {
-			const settled = settle(outcome.request);
+			const settled = await settle(outcome.request);
 			if (settled.ok && settled.request.stage !== 'specification')
 				record(settled, settled.request.id);
 		}
@@ -671,6 +773,12 @@ export async function applyEvolutionOperations(
 
 	// Persist: the canonical section first (it is what an accepted value IS),
 	// then the dossier under the revision it was read at.
+	// The register first, under the revision it was read at: a Documents edit made
+	// meanwhile refuses this batch whole rather than being overwritten by it.
+	if (documentsChanged && documents) {
+		const written = await services.saveDocumentsDraft.execute(documents, { expectedRevision: documentsRevision, origin: input.origin });
+		if (!written) return { ok: false, status: 409, results };
+	}
 	if (working.featuresChanged) await services.saveFeaturesDraft.execute(working.features);
 	const saved = await services.saveEvolutionDraft.execute(working.evolution, {
 		expectedRevision: view.revision,

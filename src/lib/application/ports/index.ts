@@ -132,6 +132,7 @@ export type {
 	BindingInstallTarget,
 	BindingToolInstall,
 	InstalledSkillRef,
+	InstalledToolRef,
 	Skill,
 	SkillBinding,
 	SkillCatalogPort,

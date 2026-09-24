@@ -10,7 +10,12 @@ import {
 	loadEvolutionView
 } from '$lib/server/evolution-view.server';
 import { applyEvolutionOperations } from '$lib/server/evolution-operations.server';
-import { isImpactHypothesis } from '$domain/evolution';
+import {
+	findRequestByRef,
+	isImpactHypothesis,
+	unresolvedRequestReason,
+	type FindingScope
+} from '$domain/evolution';
 import type { RequestHandler } from './$types';
 
 /**
@@ -18,10 +23,11 @@ import type { RequestHandler } from './$types';
  * calls, so an MCP client runs a request from the raw need to acceptance
  * without recomputing the dossier's rules from the raw section document.
  *
- *   GET  /api/evolution?projectId=<id>[&requestId=<id>][&part=drafts|fields|proposals|impact|report|readings|history]
- *        -> the board (every live request as a card), one dossier in counts,
- *           or one list of it, narrowed by `leaf` / `section` / `verdict` and
- *           paged by `offset` / `limit`.
+ *   GET  /api/evolution?projectId=<id>[&requestId=<id or unique prefix>][&part=drafts|fields|proposals|impact|report|readings|history]
+ *        -> the board (every live request as a card, first), one dossier in
+ *           counts, or one list of it, narrowed by `leaf` / `section` /
+ *           `verdict` and paged by `offset` / `limit`. Without a request,
+ *           part=leaves|sources pages the board's own lists.
  *   POST /api/evolution { projectId, operations[], as_person? }
  *        -> typed operations, applied atomically under the server's guards.
  *
@@ -29,6 +35,12 @@ import type { RequestHandler } from './$types';
  * MCP names itself as an AI client, and `as_person: true` relays the signed-in
  * person's own decision with the channel stamped on the timeline.
  */
+const scopeParam = (raw: string | null): FindingScope | undefined => {
+	if (raw === null) return undefined;
+	if (raw === 'request' || raw === 'inherited') return raw;
+	error(400, `unknown scope "${raw}". Valid: request, inherited`);
+};
+
 export const GET: RequestHandler = async (event) => {
 	const projectId = event.url.searchParams.get('projectId') ?? '';
 	if (!projectId) error(400, 'projectId is required');
@@ -61,12 +73,19 @@ export const GET: RequestHandler = async (event) => {
 		part,
 		section: event.url.searchParams.get('section') ?? undefined,
 		verdict: event.url.searchParams.get('verdict') ?? undefined,
+		scope: scopeParam(event.url.searchParams.get('scope')),
 		hypothesis,
 		leaf: event.url.searchParams.get('leaf') ?? undefined,
 		offset: int('offset'),
 		limit: int('limit')
 	});
-	if (requestId && !aggregate.request) error(404, `Request "${requestId}" does not exist on this project.`);
+	if (requestId && !aggregate.request) {
+		const lookup = findRequestByRef(
+			view.draft.requests.filter((r) => r.status !== 'deleted'),
+			requestId
+		);
+		error(lookup.kind === 'ambiguous' ? 400 : 404, unresolvedRequestReason(requestId, lookup));
+	}
 	return json(aggregate);
 };
 
