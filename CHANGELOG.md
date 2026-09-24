@@ -6,6 +6,17 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.37] - 2026-09-24
+
+### Fixed
+
+- The engine moves with the platform. The platform runs the engine's own
+  mcp-server, not only the behaviour dashboard does, so a fix shipped in the
+  engine reached the dashboard and not the answers the platform itself gives. The
+  dependency now moves with the release, which is how the corrected hint on an
+  orphan index key actually arrives. Caught on the release candidate, where the
+  new answer and the old hint came back in the same response.
+
 ## [0.9.36] - 2026-09-24
 
 Eight things that made the tool argue with the person using it.
