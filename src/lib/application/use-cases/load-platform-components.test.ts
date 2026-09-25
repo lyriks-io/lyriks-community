@@ -91,6 +91,24 @@ describe('LoadPlatformComponentsUseCase', () => {
 		});
 	});
 
+	// ac-adm-2: on the studio the panel read "Image tag stable" and nothing said
+	// which release that was. The kit records the release the install runs.
+	it('names the release the install runs, not only the channel it follows', async () => {
+		const stable = new LoadPlatformComponentsUseCase(
+			{ ...BUILD, imageTag: 'stable' },
+			{ engineVersion: async () => '0.13.0' },
+			{ probe: async () => null },
+			{ serverVersion: async () => '16.4' },
+			clock,
+			'0.13.0',
+			{ read: async () => ({ ...HOST, release: '2026.09-62' }) },
+			{ read: async () => null }
+		);
+		const platform = byId(await stable.execute(), 'platform');
+		expect(platform.build?.Release).toBe('2026.09-62');
+		expect(platform.build?.['Image tag']).toBe('stable');
+	});
+
 	it('prefers the version the running engine reports over the declared one', async () => {
 		const components = await build({ engine: async () => '0.10.2', declared: '0.13.0' }).execute();
 		const engine = byId(components, 'unspaghettit');

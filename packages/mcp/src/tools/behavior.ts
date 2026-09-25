@@ -60,7 +60,9 @@ const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 
  * - a success: `previousUpdatedAt` and `updatedAt`, the version to send next,
  *   `scenarios: { scope, run, passed, failed[], truncated? }`, the scenarios of
  *   what the batch touched, and `relatedElsewhere`, what the batch touches in
- *   OTHER features.
+ *   OTHER features;
+ * - `created` and `renamed`: the ids the batch minted and the state paths it
+ *   moved, in a dry run as in a commit.
  */
 const RAW_FIELDS: ReadonlyArray<readonly [string, (v: unknown) => boolean]> = [
   ['conflict', (v) => typeof v === 'boolean'],
@@ -72,6 +74,12 @@ const RAW_FIELDS: ReadonlyArray<readonly [string, (v: unknown) => boolean]> = [
   // isRow is declared further down: named here, it would be read before it exists.
   ['scenarios', (v) => isRow(v)],
   ['relatedElsewhere', (v) => isRow(v) || Array.isArray(v)],
+  // Every element the batch minted, ref or not (`{ op, kind, id, path?, key? }`,
+  // `key` being its .unspa.json key), and every state path it renamed
+  // (`{ from, to, ... }`): what an index is written from without reading the
+  // whole feature back.
+  ['created', Array.isArray],
+  ['renamed', Array.isArray],
 ]
 
 /**

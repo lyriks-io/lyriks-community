@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Lyriks helper (installed by `sync_skills` under .lyriks/tools/).
-//   node .lyriks/tools/ingest-results.mjs <report.json> [--dry-run] [--json]
+//   node .lyriks/tools/ingest-results.mjs <report.json> [--criteria <map.json>] [--kind <kind>] [--revision <sha>] [--dry-run] [--json]
 // Brings test results back into `.unspa.json` without hand editing. Reads a
 // vitest or jest JSON report (`--reporter=json --outputFile=<report.json>`),
 // keeps the tests whose title carries the engine's token
@@ -11,12 +11,19 @@
 //                           located first (index entry), proven second.
 // "Located" and "proven" are two claims. An index entry says where the code is;
 // only a passing run of the real code earns `verifiedAt`.
+// Acceptance criteria come back the same way (criteria-results.mjs): a test
+// whose title carries `[criterion:<id>]` (or that --criteria maps to one) sets
+// `verification.lastResult { passed, at, summary, revision }` on the entry
+// `criterion:<id>`, passed when every one of its tests passed, and creates that
+// entry (kind from --kind, default unit, files from the report) when it is
+// missing. The next sync then reports the criterion verified, or failing.
 // Same rules and exit codes as the engine's own `unspa coverage ingest`: 1 when
 // the report or the index cannot be read, else 0, a failing test included (this
 // records, it does not gate). No dependencies, no network, Node 18+.
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { loadIndexFile, writeIndexFile } from './index-file.mjs';
+import { CRITERION_KINDS, applyCriterion, criterionResults, currentRevision, readCriteriaMap } from './criteria-results.mjs';
+import { findIndexFile, loadIndexFile, writeIndexFile } from './index-file.mjs';
 
 // The engine's token, as its codegen emits it (cli/scenarios/results.ts).
 const TOKEN = /\[unspa:([^:\]]+):([^:\]]+):([^:\]]+)\]/;
@@ -88,10 +95,13 @@ const OUTCOMES = {
 };
 
 function printReport(report) {
-	if (report.actions.length === 0) {
-		console.log(`${report.reportFile}: no test title carries an [unspa:<surface>:<action>:<scenario>] token, nothing to ingest.`);
-		console.log('Put the `titleToken` of each export_behavior_scenarios fixture in its test title, then run the tests with --reporter=json.');
+	if (report.actions.length === 0 && report.criteria.length === 0) {
+		console.log(`${report.reportFile}: no test title carries an [unspa:<surface>:<action>:<scenario>] or [criterion:<id>] token, nothing to ingest.`);
+		console.log('Put the `titleToken` of each export_behavior_scenarios fixture, or [criterion:<id>], in its test title, then run the tests with --reporter=json.');
 		return;
+	}
+	for (const criterion of report.criteria) {
+		console.log(`${criterion.key}  ${criterion.passed}/${criterion.total} passed  lastResult ${criterion.outcome.replace('created-', 'written (entry created), ')}`);
 	}
 	const width = Math.max(...report.actions.map((action) => action.key.length));
 	for (const action of report.actions) {
@@ -100,15 +110,32 @@ function printReport(report) {
 	console.log(
 		`${report.indexFile}: ${report.tested} actions tested, ${report.verified} fully passing, ${report.tested - report.verified} with failures; ` +
 			`${report.stamped} stamped, ${report.cleared} cleared, ${report.unindexed.length} passing but not in the index` +
+			(report.criteria.length > 0 ? `; ${report.criteria.length} criteria given a lastResult` : '') +
 			(report.dryRun ? ' (dry run: nothing written).' : report.written ? '.' : ' (nothing to write).')
 	);
 }
 
+/** `<report.json>` and the flags; the value flags take the next argument. */
+function parseArgv(argv) {
+	const flags = {};
+	const positional = [];
+	for (let i = 0; i < argv.length; i += 1) {
+		const name = argv[i].startsWith('--') ? argv[i].slice(2) : null;
+		if (name === null) positional.push(argv[i]);
+		else if (['criteria', 'kind', 'revision'].includes(name)) {
+			if (argv[i + 1] === undefined) throw new Error(`--${name} needs a value.`);
+			flags[name] = argv[(i += 1)];
+		} else flags[name] = true;
+	}
+	return { file: positional[0], flags };
+}
+
 function main() {
-	const args = process.argv.slice(2);
-	const dryRun = args.includes('--dry-run');
-	const file = args.find((arg) => !arg.startsWith('--'));
-	if (!file) throw new Error('Usage: node .lyriks/tools/ingest-results.mjs <report.json> [--dry-run] [--json]');
+	const { file, flags } = parseArgv(process.argv.slice(2));
+	const dryRun = Boolean(flags['dry-run']);
+	if (!file) throw new Error('Usage: node .lyriks/tools/ingest-results.mjs <report.json> [--criteria <map.json>] [--kind <kind>] [--revision <sha>] [--dry-run] [--json]');
+	const kind = flags.kind ?? 'unit';
+	if (!CRITERION_KINDS.includes(kind)) throw new Error(`--kind must be one of ${CRITERION_KINDS.join(', ')}.`);
 	const reportFile = resolve(file);
 	if (!existsSync(reportFile)) {
 		throw new Error(`Results file not found: ${reportFile}\nRun the tests with --reporter=json --outputFile=<report.json>, then ingest that file.`);
@@ -121,9 +148,11 @@ function main() {
 	}
 
 	const perAction = summarizeByAction(parseScenarioResults(raw));
-	const report = { reportFile, indexFile: null, dryRun, written: false, stampedAt: null, tested: perAction.length, verified: 0, stamped: 0, cleared: 0, unindexed: [], actions: [] };
+	const indexPath = findIndexFile();
+	const perCriterion = criterionResults(raw, flags.criteria ? readCriteriaMap(resolve(flags.criteria)) : undefined, indexPath ? resolve(indexPath, '..') : process.cwd());
+	const report = { reportFile, indexFile: null, dryRun, written: false, stampedAt: null, tested: perAction.length, verified: 0, stamped: 0, cleared: 0, unindexed: [], actions: [], criteria: [] };
 	// Like the engine, a report without tagged tests never needs the index at all.
-	if (perAction.length > 0) {
+	if (perAction.length + perCriterion.length > 0) {
 		const loaded = loadIndexFile();
 		report.indexFile = loaded.path;
 		report.stampedAt = new Date().toISOString();
@@ -135,13 +164,17 @@ function main() {
 			if (outcome === 'cleared') report.cleared += 1;
 			if (outcome === 'unindexed') report.unindexed.push(action.actionId);
 		}
-		if (!dryRun && report.stamped + report.cleared > 0) {
+		const revision = flags.revision ?? (perCriterion.length > 0 ? currentRevision(loaded.dir) : null);
+		for (const result of perCriterion) {
+			report.criteria.push(applyCriterion(loaded.index, result, { at: report.stampedAt, kind, revision, reportFile }));
+		}
+		if (!dryRun && report.stamped + report.cleared + report.criteria.length > 0) {
 			writeIndexFile(loaded);
 			report.written = true;
 		}
 	}
 
-	if (args.includes('--json')) console.log(JSON.stringify(report, null, 2));
+	if (flags.json) console.log(JSON.stringify(report, null, 2));
 	else printReport(report);
 	return 0;
 }

@@ -408,3 +408,119 @@ describe('apply-batch.mjs', () => {
 		expect(fake.seen).toEqual([]);
 	});
 });
+
+/** The block sync_skills merges into CLAUDE.md, naming the project the repository is bound to. */
+const bindingBlock = (projectId: string) =>
+	`# Team notes\n\n<!-- lyriks-binding -->\n## This product is specified in Lyriks\n\nIts spec lives in the Lyriks project \`${projectId}\` and nowhere else.\n<!-- /lyriks-binding -->\n`;
+
+// A field repository kept a .unspa.json naming a project since replaced, while
+// CLAUDE.md named the right one: every sync went to the old project in silence.
+describe('the project a networked script writes to', () => {
+	it('refuses to sync when the index and the binding block name two projects, and prints the command to run', async () => {
+		fake.tools.sync_implementation_index = () => ({ json: SYNC_ANSWER });
+		const dir = repoWithIndex(TWO_FEATURES, 'big-island-04ba81');
+		writeFileSync(join(dir, 'CLAUDE.md'), bindingBlock('big-island-c4e7da'));
+		const refused = await run('sync-index.mjs', ['--url', url, '--token', 's3cret'], { cwd: dir });
+		expect(refused.status).toBe(1);
+		expect(toolCalls()).toEqual([]);
+		expect(refused.stderr).not.toContain('s3cret');
+		expect(refused.stderr).toContain('Nothing was sent');
+		expect(refused.stderr).toContain('names projectId big-island-04ba81 but the binding block of CLAUDE.md names big-island-c4e7da');
+		expect(refused.stderr).toContain('--url');
+		expect(refused.stderr).toMatch(/node \S*sync-index\.mjs --url \S+ --token "\$LYRIKS_MCP_TOKEN" --project big-island-c4e7da/);
+		expect(refused.stderr).toContain('index-file.mjs set-project <id>');
+
+		// Naming the project settles it, and the disagreement is still said out loud.
+		const sent = await run('sync-index.mjs', ['--project', 'big-island-c4e7da', '--url', url], { cwd: dir });
+		expect(sent.status).toBe(0);
+		expect(argsOf(toolCalls()[0]).project_id).toBe('big-island-c4e7da');
+		expect(sent.stderr).toContain('WARNING (Lyriks project): --project big-island-c4e7da differs from the projectId big-island-04ba81');
+		const printed = JSON.parse(sent.stdout);
+		expect(printed).toMatchObject({ project: 'big-island-c4e7da', projectSource: '--project' });
+		expect(printed.projectWarnings).toHaveLength(1);
+	});
+
+	it('takes the binding block when the index names no project, and stays quiet when all agree', async () => {
+		fake.tools.sync_implementation_index = () => ({ json: SYNC_ANSWER });
+		const dir = repoWithIndex(TWO_FEATURES, null);
+		writeFileSync(join(dir, 'CLAUDE.md'), bindingBlock('big-island-c4e7da'));
+		const result = await run('sync-index.mjs', ['--url', url], { cwd: dir });
+		expect(result.status).toBe(0);
+		expect(result.stderr).toBe('');
+		expect(argsOf(toolCalls()[0]).project_id).toBe('big-island-c4e7da');
+		expect(JSON.parse(result.stdout)).toMatchObject({ project: 'big-island-c4e7da', projectSource: 'CLAUDE.md' });
+	});
+
+	it('refuses the same way in apply-batch, which writes too', async () => {
+		fake.tools.apply_behavior_batch = () => ({ json: { batch: { ok: true } } });
+		const dir = repoWithIndex(TWO_FEATURES, 'big-island-04ba81');
+		writeFileSync(join(dir, 'AGENTS.md'), bindingBlock('big-island-c4e7da'));
+		writeFileSync(join(dir, 'ops.json'), JSON.stringify([{ op: 'noop' }]));
+		const refused = await run('apply-batch.mjs', ['feat-a', 'ops.json', '--dry-run', '--url', url], { cwd: dir });
+		expect(refused.status).toBe(1);
+		expect(refused.stderr).toContain('binding block of AGENTS.md names big-island-c4e7da');
+		expect(toolCalls()).toEqual([]);
+	});
+});
+
+describe('index-file.mjs upsert --sync', () => {
+	it('sends criterion keys exactly as upserted, alone', async () => {
+		fake.tools.sync_implementation_index = () => ({ json: SYNC_ANSWER });
+		const dir = repoWithIndex(TWO_FEATURES);
+		const criterion = { verification: { kind: 'unit', files: ['tests/boost.spec.ts'] } };
+		writeFileSync(join(dir, 'entries.json'), JSON.stringify({ 'criterion:c-1': criterion }));
+		const result = await run('index-file.mjs', ['upsert', 'entries.json', '--sync', '--json', '--url', url], { cwd: dir });
+		expect(result.stderr).toBe('');
+		expect(result.status).toBe(0);
+		expect(argsOf(toolCalls()[0])).toEqual({ project_id: 'vector-rally', index: { 'criterion:c-1': criterion } });
+		const printed = JSON.parse(result.stdout);
+		expect(printed).toMatchObject({ added: ['criterion:c-1'], written: true, sync: { sent: 1, project: 'vector-rally' } });
+	});
+
+	it('refuses loose action or child keys without --feature, before writing anything', async () => {
+		const dir = repoWithIndex(TWO_FEATURES);
+		const before = readFileSync(join(dir, '.unspa.json'), 'utf8');
+		writeFileSync(join(dir, 'entries.json'), JSON.stringify({ 'rule:boost-cooldown': entry(16) }));
+		const refused = await run('index-file.mjs', ['upsert', 'entries.json', '--sync', '--url', url], { cwd: dir });
+		expect(refused.status).toBe(1);
+		expect(refused.stderr).toContain('Nothing was written or sent: rule:boost-cooldown belong to an action or a surface');
+		expect(refused.stderr).toContain('--feature <featureId>');
+		expect(readFileSync(join(dir, '.unspa.json'), 'utf8')).toBe(before);
+		expect(toolCalls()).toEqual([]);
+	});
+
+	it('with --feature, writes the entries and sends the whole feature slice they belong to', async () => {
+		fake.tools.get_behavior_feature = () => ({
+			json: { featureId: 'feat-boost', total: 4, keys: ['action:boost', 'rule:boost-needs-fuel', 'event:boost_applied', 'rule:boost-cooldown'] }
+		});
+		fake.tools.sync_implementation_index = () => ({ json: SYNC_ANSWER });
+		const dir = repoWithIndex(TWO_FEATURES);
+		writeFileSync(join(dir, 'entries.json'), JSON.stringify({ 'rule:boost-cooldown': entry(16), 'rule:refuel-in-pit': entry(44) }));
+		const result = await run('index-file.mjs', ['upsert', 'entries.json', '--sync', '--feature', 'feat-boost', '--url', url], { cwd: dir });
+		expect(result.status).toBe(0);
+		expect(Object.keys(argsOf(toolCalls().at(-1)!).index as object)).toEqual([
+			'action:boost',
+			'rule:boost-needs-fuel',
+			'event:boost_applied',
+			'rule:boost-cooldown'
+		]);
+		expect(result.stdout).toContain('added     rule:boost-cooldown');
+		expect(result.stdout).toContain('replaced  rule:refuel-in-pit');
+		expect(result.stdout).toContain('Not in feature feat-boost, so not sent: rule:refuel-in-pit.');
+	});
+
+	it('refuses a sync to a disputed project, and names it in --json when only writing locally', async () => {
+		const dir = repoWithIndex(TWO_FEATURES, 'big-island-04ba81');
+		writeFileSync(join(dir, 'CLAUDE.md'), bindingBlock('big-island-c4e7da'));
+		writeFileSync(join(dir, 'entries.json'), JSON.stringify({ 'criterion:c-1': { verification: { kind: 'manual' } } }));
+		const refused = await run('index-file.mjs', ['upsert', 'entries.json', '--sync', '--url', url], { cwd: dir });
+		expect(refused.status).toBe(1);
+		expect(refused.stderr).toContain('Nothing was written or sent: two different projects are named');
+		expect(toolCalls()).toEqual([]);
+
+		const local = await run('index-file.mjs', ['upsert', 'entries.json', '--json'], { cwd: dir });
+		expect(local.status).toBe(0);
+		expect(local.stderr).toContain('WARNING (Lyriks project)');
+		expect(JSON.parse(local.stdout).projectWarnings[0]).toContain('big-island-c4e7da');
+	});
+});

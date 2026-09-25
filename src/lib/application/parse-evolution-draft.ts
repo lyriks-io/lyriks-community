@@ -226,6 +226,24 @@ function parseDraftLeaf(src: Record<string, unknown>, index: number): DraftLeaf 
 			.filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
 			.map((c, i) => ({ id: str(c.id) || `ac-draft-${i}`, text: str(c.text) }))
 			.filter((c) => c.text !== ''),
+		...(Array.isArray(src.retireCriteria) ? { retireCriteria: strList(src.retireCriteria) } : {}),
+		...(Array.isArray(src.changeCriteria)
+			? {
+					changeCriteria: src.changeCriteria
+						.filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
+						.map((c) => ({ id: str(c.id), text: str(c.text) }))
+						.filter((c) => c.id !== '' && c.text !== '')
+				}
+			: {}),
+		...(Array.isArray(src.descriptionPatch)
+			? {
+					descriptionPatch: src.descriptionPatch
+						.filter((p): p is Record<string, unknown> => !!p && typeof p === 'object')
+						.map((p) => ({ find: str(p.find), replace: str(p.replace) }))
+						.filter((p) => p.find !== '')
+				}
+			: {}),
+		...(str(src.descriptionAppend) ? { descriptionAppend: str(src.descriptionAppend) } : {}),
 		dependsOn: strList(src.dependsOn),
 		sourceIds: strList(src.sourceIds),
 		behaviour: (Array.isArray(src.behaviour) ? src.behaviour : [])
@@ -251,6 +269,7 @@ function parseImplementationFinding(src: Record<string, unknown>): Implementatio
 		anchorForeignLeaf: bool(src.anchorForeignLeaf),
 		acceptanceTestPassing: bool(src.acceptanceTestPassing),
 		specVersion: num(src.specVersion, 0, 0),
+		...(src.scope === 'inherited' || src.scope === 'request' ? { scope: src.scope } : {}),
 		decision: isLineDecision(src.decision) ? src.decision : 'undecided',
 		decidedBy: nullableStr(src.decidedBy),
 		decidedAt: nullableStr(src.decidedAt)
@@ -407,6 +426,7 @@ function parseRequest(src: Record<string, unknown>): EvolutionRequest {
 			.filter((v): v is Record<string, unknown> => !!v && typeof v === 'object')
 			.map(parseFrozenVersion)
 			.filter((v) => v.version >= 1),
+		...(Array.isArray(src.baselineKeys) ? { baselineKeys: strList(src.baselineKeys) } : {}),
 		createdAt: str(src.createdAt),
 		openQuestionKeys: [
 			...new Set([...strList(src.openQuestionKeys), ...openQuestionsOfParkedBlocks(src, leafIds)])

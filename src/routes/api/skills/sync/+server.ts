@@ -1,6 +1,6 @@
 import { error, json } from '@sveltejs/kit';
 import { getServices } from '$composition/container.server';
-import type { InstalledSkillRef, SkillClientId } from '$application/ports';
+import type { InstalledSkillRef, InstalledToolRef, SkillClientId } from '$application/ports';
 import type { RequestHandler } from './$types';
 
 const CLIENT_IDS: readonly SkillClientId[] = ['claude', 'codex', 'gemini', 'copilot', 'generic'];
@@ -22,6 +22,11 @@ const PROJECT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/;
  * runtime writes verbatim under `.lyriks/tools/`, all of them side by side
  * since they import each other: checking the index against the code, and
  * sending an index or a batch too large to type as a tool argument.
+ * `installedTools: [{ path, contentHash? }]` names the helper scripts and the
+ * hook the client already holds (the hash read from each file's
+ * `// contentHash:` line): one reported with the published hash comes back as
+ * `{ path, contentHash, unchanged: true }` without `content`. Omitted, every
+ * file comes back whole.
  * Read-only diff — like the other skill reads it rides the global auth wall.
  */
 export const POST: RequestHandler = async ({ request }) => {
@@ -31,6 +36,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		projectId?: unknown;
 		skillIds?: unknown;
 		includeContent?: unknown;
+		installedTools?: unknown;
 	};
 	// Edge validation: keep only well-formed refs; garbage never reaches the port.
 	const installed: InstalledSkillRef[] = (Array.isArray(body.installed) ? body.installed : [])
@@ -42,6 +48,20 @@ export const POST: RequestHandler = async ({ request }) => {
 		)
 		.map((entry) => ({
 			id: entry.id,
+			contentHash: typeof entry.contentHash === 'string' ? entry.contentHash : undefined
+		}));
+
+	if (body.installedTools !== undefined && !Array.isArray(body.installedTools))
+		error(400, 'installedTools must be an array of { path, contentHash? }');
+	const installedTools: InstalledToolRef[] = (Array.isArray(body.installedTools) ? body.installedTools : [])
+		.filter(
+			(entry): entry is { path: string; contentHash?: unknown } =>
+				typeof entry === 'object' &&
+				entry !== null &&
+				typeof (entry as { path?: unknown }).path === 'string'
+		)
+		.map((entry) => ({
+			path: entry.path,
 			contentHash: typeof entry.contentHash === 'string' ? entry.contentHash : undefined
 		}));
 
@@ -59,6 +79,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		error(400, 'includeContent must be a boolean');
 	return json(getServices().skillCatalog.syncSkills(installed, client, projectId, {
 		skillIds: body.skillIds as string[] | undefined,
-		includeContent: body.includeContent as boolean | undefined
+		includeContent: body.includeContent as boolean | undefined,
+		installedTools
 	}));
 };

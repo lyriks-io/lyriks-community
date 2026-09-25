@@ -117,7 +117,10 @@ describe('sync_implementation_index', () => {
     const result = await syncIndexHandler({ project_id: 'p', index: { 'action:a1': {} } }, lyriks) as Record<string, unknown>
     // verbose never travels to the platform: it only shapes the answer.
     expect(post.mock.calls[0][1]).toEqual({ projectId: 'p', index: { 'action:a1': {} } })
-    expect(result).toMatchObject({ ok: false, synced: 1146, successes: 1134, failures: 12, skipped: 210, featureIds: ['f1', 'f2'] })
+    expect(result).toMatchObject({ ok: false, synced: 1146, successes: 1134, failures: 12, skipped: 210, projectFeatures: 2 })
+    // The project's feature ids are counted, not listed: they say nothing about the keys sent.
+    expect(result).not.toHaveProperty('featureIds')
+    expect(result.sent).toEqual({ keys: 1, orphans: 0 })
     expect(result).not.toHaveProperty('acks')
     expect(result.failedAcks).toHaveLength(12)
     expect((result.failedAcks as Array<{ ok: boolean }>).every((a) => a.ok === false)).toBe(true)
@@ -169,7 +172,9 @@ describe('sync_implementation_index', () => {
     const result = await syncIndexHandler({ project_id: 'p', index }, lyriks) as Record<string, unknown>
     // The verification block of a criterion entry travels inside the index, untouched.
     expect(post.mock.calls[0][1]).toEqual({ projectId: 'p', index })
-    expect(result.criteria).toEqual(criteria(6))
+    // Only the criteria the caller sent come back as rows; the project counters stay.
+    expect(result.criteria).toEqual({ ...criteria(6), entries: [criterion(0)], entriesScope: 'the criterion keys you sent; verbose:true lists the project' })
+    expect(result.sent).toMatchObject({ keys: 1, orphans: 0, criteria: { sent: 1, verified: 1, failing: 0, unverified: 0 } })
     expect(result.verified).toBe(38)
     expect(result).toMatchObject({ synced: 1146, skipped: 210, semantics: SYNC_SEMANTICS })
   })

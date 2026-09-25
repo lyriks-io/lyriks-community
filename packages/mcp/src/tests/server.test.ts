@@ -7,7 +7,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { z }                        from 'zod'
 import { Client }                   from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport }        from '@modelcontextprotocol/sdk/inMemory.js'
-import { createMcpServer, EVOLUTION_IS_THE_DOOR } from '../server.js'
+import { createMcpServer, EVOLUTION_IS_OPTIONAL } from '../server.js'
 import type { BoundOverlay }         from '../enterprise/overlay.js'
 
 /** A bound overlay the way the Enterprise one behaves: it registers the five tools itself. */
@@ -127,26 +127,20 @@ describe('createMcpServer', () => {
     const { tools } = await client.listTools()
     await client.close()
 
-    expect(instructions).toContain(EVOLUTION_IS_THE_DOOR)
-    expect(instructions).toContain('lyriks-evolution for ANY change to an existing product')
-    // The old split is gone: it is what let a change be waved past the dossier.
-    expect(instructions).not.toContain('never an Evolution request')
-    expect(instructions).not.toContain('which of the two is wanted')
+    expect(instructions).toContain(EVOLUTION_IS_OPTIONAL)
+    // The mandatory door is gone: a change is made directly, a dossier when asked for.
+    for (const gone of ['changes through an Evolution request, always', 'There is NO threshold', 'EVOLUTION REQUEST FIRST', 'lyriks-evolution for ANY change'])
+      expect(instructions, gone).not.toContain(gone)
     for (const phrase of [
-      'A product that already EXISTS changes through an Evolution request, always',
-      'opens a dossier FIRST',
-      'the freeze into Verify is what writes the sections',
-      'There is NO threshold and nothing for you to judge',
-      'crosses its own gates and closes itself',
-      'Who signs follows the roster, not the size of the change',
-      'lyriks-build authors it directly',
-    ]) expect(EVOLUTION_IS_THE_DOOR, phrase).toContain(phrase)
+      'Evolution is OPTIONAL',
+      'the spec first through the section tools',
+      'only when the person asks for one',
+      'Never open a dossier on your own for an ordinary change',
+    ]) expect(EVOLUTION_IS_OPTIONAL, phrase).toContain(phrase)
     // What the rule sends the agent to must exist.
     const names = new Set(tools.map((t) => t.name))
-    for (const name of ['add_draft_leaf', 'sync_implementation_index']) {
-      expect(EVOLUTION_IS_THE_DOOR).toContain(name)
-    }
-    for (const name of ['get_evolution', 'apply_evolution_batch', 'apply_behavior_batch', 'patch_section']) {
+    for (const name of ['apply_behavior_batch', 'patch_section', 'build_screen', 'wire_element', 'sync_implementation_index', 'get_evolution', 'apply_evolution_batch']) {
+      expect(EVOLUTION_IS_OPTIONAL).toContain(name)
       expect(names.has(name), name).toBe(true)
     }
     // `add_draft_leaf` is an operation of the batch, not a tool of its own, so
@@ -154,14 +148,13 @@ describe('createMcpServer', () => {
     expect(tools.find((t) => t.name === 'apply_evolution_batch')?.description).toContain('add_draft_leaf {requestId')
     // Claude Code shows the first 2048 characters of the instructions: the
     // sentence an agent acts on has to land before that.
-    const acted = instructions.indexOf('opens a dossier FIRST') + 'opens a dossier FIRST'.length
-    expect(acted).toBeGreaterThan(0)
+    const acted = instructions.indexOf('Evolution is OPTIONAL') + 'Evolution is OPTIONAL'.length
+    expect(acted).toBeGreaterThan('Evolution is OPTIONAL'.length - 1)
     expect(acted).toBeLessThanOrEqual(2048)
-    // The neighbours of the rewritten sentence still say what they said.
-    for (const kept of ['EVOLUTION REQUEST FIRST', 'THE CONVERSATION STAYS BOUND TO ITS PROJECT', 'lyriks-delivery step 4'])
+    for (const kept of ['SPEC CHANGE FIRST', 'THE CONVERSATION STAYS BOUND TO ITS PROJECT', 'lyriks-delivery step 4'])
       expect(instructions).toContain(kept)
     for (const name of ['get_evolution', 'apply_evolution_batch'])
-      expect(tools.find((t) => t.name === name)?.description, name).toContain(EVOLUTION_IS_THE_DOOR)
+      expect(tools.find((t) => t.name === name)?.description, name).toContain(EVOLUTION_IS_OPTIONAL)
   })
 
   // Field agents asked for tools the graph already is; the recipes only name arguments it accepts.

@@ -209,6 +209,46 @@ describe('filled fields include the ones the draft carries', () => {
 		};
 		expect(filledInlineKeys(signed, request)).toContain('01-origin.objective@draft:d2');
 	});
+
+	// Big Island, 2026-09-24: an amend draft carrying objective, problem, value
+	// and eight criteria left the amended feature at four critical fields empty.
+	it('counts an amendment and its leaf as one feature, so a filled leaf is not asked again', () => {
+		const request = createEvolutionRequest({
+			id: 'r4',
+			leafIds: ['feat-controls', 'draft:d4'],
+			drafts: [
+				createDraftLeaf({ id: 'draft:d4', kind: 'amend', baseLeafId: 'feat-controls', objective: 'Mouse control.' })
+			]
+		});
+		const signed = {
+			...features,
+			leafMeta: { 'feat-controls': { problem: 'Keys only.', value: 'Mouse players can play.' } }
+		};
+		const keys = filledInlineKeys(signed, request);
+		expect(keys).toContain('02-problem.statement@feat-controls');
+		expect(keys).toContain('01-origin.objective@feat-controls');
+		expect(keys.some((k) => k.endsWith('@draft:d4'))).toBe(false);
+	});
+
+	it('counts an amendment value on the feature it amends', () => {
+		const request = createEvolutionRequest({
+			id: 'r3',
+			leafIds: ['feat-controls', 'draft:d3'],
+			drafts: [
+				createDraftLeaf({
+					id: 'draft:d3',
+					kind: 'amend',
+					baseLeafId: 'feat-controls',
+					objective: 'Mouse control.',
+					acceptanceCriteria: [{ id: 'c1', text: 'A click walks.' }]
+				})
+			]
+		});
+		const keys = filledInlineKeys(features, request);
+		expect(keys).toContain('01-origin.objective@feat-controls');
+		expect(keys).toContain('05-functional.acceptance@feat-controls');
+		expect(keys).not.toContain('02-problem.statement@feat-controls');
+	});
 });
 
 /**

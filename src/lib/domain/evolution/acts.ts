@@ -285,6 +285,97 @@ export interface DraftLeafInput {
 	readonly dependsOn?: readonly string[];
 	readonly sourceIds?: readonly string[];
 	readonly behaviour?: readonly { kind: DraftBehaviourNote['kind']; name: string; detail?: string }[];
+	/** amend only: ids of the base feature's criteria to retire. */
+	readonly retireCriteria?: readonly string[];
+	/** amend only: base criteria reworded, by id. */
+	readonly changeCriteria?: readonly { id: string; text: string }[];
+	/** amend only: exact passages of the base description to replace. */
+	readonly descriptionPatch?: readonly { find: string; replace: string }[];
+	/** amend only: text added after the base description. */
+	readonly descriptionAppend?: string;
+}
+
+/** What an amendment is measured against: the feature as the tree holds it. */
+export type BaseLeafLookup = (
+	leafId: string
+) => { readonly description: string; readonly criteria: readonly { readonly id: string; readonly text: string }[] } | null;
+
+type DeltaFields = Pick<DraftLeaf, 'retireCriteria' | 'changeCriteria' | 'descriptionPatch' | 'descriptionAppend'>;
+
+/** A draft with its delta cleared, so the delta just checked replaces it whole. */
+function withoutDelta(draft: DraftLeaf): DraftLeaf {
+	const out = { ...draft };
+	delete out.retireCriteria;
+	delete out.changeCriteria;
+	delete out.descriptionPatch;
+	delete out.descriptionAppend;
+	return out;
+}
+
+/**
+ * The delta half of an amendment, checked against the base feature: every id
+ * it names must be one of the feature's criteria, and every passage it
+ * replaces must occur in the description exactly once, so an edit can never
+ * land somewhere nobody pointed at. Fields not sent keep what the draft had.
+ */
+function draftDelta(
+	input: DraftLeafInput,
+	kind: DraftLeafKind,
+	baseLeafId: string | null,
+	current: DeltaFields,
+	base: BaseLeafLookup | undefined
+): { ok: true; fields: DeltaFields } | Refused {
+	const sent =
+		input.retireCriteria !== undefined ||
+		input.changeCriteria !== undefined ||
+		input.descriptionPatch !== undefined ||
+		input.descriptionAppend !== undefined;
+	if (!sent) return { ok: true, fields: current };
+	if (kind !== 'amend')
+		return refuse(
+			'retireCriteria, changeCriteria, descriptionPatch and descriptionAppend amend an existing feature.',
+			'An addition has nothing to retire or patch, and a removal takes the whole feature: send the delta on a draft of kind "amend".'
+		);
+	const leaf = baseLeafId && base ? base(baseLeafId) : null;
+	const known = new Set((leaf?.criteria ?? []).map((c) => c.id));
+	const retire = input.retireCriteria === undefined ? current.retireCriteria : [...new Set(input.retireCriteria)];
+	const change =
+		input.changeCriteria === undefined
+			? current.changeCriteria
+			: input.changeCriteria
+					.map((c) => ({ id: c.id.trim(), text: c.text.trim() }))
+					.filter((c) => c.id !== '' && c.text !== '');
+	const unknown = [...(retire ?? []), ...(change ?? []).map((c) => c.id)].filter((id) => !known.has(id));
+	if (leaf && unknown.length > 0)
+		return refuse(
+			`"${baseLeafId}" carries no acceptance criterion ${unknown.map((id) => `"${id}"`).join(', ')}.`,
+			'A retired or reworded criterion is named by the id the feature gave it; get_section(features) or get_knowledge_graph with the feature id lists them.'
+		);
+	const patch =
+		input.descriptionPatch === undefined
+			? current.descriptionPatch
+			: input.descriptionPatch.filter((p) => p.find !== '').map((p) => ({ find: p.find, replace: p.replace }));
+	for (const p of patch ?? []) {
+		const occurrences = leaf ? leaf.description.split(p.find).length - 1 : 1;
+		if (occurrences !== 1)
+			return refuse(
+				occurrences === 0
+					? `The description of "${baseLeafId}" does not contain: "${p.find.slice(0, 80)}".`
+					: `"${p.find.slice(0, 80)}" occurs ${occurrences} times in the description of "${baseLeafId}".`,
+				'A patch replaces one exact passage of the description as the feature holds it now; quote a passage that occurs exactly once.'
+			);
+	}
+	const append =
+		input.descriptionAppend === undefined ? current.descriptionAppend : input.descriptionAppend.trim() || undefined;
+	return {
+		ok: true,
+		fields: {
+			...(retire && retire.length > 0 ? { retireCriteria: retire } : {}),
+			...(change && change.length > 0 ? { changeCriteria: change } : {}),
+			...(patch && patch.length > 0 ? { descriptionPatch: patch } : {}),
+			...(append ? { descriptionAppend: append } : {})
+		}
+	};
 }
 
 const BEHAVIOUR_KINDS: ReadonlySet<DraftBehaviourNote['kind']> = new Set([
@@ -359,7 +450,8 @@ export function addDraftLeafAct(
 	ctx: ActContext,
 	request: EvolutionRequest,
 	input: DraftLeafInput,
-	knownLeafIds: ReadonlySet<string>
+	knownLeafIds: ReadonlySet<string>,
+	base?: BaseLeafLookup
 ): ActOutcome {
 	const kind: DraftLeafKind = input.kind ?? 'add';
 	const name = (input.name ?? '').trim();
@@ -378,12 +470,14 @@ export function addDraftLeafAct(
 	if (!allowed.ok) return allowed;
 	const behaviour = behaviourRows(ctx, input.behaviour);
 	if (!behaviour.ok) return behaviour;
+	const delta = draftDelta(input, kind, baseLeafId, {}, base);
+	if (!delta.ok) return delta;
 
-	const base = kind === 'add' ? null : baseLeafId;
+	const standsFor = kind === 'add' ? null : baseLeafId;
 	const draft = createDraftLeaf({
 		id: `${DRAFT_LEAF_PREFIX}${ctx.newId()}`,
 		kind,
-		baseLeafId: base,
+		baseLeafId: standsFor,
 		// Left empty on purpose when the change does not rename: the freeze then
 		// keeps the name the leaf already has.
 		name,
@@ -398,6 +492,7 @@ export function addDraftLeafAct(
 			.map((text) => text.trim())
 			.filter((text) => text !== '')
 			.map((text) => ({ id: ctx.newId(), text })),
+		...delta.fields,
 		dependsOn: [...new Set(input.dependsOn ?? [])],
 		sourceIds: [...new Set(input.sourceIds ?? [])],
 		behaviour: behaviour.rows
@@ -424,7 +519,8 @@ export function updateDraftLeafAct(
 	request: EvolutionRequest,
 	draftId: string,
 	input: DraftLeafInput,
-	knownLeafIds: ReadonlySet<string>
+	knownLeafIds: ReadonlySet<string>,
+	base?: BaseLeafLookup
 ): ActOutcome {
 	const current = request.drafts.find((d) => d.id === draftId);
 	if (!current)
@@ -444,9 +540,12 @@ export function updateDraftLeafAct(
 	if (!allowed.ok) return allowed;
 	const behaviour = input.behaviour === undefined ? null : behaviourRows(ctx, input.behaviour);
 	if (behaviour && !behaviour.ok) return behaviour;
+	const delta = draftDelta(input, kind, baseLeafId, current, base);
+	if (!delta.ok) return delta;
 
 	const next: DraftLeaf = {
-		...current,
+		...withoutDelta(current),
+		...delta.fields,
 		kind,
 		baseLeafId: kind === 'add' ? null : baseLeafId,
 		name,
@@ -591,6 +690,11 @@ export function proposeAct(
 	const leafScoped = field ? isLeafScoped(field) : false;
 	const missingSources = input.citedSourceIds.filter((id) => !checks.sourceExists(id));
 	const key = fieldKey(input.fieldPath, leafScoped ? input.leafId : null);
+	// Structural, never linguistic: the two halves are either named or they are
+	// not. No language is privileged, because a check that only passes in English
+	// switches the sourcing discipline off wherever the product is actually used.
+	const read = input.whatWasRead?.trim() ?? '';
+	const inferred = input.whatWasInferred?.trim() ?? '';
 	const allowed = firstRefusal(
 		notFinished(request),
 		guard(
@@ -625,6 +729,15 @@ export function proposeAct(
 			`Unknown source${missingSources.length === 1 ? '' : 's'}: ${missingSources.join(', ')}.`,
 			'Sources are cited by the id of their row in the documents register.'
 		),
+		// Refused HERE, not at the signature. A proposal that can never be accepted
+		// used to be stored, counted as blocked with no reason, and refused only
+		// when someone tried to accept it; in an atomic batch that refusal also
+		// rolled back the valid decisions taken before it.
+		guard(
+			(read === '' || inferred === '') && input.readVsInferred !== true,
+			'Say what was read and what was inferred in their own fields: whatWasRead and whatWasInferred.',
+			'A proposal without both halves can never be accepted, so it is refused when it is made rather than when someone tries to sign it. The two are named fields, in any language: nothing is looked for in the wording, and the free-text reasoning alone does not stand for them.'
+		),
 		guard(
 			pendingProposals(request).some((p) => fieldKey(p.targetField, leafOf(p)) === key),
 			'A proposal is already waiting on this field. The person decides it first (accept, refuse or reword).',
@@ -634,13 +747,7 @@ export function proposeAct(
 	if (!allowed.ok || !field) return allowed as Refused;
 
 	const path = canonicalPathsFor(field, input.leafId ? [input.leafId] : [])[0]?.path ?? '';
-	// Structural, never linguistic: the two halves are either named or they are
-	// not. No language is privileged, because a check that only passes in English
-	// switches the sourcing discipline off wherever the product is actually used.
 	const flagged = flaggedWordsIn(input.value, checks.bannedWords);
-	const read = input.whatWasRead?.trim() ?? '';
-	const inferred = input.whatWasInferred?.trim() ?? '';
-	const readVsInferred = input.readVsInferred ?? (read !== '' && inferred !== '');
 	const proposal: Proposal = createProposal({
 		id: ctx.newId(),
 		targetField: input.fieldPath,
@@ -653,7 +760,7 @@ export function proposeAct(
 		reasoning: input.reasoning.trim() || [read, inferred].filter((part) => part !== '').join('\n\n'),
 		whatWasRead: read,
 		whatWasInferred: inferred,
-		reasoningSeparatesReadFromInferred: readVsInferred,
+		reasoningSeparatesReadFromInferred: input.readVsInferred ?? true,
 		citedSourceIds: [...new Set(input.citedSourceIds)],
 		bannedSynonymDetected: flagged.length > 0,
 		flaggedWords: flagged,

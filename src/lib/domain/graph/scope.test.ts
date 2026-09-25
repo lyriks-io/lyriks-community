@@ -133,3 +133,37 @@ describe('scopeGraph direction', () => {
 		expect(both.nodes.map((n) => n.id).sort()).toEqual(['entity:e', 'feature:a', 'project:p']);
 	});
 });
+
+/**
+ * Big Island, 2026-09-24: `kinds:["feature"], q:"jog"` returned nothing, while
+ * jogging lived in a criterion of the exploration feature.
+ */
+describe('a feature is found by what it owns', () => {
+	const owned = () => {
+		const builder = new GraphBuilder();
+		builder.addNode(node('feature:exploration', 'feature', 'features', 'Walk the archipelago'));
+		builder.addNode(node('feature:controls', 'feature', 'features', 'Keys and mouse'));
+		builder.addNode({ id: 'criterion:28e6a571', kind: 'criterion', context: 'features', label: 'Double tap to jog, triple tap to sprint' });
+		builder.addNode({ id: 'surface:s1', kind: 'surface', context: 'behavior', label: 'Explore' });
+		builder.addNode({ id: 'action:a1', kind: 'action', context: 'behavior', label: 'Jog To Spot' });
+		builder.addEdge({ id: 'e1', from: 'feature:exploration', to: 'criterion:28e6a571', kind: 'contains' });
+		builder.addEdge({ id: 'e2', from: 'feature:controls', to: 'surface:s1', kind: 'contains' });
+		builder.addEdge({ id: 'e3', from: 'surface:s1', to: 'action:a1', kind: 'contains' });
+		return builder.build('p', '2026-09-24T00:00:00.000Z');
+	};
+
+	it('returns the owners of the matching criterion and action, and says through what', () => {
+		const scoped = scopeGraph(owned(), { kinds: ['feature'], q: 'jog' });
+		expect(scoped.nodes.map((n) => n.id).sort()).toEqual(['feature:controls', 'feature:exploration']);
+		expect(scoped.matchedVia?.['feature:exploration']).toEqual([
+			{ id: 'criterion:28e6a571', kind: 'criterion', label: 'Double tap to jog, triple tap to sprint' }
+		]);
+		expect(scoped.matchedVia?.['feature:controls']?.[0].id).toBe('action:a1');
+	});
+
+	it('still matches a feature on its own words, with nothing to explain', () => {
+		const scoped = scopeGraph(owned(), { kinds: ['feature'], q: 'archipelago' });
+		expect(scoped.nodes.map((n) => n.id)).toEqual(['feature:exploration']);
+		expect(scoped.matchedVia).toBeUndefined();
+	});
+});
