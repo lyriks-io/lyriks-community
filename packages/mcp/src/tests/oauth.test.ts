@@ -65,7 +65,10 @@ describe('OAuth consent and restricted credentials', () => {
     expect(f.response.status).toBe(200)
     expect(f.response.headers.get('location')).toBeNull()
     expect(f.response.headers.get('x-frame-options')).toBe('DENY')
-    expect(f.response.headers.get('content-security-policy')).toContain('https://client.example')
+    // Scripts off; no form-action, which browsers also apply to the client's
+    // own redirects after its callback (www.cursor.com answers 308 to cursor.com).
+    expect(f.response.headers.get('content-security-policy')).toContain("default-src 'none'")
+    expect(f.response.headers.get('content-security-policy')).not.toContain('form-action')
     expect(f.nonce).toHaveLength(43)
     expect(f.html).not.toContain(SESSION)
     expect(f.html).not.toContain('<script>')

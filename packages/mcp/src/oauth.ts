@@ -214,7 +214,14 @@ export function registerOAuthRoutes(app: Hono<{ Variables: HonoVariables }>): vo
     c.header('Referrer-Policy', 'same-origin')
     c.header('X-Frame-Options', 'DENY')
     c.header('X-Content-Type-Options', 'nosniff')
-    c.header('Content-Security-Policy', `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${new URL(redirectUri).origin}; frame-ancestors 'none'; base-uri 'none'`)
+    // No form-action: browsers apply it to every redirect the consent POST
+    // starts, and the hops after ours belong to the client. Cursor's callback
+    // https://www.cursor.com/... answers 308 to https://cursor.com/..., so
+    // naming the callback origin still blocked Allow (2026-10-12), and a
+    // custom-scheme callback (cursor://...) has origin 'null', which matches
+    // nothing. Scripts stay off and every value on the page is escaped, so no
+    // other form can appear here.
+    c.header('Content-Security-Policy', `default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'`)
     const notice = client.registered ? '' :
       '<p>This client presented a registration this Lyriks install did not issue (one from an earlier version, for instance). It is waiting for the answer on this computer, so it signs in here like any other client.</p>'
     return c.html(page(`Connect ${client.name}?`, `${notice}<p>This client will be able to read and change the Lyriks projects your account can access.</p><p>Client callback: <code>${escapeHtml(redirectUri)}</code></p><p>Approve only if you started this connection and trust this client.</p><form method="post" action="/mcp/oauth/authorize"><input type="hidden" name="consent" value="${nonce}"><button name="decision" value="allow">Allow access</button><button name="decision" value="deny">Cancel</button></form>`))

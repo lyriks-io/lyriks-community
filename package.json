@@ -1,6 +1,6 @@
 {
   "name": "lyriks",
-  "version": "0.9.39",
+  "version": "0.9.40",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.6.3",
@@ -69,9 +69,11 @@
   "pnpm": {
     "overrides": {
       "hono": "4.13.8",
-      "devalue": "5.9.2",
+      "devalue": "5.9.3",
       "tsx>esbuild": "0.28.1",
-      "fast-uri": "3.1.6",
+      "fast-uri": "3.1.7",
+      "proxy-addr": "2.0.8",
+      "@modelcontextprotocol/sdk": "1.31.0",
       "ip-address": "10.3.1",
       "@hono/node-server": "1.19.15",
       "body-parser@>=2 <2.3": "2.3.0",
