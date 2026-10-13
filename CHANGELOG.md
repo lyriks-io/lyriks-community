@@ -6,6 +6,26 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.40] - 2026-10-12
+
+Cursor can connect to a Lyriks install that requires sign-in.
+
+### Fixed
+
+- Clicking Allow access on the MCP consent page did nothing in Cursor: the
+  browser reported that sending the form violated the page's Content Security
+  Policy. The page allowed the form to reach only Lyriks and the client's
+  callback origin, browsers apply that rule to every redirect after the click,
+  and Cursor's callback on www.cursor.com redirects to cursor.com. The rule is
+  gone from the consent page; scripts stay off, every value is escaped and the
+  page cannot be framed.
+
+### Security
+
+- Dependencies move past fixable high-severity advisories:
+  @modelcontextprotocol/sdk 1.31.0, fast-uri 3.1.7, proxy-addr 2.0.8 and
+  devalue 5.9.3.
+
 ## [0.9.39] - 2026-09-25
 
 Evolution becomes optional, and what agents reported from the field is fixed.
