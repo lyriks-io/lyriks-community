@@ -19,15 +19,40 @@ export type UpdateState =
 	/** A newer release exists. */
 	| 'available';
 
+/**
+ * Why a status is `unknown`, so Settings can name it (criterion dc44978e). The
+ * band ignores it: it speaks only of an available release.
+ */
+export type UnknownReason =
+	/** No administrator allowed the check: nothing was asked. */
+	| 'off'
+	/** A moving tag with no recorded release: nothing to compare. */
+	| 'release_unknown'
+	/** The registry was asked and gave no usable answer. */
+	| 'no_answer'
+	/** The registry answered but holds no release of the kind the install runs. */
+	| 'no_release';
+
 export interface UpdateStatus {
 	readonly state: UpdateState;
 	/** The running version tag, when it is a real version. */
 	readonly current?: string;
 	/** The newest offered version, only when state is `available`. */
 	readonly latest?: string;
+	/** Set only when state is `unknown`. */
+	readonly reason?: UnknownReason;
+	/**
+	 * When this answer was established (ISO): the moment the registry answered,
+	 * kept with the answer while it is reused, or the moment of a check that asked
+	 * nothing (criterion 7212cfa5).
+	 */
+	readonly checkedAt?: string;
 }
 
-const UNKNOWN: UpdateStatus = { state: 'unknown' };
+/** The status a check that could not compare anything reports. */
+export function unknownStatus(reason: UnknownReason, current?: string): UpdateStatus {
+	return current ? { state: 'unknown', current, reason } : { state: 'unknown', reason };
+}
 
 /**
  * Resolve the status shown to operators.
@@ -42,8 +67,8 @@ export function resolveUpdateStatus(
 ): UpdateStatus {
 	const current = parseVersion(currentTag);
 	// A moving tag (`latest`, `behavior`) has no ordering — nothing truthful to say.
-	if (!current) return UNKNOWN;
-	if (!latest) return UNKNOWN;
+	if (!current) return unknownStatus('release_unknown');
+	if (!latest) return unknownStatus('no_release', formatVersion(current));
 	if (compareVersions(latest, current) > 0) {
 		return { state: 'available', current: formatVersion(current), latest: formatVersion(latest) };
 	}
