@@ -31,13 +31,15 @@ describe('rehomeSnapshot', () => {
 
 		expect(out.projectId).toBe('northwind-b13c3c');
 		expect(out.kernel.project?.id).toBe('northwind-b13c3c');
+		const copiedLeaf = out.kernel.features[0].id;
+		expect(copiedLeaf).not.toBe('feat-iam-mfa');
 		expect(out.kernel.project?.featureIds).toEqual([
-			'feat-iam-mfa',
+			copiedLeaf,
 			'northwind-b13c3c__data_model',
 			'northwind-b13c3c__experience'
 		]);
 		expect(out.kernel.features.map((f) => f.id)).toEqual([
-			'feat-iam-mfa',
+			copiedLeaf,
 			'northwind-b13c3c__data_model',
 			'northwind-b13c3c__experience'
 		]);

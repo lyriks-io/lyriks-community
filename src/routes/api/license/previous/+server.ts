@@ -1,5 +1,4 @@
 import { json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireAdmin } from '$lib/server/admin.server';
 import type { RequestHandler } from './$types';
 
@@ -14,7 +13,7 @@ import type { RequestHandler } from './$types';
  */
 export const POST: RequestHandler = async (event) => {
 	requireAdmin(event);
-	const services = getServices();
+	const services = event.locals.services;
 	const result = await services.restorePreviousLicense.execute(event.locals.session?.email ?? 'api');
 	if (result.ok) {
 		// The seat gate must follow the key that is actually in force, or the Back

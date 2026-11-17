@@ -1,5 +1,4 @@
 import { error, json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import type { InstalledSkillRef, InstalledToolRef, SkillClientId } from '$application/ports';
 import type { RequestHandler } from './$types';
 
@@ -29,7 +28,7 @@ const PROJECT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/;
  * file comes back whole.
  * Read-only diff — like the other skill reads it rides the global auth wall.
  */
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	const body = (await request.json().catch(() => ({}))) as {
 		installed?: unknown;
 		client?: unknown;
@@ -77,7 +76,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		error(400, 'skillIds must be an array of skill ids');
 	if (body.includeContent !== undefined && typeof body.includeContent !== 'boolean')
 		error(400, 'includeContent must be a boolean');
-	return json(getServices().skillCatalog.syncSkills(installed, client, projectId, {
+	return json(locals.services.skillCatalog.syncSkills(installed, client, projectId, {
 		skillIds: body.skillIds as string[] | undefined,
 		includeContent: body.includeContent as boolean | undefined,
 		installedTools

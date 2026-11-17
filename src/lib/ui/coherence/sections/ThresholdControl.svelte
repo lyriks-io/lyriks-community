@@ -20,11 +20,11 @@
 
 <section class="rounded-card border border-line bg-surface p-4">
 	<div class="mb-2 flex items-center justify-between gap-3">
-		<p class="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">
+		<p class="flex items-center gap-1.5 text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-ink-400">
 			<Icon name="sliders" size={13} /> Green-bar threshold
 		</p>
 		<span
-			class="rounded-pill px-2 py-0.5 text-[10px] font-semibold {met
+			class="rounded-pill px-2 py-0.5 text-[0.625rem] font-semibold {met
 				? 'bg-success-50 text-success-600'
 				: 'bg-warning-50 text-warning-600'}"
 		>
@@ -39,7 +39,7 @@
 			step="1"
 			value={store.draft.threshold}
 			oninput={onInput}
-			class="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-surface-sunken accent-brand-500"
+			class="h-1.5 flex-1 cursor-pointer appearance-none bg-surface-sunken accent-brand-500"
 			aria-label="Readiness threshold"
 		/>
 		<input
@@ -52,7 +52,7 @@
 			aria-label="Readiness threshold value"
 		/>
 	</div>
-	<p class="mt-2 text-[10.5px] leading-snug text-ink-400">
+	<p class="mt-2 text-[0.65625rem] leading-snug text-ink-400">
 		Specs can only be generated once readiness reaches this bar with zero blocking gaps.
 	</p>
 </section>

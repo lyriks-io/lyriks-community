@@ -1,5 +1,4 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { callerKind } from '$lib/server/caller.server';
 import { canReopen, canSettle, dropPreparation, reopenGap, settleGap } from '$domain/coherence';
@@ -38,7 +37,7 @@ export const POST: RequestHandler = async (event) => {
 		error(400, 'status must be accepted_risk, by_design, wont_fix or reopened');
 	const status = body.status;
 
-	const services = getServices();
+	const services = event.locals.services;
 	const session = services.currentSession();
 	// Read from the request, never assumed. This was hardcoded to 'person', which
 	// made the domain's person-only guard unreachable: the MCP names itself on

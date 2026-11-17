@@ -16,18 +16,20 @@
 	let { tone = 'neutral', removable = false, onremove, class: klass = '', children }: Props =
 		$props();
 
+	// The design's tag: square, a 1.5px border in the tone's colour, its text in
+	// the tone's ink; never a shadow (only what can be pressed wears one).
 	const tones: Record<ChipTone, string> = {
-		brand: 'bg-brand-50 text-brand-600',
-		accent: 'bg-accent-50 text-accent-500',
-		neutral: 'bg-surface-sunken text-ink-700',
-		success: 'bg-success-50 text-success-500',
-		warning: 'bg-warning-50 text-warning-500',
-		danger: 'bg-danger-50 text-danger-500'
+		brand: 'border-brand-400 text-brand-500',
+		accent: 'border-accent-400 text-accent-600',
+		neutral: 'border-line bg-surface-sunken text-ink-700',
+		success: 'border-success-500 bg-success-100 text-success-700',
+		warning: 'border-warning-500 bg-warning-100 text-warning-700',
+		danger: 'border-danger-500 bg-danger-100 text-danger-600'
 	};
 </script>
 
 <span
-	class="inline-flex items-center gap-1.5 rounded-pill px-2.5 py-1 text-xs font-medium {tones[
+	class="inline-flex items-center gap-1.5 border-[1.5px] px-2 py-[2.5px] text-xs font-medium {tones[
 		tone
 	]} {klass}"
 >
@@ -36,7 +38,7 @@
 		<button
 			type="button"
 			onclick={onremove}
-			class="-mr-1 grid size-4 place-items-center rounded-full opacity-60 hover:opacity-100"
+			class="-mr-1 grid size-4 place-items-center opacity-60 hover:opacity-100"
 			aria-label="Remove"
 		>
 			<Icon name="x" size={12} />

@@ -1,16 +1,16 @@
-// Shared visual vocabulary for the Infrastructure view — the mockup's TYPE_COLOR /
-// TYPE_ICON / ENGINE_FILL, mapped to hex for the light theme (these accent hues
-// aren't in the token set). Used across the Data & Architecture board (InfraCanvas,
+// Shared visual vocabulary for the Infrastructure view: the mockup's TYPE_COLOR /
+// TYPE_ICON / ENGINE_FILL, as hex of the design system's palette (an SVG fill
+// takes a hex, not a utility class). Used across the Tech & Data board (InfraCanvas,
 // HostInspector, InterfaceInspector).
 import type { DbEngine, HostKind, Protocol } from '$domain/data';
 
 /** Host-type accent (the mockup's HOST_TYPE_COLOR): internal violet · cloud blue · saas pink · external amber · onprem mint. */
 export const HOST_TYPE_HEX: Record<HostKind, string> = {
-	internal: '#8b5cf6',
-	cloud: '#3b82f6',
-	saas: '#ec4899',
-	external: '#f59e0b',
-	onprem: '#10b981'
+	internal: '#bb46f5',
+	cloud: '#0066ff',
+	saas: '#fa5fb2',
+	external: '#ffa101',
+	onprem: '#1fa98a'
 };
 
 /** Host-type glyph (the mockup's TYPE_ICON). */
@@ -28,12 +28,12 @@ export const HOST_TYPE_GLYPH: Record<HostKind, string> = {
  * blue, otherwise two adjacent blocks would read as the same store.
  */
 export const ENGINE_HEX: Record<DbEngine, string> = {
-	postgres: '#3b82f6',
-	mysql: '#06b6d4',
-	sqlite: '#f59e0b',
-	mongodb: '#10b981',
-	redis: '#ec4899',
-	other: '#8b5cf6'
+	postgres: '#0066ff',
+	mysql: '#0047b3',
+	sqlite: '#ffa101',
+	mongodb: '#1fa98a',
+	redis: '#fa5fb2',
+	other: '#bb46f5'
 };
 
 /**
@@ -43,15 +43,15 @@ export const ENGINE_HEX: Record<DbEngine, string> = {
  * rather than compete with the network hues.
  */
 export const PROTOCOL_HEX: Record<Protocol, string> = {
-	rest: '#8b5cf6',
-	graphql: '#ec4899',
-	webhook: '#f59e0b',
-	grpc: '#10b981',
-	soap: '#3b82f6',
-	event: '#ec4899',
-	websocket: '#10b981',
-	queue: '#f59e0b',
-	sdk: '#64748b',
-	native: '#64748b',
-	'in-process': '#64748b'
+	rest: '#bb46f5',
+	graphql: '#fa5fb2',
+	webhook: '#ffa101',
+	grpc: '#1fa98a',
+	soap: '#0066ff',
+	event: '#fa5fb2',
+	websocket: '#1fa98a',
+	queue: '#ffa101',
+	sdk: '#8a8a92',
+	native: '#8a8a92',
+	'in-process': '#8a8a92'
 };

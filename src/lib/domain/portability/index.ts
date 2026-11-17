@@ -15,6 +15,7 @@ export {
 	FILE_INDEX_PATH,
 	KERNEL_FEATURE_DIR,
 	KERNEL_PROJECT_PATH,
+	KERNEL_ARTIFACTS_PATH,
 	LEGACY_DOCUMENTS_PATH,
 	MANIFEST_PATH,
 	META_PATH,
@@ -38,12 +39,14 @@ export {
 } from './externalize-files';
 export { readBundle, type BundleFiles, type ReadBundleResult } from './read-bundle';
 export { rehomeSnapshot, type RehomeTarget } from './rehome-snapshot';
+export { isSafeKernelId, kernelArtifactPath, kernelArtifactFromFile, parseKernelArtifact } from './kernel-artifacts';
 export { parseJsonBytes, stableJson, stableJsonBytes } from './stable-json';
 export {
 	describeProject,
 	emptyRowSnapshot,
 	type DomainRef,
 	type KernelFeature,
+	type KernelArtifact,
 	type ProjectKernelSnapshot,
 	type ProjectMetaRow,
 	type ProjectRowSnapshot,

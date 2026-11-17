@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-	canExcludeFromReadiness,
-	canRestoreToReadiness,
 	createEvolutionRequest,
-	excludeFromReadiness,
 	readCoherence,
-	readReadiness,
-	restoreToReadiness,
-	trlFromMaturityScore,
 	type Actor,
 	type CoherenceFinding
 } from './index';
@@ -61,62 +55,5 @@ describe('the coherence reading', () => {
 		const reading = readCoherence(createEvolutionRequest());
 		expect(reading.available).toBe(false);
 		expect(reading.overall).toBeNull();
-	});
-});
-
-describe('the readiness reading', () => {
-	it('is the average TRL of the touched features, and never typed', () => {
-		const r = createEvolutionRequest({ leafIds: ['a', 'b', 'c'] });
-		const reading = readReadiness(r, { a: 4, b: 6, c: 8 });
-		expect(reading.average).toBe(6);
-		expect(reading.available).toBe(true);
-	});
-
-	it('projects a maturity score onto the 1-9 scale the badge uses', () => {
-		expect(trlFromMaturityScore(0)).toBe(1);
-		expect(trlFromMaturityScore(50)).toBe(5);
-		expect(trlFromMaturityScore(100)).toBe(9);
-	});
-
-	it('leaves a feature with no readable TRL out of the average, and says so', () => {
-		const r = createEvolutionRequest({ leafIds: ['a', 'b'] });
-		const reading = readReadiness(r, { a: 4 });
-		expect(reading.average).toBe(4);
-		expect(reading.leaves.find((l) => l.leafId === 'b')?.trl).toBeNull();
-		expect(readReadiness(createEvolutionRequest({ leafIds: ['b'] }), {}).available).toBe(false);
-	});
-
-	// 08da21ff: an admin excludes a feature with a reason.
-	it('lets an admin exclude a touched feature with a reason, and the average moves', () => {
-		const r = createEvolutionRequest({ leafIds: ['a', 'b'] });
-		expect(
-			canExcludeFromReadiness(admin, { touched: true, alreadyExcluded: false, reason: 'Out of scope for v2.0' }).ok
-		).toBe(true);
-		const excluded = excludeFromReadiness(r, {
-			id: 'x1',
-			leafId: 'b',
-			reason: 'Out of scope for v2.0',
-			by: 'ana',
-			at: '2026-09-03T10:00:00Z'
-		});
-		const reading = readReadiness(excluded, { a: 4, b: 8 });
-		expect(reading.average).toBe(4);
-		expect(reading.excludedCount).toBe(1);
-		// The leaf stays listed with its reason: traced, never dropped.
-		expect(reading.leaves.find((l) => l.leafId === 'b')?.exclusion?.reason).toBe('Out of scope for v2.0');
-		expect(readReadiness(restoreToReadiness(excluded, 'b'), { a: 4, b: 8 }).average).toBe(6);
-	});
-
-	// f828e7a4: a designer cannot exclude a feature.
-	it('refuses an exclusion from a designer, from the model, without a reason, or twice', () => {
-		const ok = { touched: true, alreadyExcluded: false, reason: 'because' };
-		expect(canExcludeFromReadiness(designer, ok).ok).toBe(false);
-		expect(canExcludeFromReadiness(aiClient, ok).ok).toBe(false);
-		expect(canExcludeFromReadiness(admin, { ...ok, reason: '  ' }).ok).toBe(false);
-		expect(canExcludeFromReadiness(admin, { ...ok, alreadyExcluded: true }).ok).toBe(false);
-		expect(canExcludeFromReadiness(admin, { ...ok, touched: false }).ok).toBe(false);
-		expect(canRestoreToReadiness(admin, true).ok).toBe(true);
-		expect(canRestoreToReadiness(designer, true).ok).toBe(false);
-		expect(canRestoreToReadiness(admin, false).ok).toBe(false);
 	});
 });

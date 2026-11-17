@@ -1,5 +1,8 @@
 import type { CanonicalSection, ImpactSection } from './enums';
-import type { EvolutionRequest } from './draft';
+import type { DraftLeaf, EvolutionRequest } from './draft';
+
+/** Who owns a field's value: a canonical section, or the request itself (its need). */
+export type FieldOwner = CanonicalSection | 'request';
 
 /**
  * The blocks of the specification dossier page, and the canonical home of every
@@ -41,8 +44,12 @@ export interface BlockField {
 	readonly example: string;
 	/** Why the field matters in review, shown under the question. */
 	readonly whyItMatters: string;
-	/** The section that owns the value. The dossier is never the owner. */
-	readonly section: CanonicalSection;
+	/**
+	 * The section that owns the value. The dossier is never the owner of a
+	 * section's value; `request` marks the need of the request, which belongs
+	 * to no section and travels with the dossier itself.
+	 */
+	readonly section: FieldOwner;
 	/**
 	 * The exact path inside the owning section, with `{leaf}` standing for one of
 	 * the features the change touches. Resolved by `canonicalPathsFor`.
@@ -90,7 +97,7 @@ interface Texts {
 const inline = (
 	path: string,
 	label: string,
-	section: CanonicalSection,
+	section: FieldOwner,
 	canonicalPath: string,
 	weight: number,
 	critical: boolean,
@@ -529,10 +536,189 @@ export function impactSectionOf(field: BlockField): ImpactSection | null {
 /** Exactly ten core blocks. The score covers every block shown or it is not reported at all. */
 export const BLOCK_COUNT = SPEC_BLOCKS.length;
 
-const EVERY_BLOCK: readonly SpecBlock[] = [...SPEC_BLOCKS, ...CONDITIONAL_BLOCKS];
+/**
+ * The need of the request (ac-evo-need-1..3): why the change exists, asked once
+ * for the whole request rather than once per feature it touches. Its values
+ * belong to the request and are written into no section, which is why every
+ * field here is owned by `request`.
+ *
+ * The questions demand facts rather than intentions: a free "problem" field
+ * accepts a solution in disguise, while "what happens today, and for whom"
+ * does not. The current situation and the objectives are critical: the freeze
+ * reads them (ac-evo-gate-need).
+ */
+export const NEED_BLOCK: SpecBlock = {
+	id: '00-need',
+	title: 'Need',
+	purpose: 'Why the change exists, backed by facts, before anyone names a feature.',
+	fields: [
+		inline(
+			'00-need.description',
+			'Description',
+			'request',
+			'request.need.description',
+			2,
+			false,
+			{
+				question: 'What is the change about, in your own words?',
+				example:
+					'Our PMs restate the same intent on every feature a change touches, and reviewers cannot tell who decided what.',
+				why: 'Everything else in the need is read from here: write it the way you would tell a colleague.'
+			},
+			{ multiline: true }
+		),
+		inline(
+			'00-need.situation',
+			'Current situation',
+			'request',
+			'request.need.situation',
+			3,
+			true,
+			{
+				question: 'What happens today, and for whom?',
+				example: 'Each change request is written in a shared doc; the 4 PMs re-type the context for every feature it touches.',
+				why: 'A situation is a fact a reviewer can check; it is what keeps a solution from posing as a problem.'
+			},
+			{ multiline: true }
+		),
+		inline(
+			'00-need.symptoms',
+			'Observed symptoms',
+			'request',
+			'request.need.symptoms',
+			2,
+			false,
+			{
+				question: 'What do you see go wrong, how often, with one real example?',
+				example: 'Three of the last five requests shipped without anyone knowing who approved the scope (requests 41, 44, 46).',
+				why: 'A symptom with a frequency and an example is evidence; without them it is an impression.'
+			},
+			{ multiline: true, kind: 'list' }
+		),
+		inline(
+			'00-need.cost',
+			'What it costs',
+			'request',
+			'request.need.cost',
+			2,
+			false,
+			{
+				question: 'What does it cost today: time, errors, money, customers?',
+				example: 'About 15 hours a week of spec writing across the team, and one rework per sprint.',
+				why: 'The cost is what the change is weighed against when the scope has to shrink.'
+			},
+			{ multiline: true }
+		),
+		inline(
+			'00-need.objectives',
+			'Objectives',
+			'request',
+			'request.need.objectives',
+			3,
+			true,
+			{
+				question: 'What should be true once the change ships?',
+				example: 'Every change carries one traceable decision per subject, readable by the team and the customer.',
+				why: 'The objectives are what the approval checks the delivered change against.'
+			},
+			{ multiline: true, kind: 'list' }
+		),
+		inline(
+			'00-need.measures',
+			'Measures',
+			'request',
+			'request.need.measures',
+			2,
+			false,
+			{
+				question: 'What is measured, its value today and its target? One per line: what: today -> target.',
+				example: 'Spec writing time: 15 h a week -> 3 h a week',
+				why: 'A target nobody can measure cannot be told from luck at the review.'
+			},
+			{ multiline: true, kind: 'list' }
+		)
+	]
+};
+
+/** The fields of the need, in the order the page asks them. */
+export const NEED_FIELDS: readonly BlockField[] = NEED_BLOCK.fields;
+
+/** The keys of the need a request holds, one per need field. */
+export const NEED_KEYS = ['description', 'situation', 'symptoms', 'cost', 'objectives', 'measures'] as const;
+export type NeedKey = (typeof NEED_KEYS)[number];
+
+/** True when the field is a question of the need, owned by the request itself. */
+export const isNeedField = (field: Pick<BlockField, 'section'>): boolean => field.section === 'request';
+
+/** The need key a need field writes, read off its path (`00-need.situation` -> `situation`). */
+export function needKeyOf(fieldPath: string): NeedKey | null {
+	const key = fieldPath.startsWith('00-need.') ? fieldPath.slice('00-need.'.length) : '';
+	return (NEED_KEYS as readonly string[]).includes(key) ? (key as NeedKey) : null;
+}
+
+/**
+ * Who asked for the request and where it comes from, two answers of its 1.1
+ * beside the requester's verbatim, versioned and validated like the answers of
+ * the need (ac-evo-form-origin-validated).
+ */
+export const ORIGIN_ANSWER_KEYS = { requester: 'request.requester', origin: 'request.origin' } as const;
+
+/**
+ * The requester and the source as fields a proposal can target, so the
+ * person's AI suggests them like any other answer (ac-evo-live-prefill). They
+ * weigh nothing: the maturity of a request is read on its need and its blocks.
+ */
+export const ORIGIN_FIELDS: readonly BlockField[] = [
+	inline(ORIGIN_ANSWER_KEYS.requester, 'Requester', 'request', ORIGIN_ANSWER_KEYS.requester, 0, false, {
+		question: 'Who asked for the change?',
+		example: 'Carmen Martin, the baker',
+		why: 'The person to go back to when the need is unclear.'
+	}),
+	inline(ORIGIN_ANSWER_KEYS.origin, 'Source', 'request', ORIGIN_ANSWER_KEYS.origin, 0, false, {
+		question: 'Where does the request come from? One of internal_idea, customer_feedback, support_ticket, market_watch, regulatory, technical_debt.',
+		example: 'customer_feedback',
+		why: 'Read later to say how much of the work customers drive.'
+	})
+];
+
+/** True for the requester or the source of a request, the answers of 1.1 beside the verbatim. */
+export const isOriginField = (path: string): boolean => path === ORIGIN_ANSWER_KEYS.requester || path === ORIGIN_ANSWER_KEYS.origin;
+
+/**
+ * What a subject of the request does to the product: adds a feature, amends
+ * one, or removes one. A feature named without a draft is read as an
+ * amendment, which is what naming it has always meant.
+ */
+export type SubjectKind = 'add' | 'amend' | 'remove';
+
+/**
+ * Which questions a subject is asked (ac-evo-form-9). Why the change exists is
+ * asked once, on the need; a subject is asked only what is its own: a new
+ * feature its objective, its measurable effect and its criteria, an amended one
+ * its criteria, a removed one nothing.
+ */
+const ASKED_ON: Readonly<Record<string, readonly SubjectKind[]>> = {
+	'01-origin.objective': ['add'],
+	'02-problem.statement': [],
+	'02-problem.value': [],
+	'02-problem.effect': ['add'],
+	'05-functional.acceptance': ['add', 'amend']
+};
+
+/** Whether a subject of that kind is asked this field. Fields outside the matrix are asked of every subject. */
+export const isAskedOn = (field: Pick<BlockField, 'path'>, kind: SubjectKind): boolean =>
+	ASKED_ON[field.path]?.includes(kind) ?? true;
+
+/** The kind of one touched feature, read off the draft that stands for it. */
+export function subjectKindOf(drafts: readonly Pick<DraftLeaf, 'id' | 'baseLeafId' | 'kind'>[], leafId: string): SubjectKind {
+	const draft = drafts.find((d) => d.id === leafId || d.baseLeafId === leafId);
+	return draft?.kind ?? 'amend';
+}
+
+const EVERY_BLOCK: readonly SpecBlock[] = [NEED_BLOCK, ...SPEC_BLOCKS, ...CONDITIONAL_BLOCKS];
 
 const FIELD_BY_PATH = new Map<string, BlockField>(
-	EVERY_BLOCK.flatMap((block) => block.fields.map((f) => [f.path, f] as const))
+	[...EVERY_BLOCK.flatMap((block) => block.fields), ...ORIGIN_FIELDS].map((f) => [f.path, f] as const)
 );
 
 export const blockFieldByPath = (path: string): BlockField | undefined => FIELD_BY_PATH.get(path);

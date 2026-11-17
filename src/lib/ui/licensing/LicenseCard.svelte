@@ -48,19 +48,19 @@
 	{#if ent}
 		<dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
 			<div>
-				<dt class="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">Licensed to</dt>
+				<dt class="text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-ink-400">Licensed to</dt>
 				<dd class="text-ink-900">{ent.customer}</dd>
 			</div>
 			<div>
-				<dt class="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">Edition</dt>
+				<dt class="text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-ink-400">Edition</dt>
 				<dd class="text-ink-900 capitalize">{ent.edition}</dd>
 			</div>
 			<div>
-				<dt class="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">Seats</dt>
+				<dt class="text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-ink-400">Seats</dt>
 				<dd class="text-ink-900">{ent.seats}</dd>
 			</div>
 			<div>
-				<dt class="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">Expires</dt>
+				<dt class="text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-ink-400">Expires</dt>
 				<dd class="text-ink-900">
 					{#if ent.expiresAt === null}
 						Never · perpetual
@@ -79,7 +79,7 @@
 				</dd>
 			</div>
 			<div class="col-span-2">
-				<dt class="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
+				<dt class="text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-ink-400">
 					Activated on this install
 				</dt>
 				<dd class="text-ink-900">{fmtDate(view.activatedAt)}</dd>

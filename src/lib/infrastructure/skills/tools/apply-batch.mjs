@@ -63,6 +63,7 @@ runScript(async () => {
 
 	const session = await openSession(resolveEndpoint(flags));
 	const answer = await callToolJson(session, 'apply_behavior_batch', args);
+	const capped = answer?.capped === true;
 	const batch = answer.batch && typeof answer.batch === 'object' ? answer.batch : {};
 	const scenarios = batch.scenarios ?? answer.scenarios;
 	const summary = {
@@ -82,7 +83,8 @@ runScript(async () => {
 		...(batch.updatedAt !== undefined ? { updatedAt: batch.updatedAt } : {}),
 		...(batch.relatedElsewhere !== undefined ? { relatedElsewhere: batch.relatedElsewhere } : {}),
 		...(scenarios !== undefined ? { scenarios } : {}),
-		...(Array.isArray(answer.warnings) && answer.warnings.length > 0 ? { warnings: answer.warnings } : {})
+		...(Array.isArray(answer.warnings) && answer.warnings.length > 0 ? { warnings: answer.warnings } : {}),
+		...(capped ? { capped: true, note: 'The answer was capped by the gateway: the verdict above is complete, long lists may be cut.' } : {})
 	};
 	console.log(JSON.stringify(summary, null, 2));
 	return summary.ok ? 0 : 1;

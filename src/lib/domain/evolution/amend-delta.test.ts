@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createEvolutionRequest } from './draft';
 import { addDraftLeafAct, updateDraftLeafAct, type ActContext } from './acts';
 import { editedDescription, materialiseDrafts } from './materialise';
+import { withSolutionValidated } from './solution-validated.fixture';
 
 /**
  * An amendment said as a delta.
@@ -29,7 +30,7 @@ const base = (leafId: string) =>
 				]
 			}
 		: null;
-const request = () => createEvolutionRequest({ id: 'r1', stage: 'specification', leafIds: ['feat-controls'] });
+const request = () => withSolutionValidated(createEvolutionRequest({ id: 'r1', stage: 'specification', leafIds: ['feat-controls'] }));
 
 describe('an amendment said as a delta', () => {
 	it('retires, rewords and adds criteria without restating the others', () => {

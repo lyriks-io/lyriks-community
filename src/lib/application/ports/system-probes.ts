@@ -13,7 +13,21 @@ import type { ContainerResources, HostFacts } from '$domain/system';
 export interface EngineVersionProbePort {
 	/** `null` when the engine is unreachable or does not advertise a version. */
 	engineVersion(): Promise<string | null>;
+	/**
+	 * Which solver the engine proves with, on an installation that proves;
+	 * `null` where it does not prove or the engine did not say.
+	 */
+	solverStatus?(): Promise<SolverStatus | null>;
 }
+
+/** The proof module the engine loaded (or tried to): its name, and its version once loaded. */
+export type ProofModule = { readonly name: string; readonly version: string | null };
+
+/** The engine's solver: the native one and its version, or none and why; and the proof module behind it. */
+export type SolverStatus = (
+	| { readonly kind: 'native'; readonly version: string }
+	| { readonly kind: 'wasm' | 'none'; readonly reason: string }
+) & { readonly prover?: ProofModule };
 
 /** What Lyriks-back reports about itself and the formal engine behind it. */
 export interface BackSystemInfo {

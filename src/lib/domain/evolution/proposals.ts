@@ -96,7 +96,8 @@ export function canRefuseProposal(
 /** Only an undecided proposal can be reworded; rewording clears the glossary flag. */
 export function canRewordProposal(proposal: Proposal): Guarded {
 	return guard(
-		proposal.decision !== 'pending',
+		// A reworded proposal is still undecided: it can be reworded again.
+		proposal.decision !== 'pending' && proposal.decision !== 'reworded',
 		'This proposal has already been decided.',
 		'Rewording a proposal that was accepted or refused would reopen a decision somebody already signed for.'
 	);

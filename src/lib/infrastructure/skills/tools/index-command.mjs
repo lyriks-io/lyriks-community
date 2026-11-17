@@ -1,9 +1,13 @@
 // Lyriks helper (installed by `sync_skills` under .lyriks/tools/). The commands
 // of `node .lyriks/tools/index-file.mjs`, which edit `.unspa.json` the one way
 // that keeps its formatting (see index-text.mjs):
+//   init [--project <id>] [--json]
+//       creates `.unspa.json` in the current folder for the project --project
+//       or the binding block of CLAUDE.md names (see index-init.mjs).
 //   upsert <entries.json | -> [--sync [--feature <featureId>]] [--project <id>] [--dry-run] [--json] [--url URL] [--token TOKEN]
 //       adds or replaces entries by key. The file holds `{ "<key>": { entry } }`
-//       or `{ "index": { ... } }`.
+//       or `{ "index": { ... } }`. Without an index, it creates one the way
+//       init does, so the first entry needs no other step.
 //   remove <key...> [--sync --feature <featureId>] [--project <id>] [--dry-run] [--json]
 //       drops the entries of renamed or removed elements.
 //   set-project <id>
@@ -14,13 +18,16 @@
 // --feature, never as a few loose keys. Not run directly: index-file.mjs is.
 import { readFileSync } from 'node:fs';
 import { indexEntries, loadIndexFile, writeIndexFile } from './index-file.mjs';
+import { indexToUpsert, init } from './index-init.mjs';
 import { printProjectWarnings, resolveProject } from './index-project.mjs';
 
 const USAGE = [
 	'Usage: node .lyriks/tools/index-file.mjs upsert <entries.json | -> [--sync [--feature <featureId>]] [--project <id>] [--dry-run] [--json]',
 	'       node .lyriks/tools/index-file.mjs remove <key...> [--sync --feature <featureId>] [--project <id>] [--dry-run] [--json]',
-	'       node .lyriks/tools/index-file.mjs set-project <id>'
+	'       node .lyriks/tools/index-file.mjs set-project <id>',
+	'       node .lyriks/tools/index-file.mjs init [--project <id>] [--json]'
 ].join('\n');
+const COMMANDS = ['init', 'upsert', 'remove', 'set-project'];
 const KEY = /^[a-z_]+:\S/;
 const isEntry = (entry) => Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry);
 
@@ -109,7 +116,9 @@ function print(result) {
 		for (const key of result[kind]) console.log(`${kind.padEnd(9)} ${key}`);
 	}
 	const counts = ['added', 'replaced', 'unchanged', 'removed'].map((kind) => `${result[kind].length} ${kind}`).join(', ');
-	console.log(`${result.indexFile}: ${counts}${result.dryRun ? ' (dry run: nothing written)' : result.written ? '.' : ' (nothing to write).'}`);
+	const created = result.created ? ` created for project ${result.project},` : '';
+	const dryRun = result.created ? ' (dry run: nothing written, the index would be created)' : ' (dry run: nothing written)';
+	console.log(`${result.indexFile}:${created} ${counts}${result.dryRun ? dryRun : result.written ? '.' : ' (nothing to write).'}`);
 	if (result.notInFeature?.length) console.log(`Not in feature ${result.sync.feature}, so not sent: ${result.notInFeature.join(', ')}.`);
 	if (result.sync) console.log(JSON.stringify(result.sync, null, 2));
 }
@@ -119,24 +128,37 @@ export async function runIndexCommand(argv) {
 	try {
 		const { positional, flags } = parseArgs(argv, ['url', 'token', 'feature', 'project']);
 		const [command, ...rest] = positional;
-		const loaded = loadIndexFile();
+		if (!COMMANDS.includes(command)) throw new Error(USAGE);
+		if (command === 'init') {
+			if (rest.length !== 0) throw new Error(USAGE);
+			init(flags);
+			return;
+		}
 		if (command === 'set-project') {
 			if (rest.length !== 1 || !rest[0].trim()) throw new Error(USAGE);
+			const loaded = loadIndexFile();
 			const before = loaded.projectId;
 			loaded.doc.projectId = rest[0].trim();
 			writeIndexFile(loaded);
 			console.log(`${loaded.path}: projectId ${before ?? '(none)'} -> ${loaded.doc.projectId}`);
 			return;
 		}
-		if (command !== 'upsert' && command !== 'remove') throw new Error(USAGE);
 		if (command === 'upsert' ? rest.length !== 1 : rest.length === 0) throw new Error(USAGE);
 		const upserts = command === 'upsert' ? readEntries(rest[0]) : [];
+		const loaded = command === 'upsert' ? indexToUpsert(flags) : loadIndexFile();
 		const project = resolveProject({ flag: flags.project, indexProject: loaded.projectId, indexPath: loaded.path, dirs: [loaded.dir, process.cwd()] });
 		const refusal = flags.sync && !flags['dry-run'] ? syncRefusal(flags, command === 'upsert' ? upserts.map(([key]) => key) : rest, project) : null;
 		if (refusal) throw new Error(`Nothing was written or sent: ${refusal}`);
 		const outcome = edit(loaded, command, upserts, rest);
 		const changed = outcome.added.length + outcome.replaced.length + outcome.removed.length > 0;
-		const result = { indexFile: loaded.path, project: project.projectId, dryRun: Boolean(flags['dry-run']), written: false, ...outcome };
+		const result = {
+			indexFile: loaded.path,
+			project: project.projectId,
+			dryRun: Boolean(flags['dry-run']),
+			written: false,
+			...(loaded.created ? { created: true } : {}),
+			...outcome
+		};
 		if (project.warnings.length > 0) result.projectWarnings = project.warnings;
 		if (changed && !result.dryRun) {
 			writeIndexFile(loaded);

@@ -1,6 +1,5 @@
-import { architectureContext } from '$application/architecture-context';
+import { architectureContext } from '$application/specification/architecture-context';
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import type { RequestHandler } from './$types';
 
@@ -22,7 +21,7 @@ export const GET: RequestHandler = async (event) => {
 	await requireProjectAccess(event, projectId, 'read');
 	if (!screenId) error(400, 'screen is required');
 
-	const s = getServices();
+	const s = event.locals.services;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const draft = (await s.loadExperienceDraft.execute(projectId)) as any;
 	const builder = draft.builder;

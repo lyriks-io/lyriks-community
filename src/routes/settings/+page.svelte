@@ -1,16 +1,20 @@
 <script lang="ts">
+	import { scrollMotion } from '$ui/shell/scroll-motion';
 	import { tick, untrack } from 'svelte';
 	import { invalidateAll, replaceState } from '$app/navigation';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
 	import { Icon, ToggleTile, confirmDialog, type IconName } from '$ui/design-system';
-	import type { AiSettings, FeedbackSettings } from '$domain/settings';
+	import type { AiSettings } from '$domain/settings';
 	import { FEEDBACK_EMAIL } from '$domain/feedback';
+	import { isCommunity, lockedSentence, planOpening, PRICING_URL, UPGRADE_PLAN_NAMES } from '$domain/licensing';
 	import ComponentsSection from '$ui/settings/ComponentsSection.svelte';
+	import AssistantPanelBody from '$ui/settings/AssistantPanelBody.svelte';
+	import ProofsPanelBody from '$ui/settings/ProofsPanelBody.svelte';
+	import InstallConfigurationForm from '$ui/settings/InstallConfigurationForm.svelte';
 	import type { Component } from 'svelte';
 	import SettingsPanel from '$ui/settings/SettingsPanel.svelte';
 	import { openFeedback } from '$ui/shell/feedback.svelte';
-	import TopBar from '$ui/shell/TopBar.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -18,11 +22,12 @@
 	// The member roster and the Community reclaim are Enterprise panels: the
 	// overlay ships them, the globs resolve to nothing in the open-source tree.
 	const eeModules = import.meta.glob<{ default: Component<Record<string, unknown>> }>(
-		['/src/lib/ee/ui/settings/MembersPanelBody.svelte', '/src/lib/ee/ui/settings/ReclaimPanel.svelte'],
+		['/src/lib/ee/ui/settings/MembersPanelBody.svelte', '/src/lib/ee/ui/settings/ReclaimPanel.svelte', '/src/lib/ee/ui/settings/AccountJob.svelte'],
 		{ eager: true }
 	);
 	const EeMembersBody = eeModules['/src/lib/ee/ui/settings/MembersPanelBody.svelte']?.default ?? null;
 	const EeReclaimPanel = eeModules['/src/lib/ee/ui/settings/ReclaimPanel.svelte']?.default ?? null;
+	const EeAccountJob = eeModules['/src/lib/ee/ui/settings/AccountJob.svelte']?.default ?? null;
 
 	// Local editable copy (mutable, one-time snapshot of loaded data); saved to /api/settings on demand.
 	let ai = $state(untrack(() => ({ ...data.ai })));
@@ -186,33 +191,34 @@
 		}
 	}
 
-	// ── Feedback channel ─────────────────────────────────────────────────────────
-	// Two knobs with two scopes: the app-wide operator switch (may the dialog
-	// OFFER its online channel at all), saved like the AI switch; and this
-	// browser's own channel choice, the one the dialog asks for on first use,
-	// stored only in localStorage.
-	let feedback = $state(untrack(() => ({ ...data.feedback })));
-	let feedbackStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
-	async function toggleFeedbackOnline() {
-		const next = !feedback.onlineEnabled;
-		feedback = { onlineEnabled: next };
-		feedbackStatus = 'saving';
-		try {
-			const res = await fetch('/api/feedback', {
-				method: 'PUT',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify(feedback)
-			});
-			if (!res.ok) throw new Error(String(res.status));
-			const body = (await res.json()) as { settings: FeedbackSettings };
-			feedback = { ...body.settings };
-			feedbackStatus = 'saved';
-		} catch {
-			feedback = { onlineEnabled: !next };
-			feedbackStatus = 'error';
+	// ── Display ──────────────────────────────────────────────────────────────────
+	// How long what just entered the specification reads New (criterion 8c1e9288): app-wide, admin-owned.
+	let newBadgeDays = $state(untrack(() => data.display.newBadgeDays));
+	let displayStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
+	let displayRefusal = $state('');
+	async function saveNewBadgeDays() {
+		const before = data.display.newBadgeDays;
+		displayStatus = 'saving';
+		displayRefusal = '';
+		const res = await fetch('/api/settings/display', {
+			method: 'PUT',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ newBadgeDays: Number(newBadgeDays) })
+		}).catch(() => null);
+		if (res?.ok) {
+			newBadgeDays = ((await res.json()) as { settings: { newBadgeDays: number } }).settings.newBadgeDays;
+			displayStatus = 'saved';
+			return;
 		}
+		displayRefusal = res?.status === 422 ? ((await res.json()) as { refusal: string }).refusal : 'Couldn’t save (admin only).';
+		newBadgeDays = before;
+		displayStatus = 'error';
 	}
 
+	// ── Feedback channel ─────────────────────────────────────────────────────────
+	// Whether the dialog may OFFER its online channel is answered in Configuration;
+	// this panel keeps this browser's own channel choice, the one the dialog asks
+	// for on first use, stored only in localStorage.
 	const FEEDBACK_MODE_KEY = 'lyriks.feedback.mode';
 	type FeedbackMode = 'ask' | 'online' | 'offline';
 	const FEEDBACK_MODES: Array<{ id: FeedbackMode; label: string }> = [
@@ -280,11 +286,17 @@
 	const membersAdmin = untrack(() => data.membersAdmin as { locked?: boolean; workspace?: { name: string; role: string } | null } | null);
 	const membersLocked = membersAdmin?.locked === true || !EeMembersBody;
 	const membersShown = !!membersAdmin && (membersLocked || !!membersAdmin.workspace);
+	// On Community, sharing the project is what Team opens (EVO-001); elsewhere it is the Enterprise edition.
+	const membersPlan = untrack(() => (isCommunity(data.edition) ? UPGRADE_PLAN_NAMES[planOpening('sharing')] : 'Enterprise'));
 	const SECTIONS: SectionDef[] = [
 		{ id: 'account', label: 'Account', icon: 'shield', keywords: 'account name email edition connected profile identity sign in' },
+		{ id: 'configuration', label: 'Configuration', icon: 'globe', keywords: 'configuration first air gap airgap egress internet network outbound language specification update check registry links online feedback' },
 		{ id: 'ai', label: 'AI suggestions', icon: 'sparkles', keywords: 'ai suggestions llm mcp authorize block switch' },
+		{ id: 'assistant', label: 'AI assistant', icon: 'bolt', keywords: 'ai assistant built-in claude anthropic openai chatgpt api key byok model provider diagram draw connection test' },
+		{ id: 'proofs', label: 'Proofs', icon: 'cpu', keywords: 'proofs proof solver z3 prove rules verdict machine processors memory cpu vm enterprise', badge: untrack(() => (data.proofs.allowed ? undefined : 'Enterprise')) },
+		{ id: 'display', label: 'Display', icon: 'eye', keywords: 'display new badge days recent specification features appeared' },
 		{ id: 'feedback', label: 'Feedback', icon: 'megaphone', keywords: 'feedback share message bug idea contact email online channel send team' },
-		{ id: 'members', label: 'Members', icon: 'users', keywords: 'members team invite invitations role admin designer viewer access projects scope grant first last name enterprise edition', when: membersShown, badge: membersLocked ? 'Enterprise' : undefined },
+		{ id: 'members', label: 'Members', icon: 'users', keywords: 'members team invite invitations role admin designer viewer access projects scope grant first last name enterprise edition', when: membersShown, badge: membersLocked ? membersPlan : undefined },
 		{ id: 'reclaim', label: 'Reclaim projects', icon: 'download', keywords: 'reclaim community enterprise ownership projects verify', when: untrack(() => !!data.reclaim) },
 		{ id: 'versions', label: 'Versions', icon: 'layers', keywords: 'version versions build image tag commit release platform unspaghettit engine back dpo postgres node support components install' },
 		{ id: 'danger', label: 'Danger zone', icon: 'circle-alert', keywords: 'danger reset workspace destructive irreversible wipe' }
@@ -321,7 +333,7 @@
 	// Read the hash from the reactive URL, not from `location`.
 	//
 	// `location.hash` is a plain property, so this effect had nothing to depend on
-	// and ran once, at mount. Following /settings#account from the user menu while
+	// and ran once, at mount. Following a /settings#account link while
 	// already ON /settings is a hash change and nothing more — no navigation, no
 	// remount — so the panel never opened and the menu item looked dead. It worked
 	// from anywhere else, which is what made it look like the link was wrong
@@ -356,7 +368,7 @@
 		if (!pwWall) return;
 		openSection = 'account';
 		tick().then(() => {
-			document.getElementById('password-zone')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+			document.getElementById('password-zone')?.scrollIntoView({ behavior: scrollMotion(), block: 'center' });
 			document.getElementById('pw-current')?.focus({ preventScroll: true });
 		});
 	});
@@ -366,19 +378,10 @@
 	function jumpTo(e: MouseEvent, id: string) {
 		e.preventDefault();
 		openSection = id;
-		document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		document.getElementById(id)?.scrollIntoView({ behavior: scrollMotion(), block: 'start' });
 		history.replaceState(null, '', `#${id}`);
 	}
 </script>
-
-<!-- The same shared chrome as the portfolio and every project page, so settings
-     doesn't read as a different app (logo · search · user menu). -->
-<TopBar
-	sessionEmail={data.session?.email}
-	memberName={data.memberName}
-	workspaces={data.workspaces}
-	activeWorkspace={data.activeWorkspace}
-/>
 
 <div class="min-h-0 flex-1 overflow-y-auto">
 <div class="mx-auto max-w-5xl px-6 py-10">
@@ -387,14 +390,14 @@
 			<Icon name="arrow-left" size={18} />
 		</a>
 		<div>
-			<h1 class="text-xl font-bold text-ink-900">Settings</h1>
+			<h1 class="text-xl font-bold tracking-[-0.03em] text-ink">Settings</h1>
 			<p class="text-xs text-ink-500">App-level configuration for the {account?.editionLabel ?? 'Lyriks'} edition.</p>
 		</div>
 	</div>
 
 	{#if pwWall}
-		<div class="mb-6 flex items-start gap-3 rounded-field border border-warning-300 bg-warning-50 px-4 py-3">
-			<span class="mt-0.5 text-warning-500"><Icon name="lock" size={16} /></span>
+		<div class="mb-6 flex items-start gap-3 border-l-[6px] border-orange bg-orange-tint px-4 py-3">
+			<span class="mt-0.5 text-orange-ink"><Icon name="lock" size={16} /></span>
 			<div>
 				<p class="text-sm font-semibold text-ink-900">Choose your own password to unlock the app</p>
 				<p class="text-xs text-ink-600">
@@ -418,7 +421,7 @@
 					type="search"
 					placeholder="Search settings…"
 					aria-label="Search settings"
-					class="w-full rounded-pill border border-line bg-surface py-1.5 pl-8 pr-3 text-sm text-ink-900 outline-none focus:border-brand-300"
+					class="w-full border-[1.5px] border-ink-3 bg-surface-sunken py-1.5 pl-8 pr-3 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue"
 				/>
 			</div>
 			<nav class="flex flex-col gap-0.5">
@@ -426,12 +429,12 @@
 					<a
 						href="#{s.id}"
 						onclick={(e) => jumpTo(e, s.id)}
-						class="flex items-center gap-2 rounded-field px-2.5 py-1.5 text-sm font-medium text-ink-600 transition hover:bg-surface-sunken hover:text-ink-900 {s.id === 'danger' ? 'text-danger-500 hover:text-danger-600' : ''}"
+						class="flex items-center gap-2 px-2.5 py-1.5 text-sm font-medium text-ink-2 transition hover:bg-surface-sunken hover:text-ink {s.id === 'danger' ? 'text-red-ink hover:text-red-ink' : ''}"
 					>
 						<Icon name={s.icon} size={14} />
 						{s.label}
 						{#if s.badge}
-							<span class="ml-auto rounded-pill bg-brand-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-brand-600">{s.badge}</span>
+							<span class="ml-auto border border-blue px-1.5 py-0.5 font-evo-mono text-[0.5625rem] font-bold tracking-[0.06em] text-blue-ink uppercase">{s.badge}</span>
 						{/if}
 					</a>
 				{:else}
@@ -452,7 +455,7 @@
 					onToggle={togglePanel}
 				>
 					<div class="flex items-center gap-3">
-						<span class="grid size-11 shrink-0 place-items-center rounded-full text-sm font-bold text-white gradient-warm">
+						<span class="grid size-11 shrink-0 place-items-center bg-toner-2 font-evo-mono text-sm font-bold text-ink">
 							{accountInitials}
 						</span>
 						<div class="min-w-0">
@@ -467,13 +470,13 @@
 						</div>
 					</div>
 
-					<div class="grid grid-cols-2 gap-3 rounded-field border border-line bg-surface-sunken/40 p-3 text-xs">
+					<div class="grid grid-cols-2 gap-3 bg-surface-sunken p-3 text-xs">
 						<div>
-							<p class="font-semibold uppercase tracking-[0.14em] text-ink-400">Edition</p>
+							<p class="font-evo-mono tracking-[0.08em] text-ink-3 uppercase">Edition</p>
 							<p class="mt-0.5 text-ink-800">{account?.editionLabel}</p>
 						</div>
 						<div>
-							<p class="font-semibold uppercase tracking-[0.14em] text-ink-400">Workspace role</p>
+							<p class="font-evo-mono tracking-[0.08em] text-ink-3 uppercase">Workspace role</p>
 							<p class="mt-0.5 text-ink-800">{account?.role ?? 'None'}</p>
 						</div>
 					</div>
@@ -482,10 +485,10 @@
 					     themselves up. Client-safe view only; the raw key never leaves the
 					     server. Managing (activate / replace) stays on /activate. -->
 					{#if license}
-						<div class="rounded-field border border-line bg-surface-sunken/40 p-3 text-xs">
+						<div class="bg-surface-sunken p-3 text-xs">
 							<div class="mb-2 flex items-center justify-between">
-								<p class="font-semibold uppercase tracking-[0.14em] text-ink-400">Licence</p>
-								<a href="/activate" class="font-medium text-brand-600 hover:underline">Manage</a>
+								<p class="font-evo-mono tracking-[0.08em] text-ink-3 uppercase">Licence</p>
+								<a href="/activate" class="font-semibold text-blue-ink hover:underline">Manage</a>
 							</div>
 							{#if license.entitlements}
 								<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -525,18 +528,18 @@
 									</div>
 									<div class="col-span-2 sm:col-span-3">
 										<p class="text-ink-400">Licence id</p>
-										<p class="mt-0.5 font-mono text-[11px] text-ink-600">{license.entitlements.licenseId}</p>
+										<p class="mt-0.5 font-mono text-[0.6875rem] text-ink-600">{license.entitlements.licenseId}</p>
 									</div>
 								</div>
 								{#if license.status !== 'active'}
-									<p class="mt-2 font-medium text-danger-500">
+									<p class="mt-2 font-medium text-red-ink">
 										Status: {license.status.replace('_', ' ')}. See /activate.
 									</p>
 								{/if}
 							{:else}
 								<p class="text-ink-500">
 									Not activated.
-									<a class="font-medium text-brand-600 hover:underline" href="/activate">Activate now</a>.
+									<a class="font-semibold text-blue-ink hover:underline" href="/activate">Activate now</a>.
 								</p>
 							{/if}
 						</div>
@@ -547,7 +550,7 @@
 						     account bootstrapped from an email alone starts without either.
 						     Editing is self-service — it needs no workspace and no role. -->
 						<div class="space-y-2">
-							<p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">Your name</p>
+							<p class="font-evo-mono text-xs tracking-[0.08em] text-ink-3 uppercase">Your name</p>
 							<div class="flex flex-wrap items-end gap-2">
 								<div class="min-w-40 flex-1">
 									<label class="block text-xs text-ink-500" for="account-first">First name</label>
@@ -556,7 +559,7 @@
 										bind:value={accountFirst}
 										maxlength="80"
 										placeholder="First name"
-										class="mt-1 w-full rounded-field border border-line bg-surface px-3 py-2 text-sm text-ink-900 outline-none focus:border-brand-300"
+										class="mt-1 w-full border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue"
 									/>
 								</div>
 								<div class="min-w-40 flex-1">
@@ -566,27 +569,31 @@
 										bind:value={accountLast}
 										maxlength="80"
 										placeholder="Last name"
-										class="mt-1 w-full rounded-field border border-line bg-surface px-3 py-2 text-sm text-ink-900 outline-none focus:border-brand-300"
+										class="mt-1 w-full border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue"
 									/>
 								</div>
 								<button
 									type="button"
 									onclick={saveAccountName}
 									disabled={accountStatus === 'saving'}
-									class="rounded-field bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-60"
+									class="pressable border-[1.5px] border-ink bg-brand-500 px-4 py-2 text-xs font-bold tracking-[0.07em] text-paper uppercase disabled:opacity-60"
 								>
 									{accountStatus === 'saving' ? 'Saving…' : 'Save'}
 								</button>
 							</div>
 							{#if accountStatus === 'saved'}
-								<span class="text-xs font-medium text-success-600">Saved.</span>
+								<span class="text-xs font-medium text-green-ink">Saved.</span>
 							{:else if accountStatus === 'error'}
-								<span class="text-xs font-medium text-danger-500">Couldn’t save.</span>
+								<span class="text-xs font-medium text-red-ink">Couldn’t save.</span>
 							{/if}
 						</div>
+						{#if EeAccountJob}
+							<!-- Enterprise: what the member does, beside who they are (ac-team-jobs-own). -->
+							<EeAccountJob admin={data.membersAdmin} />
+						{/if}
 					{:else if account?.nameSource === 'operator'}
 						<div class="space-y-2">
-							<label class="block text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400" for="account-name">
+							<label class="block font-evo-mono text-xs tracking-[0.08em] text-ink-3 uppercase" for="account-name">
 								Display name
 							</label>
 							<div class="flex flex-wrap items-center gap-2">
@@ -595,20 +602,20 @@
 									bind:value={accountName}
 									maxlength="80"
 									placeholder="How you want to appear"
-									class="min-w-56 flex-1 rounded-field border border-line bg-surface px-3 py-2 text-sm text-ink-900 outline-none focus:border-brand-300"
+									class="min-w-56 flex-1 border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue"
 								/>
 								<button
 									type="button"
 									onclick={saveAccountName}
 									disabled={accountStatus === 'saving'}
-									class="rounded-field bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-60"
+									class="pressable border-[1.5px] border-ink bg-brand-500 px-4 py-2 text-xs font-bold tracking-[0.07em] text-paper uppercase disabled:opacity-60"
 								>
 									{accountStatus === 'saving' ? 'Saving…' : 'Save'}
 								</button>
 								{#if accountStatus === 'saved'}
-									<span class="text-xs font-medium text-success-600">Saved.</span>
+									<span class="text-xs font-medium text-green-ink">Saved.</span>
 								{:else if accountStatus === 'error'}
-									<span class="text-xs font-medium text-danger-500">Couldn’t save.</span>
+									<span class="text-xs font-medium text-red-ink">Couldn’t save.</span>
 								{/if}
 							</div>
 						</div>
@@ -624,10 +631,10 @@
 						<div
 							id="password-zone"
 							class={pwWall
-								? 'mt-4 space-y-2 rounded-field border-2 border-warning-300 bg-warning-50 p-4 ring-4 ring-warning-100'
+								? 'mt-4 space-y-2 border-2 border-ink bg-orange-tint p-4 shadow-offset-orange'
 								: 'mt-4 space-y-2 border-t border-line pt-4'}
 						>
-							<p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">Password</p>
+							<p class="font-evo-mono text-xs tracking-[0.08em] text-ink-3 uppercase">Password</p>
 							<div class="flex flex-wrap items-end gap-2">
 								<label class="sr-only" for="pw-current">Current password</label>
 								<input
@@ -636,7 +643,7 @@
 									autocomplete="current-password"
 									bind:value={pwCurrent}
 									placeholder="Current password"
-									class="min-w-48 flex-1 rounded-field border border-line bg-surface px-3 py-2 text-sm text-ink-900 outline-none focus:border-brand-300"
+									class="min-w-48 flex-1 border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue"
 								/>
 								<label class="sr-only" for="pw-new">New password</label>
 								<input
@@ -645,26 +652,46 @@
 									autocomplete="new-password"
 									bind:value={pwNew}
 									placeholder="New password"
-									class="min-w-48 flex-1 rounded-field border border-line bg-surface px-3 py-2 text-sm text-ink-900 outline-none focus:border-brand-300"
+									class="min-w-48 flex-1 border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue"
 								/>
 								<button
 									type="button"
 									onclick={changePassword}
 									disabled={pwStatus === 'saving' || !pwCurrent || !pwNew}
-									class="rounded-field bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-60"
+									class="pressable border-[1.5px] border-ink bg-brand-500 px-4 py-2 text-xs font-bold tracking-[0.07em] text-paper uppercase disabled:opacity-60"
 								>
 									{pwStatus === 'saving' ? 'Changing…' : 'Change password'}
 								</button>
 							</div>
 							{#if pwStatus === 'saved'}
-								<p class="text-xs font-medium text-success-600">Password changed.</p>
+								<p class="text-xs font-medium text-green-ink">Password changed.</p>
 							{:else if pwStatus === 'error'}
-								<p class="text-xs font-medium text-danger-500">{pwError}</p>
+								<p class="text-xs font-medium text-red-ink">{pwError}</p>
 							{:else}
 								<p class="text-xs text-ink-500">At least 12 characters, and different from the current one.</p>
 							{/if}
 						</div>
 					{/if}
+				</SettingsPanel>
+			{/if}
+
+			{#if shown.has('configuration')}
+				<SettingsPanel
+					id="configuration"
+					title="Configuration"
+					icon="globe"
+					open={openSection === 'configuration'}
+					onToggle={togglePanel}
+				>
+					<InstallConfigurationForm
+						choices={data.configuration}
+						destinations={data.destinations}
+						assistantEnabled={data.assistant.enabled}
+						canEdit={data.isAdmin}
+						submitLabel="Save"
+						noUpdateAnswer={data.configuration.validated && data.configuration.updateCheck && update?.state === 'unknown'}
+						onSaved={invalidateAll}
+					/>
 				</SettingsPanel>
 			{/if}
 
@@ -678,8 +705,9 @@
 				>
 					<p class="text-xs text-ink-500">
 						Suggestions are always generated by your own LLM working through the Lyriks MCP;
-						Lyriks never calls an AI service itself. This switch authorizes or blocks that
-						generation for the whole workspace.
+						Lyriks itself calls no AI service for them. This switch authorizes or blocks that
+						generation for the whole workspace. The built-in assistant, which draws diagrams
+						from the server, has its own panel below.
 					</p>
 
 					<ToggleTile
@@ -695,9 +723,62 @@
 						{#if status === 'saving'}
 							<span class="text-xs font-medium text-ink-500">Saving…</span>
 						{:else if status === 'saved'}
-							<span class="text-xs font-medium text-success-600">Saved.</span>
+							<span class="text-xs font-medium text-green-ink">Saved.</span>
 						{:else if status === 'error'}
-							<span class="text-xs font-medium text-danger-500">Couldn’t save.</span>
+							<span class="text-xs font-medium text-red-ink">Couldn’t save.</span>
+						{/if}
+					</div>
+				</SettingsPanel>
+			{/if}
+
+			{#if shown.has('assistant')}
+				<SettingsPanel
+					id="assistant"
+					title="AI assistant"
+					icon="bolt"
+					open={openSection === 'assistant'}
+					onToggle={togglePanel}
+				>
+					<AssistantPanelBody initial={data.assistant} isAdmin={data.isAdmin} />
+				</SettingsPanel>
+			{/if}
+
+			{#if shown.has('proofs')}
+				<SettingsPanel id="proofs" title="Proofs" icon="cpu" open={openSection === 'proofs'} onToggle={togglePanel}>
+					<ProofsPanelBody initial={data.proofs} isAdmin={data.isAdmin} />
+				</SettingsPanel>
+			{/if}
+
+			{#if shown.has('display')}
+				<SettingsPanel id="display" title="Display" icon="eye" open={openSection === 'display'} onToggle={togglePanel}>
+					<p class="text-xs text-ink-500">
+						What just entered the specification (a core feature, a feature) reads <b>New</b> in Knowledge for this many
+						days. 0 turns the badge off.
+					</p>
+					<label class="flex flex-wrap items-center gap-3 text-sm text-ink-700">
+						Mark as New for
+						<input
+							type="number"
+							min="0"
+							max="30"
+							step="1"
+							bind:value={newBadgeDays}
+							disabled={!data.isAdmin}
+							onchange={() => void saveNewBadgeDays()}
+							class="h-9 w-20 border-[1.5px] border-ink-3 bg-surface-sunken px-2 text-sm text-ink outline-none focus:border-blue disabled:opacity-60"
+							aria-label="Mark as New for, in days"
+						/>
+						{Number(newBadgeDays) === 1 ? 'day' : 'days'}
+					</label>
+					<div class="flex items-center gap-3">
+						{#if !data.isAdmin}
+							<span class="text-xs text-ink-500">Only an administrator changes it.</span>
+						{:else if displayStatus === 'saving'}
+							<span class="text-xs font-medium text-ink-500">Saving…</span>
+						{:else if displayStatus === 'saved'}
+							<span class="text-xs font-medium text-green-ink">Saved.</span>
+						{:else if displayStatus === 'error'}
+							<span class="text-xs font-medium text-red-ink">{displayRefusal}</span>
 						{/if}
 					</div>
 				</SettingsPanel>
@@ -718,26 +799,14 @@
 						appliance itself never calls out either way.
 					</p>
 
-					<ToggleTile
-						title={feedback.onlineEnabled ? 'Online channel offered' : 'Online channel hidden'}
-						hint={feedback.onlineEnabled
-							? 'Users may choose to send feedback over the internet, from their own browser, after an explicit per-browser opt-in.'
-							: 'The dialog only offers the email and copy channels.'}
-						selected={feedback.onlineEnabled}
-						onToggle={toggleFeedbackOnline}
-					/>
-					<div class="flex items-center gap-3">
-						{#if feedbackStatus === 'saving'}
-							<span class="text-xs font-medium text-ink-500">Saving…</span>
-						{:else if feedbackStatus === 'saved'}
-							<span class="text-xs font-medium text-success-600">Saved.</span>
-						{:else if feedbackStatus === 'error'}
-							<span class="text-xs font-medium text-danger-500">Couldn’t save (admin only).</span>
-						{/if}
-					</div>
+					<p class="text-xs text-ink-500">
+						The online channel is {data.configuration.validated && data.feedback.onlineEnabled ? 'offered' : 'not offered'}
+						on this installation. An administrator changes that in
+						<a href="#configuration" class="font-semibold text-ink underline">Configuration</a>.
+					</p>
 
 					<div class="space-y-2 border-t border-line pt-4">
-						<p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
+						<p class="font-evo-mono text-xs tracking-[0.08em] text-ink-3 uppercase">
 							Your channel in this browser
 						</p>
 						<div class="flex gap-1.5">
@@ -746,9 +815,9 @@
 									type="button"
 									aria-pressed={feedbackMode === m.id}
 									onclick={() => setFeedbackMode(m.id)}
-									class="rounded-pill border px-2.5 py-1 text-xs font-medium transition {feedbackMode === m.id
-										? 'border-brand-400 bg-brand-500/10 text-brand-600'
-										: 'border-line text-ink-500 hover:text-ink-700'}"
+									class="border-[1.5px] px-2.5 py-1 text-xs font-medium transition {feedbackMode === m.id
+										? 'border-ink bg-ink text-paper'
+										: 'border-line bg-paper text-ink hover:border-ink'}"
 								>
 									{m.label}
 								</button>
@@ -761,7 +830,7 @@
 					</div>
 
 					<div class="space-y-2 border-t border-line pt-4">
-						<p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
+						<p class="font-evo-mono text-xs tracking-[0.08em] text-ink-3 uppercase">
 							Periodic invite
 						</p>
 						<div class="flex gap-1.5">
@@ -770,9 +839,9 @@
 									type="button"
 									aria-pressed={feedbackNudge === option.id}
 									onclick={() => setFeedbackNudge(option.id)}
-									class="rounded-pill border px-2.5 py-1 text-xs font-medium transition {feedbackNudge === option.id
-										? 'border-brand-400 bg-brand-500/10 text-brand-600'
-										: 'border-line text-ink-500 hover:text-ink-700'}"
+									class="border-[1.5px] px-2.5 py-1 text-xs font-medium transition {feedbackNudge === option.id
+										? 'border-ink bg-ink text-paper'
+										: 'border-line bg-paper text-ink hover:border-ink'}"
 								>
 									{option.label}
 								</button>
@@ -787,7 +856,7 @@
 					<button
 						type="button"
 						onclick={() => openFeedback()}
-						class="rounded-field border border-line px-3 py-2 text-xs font-semibold text-ink-700 hover:bg-surface-sunken"
+						class="pressable border-[1.5px] border-ink px-3 py-2 text-xs font-bold tracking-[0.07em] text-ink uppercase"
 					>
 						Share feedback now
 					</button>
@@ -804,7 +873,7 @@
 					title="Members"
 					icon="users"
 					meta={membersLocked
-						? 'Enterprise edition'
+						? membersPlan === 'Enterprise' ? 'Enterprise edition' : membersPlan
 						: membersAdmin?.workspace
 							? `${membersAdmin.workspace.name} · you are ${membersAdmin.workspace.role}`
 							: undefined}
@@ -819,22 +888,33 @@
 						     check, then by its seat gate. -->
 						<div
 							data-testid="members-locked"
-							class="flex items-start gap-3 rounded-field border border-brand-200 bg-brand-50/60 p-3"
+							class="flex items-start gap-3 border-l-[6px] border-blue bg-blue-tint p-3"
 						>
-							<span class="grid size-8 shrink-0 place-items-center rounded-full bg-brand-100 text-brand-600">
+							<span class="grid size-8 shrink-0 place-items-center border-[1.5px] border-ink bg-paper text-ink">
 								<Icon name="lock" size={15} />
 							</span>
 							<div class="min-w-0 space-y-1">
-								<p class="flex flex-wrap items-center gap-2 text-sm font-semibold text-ink-900">
-									Available in the Enterprise edition
-									<span class="rounded-pill bg-brand-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">Enterprise</span>
-								</p>
-								<p class="text-xs text-ink-600">
-									Inviting colleagues, setting their roles and choosing which projects they can
-									see are part of the Enterprise edition. This install runs the
-									{account?.editionLabel} edition, which holds its single operator.
-									<a class="font-medium text-brand-600 hover:underline" href="/activate">Manage licence</a>.
-								</p>
+								{#if membersPlan !== 'Enterprise'}
+									<p class="flex flex-wrap items-center gap-2 text-sm font-semibold text-ink-900">
+										Available with {membersPlan}
+										<span class="border-[1.5px] border-ink bg-ink px-2 py-0.5 font-evo-mono text-[0.625rem] font-bold tracking-[0.06em] text-paper uppercase">{membersPlan}</span>
+									</p>
+									<p class="text-xs text-ink-600">
+										{lockedSentence('sharing')}
+										{#if data.onlineHelp}<a class="font-semibold text-blue-ink hover:underline" href={PRICING_URL} target="_blank" rel="noopener noreferrer">See the plans</a>{:else}The plans: {PRICING_URL.replace(/^https?:\/\//, '')}{/if}.
+									</p>
+								{:else}
+									<p class="flex flex-wrap items-center gap-2 text-sm font-semibold text-ink-900">
+										Available in the Enterprise edition
+										<span class="border-[1.5px] border-ink bg-ink px-2 py-0.5 font-evo-mono text-[0.625rem] font-bold tracking-[0.06em] text-paper uppercase">Enterprise</span>
+									</p>
+									<p class="text-xs text-ink-600">
+										Inviting colleagues, setting their roles and choosing which projects they can
+										see are part of the Enterprise edition. This install runs the
+										{account?.editionLabel} edition, which holds its single operator.
+										<a class="font-semibold text-blue-ink hover:underline" href="/activate">Manage licence</a>.
+									</p>
+								{/if}
 							</div>
 						</div>
 					{:else if EeMembersBody}
@@ -857,7 +937,7 @@
 						     must never be given one to update itself, so the most this can
 						     do is name the command — which is also the thing an operator
 						     otherwise has to go and look up. -->
-						<div class="mb-3 space-y-2 rounded-field border border-brand-200 bg-brand-50/60 p-3">
+						<div class="mb-3 space-y-2 border-l-[6px] border-blue bg-blue-tint p-3">
 							<p class="text-sm font-semibold text-ink-900">
 								Version {update.latest} is available
 								<span class="font-normal text-ink-500">— you are on {update.current}</span>
@@ -865,13 +945,13 @@
 							<p class="text-xs text-ink-600">Run this on the appliance host:</p>
 							<div class="flex items-center gap-2">
 								<code
-									class="flex-1 overflow-x-auto rounded-field border border-line bg-surface px-3 py-2 font-mono text-xs text-ink-900"
+									class="flex-1 overflow-x-auto bg-ink px-3 py-2 font-mono text-xs text-paper"
 									>{UPDATE_COMMAND}</code
 								>
 								<button
 									type="button"
 									onclick={copyUpdateCommand}
-									class="shrink-0 rounded-field border border-line px-3 py-2 text-xs font-semibold text-ink-700 hover:bg-surface-sunken"
+									class="pressable shrink-0 border-[1.5px] border-ink px-3 py-2 text-xs font-bold tracking-[0.07em] text-ink uppercase"
 								>
 									{copied ? 'Copied' : 'Copy'}
 								</button>
@@ -882,7 +962,7 @@
 							</p>
 						</div>
 					{:else if update?.state === 'current'}
-						<p class="mb-3 text-xs font-medium text-success-600">
+						<p class="mb-3 text-xs font-medium text-green-ink">
 							Up to date — {update.current} is the newest published release.
 						</p>
 					{/if}
@@ -911,16 +991,16 @@
 							<button
 								type="button"
 								onclick={() => (dangerOpen = true)}
-								class="shrink-0 rounded-field border border-danger-300 px-3 py-1.5 text-xs font-semibold text-danger-600 transition hover:bg-danger-50"
+								class="pressable shrink-0 border-[1.5px] border-red-ink px-3 py-1.5 text-xs font-bold tracking-[0.07em] text-red-ink uppercase"
 							>
 								Reveal
 							</button>
 						{/if}
 					</div>
 					{#if dangerOpen}
-						<div class="space-y-2.5 rounded-field border border-danger-200 bg-surface p-3">
+						<div class="space-y-2.5 border-[1.5px] border-red-ink bg-red-tint p-3">
 							<label class="block text-xs text-ink-700" for="reset-confirm">
-								Type <span class="font-mono font-semibold text-danger-600">reset workspace</span> to enable
+								Type <span class="font-mono font-semibold text-red-ink">reset workspace</span> to enable
 								the button.
 							</label>
 							<input
@@ -930,21 +1010,21 @@
 								autocapitalize="none"
 								spellcheck="false"
 								placeholder="reset workspace"
-								class="w-full rounded-field border border-line bg-surface px-3 py-2 text-sm text-ink-900 outline-none focus:border-danger-300"
+								class="w-full border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-red"
 							/>
 							<div class="flex items-center gap-2">
 								<button
 									type="button"
 									onclick={resetWorkspace}
 									disabled={!resetArmed || resetBusy}
-									class="rounded-field bg-danger-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-danger-600 disabled:cursor-not-allowed disabled:opacity-40"
+									class="pressable border-[1.5px] border-ink bg-red-ink px-4 py-2 text-xs font-bold tracking-[0.07em] text-paper uppercase disabled:cursor-not-allowed disabled:opacity-40"
 								>
 									{resetBusy ? 'Resetting…' : 'Reset workspace'}
 								</button>
 								<button
 									type="button"
 									onclick={closeDangerZone}
-									class="rounded-field border border-line px-3 py-2 text-sm font-medium text-ink-600 transition hover:bg-surface-sunken"
+									class="pressable border-[1.5px] border-ink px-3 py-2 text-xs font-bold tracking-[0.07em] text-ink uppercase"
 								>
 									Cancel
 								</button>
@@ -955,7 +1035,7 @@
 			{/if}
 
 			{#if visibleSections.length === 0}
-				<div class="rounded-card border border-line bg-surface p-8 text-center text-sm text-ink-400">
+				<div class="border border-line bg-surface p-8 text-center text-sm text-ink-3">
 					No settings match “{query}”.
 				</div>
 			{/if}

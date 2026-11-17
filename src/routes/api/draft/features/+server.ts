@@ -1,4 +1,4 @@
-import { parseFeaturesDraft } from '$application/parse-features-draft';
+import { parseFeaturesDraft } from '$application/specification/parse-features-draft';
 import { saveSectionDraft } from '$lib/server/section-save.server';
 import { assertSectionDraftValid } from '$lib/server/section-authoring-validation.server';
 import { assertLeafIdsUnclaimed } from '$lib/server/features-leaf-id-guard.server';
@@ -20,5 +20,6 @@ export const PUT: RequestHandler = (event) =>
 			await assertLeafIdsUnclaimed(parseFeaturesDraft(body, projectId), services, projectId);
 		},
 		parse: parseFeaturesDraft,
-		persist: (draft, services) => services.saveFeaturesDraft.execute(draft)
+		persist: async (draft, services, projectId) =>
+			services.saveFeaturesDraft.execute(draft, await services.loadSpecLanguage.generated(projectId))
 	});

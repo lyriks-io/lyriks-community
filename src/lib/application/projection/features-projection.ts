@@ -1,5 +1,6 @@
 import {
 	createEmptyFeaturesDraft,
+	type ActionJourneys,
 	familyPathOf,
 	isMvpTier,
 	leafFeatures,
@@ -16,6 +17,7 @@ import {
 	type WorkAssignment
 } from '$domain/features';
 import type { BehaviorOp } from '$application/ports';
+import type { SpecLanguage } from '$domain/language';
 import { ACCEPTANCE_LEAF_PREFIX } from './ownership';
 import type { UnspaFeatureSnapshot, UnspaProjectSnapshot, UnspaTag } from '$lib/unspa-schema';
 
@@ -38,9 +40,6 @@ export interface FeaturesResidue {
 	 * are the kernel's; only who owns them is Lyriks-owned. Optional for the same
 	 * reason as `leafMeta`. */
 	actionAssignments?: Record<string, string>;
-	/** Per-action manual TRL (`featureId::actionId` → 1-9). Lyriks-owned; actions
-	 * carry no engine score. Optional for back-compat. */
-	actionTrl?: Record<string, number>;
 	/** Per-action release (`featureId::actionId` → release id). Lyriks-owned.
 	 * Optional for back-compat. */
 	actionRelease?: Record<string, string>;
@@ -51,9 +50,13 @@ export interface FeaturesResidue {
 	/** Work-queue sprints — first-class Lyriks objects (like releases), invisible to
 	 * the kernel. Optional so residue written before this field parses unchanged. */
 	sprints?: Sprint[];
+	/** When each core feature and feature first entered the spec (criterion 2a6bff42). Optional for back-compat. */
+	firstSeenAt?: Record<string, string>;
 	/** Work assignments (who owns which core/feature/action, in which sprint/order).
 	 * Lyriks-owned decoration; produces no BehaviorOps. Optional for back-compat. */
 	assignments?: WorkAssignment[];
+	/** The journeys each feature's actions are arranged in, keyed by feature id. Optional for back-compat. */
+	actionJourneys?: ActionJourneys;
 	/** UI/meta: last autosave instant. Kept in the residue since it is not behavior. */
 	lastSavedAt: string | null;
 }
@@ -65,7 +68,6 @@ export function emptyFeaturesResidue(): FeaturesResidue {
 		releases: [],
 		leafMeta: {},
 		actionAssignments: {},
-		actionTrl: {},
 		actionRelease: {},
 		featureRoles: {},
 		actionRoles: {},
@@ -100,12 +102,13 @@ export function buildFeaturesProjection(
 	// Verbatim passthrough; `?? {}` tolerates residue written before leafMeta existed.
 	draft.leafMeta = deco.leafMeta ?? {};
 	draft.actionAssignments = deco.actionAssignments ?? {};
-	draft.actionTrl = deco.actionTrl ?? {};
 	draft.actionRelease = deco.actionRelease ?? {};
 	draft.featureRoles = deco.featureRoles ?? {};
 	draft.actionRoles = deco.actionRoles ?? {};
 	draft.sprints = deco.sprints ?? [];
 	draft.assignments = deco.assignments ?? [];
+	draft.firstSeenAt = deco.firstSeenAt ?? {};
+	draft.actionJourneys = deco.actionJourneys ?? {};
 	draft.lastSavedAt = deco.lastSavedAt;
 
 	// The binding runs both ways: a `core:`/`family:` tag naming something the
@@ -298,12 +301,13 @@ export function featuresResidueFromDraft(draft: ProjectFeaturesDraft): FeaturesR
 		releases: draft.releases,
 		leafMeta: draft.leafMeta ?? {},
 		actionAssignments: draft.actionAssignments ?? {},
-		actionTrl: draft.actionTrl ?? {},
 		actionRelease: draft.actionRelease ?? {},
 		featureRoles: draft.featureRoles ?? {},
 		actionRoles: draft.actionRoles ?? {},
 		sprints: draft.sprints ?? [],
 		assignments: draft.assignments ?? [],
+		firstSeenAt: draft.firstSeenAt ?? {},
+		actionJourneys: draft.actionJourneys ?? {},
 		lastSavedAt: draft.lastSavedAt
 	};
 }
@@ -313,6 +317,8 @@ export interface FeaturesOpsContext {
 	auxFeatureIds: string[];
 	/** Current project-level tags to merge into (parity with the old sync). */
 	currentProjectTags: UnspaTag[];
+	/** The spec's language: the fallback description of a leaf follows it (English when absent). */
+	lang?: SpecLanguage;
 }
 
 /**
@@ -325,12 +331,14 @@ export function featuresDraftToBehaviorOps(
 	draft: ProjectFeaturesDraft,
 	ctx: FeaturesOpsContext
 ): BehaviorOp[] {
+	const fallbackDescription = (id: string) =>
+		ctx.lang === 'fr' ? `Fonctionnalité Lyriks ${id}` : `Lyriks Feature ${id}`;
 	const leaves = leafFeatures(draft);
 	const ops: BehaviorOp[] = leaves.map((leaf) => ({
 		kind: 'upsertFeatureShell',
 		featureId: leaf.id,
 		name: leaf.name || '<unnamed feature>',
-		description: leaf.description || `Lyriks Feature ${leaf.id}`,
+		description: leaf.description || fallbackDescription(leaf.id),
 		tags: leafTags(draft, leaf.id)
 	}));
 	// The leaf's own criteria join the model's single list, under a reserved prefix,
@@ -349,7 +357,24 @@ export function featuresDraftToBehaviorOps(
 	}
 	ops.push({ kind: 'setProjectFeatureIds', featureIds: [...leaves.map((l) => l.id), ...ctx.auxFeatureIds] });
 	ops.push({ kind: 'setProjectTags', tags: mergeTags(ctx.currentProjectTags, projectLevelTags(draft)) });
+	ops.push({ kind: 'setProjectCores', cores: projectCores(draft) });
 	return ops;
+}
+
+/**
+ * The cores of the tree as the engine's registry of core features, named the
+ * way the leaves' `core:` tags name them (the core's name, else its id).
+ */
+function projectCores(draft: ProjectFeaturesDraft): { value: string; description: string }[] {
+	const seen = new Set<string>();
+	const out: { value: string; description: string }[] = [];
+	for (const c of draft.cores) {
+		const value = (c.name || c.id).trim();
+		if (!value || seen.has(value.toLowerCase())) continue;
+		seen.add(value.toLowerCase());
+		out.push({ value, description: c.description?.trim() || value });
+	}
+	return out;
 }
 
 /** Merge incoming tags with existing, deduping by `type:value`. */

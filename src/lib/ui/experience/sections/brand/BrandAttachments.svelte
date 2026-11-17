@@ -72,8 +72,8 @@
 								</div>
 							{/if}
 							<div class="px-2 py-1.5">
-								<p class="truncate text-[11px] font-medium text-ink-700">{att.name}</p>
-								<p class="text-[10px] text-ink-400">{Math.round(att.size / 1024)} KB</p>
+								<p class="truncate text-[0.6875rem] font-medium text-ink-700">{att.name}</p>
+								<p class="text-[0.625rem] text-ink-400">{Math.round(att.size / 1024)} KB</p>
 							</div>
 						</button>
 						<button

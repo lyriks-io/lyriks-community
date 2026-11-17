@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fieldBase, fieldBorder, fieldBorderEmpty, fieldBorderInvalid } from './field';
 	interface Props {
 		value: string;
 		id?: string;
@@ -6,9 +7,10 @@
 		rows?: number;
 		invalid?: boolean;
 		oninput?: (value: string) => void;
+		onkeydown?: (e: KeyboardEvent) => void;
 		class?: string;
 	}
-	let { value, id, placeholder, rows = 4, invalid = false, oninput, class: klass = '' }: Props =
+	let { value, id, placeholder, rows = 4, invalid = false, oninput, onkeydown, class: klass = '' }: Props =
 		$props();
 </script>
 
@@ -18,10 +20,11 @@
 	{value}
 	{placeholder}
 	oninput={(e) => oninput?.(e.currentTarget.value)}
+	{onkeydown}
 	aria-invalid={invalid}
-	class="field-sizing-content w-full resize-none rounded-field border px-3.5 py-2.5 text-sm leading-relaxed text-ink-900 transition-colors placeholder:text-ink-400 {invalid
-		? 'border-danger-500 bg-surface'
+	class="{fieldBase} field-sizing-content min-h-12 resize-none px-3.5 py-2.5 leading-relaxed {invalid
+		? fieldBorderInvalid
 		: value
-			? 'border-line bg-surface-sunken/60 hover:border-line-strong focus:border-brand-400 focus:bg-surface'
-			: 'border-warning-200 bg-warning-50 hover:border-warning-300 focus:border-brand-400 focus:bg-surface'} {klass}"
+			? fieldBorder
+			: fieldBorderEmpty} {klass}"
 ></textarea>

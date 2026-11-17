@@ -15,17 +15,17 @@
 		<div class="space-y-2 rounded-field border border-line bg-surface-sunken p-3">
 			<div>
 				<div class="flex items-center gap-1.5">
-					<span class="text-[11px] font-bold uppercase tracking-widest text-ink-500">{def.label}</span>
+					<span class="text-[0.6875rem] font-bold uppercase tracking-widest text-ink-500">{def.label}</span>
 					{#if def.briefOnly}
 						<span
-							class="rounded-full bg-surface-sunken px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider text-ink-400 ring-1 ring-line"
+							class="rounded-full bg-surface-sunken px-1.5 py-px text-[0.5625rem] font-semibold uppercase tracking-wider text-ink-400 ring-1 ring-line"
 							title="The simulator cannot render this trait; it ships in the exported brief only."
 						>
 							brief only
 						</span>
 					{/if}
 				</div>
-				<div class="text-[10px] text-ink-400">{def.hint}</div>
+				<div class="text-[0.625rem] text-ink-400">{def.hint}</div>
 			</div>
 			<div class="flex flex-wrap gap-1.5">
 				{#each def.options as opt (opt.v)}
@@ -39,7 +39,7 @@
 							: 'border-line bg-surface text-ink-600 hover:border-line-strong hover:text-ink-800'}"
 					>
 						<div>{opt.l}</div>
-						<div class="mt-0.5 font-mono text-[9px] text-ink-400">{opt.preview}</div>
+						<div class="mt-0.5 font-mono text-[0.5625rem] text-ink-400">{opt.preview}</div>
 					</button>
 				{/each}
 			</div>

@@ -312,6 +312,25 @@ CREATE TABLE IF NOT EXISTS operator_accounts (
 	{
 		id: '0015-operator-session-version',
 		sql: `ALTER TABLE operator_accounts ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0;`
+	},
+	{
+		// What each person does (Enterprise, ac-team-jobs-*): the workspace's list
+		// of jobs (no row = the jobs it starts with), each member's own job, and
+		// their roles in a project. Keyed like domain_access: by workspace and by
+		// email, the identity every load already holds. A job grants nothing.
+		id: '0016-team-jobs',
+		sql: `
+CREATE TABLE IF NOT EXISTS workspace_jobs (workspace_id TEXT PRIMARY KEY, jobs TEXT NOT NULL DEFAULT '[]', updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS member_jobs (workspace_id TEXT NOT NULL, user_email TEXT NOT NULL, job_id TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (workspace_id, user_email));
+CREATE TABLE IF NOT EXISTS project_member_jobs (project_id TEXT NOT NULL, user_email TEXT NOT NULL, workspace_id TEXT NOT NULL, job_ids TEXT NOT NULL DEFAULT '[]', updated_at TEXT NOT NULL, PRIMARY KEY (project_id, user_email));
+`
+	},
+	{
+		// The order the folders of the projects were dragged into (criterion
+		// ddf5cc35, action 5ccc378f): NULL while nobody placed a folder, which then
+		// reads A to Z after the placed ones.
+		id: '0017-domain-position',
+		sql: `ALTER TABLE domains ADD COLUMN IF NOT EXISTS position INTEGER;`
 	}
 ];
 

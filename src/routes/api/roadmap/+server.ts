@@ -1,9 +1,9 @@
 import { error, json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
+import { requireEvolutionAccess } from '$lib/server/community-locks.server';
 import { persistFeaturesDraft } from '$lib/server/features-write.server';
 import { guardSectionWrite } from '$lib/server/section-save.server';
-import { parseRoadmapOperations } from '$application/parse-roadmap-operations';
+import { parseRoadmapOperations } from '$application/specification/parse-roadmap-operations';
 import type { FeatureImplementationCoverage } from '$application/use-cases';
 import {
 	applyRoadmapOperations,
@@ -64,11 +64,12 @@ function featureRow(
 }
 
 export const GET: RequestHandler = async (event) => {
+	requireEvolutionAccess(event.locals.services);
 	const projectId = event.url.searchParams.get('projectId') ?? '';
 	if (!projectId) error(400, 'projectId is required');
 	await requireProjectAccess(event, projectId, 'read');
 
-	const services = getServices();
+	const services = event.locals.services;
 	const draft = await services.loadFeaturesDraft.execute(projectId);
 	const coverage = await services.implementationCoverage.get(projectId);
 
@@ -132,6 +133,7 @@ export const GET: RequestHandler = async (event) => {
 };
 
 export const POST: RequestHandler = async (event) => {
+	requireEvolutionAccess(event.locals.services);
 	const body = (await event.request.json().catch(() => null)) as {
 		projectId?: unknown;
 		operations?: unknown;
@@ -143,7 +145,7 @@ export const POST: RequestHandler = async (event) => {
 	const parsed = parseRoadmapOperations(body?.operations);
 	if (!parsed.ok) error(400, `invalid_roadmap_operations: ${parsed.issues.join('; ')}`);
 
-	const services = getServices();
+	const services = event.locals.services;
 	const draft = await services.loadFeaturesDraft.execute(projectId);
 	let results;
 	try {
@@ -153,6 +155,6 @@ export const POST: RequestHandler = async (event) => {
 		throw e;
 	}
 	// Atomic: nothing persists unless every operation applied.
-	await guardSectionWrite('features', () => persistFeaturesDraft(draft));
+	await guardSectionWrite('features', () => persistFeaturesDraft(services, draft));
 	return json({ ok: true, results });
 };

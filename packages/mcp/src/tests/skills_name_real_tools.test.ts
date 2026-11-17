@@ -127,6 +127,46 @@ const NOT_TOOLS = new Set([
   // Comparison operators a rule condition takes.
   'greater_or_equal',
   'lower_or_equal',
+  // apply_evolution_batch operation kinds the platform playbooks name since
+  // validation became optional until the build: ops inside one call.
+  'add_data_draft',
+  'add_rule_draft',
+  'add_section_draft',
+  'answer_step',
+  'ask_block',
+  'cross_stage',
+  'declare_deployment',
+  'post_on_field',
+  'register_source',
+  'reopen_request',
+  'report_ticket_post',
+  'skip_question',
+  'unskip_question',
+  'tag_reviewers',
+  'update_step_description',
+  'validate_field',
+  'validate_step',
+  'withdraw_field_verdict',
+  'withdraw_proposal',
+  // apply_project_behavior_batch and apply_behavior_batch operation kinds.
+  'add_project_invariant',
+  'update_project_invariant',
+  'remove_project_invariant',
+  'add_state_variable',
+  'link_state_variable',
+  'promote_to_project_library',
+  'set_expected_actions',
+  'set_non_goals',
+  'update_constant',
+  'advance_time',
+  // Payload fields and values the playbooks quote: attach_source's
+  // register_id, a source mode, a relation's onDelete, a click's request id,
+  // the Bash option the live session waits with.
+  'register_id',
+  'from_figma',
+  'set_null',
+  'request_id',
+  'run_in_background',
   // Example identifiers the skills quote in their prose.
   'invoice_record_v2',
 ])

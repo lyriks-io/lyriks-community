@@ -1,5 +1,4 @@
 import { error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import {
 	featureIdCollisionMessage,
 	featureIdCollisions,
@@ -30,7 +29,7 @@ export const GET: RequestHandler = async (event) => {
 	const surfaceId = params.get('surfaceId');
 	const actionId = params.get('actionId');
 	return adoptionJson(
-		await getServices().codeAdoption.getImplementationStatus(featureId, {
+		await event.locals.services.codeAdoption.getImplementationStatus(featureId, {
 			...(surfaceId ? { surfaceId } : {}),
 			...(actionId ? { actionId } : {})
 		})
@@ -60,9 +59,9 @@ export const POST: RequestHandler = async (event) => {
 	await requireBehaviorFeatureAccess(event, projectId, featureId, 'write');
 	// A globally addressed write on an id another project also claims would land
 	// in their record; refuse while it is still a message.
-	const clashes = await featureIdCollisions(projectId, featureId);
+	const clashes = await featureIdCollisions(event.locals.services, projectId, featureId);
 	if (clashes.length > 0) error(409, featureIdCollisionMessage(projectId, featureId, clashes));
-	const services = getServices();
+	const services = event.locals.services;
 	const adoption = services.codeAdoption;
 
 	if (Array.isArray(body?.entries)) {
@@ -76,7 +75,7 @@ export const POST: RequestHandler = async (event) => {
 		// feature's workflow status with it (upgrade-only, in the background).
 		if (result?.ok) {
 			services.implementationCoverage.invalidate(projectId);
-			scheduleImplementationReconcile(projectId, [featureId]);
+			scheduleImplementationReconcile(services, projectId, [featureId]);
 		}
 		return adoptionJson(result);
 	}
@@ -92,7 +91,7 @@ export const POST: RequestHandler = async (event) => {
 	});
 	if (result?.ok) {
 		services.implementationCoverage.invalidate(projectId);
-		scheduleImplementationReconcile(projectId, [featureId]);
+		scheduleImplementationReconcile(services, projectId, [featureId]);
 	}
 	return adoptionJson(result);
 };

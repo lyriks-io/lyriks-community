@@ -23,10 +23,13 @@ function wordMatcher(words: string[]): RegExp | null {
 
 /** How many times a term (or one of its allowed synonyms) appears in the corpus. */
 export function countTermUsages(term: GlossaryTerm, corpus: string): number {
-	if (!corpus) return 0;
+	return termUsageCounter(term)(corpus);
+}
+
+/** The same count for one term across many texts, its matcher built once. */
+export function termUsageCounter(term: GlossaryTerm): (corpus: string) => number {
 	const re = wordMatcher([term.term, ...term.synonymsAllowed]);
-	if (!re) return 0;
-	return (corpus.match(re) ?? []).length;
+	return (corpus) => (corpus && re ? (corpus.match(re) ?? []).length : 0);
 }
 
 export interface GlossaryHealth {

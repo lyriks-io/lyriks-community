@@ -1,4 +1,4 @@
-import { getServices } from '$composition/container.server';
+import type { AppServices } from '$composition/container.server';
 import { publishSectionChange } from '$lib/server/sync-bus.server';
 import type { ProjectFeaturesDraft } from '$domain/features';
 
@@ -13,8 +13,7 @@ const SECTION = 'features';
  * optimistic lock exists to catch stale CLIENT edits, not this read-modify-
  * write, whose window is the call itself.
  */
-export async function persistFeaturesDraft(draft: ProjectFeaturesDraft): Promise<void> {
-	const services = getServices();
+export async function persistFeaturesDraft(services: AppServices, draft: ProjectFeaturesDraft): Promise<void> {
 	const revision = await services.draftLock.commit(draft.projectId, SECTION, null);
 	try {
 		await services.saveFeaturesDraft.execute(draft);

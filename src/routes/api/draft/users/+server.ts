@@ -1,8 +1,5 @@
-import { parseUsersDraft } from '$application/parse-users-draft';
-import { error } from '@sveltejs/kit';
-import { capabilityRegistry, reviewCapabilityReferences } from '$application/capability-registry';
 import { saveSectionDraft } from '$lib/server/section-save.server';
-import { assertSectionDraftValid } from '$lib/server/section-authoring-validation.server';
+import { USERS_WRITE } from '$lib/server/section-write-specs.server';
 import type { RequestHandler } from './$types';
 
 /**
@@ -21,20 +18,4 @@ import type { RequestHandler } from './$types';
  * what is stored and decide what is written; `parse` stays pure, as its
  * contract says, and an error here rolls the revision bump back.
  */
-export const PUT: RequestHandler = (event) =>
-	saveSectionDraft(event, {
-		section: 'users',
-		validate: (body) => assertSectionDraftValid('users', body),
-		parse: parseUsersDraft,
-		persist: async (draft, services, projectId) => {
-			if (!draft.permissions.length) return services.saveUsersDraft.execute(draft);
-			const registry = capabilityRegistry(draft, await services.refreshDerivedCapabilities.execute(projectId));
-			const stored = await services.loadUsersDraft.execute(projectId);
-			const review = reviewCapabilityReferences(draft, stored, registry);
-			if (review.issues.length)
-				error(400, `invalid_capability_reference: ${review.issues.map(i => `${i.path} ${i.message}`).join('; ')}`);
-			const result = await services.saveUsersDraft.execute({ ...draft, permissions: review.permissions });
-			// Named in the answer, never silent: the matrix heals in the open.
-			return review.dropped.length ? { ...result, droppedGrants: review.dropped } : result;
-		}
-	});
+export const PUT: RequestHandler = (event) => saveSectionDraft(event, USERS_WRITE);

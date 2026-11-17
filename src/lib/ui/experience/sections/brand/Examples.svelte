@@ -33,12 +33,12 @@
 				</div>
 				<div class="grid gap-3 md:grid-cols-2">
 					<div class="space-y-2">
-						<p class="text-[11px] font-bold uppercase tracking-widest text-success-600">Do</p>
+						<p class="text-[0.6875rem] font-bold uppercase tracking-widest text-success-600">Do</p>
 						<Textarea value={e.goodSnippet} rows={3} placeholder="What the good version looks like." oninput={(v) => patch(e.id, { goodSnippet: v })} />
 						<Textarea value={e.goodCode} rows={4} placeholder="Good code (optional)" oninput={(v) => patch(e.id, { goodCode: v })} />
 					</div>
 					<div class="space-y-2">
-						<p class="text-[11px] font-bold uppercase tracking-widest text-danger-500">Don't</p>
+						<p class="text-[0.6875rem] font-bold uppercase tracking-widest text-danger-500">Don't</p>
 						<Textarea value={e.badSnippet} rows={3} placeholder="What to avoid." oninput={(v) => patch(e.id, { badSnippet: v })} />
 						<Textarea value={e.badCode} rows={4} placeholder="Bad code (optional)" oninput={(v) => patch(e.id, { badCode: v })} />
 					</div>

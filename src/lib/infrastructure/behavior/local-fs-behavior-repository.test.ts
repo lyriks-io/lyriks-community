@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { UnspaProjectSnapshot } from '$lib/unspa-schema';
@@ -65,6 +65,27 @@ const featureSnapshot = (id: string, name: string) =>
 		version: 1,
 		feature: { id, name, surfaces: [], events: [], personas: [] }
 	});
+
+describe('kernel cache identity', () => {
+	it('invalidates a reading after an equal-size atomic replacement in the same timestamp tick', async () => {
+		const root = mkdtempSync(join(tmpdir(), 'lyriks-behavior-'));
+		try {
+			mkdirSync(join(root, 'p1'));
+			const path = join(root, 'p1', 'f1.feature.json');
+			writeFileSync(path, featureSnapshot('f1', 'First'));
+			utimesSync(path, 1, 1);
+			const repository = new LocalFsBehaviorRepository(root);
+			const before = repository.kernelSignature('p1');
+			await repository.loadFeature('p1', 'f1');
+			const replacement = join(root, 'p1', 'replacement.tmp');
+			writeFileSync(replacement, featureSnapshot('f1', 'Other'));
+			utimesSync(replacement, 1, 1);
+			renameSync(replacement, path);
+			expect(repository.kernelSignature('p1')).not.toBe(before);
+			expect((await repository.loadFeature('p1', 'f1'))?.feature).toMatchObject({ name: 'Other' });
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+});
 
 /**
  * The store is scoped per project folder; the engine that authors into it
@@ -249,6 +270,26 @@ describe('LocalFsBehaviorRepository feature reads', () => {
 		writeFileSync(join(root, 'p1', 'feat-rooms.feature.json'), feature('feat-rooms', 'platform copy'));
 		const repository = new LocalFsBehaviorRepository(root);
 
+		expect((await repository.loadFeature('p1', 'feat-rooms'))!.feature).toMatchObject({
+			name: 'platform copy'
+		});
+	});
+
+	it('removes the slug-named twin when it saves the feature, so one file holds it again', async () => {
+		const root = mkdtempSync(join(tmpdir(), 'lyriks-behavior-'));
+		mkdirSync(join(root, 'p1'));
+		writeFileSync(join(root, 'p1', 'browse-rooms.feature.json'), feature('feat-rooms', 'engine copy'));
+		writeFileSync(join(root, 'p1', 'feat-rooms.feature.json'), feature('feat-rooms', 'platform copy'));
+		writeFileSync(join(root, 'p1', 'other.feature.json'), feature('feat-other', 'another feature'));
+		const repository = new LocalFsBehaviorRepository(root);
+
+		const current = (await repository.loadFeature('p1', 'feat-rooms'))!;
+		await repository.saveFeature('p1', current);
+
+		expect(readdirSync(join(root, 'p1')).sort()).toEqual([
+			'feat-rooms.feature.json',
+			'other.feature.json'
+		]);
 		expect((await repository.loadFeature('p1', 'feat-rooms'))!.feature).toMatchObject({
 			name: 'platform copy'
 		});

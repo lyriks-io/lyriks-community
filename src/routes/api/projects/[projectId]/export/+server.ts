@@ -1,5 +1,4 @@
 import { error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import type { RequestHandler } from './$types';
 
@@ -21,7 +20,7 @@ export const GET: RequestHandler = async (event) => {
 	// author it (designer and above), the same line the Team dialog draws.
 	await requireProjectAccess(event, projectId, 'write');
 
-	const services = getServices();
+	const services = event.locals.services;
 	const bundle = await services.exportProject.execute(projectId);
 	if (!bundle) error(404, 'Project not found');
 

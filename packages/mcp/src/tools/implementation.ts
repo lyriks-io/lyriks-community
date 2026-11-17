@@ -20,6 +20,8 @@ export interface SeedIndexArgs {
   project_id: string
   feature_id: string
   overwrite?: boolean
+  /** Land the seeded entries as the coverage in the same call (criterion 5f704119). */
+  sync?: boolean
 }
 
 /**
@@ -30,6 +32,7 @@ export interface SeedIndexArgs {
 export async function seedIndexHandler(args: SeedIndexArgs, lyriks: LyriksClient): Promise<unknown> {
   const q = new URLSearchParams({ projectId: args.project_id, featureId: args.feature_id })
   if (args.overwrite === true) q.set('overwrite', 'true')
+  if (args.sync === true) q.set('sync', 'true')
   return lyriks.get(`/api/behavior/implementation/index?${q.toString()}`)
 }
 
@@ -54,6 +57,7 @@ export const SYNC_SEMANTICS = {
   stale: 'About code LOCATION only: entries whose signature is no longer found at their line. NOT evaluated when the index is sent inline, which is always the case through this gateway, so zero here is not a clean bill. Run get_implementation_drift for spec drift.',
   healed: 'About code LOCATION only: entries whose signature was found again at another line and re-pointed. NOT evaluated when the index is sent inline, which is always the case through this gateway.',
   shared: 'Keys that SEVERAL features declare (a state path is not unique across features): the index holds one entry per key, so its file and line describe one of them and the others resolve to that same location. Reported, never fatal, and it does not affect ok.',
+  incomplete: 'Action and surface entries you sent WITHOUT some of the children the spec declares under them ({ key, featureId, missing: [child keys] }). Those children are reported missing, so the coverage of that action or surface drops: send them with their parent. Never fatal, and it does not affect ok. Absent on an older engine.',
   orphans: 'Index keys that match no spec entity (typo, renamed or removed entity, or wrong key format). ok is false while any remain.',
 } as const
 
@@ -77,7 +81,7 @@ function headEntries(block: unknown): unknown {
  */
 export function shapeSyncAnswer(answer: unknown, verbose = false, sentKeys?: readonly string[]): unknown {
   if (!isRow(answer) || !(Array.isArray(answer.acks) || typeof answer.synced === 'number')) return answer
-  const { acks, orphans, shared, criteria, featureIds, ...rest } = answer
+  const { acks, orphans, shared, incomplete, criteria, featureIds, ...rest } = answer
   const rows = Array.isArray(acks) ? acks : []
   const failed = rows.filter((ack) => isRow(ack) && ack.ok === false)
   const sent = sentKeys ? aboutSentKeys(sentKeys, criteria, orphans) : undefined
@@ -93,6 +97,7 @@ export function shapeSyncAnswer(answer: unknown, verbose = false, sentKeys?: rea
       : {}),
     ...(orphans !== undefined ? { orphans: headEntries(orphans) } : {}),
     ...(shared !== undefined ? { shared: headEntries(shared) } : {}),
+    ...(incomplete !== undefined ? { incomplete: headEntries(incomplete) } : {}),
     ...(criteria !== undefined
       ? { criteria: verbose || !sentKeys?.some((k) => k.startsWith('criterion:')) ? headEntries(criteria) : criteriaOfSent(criteria, sentKeys) }
       : {}),

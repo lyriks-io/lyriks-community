@@ -1,6 +1,5 @@
 import type { RequestEvent } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
-import { isProjectVisible, type ProjectVisibility } from '$application/project-visibility';
+import { isProjectVisible, type ProjectVisibility } from '$application/portfolio/project-visibility';
 import { callerAllowedDomains } from '$lib/server/domain-scope.server';
 
 /**
@@ -8,7 +7,7 @@ import { callerAllowedDomains } from '$lib/server/domain-scope.server';
  * (`null` = blanket — auth off, owner/admin, or "all projects") plus their email
  * for per-project collaborator grants. Fed to `isProjectVisible` for both the
  * listing filters (portfolio/search) and the single-project open guard, so every
- * surface shares one rule. See `$application/project-visibility`.
+ * surface shares one rule. See `$application/portfolio/project-visibility`.
  */
 export async function callerProjectVisibility(
 	event: Pick<RequestEvent, 'locals' | 'cookies'>,
@@ -29,7 +28,7 @@ export async function callerCanSeeProject(
 ): Promise<boolean> {
 	const visibility = await callerProjectVisibility(event);
 	if (visibility.allowedDomainIds === null) return true;
-	const services = getServices();
+	const services = event.locals.services;
 	const meta = await services.portfolio.getMeta(projectId).catch(() => null);
 	return isProjectVisible(projectId, meta?.domainId ?? null, visibility, (id) =>
 		services.loadTeam.execute(id),

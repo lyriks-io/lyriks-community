@@ -1,6 +1,6 @@
+import type { AppServices } from '$composition/container.server';
 import { authEnforced } from '$lib/server/auth-policy.server';
 import type { RequestEvent } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import type { GateDoor, RoleVerdict } from '$application/ports';
 import { SESSION_COOKIE } from '$lib/server/session-cookie.server';
 
@@ -13,12 +13,12 @@ import { SESSION_COOKIE } from '$lib/server/session-cookie.server';
  * roles to speak of. Auth on: whatever the gate says, and it fails closed.
  */
 export async function tokenHasRole(
-	token: string | null | undefined,
+	services: AppServices, token: string | null | undefined,
 	door: GateDoor,
 	activeWorkspaceId: string | null | undefined
 ): Promise<boolean> {
 	if (!authEnforced()) return true;
-	return getServices().roleGate.allows(token, door, activeWorkspaceId);
+	return services.roleGate.allows(token, door, activeWorkspaceId);
 }
 
 /**
@@ -26,12 +26,12 @@ export async function tokenHasRole(
  * answer (see RoleGatePort.verdict). Auth off: allowed.
  */
 export async function tokenRoleVerdict(
-	token: string | null | undefined,
+	services: AppServices, token: string | null | undefined,
 	door: GateDoor,
 	activeWorkspaceId: string | null | undefined
 ): Promise<RoleVerdict> {
 	if (!authEnforced()) return 'allowed';
-	return getServices().roleGate.verdict(token, door, activeWorkspaceId);
+	return services.roleGate.verdict(token, door, activeWorkspaceId);
 }
 
 /**
@@ -43,5 +43,5 @@ export async function callerCanWrite(
 	event: Pick<RequestEvent, 'locals' | 'cookies'>
 ): Promise<boolean> {
 	if (!event.locals.authRequired) return true;
-	return getServices().roleGate.allows(event.cookies.get(SESSION_COOKIE), 'write', event.cookies.get('lyriks_active_ws'));
+	return event.locals.services.roleGate.allows(event.cookies.get(SESSION_COOKIE), 'write', event.cookies.get('lyriks_active_ws'));
 }

@@ -25,6 +25,21 @@ describe('project elaboration', () => {
 		expect(report.items.filter(i => i.path === 'mode')).toHaveLength(1);
 	});
 
+	it('gives a completion finding the same id whatever language its message reads in', () => {
+		const withMessages = (a: string, b: string) => {
+			const data = input();
+			data.completion = { status: 'blocked', canFinish: false, auditFresh: false, issues: [
+				{ code: 'data-entity-unrelated', path: 'data.entities', severity: 'warning', message: a },
+				{ code: 'data-entity-unrelated', path: 'data.entities', severity: 'warning', message: b }
+			] } as ProjectCompletionReport;
+			return analyzeElaboration(data).items.filter(i => i.section === 'data').map(i => i.id);
+		};
+		const english = withMessages('Entity A has no relation', 'Entity B has no relation');
+		const french = withMessages("L'entité A n'a aucune relation", "L'entité B n'a aucune relation");
+		expect(new Set(english).size).toBe(2);
+		expect(french).toEqual(english);
+	});
+
 	it('prioritizes unanswered product decisions with exact paths and proposal authority', () => {
 		const report = analyzeElaboration(input());
 		expect(report.items.find(i => i.id.startsWith('brief-missing'))).toMatchObject({ kind: 'question', priority: 1, section: 'foundation', path: 'identity.brief', requiresUserDecision: true, authority: 'proposal' });
@@ -108,5 +123,39 @@ describe('project elaboration', () => {
 		const before = structuredClone(data);
 		expect(analyzeElaboration(data)).toEqual(analyzeElaboration(data));
 		expect(data).toEqual(before);
+	});
+});
+
+describe('project elaboration in French (spec language)', () => {
+	const NB = ' ';
+	it('asks its questions in French, quoting names, with ids and paths unchanged', () => {
+		const data = input();
+		data.scope!.capabilities.push(createScopeCapability('cap-1', { name: 'Export', disposition: 'unresolved' }));
+		const report = analyzeElaboration(data, 'fr');
+		expect(report.items.find(i => i.id.startsWith('brief-missing'))).toMatchObject({
+			path: 'identity.brief',
+			observation: "Aucun brief du projet n'est enregistré.",
+			prompt: `À qui ce produit s'adresse-t-il, quel problème doit-il résoudre et qu'est-ce qui doit rester hors du périmètre${NB}?`
+		});
+		expect(report.items.find(i => i.id.startsWith('scope-disposition'))!.observation).toBe(
+			`Le sort de la capacité «${NB}Export${NB}» n'est pas tranché.`
+		);
+		expect(report.limitations[0]).toMatch(/^Des vérifications déterministes/);
+	});
+
+	it('writes the feature actions in French', () => {
+		const data = input();
+		data.features!.features.push(createFeature('', null, { id: 'f1', name: 'Invoices' }));
+		const report = analyzeElaboration(data, 'fr');
+		expect(report.items.find(i => i.id.startsWith('feature-acceptance'))!.observation).toBe(
+			`La fonctionnalité «${NB}Invoices${NB}» n'a aucun critère d'acceptation enregistré.`
+		);
+		expect(report.items.find(i => i.id.startsWith('feature-work'))!.observation).toBe(
+			`La fonctionnalité «${NB}Invoices${NB}» est en attente (backlog).`
+		);
+	});
+
+	it('keeps English byte-identical when no language is given', () => {
+		expect(analyzeElaboration(input())).toEqual(analyzeElaboration(input(), 'en'));
 	});
 });

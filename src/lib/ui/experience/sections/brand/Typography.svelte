@@ -69,10 +69,10 @@
 	<BrandSectionHeader kicker="Typography" title="Font families, scale & weights" />
 
 	<div class="space-y-2">
-		<p class="text-[11px] font-bold uppercase tracking-widest text-ink-400">Font families</p>
+		<p class="text-[0.6875rem] font-bold uppercase tracking-widest text-ink-400">Font families</p>
 		{#each SLOTS as slot (slot)}
 			<div class="flex items-center gap-3 rounded-field border border-line bg-surface-sunken p-2.5">
-				<span class="w-16 shrink-0 text-[10px] font-semibold uppercase tracking-widest text-ink-400">{slot}</span>
+				<span class="w-16 shrink-0 text-[0.625rem] font-semibold uppercase tracking-widest text-ink-400">{slot}</span>
 				<div class="grid flex-1 gap-2 md:grid-cols-2">
 					<TextInput
 						value={typo.families[slot].stack}
@@ -86,7 +86,7 @@
 	</div>
 
 	<div class="space-y-2">
-		<p class="text-[11px] font-bold uppercase tracking-widest text-ink-400">Other named roles</p>
+		<p class="text-[0.6875rem] font-bold uppercase tracking-widest text-ink-400">Other named roles</p>
 		{#each typo.roles as r (r.id)}
 			<div class="flex items-start gap-2 rounded-field border border-line bg-surface-sunken p-2.5">
 				<div class="grid flex-1 gap-2 md:grid-cols-[140px_1fr_1fr_1fr]">
@@ -106,7 +106,7 @@
 	</div>
 
 	<div class="space-y-2">
-		<p class="text-[11px] font-bold uppercase tracking-widest text-ink-400">Type scale</p>
+		<p class="text-[0.6875rem] font-bold uppercase tracking-widest text-ink-400">Type scale</p>
 		{#each typo.scale as t (t.id)}
 			<div class="flex items-start gap-2 rounded-field border border-line bg-surface-sunken p-2.5">
 				<div class="grid flex-1 gap-2 md:grid-cols-[1fr_100px_100px_1fr]">
@@ -126,7 +126,7 @@
 	</div>
 
 	<div class="space-y-2">
-		<p class="text-[11px] font-bold uppercase tracking-widest text-ink-400">Weights</p>
+		<p class="text-[0.6875rem] font-bold uppercase tracking-widest text-ink-400">Weights</p>
 		{#each typo.weights as w (w.id)}
 			<div class="flex items-start gap-2 rounded-field border border-line bg-surface-sunken p-2.5">
 				<div class="grid flex-1 gap-2 md:grid-cols-[1fr_100px_1fr]">

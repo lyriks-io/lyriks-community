@@ -9,30 +9,32 @@
 	import DesignSystem from './DesignSystem.svelte';
 	import Examples from './Examples.svelte';
 	import BrandExportModal from './BrandExportModal.svelte';
+	import DesignMd from './DesignMd.svelte';
 
 	interface Props {
 		store: ExperienceStore;
 	}
 	let { store }: Props = $props();
 
-	let section = $state<BrandSection>('identity');
+	// The tab opens on the design.md itself; the sources it is written from follow.
+	let section = $state<BrandSection | 'design-md'>('design-md');
 	let exportOpen = $state(false);
 
-	const NAV: { id: BrandSection; label: string; icon: IconName }[] = [
+	const NAV: { id: BrandSection | 'design-md'; label: string; icon: IconName }[] = [
+		{ id: 'design-md', label: 'design.md', icon: 'file' },
 		{ id: 'identity', label: 'Identity', icon: 'sparkles' },
 		{ id: 'logo', label: 'Logo & assets', icon: 'image' },
 		{ id: 'colors', label: 'Colors', icon: 'layers' },
 		{ id: 'typography', label: 'Typography', icon: 'book' },
 		// Traits + simulator tokens are one conversation, under the `markers` key.
 		{ id: 'markers', label: 'Design system', icon: 'sliders' },
-		// Components and Pages & layouts live in the Experience tabs, not here.
 		{ id: 'examples', label: 'Examples', icon: 'check' }
 	];
 </script>
 
 <div class="grid grid-cols-1 items-start gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
 	<!-- Left rail -->
-	<Card class="space-y-2 md:sticky md:top-2" padding={false}>
+	<Card class="space-y-2 md:sticky md:top-[calc(var(--page-header-h,0px)_+_0.5rem)]" padding={false}>
 		<div class="space-y-0.5 p-2">
 			{#each NAV as s (s.id)}
 				<button
@@ -48,20 +50,13 @@
 				</button>
 			{/each}
 		</div>
-		<div class="border-t border-line p-2">
-			<button
-				type="button"
-				onclick={() => (exportOpen = true)}
-				class="flex w-full items-center justify-center gap-1.5 rounded-field bg-brand-gradient px-3 py-2 text-xs font-semibold text-white shadow-card"
-			>
-				<Icon name="download" size={14} /> Export LLM brief
-			</button>
-		</div>
 	</Card>
 
 	<!-- Active sub-section + its attachments -->
 	<div class="min-w-0">
-		{#if section === 'identity'}
+		{#if section === 'design-md'}
+			<DesignMd brand={store.draft.brand} notifier={store.notifier} onMoreFormats={() => (exportOpen = true)} />
+		{:else if section === 'identity'}
 			<Identity {store} />
 		{:else if section === 'logo'}
 			<Logo {store} />

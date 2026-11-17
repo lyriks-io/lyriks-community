@@ -9,8 +9,10 @@
 // problem of the whole index in one run, and `--fix` rewrites the line numbers
 // that moved. It also warns (stderr, and `projectWarnings` in --json) when the
 // projectId of the index differs from --project or from the project the binding
-// block of CLAUDE.md names: a sync would then go to the wrong project.
-// Exit code 0 when nothing is wrong or everything was fixed, else 1.
+// block of CLAUDE.md names: a sync would then go to the wrong project. It warns
+// too (stderr, `ruleWarnings` in --json) of a `rule:` entry in a server template:
+// a retrospec took `{% if not disable_login %}` for a refusal the server lacked.
+// Exit code 0 when nothing is wrong or everything was fixed, else 1; warnings never count.
 // No dependencies, no network, Node 18+.
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -24,6 +26,20 @@ const FRESH_WINDOW = 2;
 const MIN_NEEDLE = 6;
 
 const normalize = (text) => text.replace(/\s+/g, ' ').trim();
+
+// A `rule:` entry is a refusal, which the server enforces; a server-rendered template only
+// renders the screen. Components (.svelte .vue .jsx .tsx) hold real client logic, not that.
+const TEMPLATE = /\.(html?|jinja|j2|hbs|handlebars|ejs|erb|twig|mustache)$|(^|[\\/])templates[\\/]/i;
+const RULE_IN_TEMPLATE =
+	'a refusal is enforced on the server: span this rule on the server check that rejects the request. ' +
+	'If only the screen hides or disables the control, model a surface visibility instead and record the missing server check as a finding.';
+
+/** The warning for an action rule located in a template, or null. */
+function ruleWarning(key, entry) {
+	const file = typeof entry.file === 'string' ? entry.file : '';
+	if (!key.startsWith('rule:') || entry.status === 'missing' || /\.(svelte|vue|[jt]sx)$/i.test(file) || !TEMPLATE.test(file)) return null;
+	return { key, file, line: Number.isInteger(entry.line) && entry.line > 0 ? entry.line : null, reason: RULE_IN_TEMPLATE };
+}
 
 /**
  * Every line carrying the signature, 1-based, at the first of the engine's
@@ -98,6 +114,7 @@ function describe(problem) {
 }
 
 function printReport(report) {
+	for (const { key, file, line, reason } of report.ruleWarnings ?? []) process.stderr.write(`WARNING (refusal in a template): ${key} at ${file}${line ? `:${line}` : ''}: ${reason}\n`);
 	const byFile = new Map();
 	for (const problem of report.problems) {
 		if (!byFile.has(problem.file)) byFile.set(problem.file, []);
@@ -152,6 +169,7 @@ function main() {
 		const problem = checkEntry(key, entry, readLines);
 		if (problem) problems.push(problem);
 	}
+	const ruleWarnings = entries.map(([key, entry]) => ruleWarning(key, entry)).filter(Boolean);
 
 	let fixed = 0;
 	if (fix) {
@@ -167,6 +185,7 @@ function main() {
 	const ok = problems.every((problem) => problem.fixed);
 	const report = { indexFile: loaded.path, projectId: loaded.projectId, checked, skipped: entries.length - checked, fixed, ok, problems };
 	if (project.warnings.length > 0) report.projectWarnings = project.warnings;
+	if (ruleWarnings.length > 0) report.ruleWarnings = ruleWarnings;
 	if (args.includes('--json')) console.log(JSON.stringify(report, null, 2));
 	else printReport(report);
 	return ok ? 0 : 1;

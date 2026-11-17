@@ -1,133 +1,159 @@
-export { AnalyzeBriefUseCase, EmptyBriefError } from './analyze-brief';
-export { SuggestFromSectionUseCase } from './suggest-from-section';
-export { SuggestPersonasUseCase } from './suggest-personas';
-export { SuggestFeaturesUseCase } from './suggest-features';
+export { AnalyzeBriefUseCase, EmptyBriefError } from '../specification/analyze-brief';
+export { SuggestFromSectionUseCase } from '../specification/suggest-from-section';
+export { SuggestPersonasUseCase } from '../specification/suggest-personas';
+export { SuggestFeaturesUseCase } from '../specification/suggest-features';
 export {
 	SubmitFeatureSuggestionsUseCase,
 	SuggestionsBlockedError
-} from './submit-feature-suggestions';
-export { LoadSettingsUseCase } from './load-settings';
-export { SaveSettingsUseCase } from './save-settings';
-export { LoadFeedbackSettingsUseCase } from './load-feedback-settings';
-export { SaveFeedbackSettingsUseCase } from './save-feedback-settings';
-export { LoadOperatorProfileUseCase } from './load-operator-profile';
-export { ResolveActiveMemberNameUseCase } from './resolve-active-member-name';
-export { SaveOperatorProfileUseCase } from './save-operator-profile';
-export { SeedActivationDefaultsUseCase } from './seed-activation-defaults';
-export { SyncBackLicenceUseCase } from './sync-back-licence';
-export { CheckForUpdateUseCase } from './check-for-update';
-export { LoadActivationUseCase } from './load-activation';
+} from '../specification/submit-feature-suggestions';
+export { LoadSettingsUseCase } from '../operations/load-settings';
+export { SaveSettingsUseCase } from '../operations/save-settings';
+export { LoadFeedbackSettingsUseCase } from '../operations/load-feedback-settings';
+export { LoadInstallConfigurationUseCase, type InstallConfigurationView } from '../operations/load-install-configuration';
+export { SaveInstallConfigurationUseCase } from '../operations/save-install-configuration';
+export { LoadAssistantSettingsUseCase } from '../operations/load-assistant-settings';
+export { ConnectAssistantUseCase, type AssistantSettingsOutcome } from '../operations/connect-assistant';
+export { SwitchAssistantUseCase } from '../operations/switch-assistant';
+export { RemoveAssistantKeyUseCase } from '../operations/remove-assistant-key';
+export { TestAssistantUseCase } from '../operations/test-assistant';
+export { DrawDiagramWithAssistantUseCase, type DrawingOutcome } from '../evolution/draw-diagram-with-assistant';
+export { WriteTextWithAssistantUseCase, type TextWritingOutcome } from '../operations/write-text-with-assistant';
+export { LoadOperatorProfileUseCase } from '../operations/load-operator-profile';
+export { ResolveActiveMemberNameUseCase } from '../collaboration/resolve-active-member-name';
+export { SaveOperatorProfileUseCase } from '../operations/save-operator-profile';
+export { SeedActivationDefaultsUseCase } from '../operations/seed-activation-defaults';
+export { SyncBackLicenceUseCase } from '../operations/sync-back-licence';
+export { CheckForUpdateUseCase } from '../operations/check-for-update';
+export { LoadActivationUseCase } from '../operations/load-activation';
 export {
 	ActivateLicenseUseCase,
 	type ActivateLicenseResult,
 	type ActivationFailure
-} from './activate-license';
-export { DeactivateLicenseUseCase } from './deactivate-license';
-export { PreviewLicenseUseCase, type PreviewLicenseResult } from './preview-license';
+} from '../operations/activate-license';
+export { DeactivateLicenseUseCase } from '../operations/deactivate-license';
+export { PreviewLicenseUseCase, type PreviewLicenseResult } from '../operations/preview-license';
 export {
 	RestorePreviousLicenseUseCase,
 	type RestorePreviousLicenseResult,
 	type RestorePreviousFailure
-} from './restore-previous-license';
-export { LoadInstallRegistrationUseCase } from './load-install-registration';
-export { SyncBehaviorProjectUseCase } from './sync-behavior-project';
-export { PushEnvelopeToBackUseCase } from './push-envelope-to-back';
-export { DrainBackSyncOutboxUseCase } from './drain-back-sync-outbox';
+} from '../operations/restore-previous-license';
+export { LoadInstallRegistrationUseCase } from '../operations/load-install-registration';
+export { SyncBehaviorProjectUseCase } from '../specification/sync-behavior-project';
+export { PushEnvelopeToBackUseCase } from '../operations/push-envelope-to-back';
+export { DrainBackSyncOutboxUseCase } from '../operations/drain-back-sync-outbox';
 export {
 	LoadPlatformComponentsUseCase,
 	type PlatformBuildInfo
-} from './load-platform-components';
-export { LoadKnowledgeGraphUseCase } from './load-knowledge-graph';
-export { ListProjectsUseCase } from './list-projects';
-export { CreateProjectUseCase, type CreateProjectInput } from './create-project';
+} from '../operations/load-platform-components';
+export { LoadKnowledgeGraphUseCase } from '../analysis/load-knowledge-graph';
+export { ListProjectsUseCase } from '../portfolio/list-projects';
+export { CreateProjectUseCase, type CreateProjectInput } from '../portfolio/create-project';
 export {
 	UpdateProjectUseCase,
 	type UpdateProjectInput,
 	type UpdateProjectResult
-} from './update-project';
-export {
-	MarkProjectShippedUseCase,
-	type MarkProjectShippedInput,
-	type MarkProjectShippedResult
-} from './mark-project-shipped';
-export { DeleteProjectUseCase } from './delete-project';
-export { ListDomainsUseCase } from './list-domains';
-export { CreateDomainUseCase } from './create-domain';
-export { UpdateDomainUseCase, type UpdateDomainResult } from './update-domain';
-export { RemoveDomainUseCase, type RemoveDomainResult } from './remove-domain';
-export { BuildPortfolioUseCase } from './build-portfolio';
-export { SearchPortfolioUseCase, type SearchResult } from './search-portfolio';
-export { LoadUsersDraftUseCase } from './load-users-draft';
-export { SaveUsersDraftUseCase, type SaveUsersDraftResult } from './save-users-draft';
+} from '../portfolio/update-project';
+export { DeleteProjectUseCase } from '../portfolio/delete-project';
+export { ListDomainsUseCase } from '../portfolio/list-domains';
+export { CreateDomainUseCase } from '../portfolio/create-domain';
+export { UpdateDomainUseCase, type UpdateDomainResult } from '../portfolio/update-domain';
+export { RemoveDomainUseCase, type RemoveDomainResult } from '../portfolio/remove-domain';
+export { ReorderDomainsUseCase, type ReorderDomainsResult } from '../portfolio/reorder-domains';
+export { BuildPortfolioUseCase } from '../portfolio/build-portfolio';
+export { SearchPortfolioUseCase, type SearchResult } from '../portfolio/search-portfolio';
+export { LoadUsersDraftUseCase } from '../specification/load-users-draft';
+export { SaveUsersDraftUseCase, type SaveUsersDraftResult } from '../specification/save-users-draft';
 export {
 	RefreshDerivedCapabilitiesUseCase,
 	type DerivedCapabilitiesSnapshot
-} from './refresh-derived-capabilities';
-export { LoadFeaturesDraftUseCase } from './load-features-draft';
-export { LoadFeatureMaturityUseCase, type FeatureMaturityRow } from './load-feature-maturity';
-export { LoadFeatureMaturityReportUseCase } from './load-feature-maturity-report';
-export { DetectFeatureIdCollisionUseCase } from './detect-feature-id-collision';
+} from '../specification/refresh-derived-capabilities';
+export { LoadFeaturesDraftUseCase } from '../specification/load-features-draft';
+export { ListExtractedElementsUseCase } from '../retrospec/list-extracted-elements';
+export { LoadFeatureMaturityUseCase, type FeatureMaturityRow } from '../analysis/load-feature-maturity';
+export { LoadFeatureMaturityReportUseCase } from '../analysis/load-feature-maturity-report';
+export { DetectFeatureIdCollisionUseCase } from '../specification/detect-feature-id-collision';
 export {
 	LoadImplementationCoverageUseCase,
 	type ActionImplementationCoverage,
+	type CriteriaTally,
 	type FeatureImplementationCoverage
-} from './load-implementation-coverage';
+} from '../analysis/load-implementation-coverage';
+export { LoadConformanceUseCase, type ImplementationCoverageReader } from '../analysis/load-conformance';
 export {
 	SweepImplementationGapsUseCase,
 	type FeatureGapStats,
 	type GapSweep
-} from './sweep-implementation-gaps';
+} from '../analysis/sweep-implementation-gaps';
 export {
 	ReconcileImplementationStatusesUseCase,
 	planStatusUpgrades,
 	type ReconcilePlan,
 	type StatusReconciliation
-} from './reconcile-implementation-statuses';
+} from '../specification/reconcile-implementation-statuses';
 export {
 	SaveFeaturesDraftUseCase,
 	type SaveFeaturesDraftResult
-} from './save-features-draft';
-export { ScoreFeaturesUseCase, type FeatureAdvice } from './score-features';
-export { AssessFeatureUseCase, type FeatureAssessment } from './assess-feature';
-export { ReadBehaviorFeatureUseCase } from './read-behavior-feature';
+} from '../specification/save-features-draft';
+export { ScoreFeaturesUseCase, type FeatureAdvice } from '../specification/score-features';
+export { AssessFeatureUseCase, type FeatureAssessment } from '../analysis/assess-feature';
+export { ReadActionDigestUseCase } from '../specification/read-action-digest';
+export { ReadBehaviorFeatureUseCase } from '../specification/read-behavior-feature';
 export {
 	ScoreBehaviorFeatureUseCase,
 	type ScoreBehaviorFeatureInput
-} from './score-behavior-feature';
-export { ReadBehaviorOperationsUseCase } from './read-behavior-operations';
+} from '../specification/score-behavior-feature';
+export {
+	SimulateBehaviorUseCase,
+	resolveWalkTarget,
+	type SimulateBehaviorInput,
+	type WalkTarget
+} from '../analysis/simulate-behavior';
+export { WhatIfUseCase, toDraftProofImpact, type WhatIfInput } from '../analysis/what-if';
+export { ReadBehaviorOperationsUseCase } from '../specification/read-behavior-operations';
 export {
 	AuthorBehaviorUseCase,
 	type AuthorBehaviorInput,
-	type AuthorBehaviorResult
-} from './author-behavior';
+	type AuthorBehaviorResult,
+	behaviorBatchErrors,
+	behaviorBatchWarnings,
+	canonicalBehaviorOperations
+} from '../specification/author-behavior';
 export {
 	ResolveBehaviorContextUseCase,
 	type ResolvedBehaviorContext
-} from './resolve-behavior-context';
-export { ComputeBehaviorAdvisoriesUseCase } from './compute-behavior-advisories';
-export { LoadExperienceDraftUseCase } from './load-experience-draft';
+} from '../specification/resolve-behavior-context';
+export { ComputeBehaviorAdvisoriesUseCase } from '../analysis/compute-behavior-advisories';
+export { LoadExperienceDraftUseCase } from '../specification/load-experience-draft';
 export {
 	SaveExperienceDraftUseCase,
 	type SaveExperienceDraftResult
-} from './save-experience-draft';
-export { LoadRulesDraftUseCase } from './load-rules-draft';
-export { SaveRulesDraftUseCase, type SaveRulesDraftResult } from './save-rules-draft';
-export { LoadGlossaryDraftUseCase } from './load-glossary-draft';
+} from '../specification/save-experience-draft';
+export { LoadRulesDraftUseCase } from '../specification/load-rules-draft';
+export { SaveRulesDraftUseCase, type SaveRulesDraftResult } from '../specification/save-rules-draft';
+export { LoadGlossaryDraftUseCase } from '../specification/load-glossary-draft';
+export { LoadSpecCorpusUseCase, collectProse } from '../specification/load-spec-corpus';
 export {
 	SaveSimpleSectionDraftUseCase,
 	type SaveSimpleSectionDraftResult
-} from './save-simple-section-draft';
-export { LoadFoundationDraftUseCase } from './load-foundation-draft';
+} from '../specification/save-simple-section-draft';
+export { LoadFoundationDraftUseCase } from '../specification/load-foundation-draft';
+export { LoadSpecLanguageUseCase } from '../specification/load-spec-language';
 export {
 	SaveFoundationDraftUseCase,
 	type SaveFoundationDraftResult,
 	type SaveFoundationSliceResult
-} from './save-foundation-draft';
-export { LoadDataDraftUseCase } from './load-data-draft';
-export { SaveDataDraftUseCase, type SaveDataDraftResult } from './save-data-draft';
+} from '../specification/save-foundation-draft';
+export { LoadDataDraftUseCase } from '../specification/load-data-draft';
+export { SaveDataDraftUseCase, type SaveDataDraftResult } from '../specification/save-data-draft';
+export { SyncDataRulesUseCase, type SyncDataRulesResult } from '../specification/sync-data-rules';
+export { ProjectRulesOracleUseCase, type OracleAnswer } from '../specification/project-rules-oracle';
+export { ProveFeatureRulesUseCase } from '../analysis/prove-feature-rules';
+export { TieDataFieldUseCase, type TieDataFieldResult, type LinkDataFieldsResult } from '../specification/tie-data-field';
+export { ReadDataLinksUseCase, type DataLinkRow, type DataLinksReading } from '../specification/read-data-links';
+export { ReadDataRulesUseCase, type DataRuleReading, type DataRulesReading, type DataRuleVerdict } from '../specification/read-data-rules';
 export { experienceFeatureId } from '$application/projection/aux-feature-ids';
-export { AnalyzeExperienceCoverageUseCase } from './analyze-experience-coverage';
-export { SimulateExperienceUseCase, UnknownPersonaError } from './simulate-experience';
+export { AnalyzeExperienceCoverageUseCase } from '../analysis/analyze-experience-coverage';
+export { SimulateExperienceUseCase, UnknownPersonaError } from '../analysis/simulate-experience';
 export {
 	VerifyExperienceUseCase,
 	DEFAULT_ENGINE_READ_BUDGETS,
@@ -136,47 +162,62 @@ export {
 	type VerifyExperienceResult,
 	type VerifyExperienceOptions,
 	type JourneyVerification
-} from './verify-experience';
+} from '../specification/verify-experience';
 export {
 	ImportDataCollectionsUseCase,
 	type ImportDataCollectionsResult
-} from './import-data-collections';
-export { GenerateAcceptanceTestsUseCase } from './generate-acceptance-tests';
-export { GenerateRepoScaffoldUseCase } from './generate-repo-scaffold';
-export { LoadArchitectureDraftUseCase } from './load-architecture-draft';
-export { LoadDocumentRegisterUseCase, foldLegacyReferenceDocs } from './load-document-register';
-export { LoadCoherenceDraftUseCase, type CoherenceView } from './load-coherence-draft';
+} from '../specification/import-data-collections';
+export { GenerateAcceptanceTestsUseCase } from '../specification/generate-acceptance-tests';
+export { GenerateRepoScaffoldUseCase } from '../specification/generate-repo-scaffold';
+export { LoadArchitectureDraftUseCase } from '../specification/load-architecture-draft';
+export { LoadDocumentRegisterUseCase, foldLegacyReferenceDocs } from '../specification/load-document-register';
+export { LoadCoherenceDraftUseCase, type CoherenceView } from '../analysis/load-coherence-draft';
+export {
+	ReadProjectHealthUseCase,
+	type AnalysisState,
+	type AnalysisStateReader,
+	type HealthAuditReader,
+	type HealthCoverageReader
+} from '../analysis/read-project-health';
 export {
 	SaveCoherenceDraftUseCase,
 	type SaveCoherenceDraftResult
-} from './save-coherence-draft';
-export { GenerateSpecsUseCase, type GenerateSpecsResult } from './generate-specs';
-export { LoadTeamUseCase } from './load-team';
+} from '../analysis/save-coherence-draft';
+export { GenerateSpecsUseCase, type GenerateSpecsResult } from '../specification/generate-specs';
+export { LoadTeamUseCase } from '../collaboration/load-team';
 export {
 	AddCollaboratorUseCase,
 	InvalidCollaboratorError,
 	type AddCollaboratorRequest
-} from './add-collaborator';
+} from '../collaboration/add-collaborator';
 export {
 	RemoveCollaboratorUseCase,
 	type RemoveCollaboratorRequest
-} from './remove-collaborator';
+} from '../collaboration/remove-collaborator';
 export {
 	LoadResidueDraftUseCase,
 	SaveResidueDraftUseCase,
 	type ResidueDraft
-} from './residue-draft-use-cases';
+} from '../specification/residue-draft-use-cases';
 export {
 	AssessProjectCompletenessUseCase,
 	AuditProjectScopeUseCase,
 	BuildCompletionEvidenceUseCase,
 	FinishProjectUseCase,
 	SaveScopeDraftUseCase
-} from './project-completion';
-export { CaptureBaselineUseCase } from './capture-baseline';
+} from '../analysis/project-completion';
+export { CaptureBaselineUseCase } from '../specification/capture-baseline';
 export {
 	LoadReuseLibraryUseCase,
 	ExportRequirementUseCase,
 	ImportRequirementUseCase,
 	RemoveReuseTemplateUseCase
-} from './reuse-requirements';
+} from '../portfolio/reuse-requirements';
+export {
+	AuthorProjectBehaviorUseCase,
+	type AuthorProjectBehaviorInput,
+	type AuthorProjectBehaviorResult
+} from '../specification/author-project-behavior';
+export { ReadProjectBehaviorUseCase } from '../specification/read-project-behavior';
+export { FindStateReferencesUseCase } from '../specification/find-state-references';
+export { GenerateBehaviorTypesUseCase } from '../specification/generate-behavior-types';

@@ -176,7 +176,7 @@ describe('mapCoherenceAnalysis', () => {
 		expect(mapping.findings.map((f) => [f.axis, f.severity, f.existingNodeId, f.published])).toEqual([
 			['access_and_data', 'blocking', 'role:admin', true],
 			['structural', 'minor', 'feat-b', true],
-			['behavioural', 'minor', 'g4', true]
+			['behavioural', 'minor', 'feat-a', true]
 		]);
 		expect(mapping.findings[0].fixNowTarget).toBe('capability:users/admin');
 		expect(mapping.findings[0].requestNodeId).toBe('feat-a');
@@ -217,7 +217,7 @@ describe('deriveImplementationReport', () => {
 				],
 				missingEntities: [{ entityType: 'rule', entityId: 'r1', entityName: 'Card must be valid' }],
 				extraTags: [{ tag: '@unspa:pay#discount', locations: [{ file: 'src/discount.ts', line: 3 }] }],
-				auditMeta: { testFile: 'src/pay.test.ts' }
+				auditMeta: { testFile: 'src/pay.test.ts', verifiedAt: '2026-10-07T12:00:00.000Z' }
 			}
 		]
 	};
@@ -257,6 +257,30 @@ describe('deriveImplementationReport', () => {
 		}
 		expect(lines.find((l) => l.verdict === 'conform')?.filePath).toBe('src/pay.ts');
 		expect(lines.find((l) => l.verdict === 'conform')?.lineRange).toBe('10');
+	});
+
+	it('proves a state once every action of the screen that declares it passed all its scenarios', () => {
+		const located = (entityType: string, entityId: string) => ({ entityType, entityId, entityName: entityId, locations: [{ file: 'src/cart.ts', line: 4, snippet: 'x' }] });
+		const screen = { surfaceId: 's1', surfaceName: 'Cart', expectedEntities: [located('state', 'cart.count')], foundEntities: [located('state', 'cart.count')] };
+		const action = (id: string, verifiedAt?: string) => ({
+			actionId: id,
+			actionName: id,
+			surfaceId: 's1',
+			surfaceName: 'Cart',
+			expectedEntities: [located('action', id)],
+			foundEntities: [located('action', id)],
+			...(verifiedAt ? { auditMeta: { verifiedAt } } : {})
+		});
+		const stateLine = (actions: object[], spec?: object) =>
+			deriveImplementationReport({ request, statuses: { 'feat-a': { surfaces: [screen], actions } as never }, neighbours: {}, leafNames, ...(spec ? { spec: { 'feat-a': spec as never } } : {}) }).find((l) =>
+				l.requirement.endsWith('state "cart.count"')
+			);
+		expect(stateLine([action('add', 'now'), action('remove', 'now')])?.verdict).toBe('conform');
+		expect(stateLine([action('add', 'now'), action('remove')])?.verdict).toBe('non_conform');
+		// An action of the screen nobody indexed yet keeps the state unproven.
+		expect(stateLine([action('add', 'now')], { surfaces: [{ id: 's1', name: 'Cart' }], actions: [{ id: 'add', name: 'add', surfaceName: 'Cart' }, { id: 'empty', name: 'empty', surfaceName: 'Cart' }] })?.verdict).toBe('non_conform');
+		// A screen with no action proves nothing.
+		expect(stateLine([])?.verdict).toBe('non_conform');
 	});
 
 	it('reads a missing index as everything missing, without a test as non-conform', () => {
@@ -488,5 +512,24 @@ describe('the plain lines a client reads agree with the rows', () => {
 		expect(lines).not.toContain('to edit');
 		expect(lines).toContain('feature to read again');
 		expect(impactSummaryLine(change, 'change')).not.toContain('knock-on');
+	});
+});
+
+describe('the impact walks from section changes and changes to the rules [criterion:ac-leaf-ac-evo-draft-section-impact]', () => {
+	it('starts from the element a change edits, names the change on what it reaches, and skips what the graph does not hold', () => {
+		const request = createEvolutionRequest({ id: 'req-2', leafIds: [] });
+		const findings = propagateImpact({
+			request,
+			hypothesis: 'change',
+			depth: 1,
+			graph,
+			changeStarts: [
+				{ nodeId: 'role:admin', changeId: 'section:s1' },
+				{ nodeId: 'state:nowhere', changeId: 'rules:r1' }
+			]
+		});
+		expect(findings.length).toBeGreaterThan(0);
+		expect(findings.every((f) => f.fromChange === 'section:s1' && f.fromDraft && f.fromLeafId === undefined)).toBe(true);
+		expect(findings.map((f) => f.nodeId)).not.toContain('role:admin');
 	});
 });

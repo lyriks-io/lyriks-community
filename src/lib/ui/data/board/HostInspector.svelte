@@ -81,7 +81,7 @@
 			{#if host.kind === 'onprem'}
 				<span class="text-ink-400">🏢 Customer site</span>
 			{:else}
-				<span class="text-[10px] font-medium uppercase tracking-wide text-ink-400">{kf.providerLabel}</span>
+				<span class="text-[0.625rem] font-medium uppercase tracking-wide text-ink-400">{kf.providerLabel}</span>
 				<input
 					value={host.provider}
 					oninput={(e) => store.updateHost(host.id, 'provider', e.currentTarget.value)}
@@ -105,17 +105,17 @@
 		<!-- databases: finally first-class -->
 		<div>
 			<div class="mb-1.5 flex items-center justify-between">
-				<p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">
+				<p class="text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-ink-400">
 					Databases ({dbs.length})
 				</p>
 				<button
 					type="button"
 					onclick={() => store.addDatabase(host.id)}
-					class="text-[11px] font-medium text-brand-600 hover:underline">+ database</button
+					class="text-[0.6875rem] font-medium text-brand-600 hover:underline">+ database</button
 				>
 			</div>
 			{#if dbs.length === 0}
-				<p class="rounded-field border border-dashed border-line px-3 py-3 text-center text-[11px] text-ink-400">
+				<p class="rounded-field border border-dashed border-line px-3 py-3 text-center text-[0.6875rem] text-ink-400">
 					No database yet - add one to place tables here.
 				</p>
 			{:else}
@@ -134,13 +134,13 @@
 								value={db.engine}
 								onchange={(e) =>
 									store.updateDatabase(db.id, 'engine', e.currentTarget.value as DbEngine)}
-								class="rounded border border-line bg-surface px-1 py-0.5 text-[10px] text-ink-600"
+								class="rounded border border-line bg-surface px-1 py-0.5 text-[0.625rem] text-ink-600"
 							>
 								{#each DB_ENGINES as eng (eng.code)}
 									<option value={eng.code}>{eng.label}</option>
 								{/each}
 							</select>
-							<span class="text-[10px] text-ink-400">{tableCount}t</span>
+							<span class="text-[0.625rem] text-ink-400">{tableCount}t</span>
 							<button
 								type="button"
 								onclick={() => store.removeDatabase(db.id)}
@@ -156,7 +156,7 @@
 		<!-- tables on this host -->
 		<div>
 			<div class="mb-1.5 flex items-center justify-between">
-				<p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">Tables here</p>
+				<p class="text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-ink-400">Tables here</p>
 				{#if unplaced.length > 0}
 					<select
 						value=""
@@ -164,7 +164,7 @@
 							if (e.currentTarget.value) store.attachEntityToHost(host.id, e.currentTarget.value);
 							e.currentTarget.value = '';
 						}}
-						class="rounded-field border border-line bg-surface px-1.5 py-0.5 text-[10px] text-ink-500"
+						class="rounded-field border border-line bg-surface px-1.5 py-0.5 text-[0.625rem] text-ink-500"
 						title="Attach an existing unplaced table"
 					>
 						<option value="">attach existing…</option>
@@ -185,7 +185,7 @@
 						<span class="min-w-0 flex-1 truncate text-xs font-medium text-ink-800"
 							>{entity.name || 'Untitled'}</span
 						>
-						<span class="text-[10px] text-ink-400">{fieldsOfEntity(store.draft, entity.id).length}f</span>
+						<span class="text-[0.625rem] text-ink-400">{fieldsOfEntity(store.draft, entity.id).length}f</span>
 						<Icon name="arrow-right" size={12} class="text-ink-300" />
 					</button>
 				{/each}
@@ -203,7 +203,7 @@
 			oninput={(e) => store.updateHost(host.id, 'description', e.currentTarget.value)}
 			placeholder="Notes about this host (why it exists, tenancy, SLAs…)"
 			rows="2"
-			class="w-full resize-none rounded-field border border-line bg-surface px-2 py-1.5 text-[11px] text-ink-600 outline-none placeholder:text-ink-300"
+			class="w-full resize-none rounded-field border border-line bg-surface px-2 py-1.5 text-[0.6875rem] text-ink-600 outline-none placeholder:text-ink-300"
 		></textarea>
 	</div>
 {/if}

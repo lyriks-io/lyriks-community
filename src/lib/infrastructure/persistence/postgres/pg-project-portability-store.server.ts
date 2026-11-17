@@ -75,7 +75,7 @@ export class PgProjectPortabilityStore implements ProjectPortabilityStorePort {
 		return rows.length > 0;
 	}
 
-	async write(projectId: string, rows: ProjectRowSnapshot): Promise<void> {
+	async write(projectId: string, rows: ProjectRowSnapshot, options?: { readonly preserveLocalTeam: boolean }): Promise<void> {
 		await ready();
 		const now = new Date().toISOString();
 		const client = await getPgPool().connect();
@@ -87,7 +87,13 @@ export class PgProjectPortabilityStore implements ProjectPortabilityStorePort {
 			for (const table of PROJECT_OWNED_TABLES) {
 				await client.query(`DELETE FROM ${table} WHERE project_id = $1`, [projectId]);
 			}
-			await client.query('DELETE FROM project_residue WHERE project_id = $1', [projectId]);
+			// Leave the live team row untouched: reading and copying it into the
+			// archive snapshot would overwrite a team edit made in the meantime.
+			if (options?.preserveLocalTeam) {
+				await client.query("DELETE FROM project_residue WHERE project_id = $1 AND section <> 'team'", [projectId]);
+			} else {
+				await client.query('DELETE FROM project_residue WHERE project_id = $1', [projectId]);
+			}
 			await client.query('DELETE FROM draft_revisions WHERE project_id = $1', [projectId]);
 
 			for (const table of LEGACY_DRAFT_TABLES) {
@@ -109,6 +115,7 @@ export class PgProjectPortabilityStore implements ProjectPortabilityStorePort {
 			}
 
 			for (const [section, document] of Object.entries(rows.residue)) {
+				if (options?.preserveLocalTeam && section === 'team') continue;
 				await client.query(
 					'INSERT INTO project_residue (project_id, section, document, updated_at) VALUES ($1, $2, $3, $4)',
 					[projectId, section, JSON.stringify(document), now]

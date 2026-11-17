@@ -14,6 +14,7 @@ import {
   sectionsFor,
 } from '../tools/portfolio-platform.js'
 import { SECTIONS } from '../tools/sections.js'
+import { PROJECT_OUTLINE_NEXT } from '../util/shape.js'
 
 const PORTFOLIO = {
   portfolio: {
@@ -87,6 +88,22 @@ describe('the gateway without a Back', () => {
     ])
   })
 
+  it('BO05c get_project with the id alone answers the outline, no section content', async () => {
+    const lyriks = makeLyriks((path) => (path === '/api/projects' ? PORTFOLIO : { draft: { body: 'stored-body-text', rows: [1] } }))
+    const outline = (await getProjectWithoutBack({ project_id: 'bigledger' }, lyriks)) as {
+      kernel_project_id: string
+      next: string
+      summary: { wizard_envelope: Record<string, unknown> }
+    }
+    expect(outline.kernel_project_id).toBe('bigledger')
+    expect(outline.summary.wizard_envelope.features).toBe('object(2 keys)')
+    expect(outline.next).toBe(PROJECT_OUTLINE_NEXT)
+    expect(outline.next).toMatch(/get_section/)
+    expect(JSON.stringify(outline)).not.toContain('stored-body-text')
+    // summary:true, which older clients still send, is the same answer.
+    expect(await getProjectWithoutBack({ project_id: 'bigledger', summary: true }, lyriks)).toEqual(outline)
+  })
+
   it('BO05b a full get_project skips the write-only sections the platform cannot read', async () => {
     const lyriks = makeLyriks((path) => {
       if (path === '/api/projects') return PORTFOLIO
@@ -95,7 +112,7 @@ describe('the gateway without a Back', () => {
         throw new Error(`lyriks 400 on GET ${path}: {"message":"unknown section \\"${section}\\""}`)
       return { draft: { section } }
     })
-    const project = (await getProjectWithoutBack({ project_id: 'snake' }, lyriks)) as {
+    const project = (await getProjectWithoutBack({ project_id: 'snake', full: true }, lyriks)) as {
       wizard_envelope: Record<string, unknown>
     }
     expect(Object.keys(project.wizard_envelope)).not.toContain('contract')

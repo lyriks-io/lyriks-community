@@ -1,4 +1,6 @@
-import type { CoherenceIssue, CoherenceResult, CoherenceTone } from '$domain/shared';
+import type { CoherenceIssue, CoherenceResult } from '$domain/shared';
+import { NBSP, type SpecLanguage } from '$domain/language';
+import { sectionTone } from '$domain/coherence/section-tone';
 import { EU_LANGUAGE_CODES } from './identity-enums';
 import type { FoundationDefinitionDraft } from './definition';
 
@@ -36,39 +38,30 @@ function completeness(draft: FoundationDefinitionDraft): number {
 		{ weight: 20, met: draft.businessObjective.mainProblem.trim().length > 0 },
 		{ weight: 20, met: draft.businessObjective.expectedOutcome.trim().length > 0 },
 		{ weight: 15, met: draft.businessObjective.successCriteria.length > 0 },
-		{ weight: 10, met: draft.businessObjective.kpis.length > 0 },
-		/* Market and position. `marketType` always carries a default value, so it is
-		   never evidence that a market was actually described — only authored lists
-		   count, otherwise an untouched draft would score itself. */
+		/* KPIs, market segments and competition are out of scope: figures measured
+		   outside Lyriks are never asked for, so they never count either way. The
+		   languages and regulations served are requirements, and they do count. */
 		{
 			weight: 10,
-			met:
-				draft.market.customerSize.length > 0 ||
-				draft.market.industrySectors.length > 0 ||
-				draft.market.languages.length > 0 ||
-				draft.market.regulations.length > 0
-		},
-		{
-			weight: 10,
-			met:
-				draft.competition.differentiators.length > 0 ||
-				draft.competition.positioning.trim().length > 0 ||
-				draft.competition.claimedCategory.trim().length > 0
+			met: draft.market.languages.length > 0 || draft.market.regulations.length > 0
 		},
 		/* At least one explicit delivery boundary; individual controls stay optional. */
 		{
 			weight: 15,
 			met:
-				draft.business.contractualConstraints.length > 0 ||
-				draft.business.risks.length > 0 ||
-				draft.business.slas.length > 0 ||
+				draft.constraints.items.length > 0 ||
+				// Retired from the screen, so never counted (spec: criteria e8a65d93, 5784d998):
+				// draft.business.risks.length > 0 ||
+				// draft.business.slas.length > 0 ||
 				draft.technical.compatibilities.length > 0 ||
-				draft.technical.integrations.length > 0 ||
-				draft.technical.performance.length > 0 ||
-				draft.technical.availability.trim().length > 0 ||
+				// draft.technical.integrations.length > 0 ||
+				// draft.technical.performance.length > 0 ||
+				// draft.technical.availability.trim().length > 0 ||
 				draft.security.authentication.length > 0 ||
 				draft.security.encryption.length > 0 ||
-				draft.security.dataRetention.length > 0
+				// Retired from the screen, so never counted (spec: criterion ac-leaf-ac-tech-2):
+				// draft.security.dataRetention.length > 0
+				draft.security.expectedCertifications.length > 0
 		}
 	];
 	const total = items.reduce((s, i) => s + i.weight, 0);
@@ -79,6 +72,8 @@ function completeness(draft: FoundationDefinitionDraft): number {
 interface ConsistencyRule {
 	readonly code: string;
 	readonly message: string;
+	/** The same message in French. */
+	readonly fr: string;
 	readonly penalty: number;
 	triggered(draft: FoundationDefinitionDraft): boolean;
 }
@@ -87,25 +82,29 @@ const CONSISTENCY_RULES: ConsistencyRule[] = [
 	{
 		code: 'auth-no-encryption',
 		message: 'Authentication is declared but no encryption (at-rest or in-transit) is selected.',
+		fr: "Une authentification est déclarée mais aucun chiffrement (au repos ou en transit) n'est choisi.",
 		penalty: 8,
 		triggered: (d) =>
 			d.security.authentication.length > 0 && d.security.encryption.length === 0
 	},
-	{
-		code: 'sla-no-availability',
-		message: 'SLAs are committed but no required availability target is set.',
-		penalty: 6,
-		triggered: (d) => d.business.slas.length > 0 && d.technical.availability.trim().length === 0
-	},
-	{
-		code: 'retention-no-audit',
-		message: 'Data retention rules exist but audit logs are off: no trail for deletions.',
-		penalty: 6,
-		triggered: (d) => d.security.dataRetention.length > 0 && d.security.auditLogs === 'none'
-	},
+	// Retired (spec: criteria e8a65d93, 5784d998): neither the SLAs nor the availability are shown.
+	// {
+	// 	code: 'sla-no-availability',
+	// 	message: 'SLAs are committed but no required availability target is set.',
+	// 	penalty: 6,
+	// 	triggered: (d) => d.business.slas.length > 0 && d.technical.availability.trim().length === 0
+	// },
+	// Retired with Data retention (spec: criterion ac-leaf-ac-tech-2): nothing asks for retention rules any more.
+	// {
+	// 	code: 'retention-no-audit',
+	// 	message: 'Data retention rules exist but audit logs are off: no trail for deletions.',
+	// 	penalty: 6,
+	// 	triggered: (d) => d.security.dataRetention.length > 0 && d.security.auditLogs === 'none'
+	// },
 	{
 		code: 'pci-needs-at-rest',
 		message: 'PCI DSS certification expected but encryption-at-rest is not declared.',
+		fr: "La certification PCI DSS est attendue mais le chiffrement au repos n'est pas déclaré.",
 		penalty: 5,
 		triggered: (d) =>
 			d.security.expectedCertifications.includes('PCI_DSS') &&
@@ -113,46 +112,29 @@ const CONSISTENCY_RULES: ConsistencyRule[] = [
 	},
 	{
 		code: 'eu-lang-no-gdpr',
-		message: 'EU languages are targeted but GDPR is not listed in the market regulations.',
+		message: 'EU languages are targeted but GDPR is not listed in the applicable regulations.',
+		fr: "Des langues de l'UE sont ciblées mais le RGPD ne figure pas dans les réglementations applicables.",
 		penalty: 6,
 		triggered: (d) =>
 			d.market.languages.some((l) => EU_LANGUAGE_CODES.includes(l)) &&
 			!hasRegulation(d, 'GDPR')
-	},
-	{
-		code: 'competitors-no-differentiator',
-		message: 'Direct competitors are listed but no differentiator sets the product apart.',
-		penalty: 5,
-		triggered: (d) =>
-			d.competition.directCompetitors.length > 0 && d.competition.differentiators.length === 0
-	},
-	{
-		code: 'outcome-no-kpi',
-		message: 'An expected outcome is stated but no target KPI makes it measurable.',
-		penalty: 4,
-		triggered: (d) =>
-			d.businessObjective.expectedOutcome.trim().length > 0 &&
-			d.businessObjective.kpis.length === 0
 	}
 ];
 
-function toneFor(score: number): { tone: CoherenceTone; label: string } {
-	if (score < 34) return { tone: 'critical', label: 'Critical' };
-	if (score < 67) return { tone: 'at-risk', label: 'At risk' };
-	return { tone: 'strong', label: 'Strong' };
-}
-
-export function computeDefinitionCoherence(draft: FoundationDefinitionDraft): CoherenceResult {
+export function computeDefinitionCoherence(
+	draft: FoundationDefinitionDraft,
+	lang: SpecLanguage = 'en'
+): CoherenceResult {
 	const base = completeness(draft);
 	const issues: CoherenceIssue[] = [];
 	let penalty = 0;
 	for (const rule of CONSISTENCY_RULES) {
 		if (rule.triggered(draft)) {
 			penalty += rule.penalty;
-			issues.push({ code: rule.code, message: rule.message });
+			issues.push({ code: rule.code, message: lang === 'fr' ? rule.fr : rule.message });
 		}
 	}
 	const score = Math.max(0, Math.min(100, Math.round(base - penalty)));
-	const { tone, label } = toneFor(score);
+	const { tone, label } = sectionTone(score, lang);
 	return { score, tone, label, issues };
 }

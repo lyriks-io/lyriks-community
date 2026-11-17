@@ -69,6 +69,37 @@ describe('data-projection', () => {
 		expect(back.lastSavedAt).toBe('2026-01-01T00:00:00.000Z');
 	});
 
+	// Criterion 7d63b0a6 of feat-data-model: the mark lived on the write and was gone on the next read.
+	it('keeps a table marked standalone across the save, and only that one', () => {
+		const draft = sampleDraft('p1');
+		const [first, ...rest] = draft.entities;
+		const marked = { ...draft, entities: [{ ...first, standalone: true as const }, ...rest] };
+		const back = buildDataProjection('p1', kernelDataModel(marked), dataResidueFromDraft(marked));
+		expect(back.entities[0].standalone).toBe(true);
+		expect(back.entities.slice(1).every((e) => e.standalone === undefined)).toBe(true);
+	});
+
+	it('keeps the sources a table cites across the save, and none on a table that cites nothing [criterion:3918b2ea]', () => {
+		const draft = sampleDraft('p1');
+		const [first, ...rest] = draft.entities;
+		const cited = { ...draft, entities: [{ ...first, sourceIds: ['src-model-user', 'src-migration'] }, ...rest] };
+		const back = buildDataProjection('p1', kernelDataModel(cited), dataResidueFromDraft(cited));
+		expect(back.entities[0].sourceIds).toEqual(['src-model-user', 'src-migration']);
+		expect(back.entities.slice(1).every((e) => e.sourceIds === undefined)).toBe(true);
+	});
+
+	it('keeps the values of a choice field, and tells the engine its kind and its values', () => {
+		const draft = sampleDraft('p1');
+		draft.fields.push({ id: 'f5', entityId: 'e2', parentFieldId: null, name: 'status', type: 'enum', isId: false, isUnique: false, isRequired: true, isList: false, defaultValue: 'draft', relationTargetEntityId: null, enumValues: ['draft', 'paid', 'shipped'] });
+		const kernel = kernelDataModel(draft);
+		const order = (kernel.feature.entities as { id: string; fields: Record<string, unknown>[] }[]).find((e) => e.id === 'ent-e2')!;
+		expect(order.fields.find((f) => f.id === 'fld-f5')).toMatchObject({ type: 'enum', required: true, enumValues: ['draft', 'paid', 'shipped'] });
+		const back = buildDataProjection('p1', kernel, dataResidueFromDraft(draft));
+		expect(back.fields.find((f) => f.id === 'f5')!.enumValues).toEqual(['draft', 'paid', 'shipped']);
+		// Without the residue (an engine-only read), the values come back from the engine.
+		expect(buildDataProjection('p1', kernel, null).fields.find((f) => f.id === 'f5')!.enumValues).toEqual(['draft', 'paid', 'shipped']);
+	});
+
 	it('derives databaseId from the kernel resource ref (null when unhosted)', () => {
 		const draft = sampleDraft('p1');
 		const back = buildDataProjection('p1', kernelDataModel(draft), dataResidueFromDraft(draft));
@@ -103,6 +134,23 @@ describe('data-projection', () => {
 		const w = back.entities.find((e) => e.id === 'x')!;
 		expect(w.name).toBe('Widget');
 		expect(back.fields.find((f) => f.id === 'a')!.type).toBe('int');
+	});
+
+	it('sends a JSON or object field to the engine with its own kind, not as text', () => {
+		const draft = sampleDraft('p1');
+		draft.fields.push(
+			{ id: 'f5', entityId: 'e1', parentFieldId: null, name: 'coordinates', type: 'json', isId: false, isUnique: false, isRequired: true, isList: false, defaultValue: '', relationTargetEntityId: null },
+			{ id: 'f6', entityId: 'e1', parentFieldId: null, name: 'profile', type: 'object', isId: false, isUnique: false, isRequired: false, isList: false, defaultValue: '', relationTargetEntityId: null }
+		);
+		const kernel = kernelDataModel(draft);
+		const fields = (kernel.feature.entities as { fields: { name: string; type: string }[] }[]).flatMap((e) => e.fields);
+		expect(fields.find((f) => f.name === 'coordinates')!.type).toBe('json');
+		expect(fields.find((f) => f.name === 'profile')!.type).toBe('object');
+
+		// Without residue attrs, the engine's kind still comes back as the same field type.
+		const back = buildDataProjection('p1', kernel, null);
+		expect(back.fields.find((f) => f.name === 'coordinates')!.type).toBe('json');
+		expect(back.fields.find((f) => f.name === 'profile')!.type).toBe('object');
 	});
 
 	it('keeps exact engine-authored entity and field ids on the inverse write', () => {
@@ -255,5 +303,62 @@ describe('definitionEnrichment (via the database resource it decorates)', () => 
 				definitionWith({ encryption: [], dataRetention: ['Retained locally until the resident deletes it.'] })
 			).retention
 		).toBe('Retained locally until the resident deletes it.');
+	});
+});
+
+describe('data-projection in the spec language', () => {
+	const NB = ' ';
+	type Res = { id: string; description: string };
+	type Ent = { namespace: string; fields: { name: string; description: string }[] };
+	const dataModelOf = (lang?: 'en' | 'fr') => {
+		const ops = dataDraftToBehaviorOps(sampleDraft('p1'), {
+			projectId: 'p1',
+			definition: null,
+			experience: null,
+			features: null,
+			...(lang ? { lang } : {})
+		});
+		const dm = ops.find((o) => o.kind === 'upsertDataModelFeature');
+		if (dm?.kind !== 'upsertDataModelFeature') throw new Error('unreachable');
+		return dm;
+	};
+
+	it('writes the generated descriptions in French, names kept as they are', () => {
+		const dm = dataModelOf('fr');
+		expect(dm.name).toBe('Data Model');
+		expect(dm.description).toContain(`Données et architecture${NB}:`);
+		const iface = (dm.resources as Res[]).find((r) => r.id === 'res-if-i1')!;
+		expect(iface.description).toBe('Interface REST app → stripe.');
+		const entities = dm.entities as Ent[];
+		expect(entities.find((e) => e.namespace === 'User')!.fields[1].description).toBe(
+			'unique, obligatoire, valeur par défaut x@y.z'
+		);
+		expect(entities.find((e) => e.namespace === 'Order')!.fields[0].description).toBe(
+			`obligatoire, → «${NB}User${NB}» (clé étrangère)`
+		);
+		expect(entities.find((e) => e.namespace === 'Order')!.fields[1].description).toBe('champ de type string');
+	});
+
+	it('keeps the English descriptions byte for byte by default, and every id across languages', () => {
+		const en = dataModelOf();
+		expect(dataModelOf('en')).toEqual(en);
+		expect((en.resources as Res[]).find((r) => r.id === 'res-if-i1')!.description).toBe(
+			'REST interface app → stripe.'
+		);
+		const ids = (dm: ReturnType<typeof dataModelOf>) => [
+			(dm.resources as Res[]).map((r) => r.id),
+			(dm.entities as { id: string }[]).map((e) => e.id)
+		];
+		expect(ids(dataModelOf('fr'))).toEqual(ids(en));
+	});
+});
+
+describe('a relation keeps what deleting its target does across the save [criterion:99e7cc77]', () => {
+	it('round-trips onDelete on the relation that states it, and on no other field', () => {
+		const draft = sampleDraft('p1');
+		draft.fields = draft.fields.map((f) => (f.id === 'f3' ? { ...f, onDelete: 'cascade' as const } : f));
+		const back = buildDataProjection('p1', kernelDataModel(draft), dataResidueFromDraft(draft));
+		expect(back.fields.find((f) => f.id === 'f3')?.onDelete).toBe('cascade');
+		expect(back.fields.filter((f) => f.id !== 'f3').every((f) => f.onDelete === undefined)).toBe(true);
 	});
 });

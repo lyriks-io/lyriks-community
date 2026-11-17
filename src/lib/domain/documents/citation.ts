@@ -1,3 +1,4 @@
+import { sortByName } from '../shared/alphabetical';
 import type { DocumentSource } from './draft';
 
 /**
@@ -20,13 +21,16 @@ export function toggleCitation(ids: readonly string[] | undefined, sourceId: str
 		: [...current, sourceId];
 }
 
-/** The cited sources that still exist in the register, in register order. */
+/** The cited sources that still exist in the register, from A to Z by their title (criterion 4b3d2b4d). */
 export function citedSources(
 	ids: readonly string[] | undefined,
 	sources: readonly DocumentSource[]
 ): DocumentSource[] {
 	const cited = new Set(ids ?? []);
-	return sources.filter((source) => cited.has(source.id));
+	return sortByName(
+		sources.filter((source) => cited.has(source.id)),
+		(source) => source.title || source.url
+	);
 }
 
 /**

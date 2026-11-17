@@ -4,14 +4,18 @@
 	import type { DataStore } from '../draft-store.svelte';
 	import { ENGINE_HEX, HOST_TYPE_HEX, HOST_TYPE_GLYPH, PROTOCOL_HEX } from '../infra-style';
 	import SchemaPanel from '../sections/SchemaPanel.svelte';
+	import VisibilityPanel from './VisibilityPanel.svelte';
+	import { ORIGIN_HEX, ORIGIN_LABEL } from './data-map';
 	import type { Selection } from './selection';
 
 	interface Props {
 		store: DataStore;
 		entityId: string;
 		onSelect: (sel: Selection) => void;
+		/** Ids the client experience surfaces, for the visibility panel. */
+		surfaced: ReadonlySet<string>;
 	}
-	let { store, entityId, onSelect }: Props = $props();
+	let { store, entityId, onSelect, surfaced }: Props = $props();
 
 	const entity = $derived(store.draft.entities.find((e) => e.id === entityId));
 	const database = $derived(
@@ -67,7 +71,7 @@
 	<div class="space-y-4">
 		<!-- storage / host / api chain — "where does this data live, who reads it" -->
 		<div class="space-y-2 rounded-card border border-line bg-surface-sunken/40 p-3">
-			<p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">Where it lives</p>
+			<p class="text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-ink-400">Where it lives</p>
 
 			<!-- stored in -->
 			<div class="flex items-center gap-2 text-xs">
@@ -110,6 +114,19 @@
 				{/if}
 			</div>
 
+			<!-- came from: how the table entered the model -->
+			<div class="flex items-center gap-2 text-xs">
+				<Icon name="flag" size={13} class="shrink-0 text-ink-400" />
+				<span class="text-ink-400">Came from</span>
+				<span class="flex items-center gap-1 font-medium text-ink-800">
+					<span class="size-2 rounded-sm" style="background:{ORIGIN_HEX[entity.derivedFrom]}"></span>
+					{ORIGIN_LABEL[entity.derivedFrom]}
+					{#if entity.sourceRefId && entity.derivedFrom !== 'manual'}
+						<span class="truncate text-ink-400">· {entity.sourceRefId}</span>
+					{/if}
+				</span>
+			</div>
+
 			<!-- accessed by -->
 			<div class="flex items-start gap-2 text-xs">
 				<Icon name="grid" size={13} class="mt-0.5 shrink-0 text-ink-400" />
@@ -127,14 +144,14 @@
 										class="flex w-full items-center gap-1.5 text-left hover:text-brand-600"
 									>
 										<span
-											class="rounded px-1 py-0.5 text-[9px] font-bold uppercase"
+											class="rounded px-1 py-0.5 text-[0.5625rem] font-bold uppercase"
 											style="background:{PROTOCOL_HEX[api.protocol]}1a;color:{PROTOCOL_HEX[api.protocol]}"
 											>{api.protocol}</span
 										>
 										<span class="text-ink-400">{api.dir === 'in' ? '←' : '→'}</span>
 										<span class="truncate font-medium text-ink-700">{api.other}</span>
 										{#if api.operation}
-											<span class="truncate font-mono text-[10px] text-ink-400">{api.operation}</span>
+											<span class="truncate font-mono text-[0.625rem] text-ink-400">{api.operation}</span>
 										{/if}
 									</button>
 								</li>
@@ -148,29 +165,29 @@
 		<!-- relations at a glance -->
 		{#if outgoing.length > 0 || incoming.length > 0}
 			<div class="space-y-1.5">
-				<p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">Relations</p>
+				<p class="text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-ink-400">Relations</p>
 				{#each outgoing as r (r.id)}
 					<button
 						type="button"
 						onclick={() => onSelect({ kind: 'table', id: r.targetId })}
-						class="flex w-full items-center gap-1.5 rounded-field border border-line bg-surface px-2 py-1 text-left text-[11px] hover:border-brand-300"
+						class="flex w-full items-center gap-1.5 rounded-field border border-line bg-surface px-2 py-1 text-left text-[0.6875rem] hover:border-brand-300"
 					>
 						<span class="font-medium text-ink-800">{entity.name || 'this'}</span>
-						<span class="rounded-pill bg-brand-50 px-1.5 py-0.5 text-[9px] font-semibold text-brand-600"
+						<span class="rounded-pill bg-brand-50 px-1.5 py-0.5 text-[0.5625rem] font-semibold text-brand-600"
 							>{r.card}</span
 						>
 						<span class="truncate font-medium text-ink-700">{r.target}</span>
-						<span class="ml-auto text-[10px] text-ink-400">{r.label}</span>
+						<span class="ml-auto text-[0.625rem] text-ink-400">{r.label}</span>
 					</button>
 				{/each}
 				{#each incoming as r (r.id)}
 					<button
 						type="button"
 						onclick={() => onSelect({ kind: 'table', id: r.sourceId })}
-						class="flex w-full items-center gap-1.5 rounded-field border border-line bg-surface px-2 py-1 text-left text-[11px] hover:border-brand-300"
+						class="flex w-full items-center gap-1.5 rounded-field border border-line bg-surface px-2 py-1 text-left text-[0.6875rem] hover:border-brand-300"
 					>
 						<span class="truncate font-medium text-ink-700">{r.source}</span>
-						<span class="rounded-pill bg-surface-sunken px-1.5 py-0.5 text-[9px] font-semibold text-ink-500"
+						<span class="rounded-pill bg-surface-sunken px-1.5 py-0.5 text-[0.5625rem] font-semibold text-ink-500"
 							>{r.card} →</span
 						>
 						<span class="font-medium text-ink-800">{entity.name || 'this'}</span>
@@ -178,6 +195,8 @@
 				{/each}
 			</div>
 		{/if}
+
+		<VisibilityPanel {store} {entityId} {surfaced} />
 
 		<!-- the field/schema editor -->
 		<SchemaPanel {store} {entityId} />

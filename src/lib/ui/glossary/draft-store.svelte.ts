@@ -11,6 +11,7 @@ import type { CoherenceResult } from '$domain/shared';
 import type { Session, ToastNotifierPort } from '$application/ports';
 import { SectionAutosave, type SaveStatus } from '$ui/shell/section-autosave.svelte';
 import { toggleCitation } from '$domain/documents';
+import { specLanguageAccessor } from '$ui/language/spec-language-context';
 
 export type { SaveStatus };
 
@@ -18,8 +19,8 @@ export type { SaveStatus };
  * Glossary store — orchestrator for the vocabulary screen. Mirror of the other
  * section stores: every mutator goes through `#touch` so the auth guard +
  * debounced autosave of feature `297051ca` is honored uniformly. Health and
- * brief-mined suggestions are derived live from the terms plus the upstream
- * corpus passed in at construction.
+ * usage are read against the whole specification (`corpus`); suggestions are
+ * mined from the brief alone, where the product is described in its own words.
  */
 export class GlossaryStore {
 	draft = $state<ProjectGlossaryDraft>(null as unknown as ProjectGlossaryDraft);
@@ -27,10 +28,13 @@ export class GlossaryStore {
 	showAvoidOnly = $state(false);
 	selectedTermId = $state<string | null>(null);
 	readonly corpus: string;
+	readonly briefCorpus: string;
 
-	coherence = $derived.by<CoherenceResult>(() => computeGlossaryCoherence(this.draft));
+	/** The spec's language, from the project it is opened in: its checks read in it. */
+	readonly #lang = specLanguageAccessor();
+	coherence = $derived.by<CoherenceResult>(() => computeGlossaryCoherence(this.draft, this.#lang()));
 	health = $derived.by(() => computeGlossaryHealth(this.draft.terms, this.corpus));
-	suggestions = $derived.by(() => suggestGlossaryTerms(this.corpus, this.draft.terms));
+	suggestions = $derived.by(() => suggestGlossaryTerms(this.briefCorpus, this.draft.terms));
 
 	/** The terms matching the active search + banned-only filter, in author order. */
 	filtered = $derived.by<GlossaryTerm[]>(() => {
@@ -54,12 +58,14 @@ export class GlossaryStore {
 	constructor(
 		initial: ProjectGlossaryDraft,
 		corpus: string,
+		briefCorpus: string,
 		session: Session,
 		notifier: ToastNotifierPort,
 		revision = 0
 	) {
 		this.draft = initial;
 		this.corpus = corpus;
+		this.briefCorpus = briefCorpus;
 		this.session = session;
 		this.notifier = notifier;
 		this.#autosave = new SectionAutosave({

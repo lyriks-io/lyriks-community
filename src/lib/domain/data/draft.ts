@@ -3,6 +3,7 @@ import type {
 	EntityOrigin,
 	FieldType,
 	HostKind,
+	OnDelete,
 	Protocol
 } from './enums';
 
@@ -36,6 +37,19 @@ export interface DataEntity {
 	description: string;
 	derivedFrom: EntityOrigin;
 	sourceRefId: string | null;
+	/**
+	 * Ids from the project Documents & Sources register the table rests on: the
+	 * code that declares it first (its model, migration or schema), then every
+	 * ticket, page or document that speaks of it (criterion 3918b2ea). Absent
+	 * when it cites none.
+	 */
+	sourceIds?: string[];
+	/**
+	 * The table relates to no other on purpose (a lookup, a singleton setting, a
+	 * table the product no longer uses); the reason is its description. Only a
+	 * table marked so AND described escapes the orphan check.
+	 */
+	standalone?: true;
 }
 
 export interface EntityField {
@@ -54,6 +68,8 @@ export interface EntityField {
 	relationTargetEntityId: string | null;
 	/** Allowed members when `type === 'enum'` (e.g. plan: free|premium|family). */
 	enumValues?: string[];
+	/** For a relation, what deleting the record it points at does to this one; absent when not stated. */
+	onDelete?: OnDelete;
 }
 
 export interface Interface {
@@ -93,8 +109,56 @@ export interface ProjectDataDraft {
 	 * data back on even if the experience dropped it. Optional for back-compat.
 	 */
 	visibility?: Record<string, DataVisibilityChoice>;
+	/**
+	 * What ties the model to the behaviour the solver proves, Lyriks-owned. The
+	 * links field to state live in the engine (its state variables); what the
+	 * engine cannot hold lives here. Optional for back-compat.
+	 */
+	rules?: DataRulesSetup;
 	lastSavedAt: string | null;
 }
+
+/**
+ * The part of the data model's rules the engine cannot hold: which behaviour
+ * state says a record of a table exists, and which project invariants Lyriks
+ * generated from the model (the engine mints their ids, so Lyriks keeps the map
+ * to tell them from the rules a person wrote, and to regenerate only its own).
+ */
+export interface DataRulesSetup {
+	/** Table (entity id) to the yes-or-no behaviour state that is true while one of its records exists. */
+	existence: Record<string, string>;
+	/** Generated project invariant id to where it comes from. */
+	generated: Record<string, GeneratedDataRule>;
+	/**
+	 * Who made each link from a field to the state that carries it (field id to
+	 * author). The engine holds the links; this says whose they are, so a
+	 * person reads which ones Lyriks made by itself.
+	 */
+	linkedBy?: Record<string, LinkAuthor>;
+	/** Fields a person unlinked: neither Lyriks nor an AI client links them again. */
+	declined?: string[];
+	/**
+	 * Field id to the further states that carry the same value as another
+	 * feature sees it (an administrator's view of a user): read wherever data
+	 * is read, never checked by the solver, which checks the first state only
+	 * (criterion 3238573b).
+	 */
+	alsoCarriedBy?: Record<string, string[]>;
+}
+
+/** Who linked a field to its state: Lyriks by itself, an AI client from its evidence, or a person. */
+export type LinkAuthor = 'lyriks' | 'ai-client' | 'person';
+
+/** The kinds of rule the model states that the solver can check. */
+export type DataRuleKind = 'required' | 'choice';
+
+export interface GeneratedDataRule {
+	readonly entityId: string;
+	readonly fieldId: string;
+	readonly kind: DataRuleKind;
+}
+
+export const emptyDataRules = (): DataRulesSetup => ({ existence: {}, generated: {} });
 
 /** A user's explicit client-visibility choice for one entity or field. */
 export type DataVisibilityChoice = 'shown' | 'hidden';

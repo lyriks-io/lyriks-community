@@ -1,11 +1,11 @@
 import { error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import {
 	featureIdCollisionMessage,
 	featureIdCollisions,
 	requireBehaviorFeatureAccess
 } from '$lib/server/behavior-feature-access.server';
 import { adoptionJson } from '$lib/server/adoption-endpoint.server';
+import { withStagedCandidates } from '$application/retrospec/staged-candidates';
 import type {
 	CandidateSpanInput,
 	ElementSpanInput,
@@ -13,6 +13,9 @@ import type {
 	ResolveConflictInput
 } from '$application/ports';
 import type { RequestHandler } from './$types';
+
+/** The element types the engine stages a candidate as (its proposedKind). */
+const CANDIDATE_KINDS = ['surface', 'action', 'rule', 'invariant', 'transition', 'effect', 'state', 'event', 'entity'] as const;
 
 /**
  * The tracing half of code → spec: pin each modeled element to the span it was
@@ -62,9 +65,9 @@ export const POST: RequestHandler = async (event) => {
 	await requireBehaviorFeatureAccess(event, projectId, featureId, 'write');
 	// A globally addressed write on an id another project also claims would land
 	// in their record; refuse while it is still a message.
-	const clashes = await featureIdCollisions(projectId, featureId);
+	const clashes = await featureIdCollisions(event.locals.services, projectId, featureId);
 	if (clashes.length > 0) error(409, featureIdCollisionMessage(projectId, featureId, clashes));
-	const adoption = getServices().codeAdoption;
+	const adoption = event.locals.services.codeAdoption;
 	const sourceId = typeof body.sourceId === 'string' ? body.sourceId : undefined;
 
 	switch (body.op) {
@@ -78,7 +81,10 @@ export const POST: RequestHandler = async (event) => {
 				? (body.candidates as CandidateSpanInput[])
 				: null;
 			if (!candidates?.length) error(400, 'candidates must be a non-empty array');
-			return adoptionJson(await adoption.stageCandidates(featureId, candidates, sourceId));
+			const untyped = candidates.findIndex((c) => !CANDIDATE_KINDS.includes(c?.kind as (typeof CANDIDATE_KINDS)[number]));
+			if (untyped >= 0) error(400, `candidates[${untyped}].kind must be the element type the behaviour would become: ${CANDIDATE_KINDS.join(', ')}`);
+			// The ids of what was staged lead the answer, each beside what was sent for it (criterion 65c8df6d).
+			return adoptionJson(withStagedCandidates(await adoption.stageCandidates(featureId, candidates, sourceId), candidates, sourceId));
 		}
 		case 'dispose_candidate': {
 			const candidateId = typeof body.candidateId === 'string' ? body.candidateId : '';

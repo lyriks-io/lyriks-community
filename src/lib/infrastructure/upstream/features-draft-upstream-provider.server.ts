@@ -2,6 +2,7 @@ import type { DerivedCapability } from '$domain/users';
 import { leafFeatures } from '$domain/features';
 import { stepsOfJourney } from '$domain/experience';
 import { surfaceCapabilities, type LeafSnapshot } from '$application/projection/surface-capabilities';
+import { featureActionCapabilities } from '$application/projection/action-capabilities';
 import { mapLimit } from '$lib/shared/map-limit';
 import type {
 	BehaviorRepositoryPort,
@@ -23,25 +24,29 @@ const SURFACE_LEAF_CONCURRENCY = 6;
  * them.
  */
 export class FeaturesDraftUpstreamProvider implements UpstreamCapabilityProviderPort {
+	private readonly inFlight = new Map<string, Promise<LeafSnapshot[]>>();
+
 	constructor(
 		private readonly drafts: FeaturesDraftRepositoryPort,
 		private readonly experienceDrafts: ExperienceDraftRepositoryPort,
 		private readonly behavior: BehaviorRepositoryPort
 	) {}
 
+	/** One row per action each leaf feature declares; a leaf with none keeps its own row. */
 	async listFeatureCapabilities(projectId: string): Promise<DerivedCapability[]> {
 		const draft = await this.drafts.load(projectId);
 		if (!draft) return [];
-		return leafFeatures(draft).map((leaf) => {
-			const core = draft.cores.find((c) => c.id === leaf.coreId);
-			return {
+		const snapshots = await this.leafSnapshots(projectId);
+		const snapshotOf = new Map(snapshots.map((s) => [s.id, s.snapshot]));
+		return featureActionCapabilities(
+			leafFeatures(draft).map((leaf) => ({
 				id: leaf.id,
-				label: leaf.name || '<unnamed feature>',
-				source: 'feature' as const,
-				sourceRefId: leaf.coreId,
-				sourceRefLabel: core?.name || '<unknown core>'
-			};
-		});
+				name: leaf.name,
+				coreId: leaf.coreId,
+				coreName: draft.cores.find((c) => c.id === leaf.coreId)?.name || '<unknown core>',
+				snapshot: snapshotOf.get(leaf.id) ?? null
+			}))
+		);
 	}
 
 	async listJourneyCapabilities(projectId: string): Promise<DerivedCapability[]> {
@@ -67,29 +72,47 @@ export class FeaturesDraftUpstreamProvider implements UpstreamCapabilityProvider
 	}
 
 	async listSurfaceCapabilities(projectId: string): Promise<DerivedCapability[]> {
-		const [features, experience] = await Promise.all([
-			this.drafts.load(projectId),
+		const [snapshots, experience] = await Promise.all([
+			this.leafSnapshots(projectId),
 			this.experienceDrafts.load(projectId)
 		]);
-		const leaves = features ? leafFeatures(features) : [];
-		const snapshots: LeafSnapshot[] = await mapLimit(
-			leaves,
-			SURFACE_LEAF_CONCURRENCY,
-			async (leaf) => ({
-				id: leaf.id,
-				name: leaf.name,
-				snapshot: await this.behavior.loadFeature(projectId, leaf.id)
-			})
-		);
 		return surfaceCapabilities(experience, snapshots);
 	}
 
+	/**
+	 * The kernel snapshot of every leaf. Both the action rows and the surface
+	 * rows read it, usually in the same request, so a read already in flight
+	 * for the project is shared instead of hitting the kernel twice per leaf.
+	 */
+	private leafSnapshots(projectId: string): Promise<LeafSnapshot[]> {
+		const pending = this.inFlight.get(projectId);
+		if (pending) return pending;
+		const read = this.readLeafSnapshots(projectId).finally(() => this.inFlight.delete(projectId));
+		this.inFlight.set(projectId, read);
+		return read;
+	}
+
+	private async readLeafSnapshots(projectId: string): Promise<LeafSnapshot[]> {
+		const features = await this.drafts.load(projectId);
+		const leaves = features ? leafFeatures(features) : [];
+		return mapLimit(leaves, SURFACE_LEAF_CONCURRENCY, async (leaf) => ({
+			id: leaf.id,
+			name: leaf.name,
+			snapshot: await this.behavior.loadFeature(projectId, leaf.id)
+		}));
+	}
+
+	/**
+	 * Coverage is scored per feature, like the Control Center: a feature is one
+	 * id here even though the matrix grants it action by action.
+	 */
 	async listCapabilityIds(projectId: string): Promise<string[]> {
 		const [features, journeys, surfaces] = await Promise.all([
-			this.listFeatureCapabilities(projectId),
+			this.drafts.load(projectId),
 			this.listJourneyCapabilities(projectId),
 			this.listSurfaceCapabilities(projectId)
 		]);
-		return [...features, ...journeys, ...surfaces].map((c) => c.id);
+		const leafIds = features ? leafFeatures(features).map((leaf) => leaf.id) : [];
+		return [...leafIds, ...[...journeys, ...surfaces].map((c) => c.id)];
 	}
 }

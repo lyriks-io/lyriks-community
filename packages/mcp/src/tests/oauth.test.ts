@@ -262,8 +262,19 @@ describe('OAuth consent and restricted credentials', () => {
     vi.advanceTimersByTime(5 * 60_000 + 1)
     expect((await app.request('/mcp/oauth/authorize', post({ consent: f.nonce, decision: 'allow' }))).status).toBe(403)
     const g = await approved()
-    vi.advanceTimersByTime(60_001)
+    vi.advanceTimersByTime(10 * 60_000 + 1)
     expect((await exchange(g)).status).toBe(400)
+  })
+  it('accepts a code pasted by hand within ten minutes, once', async () => {
+    // Antigravity's callback is a web page that shows the code; the person
+    // copies it into the client, which then exchanges it.
+    expect((await flow()).html).toContain('paste it into the client within 10 minutes')
+    expect((await flow('http://127.0.0.1:43123/callback')).html).not.toContain('paste it into the client')
+    vi.useFakeTimers()
+    const f = await approved()
+    vi.advanceTimersByTime(9 * 60_000)
+    expect((await exchange(f)).status).toBe(200)
+    expect((await exchange(f)).status).toBe(400)
   })
   it('expires or revokes tokens and rechecks backing sessions on every request', async () => {
     const token = (await (await exchange(await approved())).json()).access_token

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Icon } from '$ui/design-system';
+	import { Icon, fieldBase, fieldBorder, fieldHeight, fieldSideButton } from '$ui/design-system';
 
 	interface Props {
 		items: string[];
@@ -28,14 +28,15 @@
 	{#if items.length > 0}
 		<ul class="space-y-1.5">
 			{#each items as item, i (item + i)}
-				<li class="group flex items-start gap-2.5 rounded-field bg-surface-sunken px-3 py-2 text-sm text-ink-700">
-					<span class="mt-1.5 size-1.5 shrink-0 rounded-full {dot}"></span>
+				<!-- py-3.5 + one 20px line = h-12, the height of the add field below. -->
+				<li class="group flex items-start gap-2.5 rounded-field bg-surface-sunken px-3.5 py-3.5 text-sm leading-5 text-ink-700">
+					<span class="mt-1.75 size-1.5 shrink-0 {dot}"></span>
 					<span class="min-w-0 flex-1 break-words">{item}</span>
 					<button
 						type="button"
 						onclick={() => onremove(i)}
 						aria-label="Remove"
-						class="shrink-0 text-ink-400 opacity-0 transition-opacity hover:text-danger-500 group-hover:opacity-100"
+						class="mt-0.75 shrink-0 text-ink-400 opacity-0 transition-opacity hover:text-danger-500 group-hover:opacity-100"
 					>
 						<Icon name="x" size={14} />
 					</button>
@@ -54,13 +55,13 @@
 					commit();
 				}
 			}}
-			class="w-full rounded-field border border-line bg-surface px-3.5 py-2 text-sm text-ink-900 transition-colors placeholder:text-ink-400 hover:border-line-strong focus:border-brand-400"
+			class="{fieldBase} {fieldHeight} {fieldBorder} px-3.5 py-2.5"
 		/>
 		<button
 			type="button"
 			onclick={commit}
 			aria-label="Add"
-			class="grid size-9 shrink-0 place-items-center rounded-field border border-line text-ink-500 transition-colors hover:border-line-strong hover:text-ink-900"
+			class={fieldSideButton}
 		>
 			<Icon name="plus" size={18} />
 		</button>

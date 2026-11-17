@@ -1,11 +1,11 @@
 import type { IconName } from '$ui/design-system';
-import type { Tier } from '$domain/tier/tier';
+import type { Tier } from '$domain/tier';
 
 /**
  * The capability registry — the post-wizard information architecture, matching
  * the v3 mockup prototype's left sidebar. Lyriks is no longer an
  * 11-step linear wizard; it's a flat set of capabilities a team moves between
- * freely. The sidebar, tier gating, Control Center "Fix-Now" routing and the
+ * freely. The sidebar, tier gating, "Fix now" routing and the
  * legacy redirects all read from here. Order here == sidebar order.
  *
  * The rail is deliberately UNCATEGORIZED: one flat list, no Specify/Validate/
@@ -13,7 +13,7 @@ import type { Tier } from '$domain/tier/tier';
  * and every capability is reachable at any time.
  *
  * `status:'hidden'` = reachable by deep link but NOT in the left nav. Architecture
- * folds into Infrastructure; Control Center / Canvas / Team / Audit are top-bar
+ * folds into Infrastructure; Canvas / Team / Audit are top-bar
  * + dock surfaces, not left-nav entries (as in the v3 prototype). Pre-fold
  * section ids live on as `legacyIds` entries on their host capability, so a
  * stored id still resolves without naming a dead page.
@@ -29,14 +29,19 @@ export interface Capability {
 	tier: Tier;
 	status: CapabilityStatus;
 	/**
-	 * The page a capability navigates to. OPTIONAL: docked-panel capabilities (the
-	 * Control Center) live in the right rail and are opened by a button/shortcut,
-	 * not a URL — they have no page route, and advertising one that 404s is the bug
-	 * MR 9 removes. Consumers must treat a missing route as "not navigable".
+	 * The page a capability navigates to. OPTIONAL: a capability without a page
+	 * has no route, and advertising one that 404s is the bug MR 9 removes.
+	 * Consumers must treat a missing route as "not navigable".
 	 */
 	route?: (projectId: string) => string;
 	partOf?: string;
 	legacyIds?: string[];
+	/** Set apart at the foot of the left nav on a background of its own. */
+	featured?: boolean;
+	/** A gear at the very foot of the left nav, never among the pages that describe the product: the project's Settings (ac-proj-settings). */
+	foot?: boolean;
+	/** Shown only to whoever administers the project (ac-proj-settings). */
+	adminOnly?: boolean;
 }
 
 export const projectRoute = (id: string) => (projectId: string) => `/projects/${projectId}/${id}`;
@@ -78,15 +83,6 @@ export const CAPABILITIES: Capability[] = [
 		legacyIds: ['initialization', 'framing', 'foundations']
 	},
 	{
-		id: 'users',
-		title: 'Users & Permissions',
-		subtitle: 'Personas & access matrix',
-		icon: 'users',
-		tier: 'oss',
-		status: 'built',
-		route: projectRoute('users')
-	},
-	{
 		id: 'features',
 		title: 'Features',
 		subtitle: 'Tree, roadmap & work queue',
@@ -96,9 +92,18 @@ export const CAPABILITIES: Capability[] = [
 		route: projectRoute('features')
 	},
 	{
+		id: 'users',
+		title: 'Users & Permissions',
+		subtitle: 'Personas & access matrix',
+		icon: 'users',
+		tier: 'oss',
+		status: 'built',
+		route: projectRoute('users')
+	},
+	{
 		id: 'experience',
 		title: 'Experience',
-		subtitle: 'Live demo, journeys & library',
+		subtitle: 'design.md, journeys & screens',
 		icon: 'monitor',
 		tier: 'oss',
 		status: 'built',
@@ -106,7 +111,7 @@ export const CAPABILITIES: Capability[] = [
 	},
 	{
 		// Merged into Features as its "Behavior" tab. Kept as a hidden alias so old
-		// deep-links + Control Center "Fix now" resolve to the merged tab (its route
+		// deep-links + a "Fix now" link of What Lyriks noticed resolve to the merged tab (its route
 		// redirects to /features?tab=behavior); not a left-nav entry.
 		id: 'functional',
 		title: 'Functional',
@@ -119,7 +124,7 @@ export const CAPABILITIES: Capability[] = [
 	},
 	{
 		// Merged into Users & Permissions as the "Access matrix" tab — kept for
-		// deep-link + Control Center "Fix now" (its route redirects to
+		// deep-link + a "Fix now" link of What Lyriks noticed (its route redirects to
 		// /users?tab=permissions); not a left-nav entry.
 		id: 'permissions',
 		title: 'Permissions',
@@ -132,7 +137,7 @@ export const CAPABILITIES: Capability[] = [
 	},
 	{
 		id: 'infrastructure',
-		title: 'Data & Architecture',
+		title: 'Tech & Data',
 		subtitle: 'Hosts, databases, entities & stack',
 		icon: 'server',
 		tier: 'oss',
@@ -141,8 +146,8 @@ export const CAPABILITIES: Capability[] = [
 		legacyIds: ['data']
 	},
 	{
-		// Merged into the "Data & Architecture" page (Infrastructure). Kept as a
-		// hidden alias so Control Center "Fix now" + legacy deep links resolve to
+		// Merged into the "Tech & Data" page (Infrastructure). Kept as a
+		// hidden alias so a "Fix now" link of What Lyriks noticed + legacy deep links resolve to
 		// the merged page's architecture section instead of a retired route.
 		id: 'architecture',
 		title: 'Architecture & Constraints',
@@ -155,17 +160,18 @@ export const CAPABILITIES: Capability[] = [
 	},
 	{
 		// Merged into Features as its "Rules" tab. Kept as a hidden alias so old
-		// deep-links + Control Center "Fix now" resolve to the merged tab (its route
+		// deep-links + a "Fix now" link of What Lyriks noticed resolve to the merged tab (its route
 		// redirects to /features?tab=rules); not a left-nav entry.
 		id: 'rules',
-		title: 'Rules & edge cases',
-		subtitle: 'Unified inventory, conflicts & acceptance tests',
+		title: 'Acceptance criteria',
+		subtitle: 'Rules where they belong, and acceptance criteria on their feature',
 		icon: 'sliders',
 		tier: 'oss',
 		status: 'hidden',
-		route: (projectId) => `/projects/${projectId}/features?tab=rules`,
+		// Rules have no tab: acceptance criteria sit on their feature in the tree.
+		route: (projectId) => `/projects/${projectId}/features?tab=tree`,
 		// Folds under Features for cross-links so the Rules dimension resolves to a
-		// visible left-nav entry (Control Center card name + route).
+		// visible left-nav entry (the name + route a point's Fix now names).
 		partOf: 'features'
 	},
 	{
@@ -178,21 +184,6 @@ export const CAPABILITIES: Capability[] = [
 		tier: 'oss',
 		status: 'hidden',
 		route: projectRoute('documents')
-	},
-	{
-		// Merged into Features as its "Evolution" tab: a change request is read
-		// beside the feature tree it changes, so it is not a capability of its own.
-		// Kept as a hidden alias so old deep-links + Control Center "Fix now"
-		// resolve to the merged tab (the /evolution route redirects there, query
-		// included); not a left-nav entry.
-		id: 'evolution',
-		title: 'Evolution',
-		subtitle: 'Change requests, from the need to acceptance',
-		icon: 'rotate',
-		tier: 'oss',
-		status: 'hidden',
-		partOf: 'features',
-		route: (projectId) => `/projects/${projectId}/features?tab=evolution`
 	},
 	{
 		// Hidden for now: the Features tab that hosted it is no longer surfaced, so
@@ -216,20 +207,46 @@ export const CAPABILITIES: Capability[] = [
 		route: projectRoute('glossary')
 	},
 	{
-		// Scores/maturity now live ONLY in the Control Center (the right rail), so the
-		// dedicated page is off the left nav. Kept deep-linkable (status:'hidden') so
-		// Control Center "Fix now" + legacy links still resolve, and so the spec
-		// generator (guarantee tiers, threshold, Generate specs) it hosts stays reachable.
+		// A page of its own, set apart at the foot of the rail (featured): the
+		// pages above it describe the product as it is, Evolution changes it over
+		// time across all of them. A kept /features?tab=evolution link redirects here.
+		id: 'evolution',
+		title: 'Evolution',
+		subtitle: 'Change requests, from the need to acceptance',
+		icon: 'rotate',
+		tier: 'oss',
+		status: 'built',
+		featured: true,
+		route: projectRoute('evolution')
+	},
+	{
+		// There is no Control Center and no page of scores any more (criteria
+		// ef42a85d, 799e1f5b): every point Lyriks noticed is listed on the page What
+		// Lyriks noticed of the Specification 360° (criterion 55a7fe86). Kept as a
+		// hidden capability so a gap whose fix has no page of its own, and every
+		// stored /coherence link, still land there (the old route redirects).
 		id: 'coherence',
-		title: 'Project health',
-		subtitle: 'Coverage, coherence, readiness & maturity',
+		title: 'Health',
+		subtitle: 'Every point that weighs on the project health',
 		icon: 'gauge',
 		tier: 'oss',
 		status: 'hidden',
-		route: projectRoute('coherence')
+		route: (projectId) => `/projects/${projectId}/spec/noticed`
 	},
 	{
-		// Off the left nav; deep-linkable + Control Center "Fix now" resolvable.
+		// The spec generator, its guarantee tiers and its threshold, which the old
+		// health page used to host under its readings. Off the left nav; found
+		// through the search box.
+		id: 'generate',
+		title: 'Generate specs',
+		subtitle: 'Guarantees, threshold and the spec generator',
+		icon: 'file',
+		tier: 'oss',
+		status: 'hidden',
+		route: projectRoute('generate')
+	},
+	{
+		// Off the left nav; deep-linkable, so a "Fix now" on a point resolves.
 		id: 'traceability',
 		title: 'Traceability',
 		subtitle: 'Requirement links & coverage gaps',
@@ -239,7 +256,7 @@ export const CAPABILITIES: Capability[] = [
 		route: projectRoute('traceability')
 	},
 	{
-		// Merged into "Data & Architecture" as its "Knowledge graph" tab: the graph is
+		// Merged into "Tech & Data" as its "Knowledge graph" tab: the graph is
 		// the whole model seen at once, which belongs beside the data spine rather
 		// than as a page of its own. Kept as a hidden alias so Control Center
 		// "Fix now" + the legacy /graph route resolve to the merged tab.
@@ -254,7 +271,7 @@ export const CAPABILITIES: Capability[] = [
 	},
 	{
 		// Merged into Traceability as its "Baselines" tab (matching the prototype).
-		// Kept as a hidden alias so Control Center "Fix now" + legacy deep links
+		// Kept as a hidden alias so a "Fix now" link of What Lyriks noticed + legacy deep links
 		// resolve to the merged tab instead of a retired route.
 		id: 'baselines',
 		title: 'Baselines',
@@ -267,7 +284,7 @@ export const CAPABILITIES: Capability[] = [
 	},
 	{
 		// Merged into Traceability as its "Approvals" tab (matching the prototype).
-		// Kept as a hidden alias so Control Center "Fix now" + legacy deep links
+		// Kept as a hidden alias so a "Fix now" link of What Lyriks noticed + legacy deep links
 		// resolve to the merged tab instead of a retired route.
 		id: 'approvals',
 		title: 'Approvals',
@@ -278,19 +295,7 @@ export const CAPABILITIES: Capability[] = [
 		partOf: 'traceability',
 		route: (projectId) => `/projects/${projectId}/traceability?tab=approvals`
 	},
-	// ── Shell capabilities (top bar + docked panels, NOT left-nav) ──
-	{
-		id: 'control-center',
-		title: 'Control Center',
-		subtitle: 'Deep coherence cockpit',
-		icon: 'target',
-		tier: 'oss',
-		status: 'hidden'
-		// No route: the Control Center is a docked right-rail panel opened by the
-		// Sidebar's Build Readiness button (⌘/Ctrl-J), not a page. There is no
-		// /projects/<id>/control-center route.
-	},
-	// Enterprise-only capabilities (Team, Manager & Audit) are registered by the
+	// Enterprise-only capabilities (Settings, Team) are registered by the
 	// Enterprise overlay when it is compiled in; see `overlayCapabilities` below.
 	...overlayCapabilities()
 ];
@@ -307,8 +312,8 @@ export function capabilityById(id: string): Capability | undefined {
 /**
  * Resolve a step/dimension id to the left-nav capability that owns its fix,
  * following `partOf` until a non-hidden capability. This is what lets the
- * Control Center label a card with the SAME name + route as the sidebar entry
- * the user would click (e.g. `architecture` → Data & Architecture, a stored
+ * Fix now of a point label it with the SAME name + route as the sidebar entry
+ * the user would click (e.g. `architecture` → Tech & Data, a stored
  * legacy id → Foundation). Returns undefined when the chain never reaches a visible
  * capability, so the caller can fall back to the raw dimension label.
  */
@@ -322,8 +327,19 @@ export function resolveVisibleCapability(id: string): Capability | undefined {
 	return cap && cap.status !== 'hidden' ? cap : undefined;
 }
 
-/** The left nav: every visible capability, one flat list in registry order. */
-export const NAV_CAPABILITIES = CAPABILITIES.filter((c) => c.status !== 'hidden');
+/**
+ * The left nav: every visible capability, one flat list in registry order, the
+ * ones set apart (featured) after it whatever registers after them, and at its
+ * very foot the project's Settings an overlay registers (ac-proj-settings).
+ */
+const VISIBLE = CAPABILITIES.filter((c) => c.status !== 'hidden');
+export const NAV_CAPABILITIES = [...VISIBLE.filter((c) => !c.featured && !c.foot), ...VISIBLE.filter((c) => c.featured && !c.foot), ...VISIBLE.filter((c) => c.foot)];
+
+/** The sections a capability holds (the Team in Settings): the menu its gear opens lists them (ac-proj-settings). */
+export const sectionsOf = (id: string): Capability[] => CAPABILITIES.filter((c) => c.partOf === id && c.route);
+
+/** The entries of the left nav one reader is shown: an admin-only entry only to whoever administers the project. */
+export const navCapabilitiesFor = (administers: boolean): Capability[] => NAV_CAPABILITIES.filter((c) => !c.adminOnly || administers);
 
 /**
  * Capabilities relocated out of the left nav into the header user-menu's
@@ -332,7 +348,7 @@ export const NAV_CAPABILITIES = CAPABILITIES.filter((c) => c.status !== 'hidden'
  * other capability cites, so it belongs here rather than in the rail. Reuse is
  * hidden for now — no menu entry, no Features tab.
  *
- * Traceability is deliberately absent: it stays deep-linkable (Control Center
+ * Traceability is deliberately absent: it stays deep-linkable (a point's Fix now
  * "Fix now", /baselines + /approvals redirects) but is off the menu until its
  * role in the product is settled.
  */

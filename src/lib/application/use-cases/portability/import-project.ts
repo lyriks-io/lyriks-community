@@ -12,6 +12,7 @@ import {
 	type ProjectPortabilityStorePort,
 	type ReconciliationStorePort
 } from '$application/ports';
+import { assertProjectCreation, type CheckProjectCreationUseCase } from '$application/portfolio/project-creation-scope';
 
 export interface ImportProjectRequest {
 	readonly bytes: Uint8Array;
@@ -41,6 +42,14 @@ export type ImportProjectResult =
 	  }
 	| { readonly ok: false; readonly error: string };
 
+/** Server-owned access and ownership boundary, held inside the target lock. */
+export interface ImportProjectPolicy {
+	withTarget(
+		target: { readonly projectId: string; readonly existing: boolean },
+		write: () => Promise<ImportProjectResult>
+	): Promise<ImportProjectResult>;
+}
+
 /**
  * Restore a project from a bundle, into this install.
  *
@@ -69,10 +78,11 @@ export class ImportProjectUseCase {
 		private readonly lock: ProjectLockPort,
 		private readonly archive: ArchiveCodecPort,
 		private readonly clock: ClockPort,
-		private readonly randomSuffix: () => string = () => crypto.randomUUID().slice(0, 6)
+		private readonly randomSuffix: () => string = () => crypto.randomUUID().slice(0, 6),
+		private readonly scope?: Pick<CheckProjectCreationUseCase, 'execute'>
 	) {}
 
-	async execute(request: ImportProjectRequest): Promise<ImportProjectResult> {
+	async execute(request: ImportProjectRequest, policy?: ImportProjectPolicy): Promise<ImportProjectResult> {
 		let files: Map<string, Uint8Array>;
 		try {
 			files = this.archive.decode(request.bytes);
@@ -90,15 +100,6 @@ export class ImportProjectUseCase {
 		let projectId: string;
 		if (request.mode === 'restore') {
 			projectId = parsed.snapshot.projectId;
-			if (await this.rows.exists(projectId)) {
-				if (!request.overwrite) {
-					return {
-						ok: false,
-						error: `A project with id "${projectId}" already exists here. Import it as a copy, or confirm the overwrite.`
-					};
-				}
-				warnings.push(`Overwrote the existing project "${projectId}".`);
-			}
 		} else {
 			const minted = await this.mintFreeId(name);
 			if (!minted) {
@@ -110,10 +111,30 @@ export class ImportProjectUseCase {
 			projectId = minted;
 		}
 
-		const domainId = await this.resolveDomain(parsed.snapshot, request, warnings);
-		const snapshot = rehomeSnapshot(parsed.snapshot, { projectId, name, domainId });
-
-		return this.lock.withLock(projectId, () => this.write(snapshot, warnings, request.mode));
+		return this.lock.withLock(projectId, async () => {
+			// A preceding import may have claimed the target while this call waited.
+			// Check both identities again, and authorize before even creating a folder.
+			const existing = (await this.rows.exists(projectId)) ||
+				(await this.behavior.loadProject(projectId)) !== null;
+			if (request.mode === 'copy' && existing) {
+				return { ok: false, error: `Project "${projectId}" was created at the same time. Please try again.` };
+			}
+			// A copy, or a restore of a project this installation does not hold, is a
+			// new project: the edition decides whether it may exist (EVO-001).
+			if (!existing) await assertProjectCreation(this.scope);
+			const write = async (): Promise<ImportProjectResult> => {
+				if (existing) {
+					if (!request.overwrite) {
+						return { ok: false, error: `A project with id "${projectId}" already exists here. Import it as a copy, or confirm the overwrite.` };
+					}
+					warnings.push(`Overwrote the existing project "${projectId}".`);
+				}
+				const domainId = await this.resolveDomain(parsed.snapshot, request, warnings);
+				const snapshot = rehomeSnapshot(parsed.snapshot, { projectId, name, domainId });
+				return this.write(snapshot, warnings, request.mode, existing);
+			};
+			return policy ? policy.withTarget({ projectId, existing }, write) : write();
+		});
 	}
 
 	/**
@@ -143,7 +164,8 @@ export class ImportProjectUseCase {
 	private async write(
 		snapshot: ProjectSnapshot,
 		warnings: readonly string[],
-		mode: ImportProjectRequest['mode']
+		mode: ImportProjectRequest['mode'],
+		preserveLocalTeam: boolean
 	): Promise<ImportProjectResult> {
 		const { projectId } = snapshot;
 		let kernelWritten = false;
@@ -156,11 +178,12 @@ export class ImportProjectUseCase {
 					// kernel that addresses a project this install does not have.
 					project: { ...snapshot.kernel.project, id: projectId },
 					features: snapshot.kernel.features.map((f) => f.feature),
+					artifacts: snapshot.kernel.artifacts ?? [],
 					quarantineStamp: this.clock.nowIso().replace(/[:.]/g, '-')
 				});
 				kernelWritten = true;
 			}
-			await this.rows.write(projectId, snapshot.rows);
+			await this.rows.write(projectId, snapshot.rows, { preserveLocalTeam });
 		} catch (e) {
 			// A copy that failed halfway is nobody's project — remove it. A restore is
 			// left alone: its previous kernel folder is in the quarantine, and deleting

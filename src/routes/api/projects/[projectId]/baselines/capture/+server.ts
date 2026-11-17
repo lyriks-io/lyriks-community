@@ -1,5 +1,4 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { expectedRevision } from '$lib/server/draft-lock.server';
 import type { RequestHandler } from './$types';
@@ -19,7 +18,7 @@ export const POST: RequestHandler = async (event) => {
 	const note = typeof body.note === 'string' ? body.note : '';
 	if (!projectId) error(400, 'projectId is required');
 
-	const result = await getServices().captureBaseline.execute(projectId, name, note, {
+	const result = await event.locals.services.captureBaseline.execute(projectId, name, note, {
 		expectedRevision: expectedRevision(request),
 		origin: request.headers.get('x-lyriks-client')
 	});

@@ -64,7 +64,7 @@ export function placeElementId(place: PagePlace): string {
 
 /** The path of a request's page, opening on one place when one is named. Relative to the installation. */
 export function requestPagePath(projectId: string, requestId: string, place?: PagePlace): string {
-	const query = new URLSearchParams({ tab: 'evolution', request: requestId });
+	const query = new URLSearchParams({ request: requestId });
 	if (place) query.set(PLACE_PARAM, placeKey(place));
-	return `/projects/${encodeURIComponent(projectId)}/features?${query.toString()}`;
+	return `/projects/${encodeURIComponent(projectId)}/evolution?${query.toString()}`;
 }

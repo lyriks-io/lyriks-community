@@ -18,6 +18,7 @@ import {
 	type ExperienceResidue
 } from '$application/projection/experience-projection';
 import type { ProjectExperienceDraft } from '$domain/experience';
+import type { SpecLanguage } from '$domain/language';
 import { leafFeatures, type ProjectFeaturesDraft } from '$domain/features';
 import type { UnspaFeatureSnapshot } from '$lib/unspa-schema';
 
@@ -57,7 +58,12 @@ export class KernelExperienceDraftRepository implements ExperienceDraftRepositor
 		 * mirror.
 		 */
 		private readonly dataFor?: () => DataDraftRepositoryPort | null,
-		private readonly definitionDrafts?: FoundationDefinitionRepositoryPort
+		private readonly definitionDrafts?: FoundationDefinitionRepositoryPort,
+		/**
+		 * The language the project's spec is written in, read on each save: the
+		 * prose the projection writes into the model follows it. Absent, English.
+		 */
+		private readonly languageOf?: (projectId: string) => Promise<SpecLanguage>
 	) {}
 
 	async load(projectId: string): Promise<ProjectExperienceDraft | null> {
@@ -85,7 +91,8 @@ export class KernelExperienceDraftRepository implements ExperienceDraftRepositor
 			this.usersDrafts.load(draft.projectId)
 		]);
 		const declaredStates = await this.#declaredStates(draft.projectId, features);
-		const ops = experienceDraftToBehaviorOps(draft, { features, users, declaredStates });
+		const lang = (await this.languageOf?.(draft.projectId)) ?? 'en';
+		const ops = experienceDraftToBehaviorOps(draft, { features, users, declaredStates, lang });
 
 		// Fix #5: re-mirror consuming leaves off THIS draft's stepDataReads, so editing
 		// what a step reads and saving only Experience enriches the leaves right away
@@ -94,7 +101,7 @@ export class KernelExperienceDraftRepository implements ExperienceDraftRepositor
 		const data = (await this.dataFor?.()?.load(draft.projectId)) ?? null;
 		if (data) {
 			const definition = (await this.definitionDrafts?.load(draft.projectId)) ?? null;
-			ops.push(...dataMirrorOps(data, draft, features, definition));
+			ops.push(...dataMirrorOps(data, draft, features, definition, lang));
 		}
 
 		const report = await this.behavior.apply(draft.projectId, ops);

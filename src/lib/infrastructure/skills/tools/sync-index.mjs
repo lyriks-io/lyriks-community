@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Lyriks helper (installed by `sync_skills` under .lyriks/tools/).
-//   node .lyriks/tools/sync-index.mjs [--feature <featureId>] [--project <id>] [--url URL] [--token TOKEN]
+//   node .lyriks/tools/sync-index.mjs [--feature <featureId>] [--project <id>] [--base-branch <branch>] [--no-git] [--url URL] [--token TOKEN]
 // Sends `.unspa.json` to `sync_implementation_index`, because a large index
 // cannot be typed as a tool argument. The project comes from --project, else
 // from the index file (`projectId`), else from the binding block of CLAUDE.md
@@ -15,6 +15,11 @@
 // located for an action or surface: an action must travel with all of its
 // children. The index does not record parentage, so the server is asked which
 // keys belong to the feature (get_behavior_feature with index_keys:true).
+//
+// In a git checkout it then reports what git says to the request built on the
+// branch (code-state.mjs) and prints the answer under `codeState`: a refusal as
+// a warning, a branch no open request is built on as a note; --no-git skips it.
+import { reportCodeState } from './code-state.mjs';
 import { indexEntries, isMainModule, loadIndexFile } from './index-file.mjs';
 import { projectForWrite } from './index-project.mjs';
 import { ENDPOINT_FLAGS, callToolJson, openSession, parseArgs, resolveEndpoint, runScript } from './mcp-client.mjs';
@@ -103,7 +108,7 @@ export async function sendEntries(session, project, slice, featureId) {
 
 if (isMainModule(import.meta.url)) {
 	runScript(async () => {
-		const { flags } = parseArgs(process.argv.slice(2), [...ENDPOINT_FLAGS, 'feature', 'project']);
+		const { flags } = parseArgs(process.argv.slice(2), [...ENDPOINT_FLAGS, 'feature', 'project', 'base-branch']);
 		const loaded = loadIndexFile();
 		const project = projectForSync(flags, loaded);
 		const entries = indexEntries(loaded.index);
@@ -118,6 +123,17 @@ if (isMainModule(import.meta.url)) {
 			);
 		}
 		const { answer, summary } = await sendEntries(session, project, slice, featureId);
+		if (!flags['no-git']) {
+			// Every proof the index holds, not only the slice sent: a slice would report its own few as the request's.
+			const codeState = await reportCodeState(session, project.projectId, loaded.dir, entries, {
+				baseBranch: typeof flags['base-branch'] === 'string' ? flags['base-branch'] : null
+			});
+			if (codeState) {
+				summary.codeState = codeState;
+				// No request on this branch is information, already in the summary: not a warning.
+				if (!codeState.reported && !codeState.noRequest) process.stderr.write(`warning: code state ${codeState.answer}\n`);
+			}
+		}
 		console.log(JSON.stringify(summary, null, 2));
 		// `ok:false` means orphan keys or refused reports: worth a failing exit code.
 		return answer.ok === false ? 1 : 0;

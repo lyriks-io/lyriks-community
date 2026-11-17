@@ -8,6 +8,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
  * therefore read as unavailable.
  */
 const identity = vi.hoisted(() => ({ configured: true, verify: vi.fn() }));
+const roleGate = vi.hoisted(() => ({ verdict: vi.fn(async () => 'allowed') }));
 /** Everything the module reaches for beyond the identity provider is inert here. */
 const services = vi.hoisted(() => {
 	const inert: unknown = new Proxy(function () {} as unknown as Record<string, unknown>, {
@@ -15,7 +16,7 @@ const services = vi.hoisted(() => {
 		apply: () => Promise.resolve(null)
 	});
 	return new Proxy({} as Record<string, unknown>, {
-		get: (_t, name) => (name === 'identity' ? identity : inert)
+		get: (_t, name) => (name === 'identity' ? identity : name === 'roleGate' ? roleGate : name === 'licenseRequired' ? () => false : inert)
 	});
 });
 vi.mock('$composition/container.server', () => ({ getServices: () => services }));
@@ -37,6 +38,7 @@ vi.mock('$env/dynamic/private', () => ({ env: {} }));
 vi.mock('$env/dynamic/public', () => ({ env: {} }));
 
 import { handle } from './hooks.server';
+import { GET as inspectSession } from './routes/api/auth/session/+server';
 
 const deleted: string[] = [];
 function request(path = '/api/auth/session') {
@@ -44,6 +46,7 @@ function request(path = '/api/auth/session') {
 	return {
 		url,
 		locals: {},
+		params: {},
 		request: new Request(url),
 		cookies: {
 			get: () => 'a-session-jwt',
@@ -57,9 +60,43 @@ const resolve = vi.fn(async () => new Response('page'));
 beforeEach(() => {
 	deleted.length = 0;
 	resolve.mockClear();
+	identity.verify.mockReset();
+	roleGate.verdict.mockReset().mockResolvedValue('allowed');
 });
 
 describe('the auth guard on /api/*', () => {
+	it('checks identity once through the real hook and introspection handler, while checking the MCP role', async () => {
+		identity.verify.mockResolvedValue({ id: 'one', email: 'one@example.test', mustChangePassword: false });
+		const event = request();
+		const res = await handle({ event, resolve: async () => inspectSession(event as never) });
+		expect(await res.json()).toEqual({ id: 'one' });
+		expect(identity.verify).toHaveBeenCalledTimes(1);
+		expect(roleGate.verdict).toHaveBeenCalledWith('a-session-jwt', 'mcp', null);
+		expect(res.headers.get('cache-control')).toContain('no-store');
+	});
+
+	it('checks a new HTTP request again and observes a revoked session', async () => {
+		identity.verify.mockResolvedValueOnce({ id: 'one', email: 'one@example.test', mustChangePassword: false }).mockResolvedValueOnce(null);
+		const first = request();
+		expect((await handle({ event: first, resolve: async () => inspectSession(first as never) })).status).toBe(200);
+		const next = request();
+		expect((await handle({ event: next, resolve: async () => inspectSession(next as never) })).status).toBe(401);
+		expect(identity.verify).toHaveBeenCalledTimes(2);
+		expect(roleGate.verdict).toHaveBeenCalledTimes(1);
+	});
+
+	it('does not reuse the earlier identity when a server handler changes the cookie', async () => {
+		identity.verify.mockResolvedValueOnce({ id: 'one', email: 'one@example.test', mustChangePassword: false }).mockResolvedValueOnce({ id: 'two', email: 'two@example.test', mustChangePassword: false });
+		const event = request();
+		const res = await handle({ event, resolve: async () => {
+			event.cookies.get = () => 'replacement-session';
+			return inspectSession(event as never);
+		} });
+		expect(await res.json()).toEqual({ id: 'two' });
+		expect(identity.verify).toHaveBeenCalledTimes(2);
+		expect(roleGate.verdict).toHaveBeenCalledWith('replacement-session', 'mcp', null);
+	});
+
 	it('answers 503 and keeps the cookie when the account service cannot be reached', async () => {
 		identity.verify.mockResolvedValue('unreachable');
 		const res = await handle({ event: request(), resolve });

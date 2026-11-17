@@ -37,26 +37,28 @@
 		: 'space-y-1.5'}
 >
 	{#if label || subgrid}
-		<div class="flex items-center gap-1.5">
+		<div class={subgrid ? 'flex items-center gap-1.5 @lg:pb-1.5' : 'flex items-center gap-1.5'}>
 			{#if label}
-				<label for={htmlFor} class="text-[11px] font-semibold text-ink-500">
-					{label}{#if required}<span class="ml-0.5 text-magenta-500">*</span>{/if}
+				<label for={htmlFor} class="font-evo-mono text-[0.6875rem] font-bold tracking-[0.08em] text-ink-3 uppercase">
+					{label}{#if required}<span class="ml-0.5 text-red-ink">*</span>{/if}
 				</label>
 				{#if hint}
-					<span class="text-[10px] text-ink-400">· {hint}</span>
+					<span class="text-[0.625rem] text-ink-400">· {hint}</span>
 				{/if}
 			{/if}
 		</div>
 	{/if}
 
-	<div class="space-y-1.5">
+	<!-- Under subgrid the input row is as tall as its tallest neighbour; a flex
+	     column lets a growing control (flex-1) fill it so both fields match. -->
+	<div class={subgrid ? 'space-y-1.5 @lg:flex @lg:flex-col' : 'space-y-1.5'}>
 		{@render children()}
 
 		{#if error || (count !== undefined && max !== undefined)}
 			<div class="flex items-start justify-between gap-3 text-xs">
-				<span class={error ? 'text-danger-500' : 'text-ink-500'}>{error ?? ''}</span>
+				<span class={error ? 'text-red-ink' : 'text-ink-3'}>{error ?? ''}</span>
 				{#if count !== undefined && max !== undefined}
-					<span class={overCount ? 'text-danger-500' : 'text-ink-400'}>{count}/{max}</span>
+					<span class={overCount ? 'text-red-ink' : 'text-ink-3'}>{count}/{max}</span>
 				{/if}
 			</div>
 		{/if}

@@ -15,7 +15,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 export interface PortfolioTools {
   listWorkspaces(args: unknown): Promise<unknown>
   listProjects(args: { workspace_id?: string }): Promise<unknown>
-  getProject(args: { project_id: string; summary?: boolean; paths?: string[] }): Promise<unknown>
+  getProject(args: { project_id: string; summary?: boolean; full?: boolean; paths?: string[] }): Promise<unknown>
   createProject(args: { workspace_id: string; name: string; description?: string }): Promise<unknown>
   updateProject(args: { project_id: string; name?: string; description?: string }): Promise<unknown>
   deleteProject(args: { project_id: string }): Promise<unknown>

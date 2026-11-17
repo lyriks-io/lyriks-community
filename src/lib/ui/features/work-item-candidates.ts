@@ -6,7 +6,7 @@ import {
 	type WorkTarget,
 	type WorkTargetKind
 } from '$domain/features';
-import type { FeatureActionIndex } from '$application/index-feature-actions';
+import type { FeatureActionIndex } from '$application/specification/index-feature-actions';
 
 /**
  * Everything a sprint (or the work queue) can take in, at the three altitudes

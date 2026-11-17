@@ -18,3 +18,8 @@ export function setGlossaryTerms(accessor: GlossaryTermsAccessor): void {
 export function getGlossaryTerms(): GlossaryTermsAccessor {
 	return getContext<GlossaryTermsAccessor>(KEY) ?? (() => []);
 }
+
+/** The same vocabulary as a context map, for a component rendered on its own (a server render, a test). */
+export function glossaryContextOf(terms: GlossaryTerm[]): Map<symbol, GlossaryTermsAccessor> {
+	return new Map([[KEY, () => terms]]);
+}

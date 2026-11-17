@@ -55,7 +55,7 @@
 		<p class="mb-2 text-sm font-semibold text-ink-900">Capture a baseline</p>
 		<div class="flex flex-wrap items-end gap-2">
 			<div class="min-w-48 flex-1">
-				<label class="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-ink-400" for="bl-name">Name</label>
+				<label class="mb-1 block text-[0.625rem] font-semibold uppercase tracking-wide text-ink-400" for="bl-name">Name</label>
 				<input
 					id="bl-name"
 					bind:value={name}
@@ -64,7 +64,7 @@
 				/>
 			</div>
 			<div class="min-w-48 flex-[2]">
-				<label class="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-ink-400" for="bl-note">Note</label>
+				<label class="mb-1 block text-[0.625rem] font-semibold uppercase tracking-wide text-ink-400" for="bl-note">Note</label>
 				<input
 					id="bl-note"
 					bind:value={note}
@@ -76,7 +76,7 @@
 				<Icon name="flag" size={14} /> {store.capturing ? 'Capturing…' : 'Capture'}
 			</Button>
 		</div>
-		<p class="mt-2 text-[11px] text-ink-400">
+		<p class="mt-2 text-[0.6875rem] text-ink-400">
 			Now: Readiness {stageLabel(stageFromScore(current.readiness))} · Coherence {current.coherence} · {current.featureCount} features.
 		</p>
 	</div>
@@ -107,14 +107,14 @@
 								oninput={(e) => store.updateBaseline(b.id, { name: e.currentTarget.value })}
 								class="w-full rounded-field border border-transparent bg-transparent px-1 py-0.5 text-sm font-semibold text-ink-900 outline-none hover:border-line focus:border-brand-300"
 							/>
-							<p class="px-1 text-[11px] text-ink-400">{fmtDate(b.createdAt)}</p>
+							<p class="px-1 text-[0.6875rem] text-ink-400">{fmtDate(b.createdAt)}</p>
 						</div>
 						<div class="flex shrink-0 items-center gap-1">
 							<button
 								type="button"
 								onclick={() => exportBaseline(b.id)}
 								title="Export requirements snapshot (Markdown)"
-								class="inline-flex items-center gap-1 rounded-field border border-line px-2 py-1.5 text-[11px] font-medium text-brand-600 hover:bg-surface-sunken"
+								class="inline-flex items-center gap-1 rounded-field border border-line px-2 py-1.5 text-[0.6875rem] font-medium text-brand-600 hover:bg-surface-sunken"
 							>
 								<Icon name="download" size={12} /> Export
 							</button>
@@ -143,7 +143,7 @@
 						value={b.note}
 						oninput={(e) => store.updateBaseline(b.id, { note: e.currentTarget.value })}
 						placeholder="Add a note…"
-						class="mt-2 w-full rounded-field border border-line bg-surface px-2.5 py-1.5 text-[13px] text-ink-700 outline-none placeholder:text-ink-300 focus:border-brand-300"
+						class="mt-2 w-full rounded-field border border-line bg-surface px-2.5 py-1.5 text-[0.8125rem] text-ink-700 outline-none placeholder:text-ink-300 focus:border-brand-300"
 					/>
 				</li>
 			{/each}

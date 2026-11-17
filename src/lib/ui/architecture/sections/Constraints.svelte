@@ -1,12 +1,15 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { Button, Icon, type IconName } from '$ui/design-system';
 	import { CONSTRAINT_CATEGORIES, type ConstraintCategory } from '$domain/architecture';
 	import type { ArchitectureStore } from '../draft-store.svelte';
 
 	interface Props {
 		store: ArchitectureStore;
+		/** A line under the header, for what the page wants to say about the list (rows still filed elsewhere). */
+		notice?: Snippet;
 	}
-	let { store }: Props = $props();
+	let { store, notice }: Props = $props();
 
 	const categoryIcon: Record<ConstraintCategory, IconName> = {
 		data_residency: 'server',
@@ -21,18 +24,14 @@
 
 <section class="rounded-card border border-line bg-surface">
 	<header class="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
-		<div>
-			<p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">
-				Non-negotiable constraints
-			</p>
-			<p class="text-xs text-ink-500">
-				Hard rules that bind every later decision and the generated product.
-			</p>
-		</div>
+		<p class="text-[0.625rem] font-bold uppercase tracking-widest text-brand-400">
+			Technical constraints
+		</p>
 		<Button variant="outline" size="sm" onclick={() => store.addConstraint()}>
 			<Icon name="plus" size={14} /> Constraint
 		</Button>
 	</header>
+	{@render notice?.()}
 
 	{#if store.draft.constraints.length === 0}
 		<p class="px-4 py-6 text-center text-xs text-ink-400">
@@ -63,7 +62,7 @@
 						value={c.category}
 						onchange={(e) =>
 							store.updateConstraint(c.id, 'category', e.currentTarget.value as ConstraintCategory)}
-						class="mt-0.5 rounded-field border border-line bg-surface px-1.5 py-0.5 text-[11px] text-ink-600"
+						class="mt-0.5 rounded-field border border-line bg-surface px-1.5 py-0.5 text-[0.6875rem] text-ink-600"
 					>
 						{#each CONSTRAINT_CATEGORIES as cat (cat.code)}
 							<option value={cat.code}>{cat.label}</option>

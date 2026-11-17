@@ -48,8 +48,8 @@ export class LyriksClient {
     return h
   }
 
-  private async request<T>(method: 'GET' | 'PUT' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown, headers?: Record<string, string>): Promise<T> {
-    const init: RequestInit = { method, headers: { ...this.headers(), ...headers } }
+  private async request<T>(method: 'GET' | 'PUT' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown, headers?: Record<string, string>, signal?: AbortSignal): Promise<T> {
+    const init: RequestInit = { method, headers: { ...this.headers(), ...headers }, ...(signal ? { signal } : {}) }
     if (body !== undefined) init.body = JSON.stringify(body)
     let retried = false
     for (;;) {
@@ -77,8 +77,8 @@ export class LyriksClient {
 
   // POST for read-only computations that need a request body (e.g. simulate) —
   // distinct from put(), which targets the section save endpoints.
-  async post<T = unknown>(path: string, body: unknown): Promise<T> {
-    return this.request<T>('POST', path, body)
+  async post<T = unknown>(path: string, body: unknown, opts: { signal?: AbortSignal } = {}): Promise<T> {
+    return this.request<T>('POST', path, body, undefined, opts.signal)
   }
 
   async patch<T = unknown>(path: string, body: unknown): Promise<T> {

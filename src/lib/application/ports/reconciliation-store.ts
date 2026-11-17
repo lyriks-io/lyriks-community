@@ -5,6 +5,8 @@
  * losing folders into a recoverable quarantine. Never deletes.
  */
 
+import type { KernelArtifact } from '$domain/portability';
+
 /** One on-disk `data/unspa/<folderKey>` folder, parsed by content id. */
 export interface LoadedFolder {
 	readonly folderKey: string;
@@ -25,6 +27,8 @@ export interface LoadedFolder {
 		/** Basename inside the folder, e.g. `feat-login.feature.json`. */
 		readonly fileName: string;
 	}>;
+	/** Read on export only; ordinary reconciliation reads do not load source text. */
+	readonly artifacts?: readonly KernelArtifact[];
 }
 
 export interface PromoteCanonicalInput {
@@ -35,11 +39,13 @@ export interface PromoteCanonicalInput {
 	readonly features: ReadonlyArray<Record<string, unknown>>;
 	/** Shared timestamp so a pre-reconcile backup lands in the same quarantine batch. */
 	readonly quarantineStamp: string;
+	/** Explicit on import, including [] for a legacy archive; omitted by reconciliation. */
+	readonly artifacts?: readonly KernelArtifact[];
 }
 
 export interface ReconciliationStorePort {
 	/** Read the given folders, parsing manifest + features by content id. */
-	loadCandidates(folderKeys: readonly string[]): Promise<LoadedFolder[]>;
+	loadCandidates(folderKeys: readonly string[], options?: { readonly includeArtifacts?: boolean }): Promise<LoadedFolder[]>;
 	/**
 	 * Stage the canonical folder in a temp dir and atomically swap it into place,
 	 * backing up any existing canonical folder into the quarantine first.

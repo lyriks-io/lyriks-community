@@ -5,95 +5,77 @@ description: "Turn a Lyriks spec into delivery work and close the loop back: fin
 
 # /lyriks-delivery
 
-Lyriks and your tracker are two layers, not two competitors. Lyriks answers **what the product is**; the tracker answers **how the work is piloted**. They join at exactly two points, and this skill is those two joins.
+Lyriks says **what the product is**; the tracker says **how the work is
+piloted**. They join twice: the ticket takes its acceptance criteria from the
+modelled scenarios (planning), and the landed code is synced back into the
+index (delivery).
 
-| Join | Direction | What happens |
-|---|---|---|
-| **Planning** | Lyriks feeds the ticket | The story's acceptance criteria are the feature's modeled scenarios. Nobody re-writes the spec. |
-| **Delivery** | The ticket feeds Lyriks back | Once the code lands, the implementation index is re-synced, so spec vs code stays honest. |
+## Know which direction you are in
 
-## First, know which direction you are in
-
-The same gap report means opposite things depending on where the project is, and
-reading it the wrong way produces a backlog nobody can act on.
-
-| Direction | The spec is | A gap means | Where the work list comes from |
+| Direction | The spec is | A gap means | The work list comes from |
 |---|---|---|---|
-| **Forward** (spec first) | ahead of the code | **planned work** not built yet, entirely expected | the roadmap's backlog and its releases |
-| **Adopted** (code first) | a model of what exists | a **defect**: the product does not do what it claims | the gap and drift reports |
+| **Forward** (spec first) | ahead of the code | planned work | the roadmap's backlog and releases |
+| **Adopted** (code first) | a model of what exists | a **defect** | the gap and drift reports |
 
-Most real projects are both at once: a modeled baseline plus capabilities that
-only exist on paper. Tell them apart before ticketing anything. A feature whose
-`implementation` is null on `get_roadmap` was never mapped to code at all, and a
-feature assigned to a future release is planned work. Never put a defect and an
-unbuilt capability in the same epic: one says the product is broken, the other
-says it is unfinished, and a team reads them differently.
+Most projects are both. A feature whose `implementation` is null on
+`get_roadmap` was never mapped; one assigned to a future release is planned.
+Never put a defect and an unbuilt capability in the same epic.
 
-## The law: one copy of the spec
+## One copy of the spec
 
-The spec lives in Lyriks and NOWHERE else. A ticket is a **thin pointer**: the feature id, what is missing, and the scenarios as acceptance criteria. The moment you paste modeled behavior as prose into a tracker, you have created a second copy that will diverge, and the tracker copy always wins arguments it should lose.
+The spec lives in Lyriks only. A ticket is a **thin pointer**: the feature id,
+what is missing, the scenarios as acceptance criteria. Title, estimate,
+assignee: the tracker's. States, rules, scenarios, entities: Lyriks', by id.
+A rule the ticket needs and the model lacks is authored in Lyriks first.
 
-- Ticket title, scope, estimate, assignee, links: the tracker's job.
-- States, actions, rules, scenarios, invariants, entities: Lyriks' job, referenced by id.
-- If a ticket needs a rule the model does not carry, the fix is to author the rule in Lyriks (`apply_behavior_batch`, see lyriks-behavior), not to write it in the ticket.
+## The binding
 
-## The binding: once Lyriks is in the conversation, it stays
+Once the user asks for Lyriks on a product, names its project, or opens a
+repository bound to it (installed `lyriks-*` skills, a `.unspa.json`), every
+later request about that product goes through Lyriks without being asked again:
 
-The first time the user asks for Lyriks on a product, names its Lyriks project, or opens a repository that carries the binding (installed `lyriks-*` skills, a `.unspa.json` index), the whole conversation is bound to that project. Nobody has to say "update Lyriks" again: the first request did.
+- **A change to make**: spec first (`apply_behavior_batch`, `patch_section`), then the code, then the index (Step 4), in the same turn.
+- **A question** (how does it behave, what is missing, what broke): read the spec first (`get_behavior_feature`, `get_section`, `get_implementation_status`, `get_implementation_gaps`, `get_implementation_drift`, `simulate_behavior`), never the code alone or memory.
+- **A change to qualify** (an estimate, an impact, a decision for someone else): an Evolution request, only when asked for (lyriks-evolution).
 
-From then on, three reflexes, on every request about that product:
+Work with no visible effect (refactor, build, formatting) skips the spec; say
+so in one line. A request that contradicts the spec is surfaced, never coded
+around.
 
-- **Something is to be changed now** (a capability, a rule, a screen, a field, a state, a flow, a message): spec first, code second, index third, in the same turn. Author or patch the feature (`apply_behavior_batch`, see lyriks-behavior), the screen (`build_screen` / `patch_section`, see lyriks-design) or the section, then write the code, then close the loop (Step 4). Code that lands without its spec is a fork of the spec, exactly what the law above forbids.
-- **Something is asked** (how does it behave, is this right, what is missing, what broke): read the spec before the code. `get_behavior_feature`, `get_section`, `get_implementation_status`, `get_implementation_gaps`, `get_implementation_drift`, `simulate_experience`, `verify_experience`. Never answer a question about specified behavior from the code alone or from memory.
-- **A change is to be qualified, not made** (what it would involve, an estimate, an impact report, a dossier to prepare, a decision that belongs to someone else): that is an Evolution request (`get_evolution` / `apply_evolution_batch`, see lyriks-evolution), which plans and writes the sections only at its freeze. Evolution is optional: open one only for this, or when the person asks for a dossier. When a request could be either ("we should add X"), ask which in one sentence; never choose silently.
+## Step 1: find the work
 
-Only work with no user-visible effect (a refactor, a build or dependency fix, formatting) skips the spec, and you say so in one line. A request that contradicts the spec is surfaced, not coded around: say what the spec says, and let the user decide which one moves.
+**`get_roadmap(project_id)` first**: one call, no index needed. Each leaf comes
+with its status, its coverage (`percent`, `found`, `expected`, `updatedAt`,
+`specUpdatedAt`) and a drift flag:
 
-## Step 1: find the work (project-wide, cheap)
-
-**Start with `get_roadmap(project_id)`.** One call, whole project, computed server-side, no index needed. Every leaf feature comes back with its workflow status, its implementation coverage (`percent`, `found`, `expected`, `updatedAt`, `specUpdatedAt`) and a drift flag when the claim and the evidence disagree:
-
-| Flag | Means | Next step |
+| Flag | Means | Next |
 |---|---|---|
-| `spec-moved-since-sync` | The feature's spec was edited AFTER the last index sync. Its coverage numbers describe an older spec. | Read the feature, size the delta, ticket it. **This is how a PO-side enrichment surfaces.** |
-| `done-but-code-incomplete` | Marked done, but the index never located every spec entity. | Either the code is missing, or the index is stale. Check before ticketing. |
-| `code-complete-but-not-done` | Every entity located, status not done. | Usually a status to fix: `reconcile_roadmap_statuses`, not a ticket. |
+| `spec-moved-since-sync` | the spec changed after the last sync | read the feature, size the delta, ticket it |
+| `done-but-code-incomplete` | done, but not every element located | code missing or index stale: check first |
+| `code-complete-but-not-done` | everything located, not done | `reconcile_roadmap_statuses`, not a ticket |
 
-Then get the element-level picture. Both of these need the `index` object out of your repo's `.unspa.json`, so they only work from the implementation checkout:
+Then, from the checkout (both need the `index` of `.unspa.json`):
 
-- `get_implementation_gaps({project_id, index})` with NO feature id returns the project roll-up: one row per feature holding spec entities (`total` / `implemented` / `partial` / `missing`, worst first), project totals, and an `unavailable` list of features the engine could not answer for. Pass `feature_id` to get the elements themselves, with the key each one carries in the index.
-- `get_implementation_drift({project_id, index, feature_id?})` names the entities whose spec moved after the code was mapped to them. Every stale row carries `scope`: `element` means that exact entity changed and the row is evidence; `feature` means only the feature-wide stamp was available, so the row is suspect by association. A feature authored before per-element stamps reports `feature` until its next edit calibrates it.
+- `get_implementation_gaps({project_id, index})`: the roll-up per feature; with `feature_id`, the elements and their index keys.
+- `get_implementation_drift({project_id, index, feature_id?})`: elements whose spec moved after the code was mapped. `scope: element` is evidence; `scope: feature` is suspicion by association.
 
 ## Step 2: read the spec, not your memory
 
-For each feature in scope: `get_behavior_feature({project_id, feature_id})`. That is the spec: surfaces, typed state, actions, rules (the guards), effects, scenarios, invariants, with stable ids. Use `paths` or `summary:true` when the feature is large.
-
-Round it out only as needed:
-
-- `get_provenance({project_id, feature_id})`: which code spans each element came from, so you name the files a dev will actually touch instead of guessing.
-- `get_implementation_context({project_id, screen_id})`: a screen brief (layout outline, journeys, entities, design tokens) when the work is UI.
-- `get_section` on `rules`, `data` or `experience` for cross-cutting context.
-- `score_behavior_feature` when you need the issue list; `assess_behavior_feature` for the full report. Both are heavy: use them to judge a feature you are about to ticket, not to browse.
-
-If the model is thin where the ticket needs depth, say so and author the depth first. A ticket built on a shell feature just moves the ambiguity downstream.
+`get_behavior_feature` per feature (`summary:true`, then by id). Add as needed:
+`get_provenance` (the files a developer will touch), `get_section experience`
+and `get_design_system` for UI work, `score_behavior_feature` or
+`assess_behavior_feature` to judge a feature before ticketing it. A thin model
+is deepened first: a ticket on a shell moves the ambiguity downstream.
 
 ## Step 3: write the ticket
 
-**A spec correction is not a ticket.** Rewriting an invariant, attaching a role,
-removing a field the code does not have: that work is done in Lyriks and it is
-finished. Only code work becomes a ticket, meaning the code does not do what the
-spec says, or the capability does not exist yet.
-
-Where your tracker has levels, map them to the model rather than to feelings about
-size: an **epic** is one campaign (a remediation, a release's worth of a
-capability), a **story** is one deliverable unit and in practice one leaf feature,
-a **task** is a mechanical sub-item of a story. A ticket that spans two features is
-two tickets; three tickets against the same feature and the same surface are
-usually one.
+**A spec correction is not a ticket**: it is done in Lyriks. Only code work
+becomes a ticket. An epic is one campaign, a story one leaf feature, a task a
+mechanical sub-item; a ticket over two features is two tickets.
 
 ```
 Title:       <what a user gains, in product words>
-Lyriks ref:  project <slug> · feature <feat-…> · gap/element ids
+Lyriks ref:  project <slug> · feature <id> · gap/element ids
 Spec stamp:  feature id + spec version (specUpdatedAt / element versions)
 What is missing: the elements the code map has not located, by id
 Files:       from get_provenance, when adoption ran
@@ -103,119 +85,117 @@ Acceptance criteria:
 Downstream:  re-sync the Lyriks index before closing (see Step 4)
 ```
 
-Acceptance criteria are **transcribed scenarios, not new prose**. A scenario already carries its state overrides, its parameters, its expected status and its assertions: that is a test, and it is the only AC that stays true when the spec changes.
+Acceptance criteria are **transcribed scenarios, never new prose**: a
+scenario is already a test.
 
-**What you cannot settle from evidence becomes a finding, not a question.** When
-the spec and the code disagree and the code does not tell you which is right,
-record it as an issue on the feature's `rules` section and carry on (same
-register as lyriks-build's product decisions: `kind` `missing_rule` or
-`ambiguity`, `status` `in_review`, the option taken and the alternative in
-`detail`). It is then part of the model, it survives the session, and this same
-pass picks it up as a ticket. Stalling on a question the human cannot answer either is the one outcome
-that helps nobody.
+**What evidence cannot settle is a finding, not a question**: an issue on
+`rules` (`missing_rule` or `ambiguity`, `in_review`, option and alternative in
+`detail`), which this pass then tickets.
 
-**Always dry-run.** Present the ticket set as text, get an explicit go, then create. Never create tracker items on your own initiative, and when the go comes, create the whole set without asking again.
+**Always dry-run**: show the ticket set, get an explicit go, then create the
+whole set without asking again.
 
-## The spec-ready snapshot (when a ticket must stand alone)
+## The spec-ready snapshot
 
-Some pipelines need the ticket to be self-sufficient: a story workflow (BMAD
-and friends), an outsourced dev, an async team that will not open Lyriks. Such
-a ticket may carry MORE than the thin pointer: a **stamped snapshot**,
-machine-generated from the model, never hand-written.
+When a ticket must stand alone (a story workflow, an outsourced team), it may
+carry a **stamped snapshot**, generated, never hand-written:
 
-1. `assess_behavior_feature` is the gate AND the source. Run it until the
-   verdict is `passed`, then take `digest.markdown` (what you can do / the
-   guards / what always holds) and the per-scenario results **verbatim**.
-2. Add the data slice from `get_section` on `data` when the work touches
-   entities, and the acceptance-criteria ids from the feature's leafMeta.
-3. Add the **spec stamp** from the template above. The stamp is what keeps the
-   one-copy law honest: any later consumer re-runs `assess_behavior_feature`,
-   compares versions, and a mismatch means the snapshot EXPIRED and must be
-   re-pulled, never patched by hand. A snapshot without its stamp is just
-   prose that will diverge; the stamp makes it a cache instead of a fork.
-4. Optionally a code-impact report (files and lines, from `get_provenance` or
-   a repo scan): it is code-facing and completes the behavior-facing digest.
+1. Run `assess_behavior_feature` until `passed`; take `digest.markdown` and the per-scenario results verbatim.
+2. Add the data slice (`get_section data`) and the feature's criterion ids.
+3. Add the spec stamp. A later reader re-runs the assess and compares: a mismatch means the snapshot expired and is pulled again, never patched.
+4. Optionally the code impact (files and lines from `get_provenance`).
 
-## Splitting the work with a story workflow (BMAD and friends)
+With a story workflow: the spec stage emits digest, scenarios, verdict, data
+slice and stamp; the story stage emits tasks, sizing, sequencing and test
+plans. Three gates: no story without a stamp and a passed verdict; re-run the
+assess and compare before decomposing; a story writer meeting an undecided
+product question sends it back to the spec. A story never replaces the
+snapshot: append it, or use a subticket.
 
-When a downstream workflow turns the spec-ready ticket into dev stories, hold
-this responsibility line:
+## The branch, from start to merge
 
-| Derived from | Emitted by | Examples |
-|---|---|---|
-| the Lyriks model | the SPEC stage (this skill + lyriks-behavior) | digest, scenarios as AC, verdict, data slice, impact report, stamp |
-| the ticket, toward build | the STORY stage (create-story or equivalent) | tasks/subtasks, sizing and splitting, sequencing, per-task test plan |
+When the request card of `get_evolution` carries `code`, the project names a
+deployment branch and the request's code follows it in git. Lyriks never
+touches the repository: you report what git says.
 
-Three gates keep that pipeline honest:
-
-- **Spec-ready gate.** No story from a ticket without a stamp and a passed
-  verdict; bounce the ticket back to spec authoring instead of decomposing a
-  guess.
-- **Freshness gate.** Before decomposing, re-run `assess_behavior_feature` and
-  compare the live spec version with the ticket's stamp. Stale means re-pull
-  the snapshot, not trust it.
-- **Bounce rule.** A story writer that meets an untraversed product decision (a
-  modelling fork the spec never settled) never invents the answer. It goes
-  back to spec authoring, where a human decides. Decomposing is the story
-  stage's ONLY creative act; sizing and sequencing are exactly the judgment
-  the model does not carry, and that is why the story stage exists at all.
-
-The story must never REPLACE the spec-ready snapshot on the ticket: append it,
-or put it on a subticket. The snapshot is what the freshness gate and the next
-re-sync read; a story that overwrote it has severed the ticket from its spec.
+1. **Work on `code.expectedBranch`**, never on the deployment branch: `git switch -c <expectedBranch> <deploymentBranch>`.
+2. **Commit, then test**: a result on uncommitted code or another commit proves nothing. Commit the code, run the tests, `ingest-results.mjs`, then commit `.unspa.json`.
+3. **Every sync reports the code**: `sync-index.mjs` sends the index, then the code state; read `codeState` (accepted, or the refusal).
+4. **The validation fixes one commit**; a later commit of code sets it aside.
+5. **The merge makes it live**: merge into the deployment branch when the person asks, then `node .lyriks/tools/report-merge.mjs --branch <request branch>` from the deployment branch (it checks the validated commit is in the merge and syncs the index). Never push.
+6. **Cancelled**: `git branch -D <branch>`.
 
 ## Step 4: close the loop after the code lands
 
-Implementation without a re-sync is how the Coherence reading rots. In the same session as the code:
+**The mapping law**: a mapping is real only when the code is captured. Never
+report a bare `{file, line}`: an entry without its `signature` (the exact
+line, verbatim) lands `unverified`. Leave none; if you cannot capture the code,
+say so.
 
-**The mapping law (one concept: adopt, implement, trace).** A spec↔code mapping is only real when the code itself is captured. Never record or report a bare `{file, line}`: that is a claim the engine cannot check, and the dashboard stamps such locations `unverified`. Whichever branch below applies, the code travels with the mapping: adoption spans carry it automatically, and a hand-written entry carries it as `signature` (the exact line, verbatim). An entry synced without a signature, or a `report_implementation_status` location without a `snippet`, lands as `unverified` in the implementation panel. Leave zero unverified locations behind; if you cannot capture the code, say so instead of reporting the location.
+For adoption, verify feature `sourceIds`, register `stored` identity, analysis
+source links and spans separately. Register before capture and pass `register_id`.
+Reuse stored text after name/kind/size/hash checks; repair pointers without new
+uploads where supported. Compare candidates by source, consumed offsets, type,
+decision, target and multiplicity; preserve associations and rationales.
 
-1. Get the new entries into the index. The direction decides how, and only one of the two branches applies:
-   - **Adopted** (existing code being modeled): `record_element_spans` / `finalize_analysis`, then `seed_implementation_index({project_id, feature_id})` returns entries. It only answers for features that hold spans; on a spec-first feature it refuses with "No spans recorded", and that refusal is NOT an instruction to go record spans.
-   - **Forward** (spec first, code written to it): there are no spans and there never will be. The code reuses the spec's English names by default (lyriks-behavior's vocabulary language law), so locating an element is mostly a search for its own name. Write the entries yourself, one per element the code now implements (`rule:<id>`, `invariant:<id>`, `surface_rule:<id>`, `surface_invariant:<id>`, `event:<name>`, `state:<path>`, `transition:<id>`, plus the `action:` / `surface:` parents), each at the exact line that applies it, with `signature` (that line, verbatim) and `specVersion` (the feature's `updatedAt` from `get_behavior_feature`, which is what arms drift). An element you looked for and did not find gets an entry with `status: "missing"`: that is how "searched, absent" stays distinguishable from "never searched". Locating code that was written from a spec is the job of `lyriks-trace` when it spans more than a handful of elements.
-2. Write the entries into your repo's `.unspa.json` yourself. The platform never stores your index.
-3. `sync_implementation_index({project_id, index})` pushes coverage in one call. Check `orphans`: a non-empty list means index keys that no longer resolve, usually a rename.
-   - **The index you send may be partial.** Actions and surfaces absent from it are left untouched, their previous reports stay. The unit that travels together is an action or a surface entry WITH all of its children (rules, states, invariants, transitions, events), because a report replaces what was located for that action or surface. After changing one feature, send that feature's entries: a large index (megabytes on a big project) does not fit in a tool call, and does not need to.
-   - **Read the counters for what they count.** `synced` is the number of reports written, one per action and per surface that has its own entry; `skipped` is the actions and surfaces with no entry in what you sent; child keys are folded into their parent's report. `stale` and `healed` in THIS answer are about code location, and an index sent through the MCP is never checked against your files, so zero there is not a clean bill. Whether the SPEC moved under an entry is `get_implementation_drift`, which is a different question under the same word.
-   - **The scripts for this ship with the skills.** `sync_skills` installs them under `.lyriks/tools/` (plain Node, no dependency; endpoint from `LYRIKS_MCP_URL`, bearer from `LYRIKS_MCP_TOKEN`). `node .lyriks/tools/check-index.mjs --fix` checks every entry against the code the way the engine does (the signature found by its TEXT, `line` as a hint, every problem in one run) and rewrites the line numbers that moved: it replaces any line-exact checker. `node .lyriks/tools/sync-index.mjs [--feature <featureId>]` sends the index, whole or one feature's keys with all their children, when it does not fit in a tool call; `apply-batch.mjs <feature_id> <ops.json> --dry-run` does the same for a behavior batch, and `mcp-call.mjs <tool> <args.json>` for any other tool. Never hand-write a JSON-RPC client for this.
-   - **Proof comes back through a script too, never by hand.** `export_behavior_scenarios` gives the feature's scenarios as fixtures, each with a `titleToken` (`[unspa:<surfaceId>:<actionId>:<scenarioId>]`).
-     The repository's test calls the REAL code through one adapter (given, the action, the expected outcome) and puts that token in the title of each test, so a plain `--reporter=json` report says which scenario each result belongs to.
-     `node .lyriks/tools/ingest-results.mjs <report.json> [--dry-run]` then stamps `verifiedAt` on every action whose results ALL passed, removes it from an action with a failing result, and only reports an action that has no index entry (it never creates one: locate first, prove second). No network.
-     `sync-index.mjs` carries the proof with the rest of the entry. Located and proven are two different claims: an index entry says where the code is, and only a passing run of the real code says it behaves. Never type a `verifiedAt` yourself.
-4. `reconcile_roadmap_statuses` aligns feature statuses with the coverage that just landed (upgrade-only, it never demotes a hand-set done).
-5. Only then move the ticket to done.
+1. Get the entries:
+   - **Adopted**: `record_element_spans`, `finalize_analysis`, then `seed_implementation_index`. On a spec-first feature it refuses ("No spans recorded"): that is not an instruction to record spans.
+   - **Forward**: write the entries yourself, one per element the code implements (`rule:`, `invariant:`, `surface_rule:`, `surface_invariant:`, `event:`, `state:`, `transition:`, and their `action:` / `surface:` parents), at the line that applies it, with `signature` and `specVersion` (the feature's `updatedAt`). Searched and absent is `status: "missing"`. The code reuses the spec's names, so search for them.
+2. Write them into `.unspa.json` (`node .lyriks/tools/index-file.mjs upsert`); the platform never stores your index.
+3. `sync_implementation_index({project_id, index})`, and read `orphans` (usually a rename).
+   - **Send a partial index**: the features you touched, each action or surface WITH all its children (a report replaces what was located under it).
+   - `synced` counts reports, one per action and surface; `stale` and `healed` there are about code location and are never checked on an inline index. Spec drift is `get_implementation_drift`.
+   - **The scripts ship with the skills** under `.lyriks/tools/` (plain Node; `LYRIKS_MCP_URL`, `LYRIKS_MCP_TOKEN`): `check-index.mjs --fix` finds each signature by its TEXT and rewrites moved lines; `sync-index.mjs [--feature <id>]` sends what does not fit a tool call; `apply-batch.mjs` and `mcp-call.mjs` do the same for a batch or any tool. Never hand-write a JSON-RPC client.
+   - **Proof comes back by script**: `export_behavior_scenarios` gives fixtures with a `titleToken` (`[unspa:<surfaceId>:<actionId>:<scenarioId>]`); the repository's tests call the REAL code through one adapter and carry the token in their title; `node .lyriks/tools/ingest-results.mjs <report.json>` stamps `verifiedAt` on every action whose results all passed (no network). Located and proven are two claims; never type a `verifiedAt`.
+4. `reconcile_roadmap_statuses` (it only upgrades).
+5. Then close the ticket, once `get_roadmap` no longer flags the feature. If it still does, say so.
 
-After that, `get_roadmap` should no longer flag the feature. If it still does, the loop is not closed: say so rather than closing the ticket.
+An index export must be complete before saving: compare keys with the native
+denominator, reject truncated signatures/paths and shape placeholders, and page
+or export the missing entries. Never turn a capped seed into a local index.
+Report citations, finalized provenance, exact code signatures, sync acknowledgments
+and measured coverage separately. An accepted sync can precede the aggregate
+recalculation; inspect the touched reports and freshness before sending it again.
+Located code and code proven by tests remain different claims.
 
-## Reading a PO-side enrichment
+## Keep the places true between two runs (CI)
 
-When someone enriches the spec and hands you "we added X on feature Y", trust it and go straight to `get_behavior_feature`. When nobody tells you, the three signals above find it: `get_roadmap` flags the feature as `spec-moved-since-sync`, and `get_implementation_drift` names the elements with `scope: "element"`. Announcement is faster; detection is what catches what nobody announced. Use both, and never assume silence means nothing moved.
+Other people change the code too. In a shared repository, propose this job on
+every merge to the main branch, or nightly:
+
+```bash
+node .lyriks/tools/check-index.mjs --fix   # Node 18, nothing to install, no network
+node .lyriks/tools/sync-index.mjs          # only where the job can reach Lyriks
+```
+
+`check-index --fix` rewrites the lines that moved and fails, naming the entry, when a code line is found nowhere: the entry is re-audited the day its code changes. Never edit a line number by hand to make the job pass. `sync-index` sends the healed index with `LYRIKS_MCP_URL` and, where sign-in is required, `LYRIKS_MCP_TOKEN` held as a CI secret. Say that such a token expires: without a valid one the job keeps the check and drops the sync.
+
+## A spec enriched by someone else
+
+Told "we added X on feature Y": go to `get_behavior_feature`. Not told:
+`get_roadmap` flags `spec-moved-since-sync` and the drift names the elements.
+Never take silence for no change.
 
 ## What these tools cannot tell you
 
-Be explicit about this with the humans you work with; it changes the team's convention.
-
-- **A key several features share holds ONE location.** State keys carry a path, not a feature id, so a `state:session.role` declared in a dozen features is ONE entry describing whichever was seeded last. `sync_implementation_index` names them in its `shared` block: read it, and do not ticket a gap on the strength of one of those rows alone.
-- **The index lives in your checkout**, versioned with the code it describes. A PO working only in the dashboard cannot make gaps or drift move: someone has to run them from the repo. `get_roadmap` is the exception, which is why it comes first.
-- **A green coverage number is evidence of a past sync, not of working code.** Read `updatedAt` before trusting `percent`, and treat `spec-moved-since-sync` as "these numbers answer for a spec that no longer exists".
-- **Drift answers "what changed", not "what it now says".** A stale row names the element and when it moved; read the feature to see what it says today.
-- **An index entry is a located line, not a proven behavior.** `implemented` means the signature text was found where the entry says, nothing more: the anchor can be arbitrary, and the code under it can be wrong. What proves behavior is a test run against the code. Keep the two apart in every report you write, and keep line numbers honest with `.lyriks/tools/check-index.mjs` (Step 4), which finds each signature by its TEXT and treats the line as a hint, so that nobody pads existing lines or avoids a clean edit to keep other features' entries valid.
-- **Every child element needs its own index key.** An `action:` entry says nothing about the rules, invariants and events under it; a coverage that plateaus with every action found and every rule missing means the index was never given `rule:` / `invariant:` keys, not that the rules are unimplemented. Do not conclude on such a number: add the keys (Step 4) and re-sync.
-- **An element nobody ever stamped reports `scope: "feature"`.** That is the old coarse signal, not a bug: the whole feature is implicated because nothing finer exists yet. One edit through the authoring tools calibrates it.
+- **A key several features share holds ONE location** (a `state:` key carries a path, not a feature): the sync's `shared` block names them.
+- **The index lives in the checkout**: gaps and drift move only when someone runs them from the repository. `get_roadmap` is the exception.
+- **A green coverage is a past sync, not working code**: read `updatedAt` before `percent`.
+- **Drift says what changed, not what it says now**: read the feature.
+- **A located line is not a proven behaviour**: only a test run of the code proves it.
+- **Every child needs its own key**: every action found and every rule missing means `rule:` keys were never written.
 
 ## Access and cost
 
-- Authentication depends on the install. A single-tenant appliance may need none; a multi-user one requires a Bearer Lyriks token, obtained interactively in a normal session. Headless and CI runs carry that token in the client config, and tokens expire: a run that used to work and now returns 401 is usually an expired credential, not a broken tool.
-- Reads (`get_roadmap`, `get_behavior_feature`, `get_provenance`) are light. Whole-project operations (`assess_project_completeness`, `audit_project_scope`, `verify_experience`) are heavy: run them at a milestone, not per ticket.
-- Call `sync_skills` at the start of an authoring session so this playbook and its siblings are current.
+- A multi-user install needs a Lyriks token; a run that now answers 401 usually holds an expired one.
+- Reads are light; `assess_project_completeness` and `audit_project_scope` are heavy: run them at milestones.
+- `sync_skills` at the start of a session keeps these playbooks current.
 
 ## Never
 
-- Never re-write modeled behavior as prose in the tracker. One copy; a stamped, machine-generated snapshot is a cache of that copy, hand-written prose is a fork.
-- Never invent acceptance criteria the model does not carry. Author them in Lyriks first, then transcribe.
-- Never let a later stage (a story, a dev note) overwrite the spec-ready snapshot on a ticket. Append, or use a subticket.
-- Never decompose a stale snapshot: re-run the assess, compare the stamp, re-pull.
-- Never create, update or close tracker items without an explicit go.
-- Never use `generate_artifact` with `type:"user_stories"` on a project specified through the behavior kernel: it reads the legacy unified model and ignores your rules and scenarios entirely.
-- Never close a ticket whose feature still flags in `get_roadmap`.
-- Never code a product change the bound project does not carry yet, and never wait to be asked "update Lyriks" a second time: the binding was set by the first request.
+- Paste modelled behaviour into the tracker, or invent criteria the model lacks.
+- Let a story overwrite the snapshot, or decompose a stale one.
+- Create, update or close tracker items without an explicit go.
+- Use `generate_artifact` with `type:"user_stories"` on a behavior-kernel project: it ignores your rules and scenarios.
+- Close a ticket whose feature still flags in `get_roadmap`.
+- Code a change the bound project does not carry yet.

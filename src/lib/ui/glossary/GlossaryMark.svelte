@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { Icon } from '$ui/design-system';
+	import Icon from '$ui/design-system/Icon.svelte';
 	import type { Mark } from '$domain/glossary';
+	import { leaveTheStage, takeTheStage } from '$ui/shell/one-card';
 
 	interface Props {
 		text: string;
@@ -29,16 +30,23 @@
 		return { destroy: () => node.remove() };
 	}
 
+	// One card at a time: another card opening closes this one at once.
+	function closeNow() {
+		if (closeTimer) clearTimeout(closeTimer);
+		open = false;
+		leaveTheStage(closeNow);
+	}
 	function show() {
 		if (closeTimer) clearTimeout(closeTimer);
 		const r = anchor.getBoundingClientRect();
 		x = r.left + r.width / 2;
 		y = r.top;
+		takeTheStage(closeNow);
 		open = true;
 	}
 	function scheduleHide() {
 		if (closeTimer) clearTimeout(closeTimer);
-		closeTimer = setTimeout(() => (open = false), 120);
+		closeTimer = setTimeout(closeNow, 120);
 	}
 	function keepOpen() {
 		if (closeTimer) clearTimeout(closeTimer);
@@ -47,7 +55,7 @@
 	const canFix = $derived(!!onFix && mark.kind !== 'canonical');
 	function applyFix() {
 		onFix?.(mark.canonical);
-		open = false;
+		closeNow();
 	}
 
 	const tone = $derived(
@@ -59,6 +67,9 @@
 	);
 </script>
 
+<!-- The underline alone marks the word (dotted for a term, dashed red for a
+     word to avoid): an icon beside it broke the rhythm of every sentence. The
+     card on hover says the rest. -->
 <span
 	bind:this={anchor}
 	role="button"
@@ -72,11 +83,7 @@
 	'banned'
 		? 'decoration-dashed'
 		: ''}"
->
-	{text}<Icon name={mark.kind === 'banned' ? 'info' : 'book'} size={10} class="ml-0.5 inline-block -translate-y-1 {tone.icon}" />
-</span>
-
-{#if open}
+>{text}</span><!-- No whitespace here: it would render as a space before the punctuation that follows the word. -->{#if open}
 	<span
 		use:portal
 		role="tooltip"
@@ -89,22 +96,22 @@
 	>
 		<span class="mb-1 flex items-center gap-1.5">
 			<Icon name={mark.kind === 'banned' ? 'info' : 'book'} size={12} class={tone.icon} />
-			<span class="text-[10px] font-bold uppercase tracking-[0.12em] {tone.labelCls}">{tone.label}</span>
+			<span class="text-[0.625rem] font-bold uppercase tracking-[0.12em] {tone.labelCls}">{tone.label}</span>
 		</span>
-		<span class="block text-[13px] font-semibold text-ink-900">{mark.canonical}</span>
+		<span class="block text-[0.8125rem] font-semibold text-ink-900">{mark.canonical}</span>
 		{#if mark.definition.trim()}
-			<span class="mt-0.5 block text-[11px] leading-snug text-ink-500">{mark.definition}</span>
+			<span class="mt-0.5 block text-[0.6875rem] leading-snug text-ink-500">{mark.definition}</span>
 		{/if}
 		{#if mark.kind === 'allowed'}
-			<span class="mt-1 block text-[10px] text-ink-400">Accepted, but prefer the canonical term.</span>
+			<span class="mt-1 block text-[0.625rem] text-ink-400">Accepted, but prefer the canonical term.</span>
 		{:else if mark.kind === 'banned'}
-			<span class="mt-1 block text-[10px] text-danger-600">Forbidden word - replace it with the canonical term above.</span>
+			<span class="mt-1 block text-[0.625rem] text-danger-600">A word to avoid: this product says the term above.</span>
 		{/if}
 		{#if canFix}
 			<button
 				type="button"
 				onclick={applyFix}
-				class="mt-2 inline-flex items-center gap-1 rounded-field bg-brand-500 px-2 py-1 text-[11px] font-semibold text-white transition hover:bg-brand-600"
+				class="mt-2 inline-flex items-center gap-1 rounded-field bg-brand-500 px-2 py-1 text-[0.6875rem] font-semibold text-white transition hover:bg-brand-600"
 			>
 				<Icon name="check" size={11} /> Use “{mark.canonical}”
 			</button>

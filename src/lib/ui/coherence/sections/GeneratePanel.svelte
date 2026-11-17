@@ -21,7 +21,7 @@
 			<p class="text-sm font-semibold text-ink-900">
 				Generate Structured Functional + Technical Specifications
 			</p>
-			<p class="mt-0.5 text-[11px] text-ink-500">
+			<p class="mt-0.5 text-[0.6875rem] text-ink-500">
 				Output: 1 functional document · 1 technical document · 1 product requirements document · 1 coherence graph · ready to become
 				an AI Generation Contract.
 			</p>
@@ -39,7 +39,7 @@
 
 	{#if store.draft.specsGenerated && store.draft.artifacts.length > 0}
 		<div class="border-t border-line px-5 py-3">
-			<p class="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-success-600">
+			<p class="mb-2 text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-success-600">
 				Generated {store.draft.generatedAt ? `· ${new Date(store.draft.generatedAt).toLocaleString()}` : ''}
 			</p>
 			<ul class="space-y-2">
@@ -56,15 +56,15 @@
 								<Icon name={open ? 'chevron-down' : 'chevron-right'} size={13} />
 								<Icon name="file-check" size={13} />
 								<span class="truncate font-medium text-ink-800">{art.title}</span>
-								<span class="rounded-pill bg-surface-sunken px-1.5 py-0.5 text-[10px] text-ink-500">
+								<span class="rounded-pill bg-surface-sunken px-1.5 py-0.5 text-[0.625rem] text-ink-500">
 									{kindLabel(art.kind)}
 								</span>
-								<span class="text-[10px] text-ink-400">{art.content.length} chars</span>
+								<span class="text-[0.625rem] text-ink-400">{art.content.length} chars</span>
 							</button>
 							<button
 								type="button"
 								onclick={() => store.copyArtifact(art)}
-								class="flex items-center gap-1 rounded-field border border-line px-2 py-1 text-[11px] font-medium text-ink-600 hover:bg-surface-sunken"
+								class="flex items-center gap-1 rounded-field border border-line px-2 py-1 text-[0.6875rem] font-medium text-ink-600 hover:bg-surface-sunken"
 								title="Copy contents"
 							>
 								<Icon name="grid" size={12} /> Copy
@@ -72,7 +72,7 @@
 							<button
 								type="button"
 								onclick={() => store.downloadArtifact(art)}
-								class="flex items-center gap-1 rounded-field border border-brand-200 bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-600 hover:bg-brand-100"
+								class="flex items-center gap-1 rounded-field border border-brand-200 bg-brand-50 px-2 py-1 text-[0.6875rem] font-medium text-brand-600 hover:bg-brand-100"
 								title="Download file"
 							>
 								<Icon name="external-link" size={12} /> Download
@@ -85,7 +85,7 @@
 										<CodeBlock code={art.content} language="json" filename={store.artifactFile(art).name} />
 									</div>
 								{:else}
-									<pre class="max-h-80 overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-[11.5px] leading-relaxed text-ink-700">{art.content}</pre>
+									<pre class="max-h-80 overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-[0.71875rem] leading-relaxed text-ink-700">{art.content}</pre>
 								{/if}
 							</div>
 						{/if}

@@ -16,12 +16,13 @@ vi.mock('$composition/container.server', () => ({
 		}
 	})
 }));
+import { getServices } from '$composition/container.server';
 
 import { isMcpPath, proxyToMcp } from './mcp-proxy.server';
 
 function event(path: string, init: RequestInit = {}): RequestEvent {
 	const url = new URL(`https://lyriks.internal${path}`);
-	return { url, request: new Request(url, init) } as RequestEvent;
+	return { url, request: new Request(url, init), locals: { services: getServices() } } as unknown as RequestEvent;
 }
 
 describe('isMcpPath', () => {

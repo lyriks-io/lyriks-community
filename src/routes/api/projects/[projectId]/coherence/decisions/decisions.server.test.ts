@@ -46,6 +46,7 @@ vi.mock('$composition/container.server', () => ({
 		}
 	})
 }));
+import { getServices } from '$composition/container.server';
 
 vi.mock('$lib/server/project-access.server', () => ({
 	requireProjectAccess: vi.fn(async () => {})
@@ -57,6 +58,7 @@ type Handler = Parameters<typeof POST>[0];
 
 const decide = (headers: Record<string, string> = {}) =>
 	({
+		locals: { services: getServices() },
 		params: { projectId: 'p1' },
 		request: new Request('http://localhost/api/projects/p1/coherence/decisions', {
 			method: 'POST',
@@ -106,7 +108,8 @@ describe('who may settle a coherence finding', () => {
 			acknowledgedGapIds: ['g1']
 		};
 		const event = {
-			params: { projectId: 'p1' },
+			locals: { services: getServices() },
+		params: { projectId: 'p1' },
 			request: new Request('http://localhost/api/projects/p1/coherence/decisions', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json', 'x-lyriks-actor': 'ai_client' },

@@ -1,4 +1,6 @@
-import type { CoherenceIssue, CoherenceResult, CoherenceTone } from '$domain/shared';
+import type { CoherenceIssue, CoherenceResult } from '$domain/shared';
+import { NBSP, type SpecLanguage } from '$domain/language';
+import { sectionTone } from '$domain/coherence/section-tone';
 import { SETTLED_STATUSES } from './enums';
 import { openCriticalContradictions } from './can-advance';
 import type { ProjectRulesDraft } from './draft';
@@ -25,16 +27,11 @@ import type { ProjectRulesDraft } from './draft';
  * Score clamped to [0, 100], same convention as Steps 01-05.
  */
 
-function toneFor(score: number): { tone: CoherenceTone; label: string } {
-	if (score < 34) return { tone: 'critical', label: 'Critical' };
-	if (score < 67) return { tone: 'at-risk', label: 'At risk' };
-	return { tone: 'strong', label: 'Strong' };
-}
-
 /** Issue kinds that a Given/When/Then scenario is expected to cover. */
 const GAP_KINDS = ['missing_rule', 'unhandled_edge'] as const;
 
-export function computeRulesCoherence(draft: ProjectRulesDraft): CoherenceResult {
+export function computeRulesCoherence(draft: ProjectRulesDraft, lang: SpecLanguage = 'en'): CoherenceResult {
+	const fr = lang === 'fr';
 	const issues: CoherenceIssue[] = [];
 	let score = 0;
 
@@ -46,11 +43,12 @@ export function computeRulesCoherence(draft: ProjectRulesDraft): CoherenceResult
 			code: 'empty-inventory',
 			// No instruction to act on this section: the mirror fills itself when
 			// rules are declared upstream, which is where this sends the reader.
-			message:
-				'No rule reaches this inventory. It mirrors what Foundation declares (SLAs, authentication, retention), the grants in Users & Permissions and the Experience journeys, and it is recomputed on every load: declare them there. Contradictions and edge cases are authored here.'
+			message: fr
+				? `Aucune règle n'atteint cet inventaire. Il reflète ce que déclare la Fondation (SLA, authentification, conservation), les droits de la section Utilisateurs et permissions et les parcours de l'Expérience, et il est recalculé à chaque chargement${NBSP}: déclarez-les là. Les contradictions et les cas limites se rédigent ici.`
+				: 'No rule reaches this inventory. It mirrors what Foundation declares (SLAs, authentication, retention), the grants in Users & Permissions and the Experience journeys, and it is recomputed on every load: declare them there. Contradictions and edge cases are authored here.'
 		});
 		if (!authoredHere) {
-			const { tone, label } = toneFor(0);
+			const { tone, label } = sectionTone(0, lang);
 			return { score: 0, tone, label, issues };
 		}
 	}
@@ -61,7 +59,9 @@ export function computeRulesCoherence(draft: ProjectRulesDraft): CoherenceResult
 	if (openCritical.length > 0) {
 		issues.push({
 			code: 'open-critical-contradiction',
-			message: `${openCritical.length} critical contradiction(s) still open.`
+			message: fr
+				? `${openCritical.length} contradiction(s) critique(s) encore ouverte(s).`
+				: `${openCritical.length} critical contradiction(s) still open.`
 		});
 	} else {
 		score += 30;
@@ -74,7 +74,9 @@ export function computeRulesCoherence(draft: ProjectRulesDraft): CoherenceResult
 		if (settled < draft.issues.length) {
 			issues.push({
 				code: 'open-issues',
-				message: `${draft.issues.length - settled} issue(s) still open.`
+				message: fr
+					? `${draft.issues.length - settled} problème(s) encore ouvert(s).`
+					: `${draft.issues.length - settled} issue(s) still open.`
 			});
 		}
 	} else {
@@ -92,7 +94,9 @@ export function computeRulesCoherence(draft: ProjectRulesDraft): CoherenceResult
 		if (covered < gaps.length) {
 			issues.push({
 				code: 'uncovered-gaps',
-				message: `${gaps.length - covered} gap(s) without an edge-case scenario.`
+				message: fr
+					? `${gaps.length - covered} manque(s) sans scénario de cas limite.`
+					: `${gaps.length - covered} gap(s) without an edge-case scenario.`
 			});
 		}
 	} else {
@@ -100,6 +104,6 @@ export function computeRulesCoherence(draft: ProjectRulesDraft): CoherenceResult
 	}
 
 	const clamped = Math.max(0, Math.min(100, Math.round(score)));
-	const { tone, label } = toneFor(clamped);
+	const { tone, label } = sectionTone(clamped, lang);
 	return { score: clamped, tone, label, issues };
 }

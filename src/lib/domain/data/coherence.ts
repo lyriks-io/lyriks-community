@@ -1,4 +1,6 @@
-import type { CoherenceIssue, CoherenceResult, CoherenceTone } from '$domain/shared';
+import type { CoherenceIssue, CoherenceResult } from '$domain/shared';
+import { NBSP, type SpecLanguage } from '$domain/language';
+import { sectionTone } from '$domain/coherence/section-tone';
 import { fieldsOfEntity, type DataEntity, type ProjectDataDraft } from './draft';
 
 /**
@@ -27,8 +29,11 @@ export function unrelatedEntities(draft: ProjectDataDraft): DataEntity[] {
 		connected.add(field.entityId);
 		connected.add(target);
 	}
-	return entities.filter((entity) => !connected.has(entity.id));
+	return entities.filter((entity) => !connected.has(entity.id) && !standsAloneOnPurpose(entity));
 }
+
+/** Marked standalone and saying why: a decision, not an orphan. */
+const standsAloneOnPurpose = (entity: DataEntity) => entity.standalone === true && entity.description.trim().length > 0;
 
 /**
  * Local-coherence for Step 07. Five concerns — the "no forgotten table, no
@@ -43,13 +48,8 @@ export function unrelatedEntities(draft: ProjectDataDraft): DataEntity[] {
  * Score clamped to [0, 100], same convention as Steps 01-06.
  */
 
-function toneFor(score: number): { tone: CoherenceTone; label: string } {
-	if (score < 34) return { tone: 'critical', label: 'Critical' };
-	if (score < 67) return { tone: 'at-risk', label: 'At risk' };
-	return { tone: 'strong', label: 'Strong' };
-}
-
-export function computeDataCoherence(draft: ProjectDataDraft): CoherenceResult {
+export function computeDataCoherence(draft: ProjectDataDraft, lang: SpecLanguage = 'en'): CoherenceResult {
+	const fr = lang === 'fr';
 	const issues: CoherenceIssue[] = [];
 	let score = 0;
 
@@ -57,7 +57,10 @@ export function computeDataCoherence(draft: ProjectDataDraft): CoherenceResult {
 	if (draft.hosts.length > 0 && draft.databases.length > 0) {
 		score += 10;
 	} else {
-		issues.push({ code: 'no-infra', message: 'No host/database declared yet.' });
+		issues.push({
+			code: 'no-infra',
+			message: fr ? "Aucun hôte ni aucune base de données n'est encore déclaré." : 'No host/database declared yet.'
+		});
 	}
 
 	const entities = draft.entities;
@@ -72,7 +75,9 @@ export function computeDataCoherence(draft: ProjectDataDraft): CoherenceResult {
 		if (covered < draft.derivedEntities.length) {
 			issues.push({
 				code: 'forgotten-table',
-				message: `${draft.derivedEntities.length - covered} entity(ies) referenced by journeys have no table.`
+				message: fr
+					? `${draft.derivedEntities.length - covered} entité(s) citée(s) par les parcours sans table.`
+					: `${draft.derivedEntities.length - covered} entity(ies) referenced by journeys have no table.`
 			});
 		}
 	} else if (entities.length > 0) {
@@ -86,7 +91,9 @@ export function computeDataCoherence(draft: ProjectDataDraft): CoherenceResult {
 		if (withFields < entities.length) {
 			issues.push({
 				code: 'fieldless-entity',
-				message: `${entities.length - withFields} entity(ies) without a field.`
+				message: fr
+					? `${entities.length - withFields} entité(s) sans champ.`
+					: `${entities.length - withFields} entity(ies) without a field.`
 			});
 		}
 
@@ -98,11 +105,16 @@ export function computeDataCoherence(draft: ProjectDataDraft): CoherenceResult {
 		if (placed < entities.length) {
 			issues.push({
 				code: 'unplaced-entity',
-				message: `${entities.length - placed} entity(ies) not placed on a database.`
+				message: fr
+					? `${entities.length - placed} entité(s) placée(s) sur aucune base de données.`
+					: `${entities.length - placed} entity(ies) not placed on a database.`
 			});
 		}
 	} else {
-		issues.push({ code: 'no-entity', message: 'No entity modeled yet.' });
+		issues.push({
+			code: 'no-entity',
+			message: fr ? "Aucune entité n'est encore modélisée." : 'No entity modeled yet.'
+		});
 	}
 
 	// 5a. Relational integrity, 15 pts. Every relation field resolves to an entity.
@@ -116,7 +128,9 @@ export function computeDataCoherence(draft: ProjectDataDraft): CoherenceResult {
 		if (resolved < relationFields.length) {
 			issues.push({
 				code: 'broken-relation',
-				message: `${relationFields.length - resolved} relation(s) point nowhere.`
+				message: fr
+					? `${relationFields.length - resolved} relation(s) ne pointe(nt) vers rien.`
+					: `${relationFields.length - resolved} relation(s) point nowhere.`
 			});
 		}
 	} else if (entities.length > 0) {
@@ -136,10 +150,13 @@ export function computeDataCoherence(draft: ProjectDataDraft): CoherenceResult {
 			const more = orphans.length - shown.length;
 			issues.push({
 				code: 'unrelated-entity',
-				message:
-					`${orphans.length} entity(ies) take part in no relation: ${shown.join(', ')}` +
-					`${more > 0 ? ` and ${more} more` : ''}. ` +
-					'Every table relates to what owns it or to what it references; model the relation the product really has, or record in its description why the table stands alone.'
+				message: fr
+					? `${orphans.length} entité(s) ne participe(nt) à aucune relation${NBSP}: ${shown.join(', ')}` +
+						`${more > 0 ? ` et ${more} autres` : ''}. ` +
+						`Chaque table se rattache à ce qui la possède ou à ce qu'elle référence${NBSP}; modélisez la relation que le produit a réellement, ou marquez la table isolée (standalone) en disant pourquoi dans sa description.`
+					: `${orphans.length} entity(ies) take part in no relation: ${shown.join(', ')}` +
+						`${more > 0 ? ` and ${more} more` : ''}. ` +
+						'Every table relates to what owns it or to what it references; model the relation the product really has, or mark the table standalone and say in its description why it stands alone.'
 			});
 		}
 	} else if (entities.length === 1) {
@@ -147,6 +164,6 @@ export function computeDataCoherence(draft: ProjectDataDraft): CoherenceResult {
 	}
 
 	const clamped = Math.max(0, Math.min(100, Math.round(score)));
-	const { tone, label } = toneFor(clamped);
+	const { tone, label } = sectionTone(clamped, lang);
 	return { score: clamped, tone, label, issues };
 }

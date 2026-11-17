@@ -4,7 +4,7 @@ import type { PageServerLoad } from './$types';
 /**
  * Baselines has been merged into the Traceability capability as its "Baselines"
  * tab (matching the prototype's information architecture). This route is kept
- * only so old deep-links and Control Center "Fix now" targets still resolve — it
+ * only so old deep-links and a "Fix now" link of What Lyriks noticed targets still resolve — it
  * redirects to the merged page with the baselines tab pre-selected. The baselines
  * draft + /api/.../baselines endpoints are unchanged; it is now rendered inside
  * Traceability.

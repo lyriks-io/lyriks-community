@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -116,6 +116,81 @@ describe('index-file.mjs upsert / remove / set-project', () => {
 		const dir = repo(JSON.stringify({ projectId: 'p', index: many(1) }));
 		const probe = `import(${JSON.stringify(script('index-file.mjs'))}).then((m) => console.log(typeof m.loadIndexFile, m.loadIndexFile().projectId))`;
 		expect(execFileSync('node', ['--input-type=module', '-e', probe], { cwd: dir, encoding: 'utf8' }).trim()).toBe('function p');
+	});
+});
+
+describe('index-file.mjs creates the index it edits [criterion:ecb81e58]', () => {
+	/** A repository that has no index yet, with the binding block sync_skills writes when `project` is given. */
+	function bare(project?: string) {
+		const dir = mkdtempSync(join(tmpdir(), 'lyriks-index-file-'));
+		dirs.push(dir);
+		if (project) writeFileSync(join(dir, 'CLAUDE.md'), `<!-- lyriks-binding -->\nIts spec lives in the Lyriks project \`${project}\` and nowhere else.\n<!-- /lyriks-binding -->\n`);
+		return dir;
+	}
+	const indexPath = (dir: string) => join(dir, '.unspa.json');
+
+	it('upsert creates { projectId, index } for --project, then edits it like any index', () => {
+		const dir = bare();
+		const result = upsert(dir, { 'action:a1': entry(3), 'criterion:c-1': { verification: { kind: 'unit' } } }, ['--project', 'vector-rally']);
+		expect(result.status).toBe(0);
+		expect(result.stdout).toContain('created for project vector-rally, 2 added, 0 replaced, 0 unchanged, 0 removed.');
+		expect(read(dir)).toBe(JSON.stringify({ projectId: 'vector-rally', index: { 'action:a1': entry(3), 'criterion:c-1': { verification: { kind: 'unit' } } } }, null, 2) + '\n');
+
+		// The next upsert finds it and edits it in place: one entry more, nothing else moved.
+		const again = upsert(dir, { 'rule:r1': entry(4) }, ['--json']);
+		expect(JSON.parse(again.stdout)).toMatchObject({ added: ['rule:r1'], written: true, project: 'vector-rally' });
+		expect(JSON.parse(again.stdout).created).toBeUndefined();
+		expect(JSON.parse(read(dir)).index).toEqual({ 'action:a1': entry(3), 'criterion:c-1': { verification: { kind: 'unit' } }, 'rule:r1': entry(4) });
+
+		// The shape the other scripts read: check-index names its project.
+		const check = run(dir, 'check-index.mjs', ['--json']);
+		expect(JSON.parse(check.stdout)).toMatchObject({ projectId: 'vector-rally', indexFile: indexPath(dir) });
+	});
+
+	it('upsert takes the project from the binding block, and a dry run writes nothing', () => {
+		const dir = bare('big-island-c4e7da');
+		const dry = upsert(dir, { 'action:a1': entry(3) }, ['--dry-run']);
+		expect(dry.status).toBe(0);
+		expect(dry.stdout).toContain('(dry run: nothing written, the index would be created)');
+		expect(existsSync(indexPath(dir))).toBe(false);
+
+		const result = upsert(dir, { 'action:a1': entry(3) }, ['--json']);
+		expect(JSON.parse(result.stdout)).toMatchObject({ created: true, written: true, project: 'big-island-c4e7da', added: ['action:a1'] });
+		expect(JSON.parse(read(dir))).toEqual({ projectId: 'big-island-c4e7da', index: { 'action:a1': entry(3) } });
+	});
+
+	it('writes nothing without a project to name, and says how to name one', () => {
+		const dir = bare();
+		const result = upsert(dir, { 'action:a1': entry(3) });
+		expect(result.status).toBe(1);
+		expect(result.stderr).toContain('no project is named to create one, so nothing was written');
+		expect(result.stderr).toContain('pass --project <id>');
+		expect(result.stderr).toContain('node .lyriks/tools/index-file.mjs init --project <id>');
+		expect(existsSync(indexPath(dir))).toBe(false);
+
+		const init = run(dir, 'index-file.mjs', ['init']);
+		expect(init.status).toBe(1);
+		expect(init.stderr).toContain('pass --project <id>');
+		expect(init.stderr).toContain('binding block');
+		expect(existsSync(indexPath(dir))).toBe(false);
+	});
+
+	it('init creates an empty index, and never replaces one found here or above', () => {
+		const dir = bare('vector-rally');
+		const created = run(dir, 'index-file.mjs', ['init', '--json']);
+		expect(created.status).toBe(0);
+		expect(JSON.parse(created.stdout)).toMatchObject({ created: true, project: 'vector-rally', projectSource: 'CLAUDE.md' });
+		expect(read(dir)).toBe('{\n  "projectId": "vector-rally",\n  "index": {}\n}\n');
+
+		writeFileSync(join(dir, 'entries.json'), JSON.stringify({ 'rule:r1': entry(1) }));
+		run(dir, 'index-file.mjs', ['upsert', 'entries.json']);
+		const held = read(dir);
+		mkdirSync(join(dir, 'src', 'deep'), { recursive: true });
+		const again = run(join(dir, 'src', 'deep'), 'index-file.mjs', ['init', '--project', 'other-project']);
+		expect(again.status).toBe(0);
+		expect(again.stdout).toContain('already exists (projectId vector-rally): nothing written.');
+		expect(read(dir)).toBe(held);
+		expect(existsSync(join(dir, 'src', 'deep', '.unspa.json'))).toBe(false);
 	});
 });
 

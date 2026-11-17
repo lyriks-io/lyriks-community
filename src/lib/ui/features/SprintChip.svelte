@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Icon } from '$ui/design-system';
+	import { Icon, clickedWithin, floatInView } from '$ui/design-system';
 	import type { Sprint } from '$domain/features';
 
 	interface Props {
@@ -16,8 +16,9 @@
 
 	let open = $state(false);
 	let root = $state<HTMLElement>();
+	let panel = $state<HTMLElement>();
 	function onWindow(e: MouseEvent) {
-		if (open && root && !root.contains(e.target as Node)) open = false;
+		if (open && !clickedWithin(e.target, root, panel)) open = false;
 	}
 	function pick(id: string | null) {
 		onPick(id);
@@ -35,7 +36,7 @@
 			open = !open;
 		}}
 		title="Assign to a sprint"
-		class="inline-flex h-5.5 items-center gap-1 rounded border border-transparent px-2 text-[10px] font-medium transition hover:border-line-strong {current
+		class="inline-flex h-5.5 items-center gap-1 rounded border border-transparent px-2 text-[0.625rem] font-medium transition hover:border-line-strong {current
 			? 'bg-info-50 text-info-600'
 			: 'bg-surface-sunken text-ink-500'}"
 	>
@@ -44,8 +45,8 @@
 		<span class="text-ink-400">▾</span>
 	</button>
 	{#if open}
-		<div
-			class="absolute right-0 top-full z-50 mt-1 min-w-48 rounded-lg border border-line bg-surface py-1 shadow-xl"
+		<div bind:this={panel} use:floatInView={{ anchor: root, align: 'right' }}
+			class="min-w-48 rounded-lg border border-line bg-surface py-1 shadow-xl"
 			role="menu"
 		>
 			{#each options as s (s.id)}
@@ -55,20 +56,20 @@
 						e.stopPropagation();
 						pick(s.id);
 					}}
-					class="flex w-full items-center justify-between px-2.5 py-1.5 text-[11px] hover:bg-surface-sunken {sprintId ===
+					class="flex w-full items-center justify-between px-2.5 py-1.5 text-[0.6875rem] hover:bg-surface-sunken {sprintId ===
 					s.id
 						? 'bg-surface-sunken'
 						: ''}"
 				>
 					<span class="inline-flex items-center gap-1.5 text-ink-700">
-						<span class="size-2 rounded-full bg-info-500"></span>
+						<span class="size-2 bg-info-500"></span>
 						<span class="font-semibold">{s.name || 'Untitled sprint'}</span>
 					</span>
 					{#if sprintId === s.id}<Icon name="check" size={12} />{/if}
 				</button>
 			{/each}
 			{#if options.length === 0}
-				<p class="px-2.5 py-1.5 text-[11px] italic text-ink-400">
+				<p class="px-2.5 py-1.5 text-[0.6875rem] italic text-ink-400">
 					No sprints yet. Add one in the Roadmap tab.
 				</p>
 			{/if}
@@ -80,9 +81,9 @@
 							e.stopPropagation();
 							pick(null);
 						}}
-						class="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-ink-500 hover:bg-surface-sunken"
+						class="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-[0.6875rem] text-ink-500 hover:bg-surface-sunken"
 					>
-						<span class="size-2 rounded-full bg-ink-300"></span> No sprint
+						<span class="size-2 bg-ink-300"></span> No sprint
 					</button>
 				</div>
 			{/if}

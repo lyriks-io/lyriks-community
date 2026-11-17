@@ -12,7 +12,10 @@ import type { SourceModeCode } from './identity-enums';
  * from scratch, lyriks-retrospec from a codebase), which the agent installs
  * through `sync_skills` and which carries every rule. The sentence only names
  * the target project and, from scratch, the sources the agent should read, so
- * it never has to guess either.
+ * it never has to guess either. From a codebase it also says the two things the
+ * person expects of the result: the codebase is adopted, and every element
+ * cites where it comes from, the code and whatever else the agent can reach
+ * (ac-proj-code-adopt, ac-proj-code-sources).
  *
  * Pure text assembly: no IO, no framework.
  */
@@ -99,9 +102,11 @@ export function kickoffPrompt(input: KickoffInput): string {
 		: `the Lyriks project "${name}"${domain ? ` in the domain "${domain}"` : ''}`;
 	const verb = input.projectId ? 'specify' : 'create';
 	if (input.sourceMode === 'code_to_spec') {
+		const evidence =
+			'trace every element you extract to the code it comes from, and cite every other source you can reach (the tools connected to you, the documents of this repository).';
 		return input.projectId
-			? `With the help of the Lyriks MCP, ingest this entire codebase into ${target}.`
-			: `With the help of the Lyriks MCP, create ${target} and ingest this entire codebase into it.`;
+			? `With the help of the Lyriks MCP, ingest and adopt this entire codebase into ${target}: ${evidence}`
+			: `With the help of the Lyriks MCP, create ${target}, then ingest and adopt this entire codebase into it: ${evidence}`;
 	}
 	const chosen = new Set(input.sources ?? []);
 	const phrases = KICKOFF_SOURCES.filter((s) => chosen.has(s.code)).map((s) => s.phrase);

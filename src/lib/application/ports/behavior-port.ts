@@ -61,6 +61,12 @@ export type BehaviorOp =
 	| { kind: 'ensureProjectFeatureId'; featureId: string }
 	/** Replace the project-level tags. */
 	| { kind: 'setProjectTags'; tags: UnspaTag[] }
+	/**
+	 * Replace the engine's registry of core features with the project's cores, so
+	 * the `core:` tags the leaves carry name declared pillars rather than free
+	 * text. The feature tree is the one source: engine-side edits are overwritten.
+	 */
+	| { kind: 'setProjectCores'; cores: { value: string; description: string }[] }
 	/** Patch the project's name/description. */
 	| { kind: 'setProjectMeta'; name?: string; description?: string }
 	/** Upsert the central "Data Model" aux feature — its behavior facet IS the entity

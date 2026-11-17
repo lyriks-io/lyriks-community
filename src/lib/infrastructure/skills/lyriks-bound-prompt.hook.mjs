@@ -9,8 +9,12 @@
 // a Lyriks tool was given in this session, else the binding block in
 // CLAUDE.md). When the last Lyriks tool call of the session failed because the
 // server could not be reached, it says so first: the agent must tell the person
-// rather than go looking for a spec it cannot read. No dependencies, no
-// network, well under 100 ms.
+// rather than go looking for a spec it cannot read. While no live session of
+// the agent is open on the project in this conversation, it also says when to
+// open one in the background (ac-ai-session-auto-open): when the work calls for
+// it, and at the latest in the turn the agent hands the person a link to the
+// app, never merely because it uses the MCP; never once the person ended it,
+// nor when LYRIKS_NO_AUTO_SESSION=1. No dependencies, no network, well under 100 ms.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -117,6 +121,78 @@ function mcpOutage(lines) {
 	return outage;
 }
 
+// An event the waiting call or the background waiter printed, as it reads in the
+// transcript: JSON that may sit escaped inside another JSON string.
+const ENDED_EVENT = /\\?"kind\\?"\s*:\s*\\?"ended\\?"/;
+const ENDED_REASON = /\\?"reason\\?"\s*:\s*\\?"([a-z_]+)\\?"/;
+
+/**
+ * Where the agent's live session of this conversation stands
+ * (ac-ai-session-auto-open): { kind: 'none' } before any session was opened or
+ * when opening failed, { kind: 'open' } once start_evolution_session was
+ * called and nothing ended it since, { kind: 'ended', reason } once an event
+ * said it ended (whether the waiting call or the background waiter printed it)
+ * or the agent ended it on the person's word (update_evolution_session end).
+ */
+function liveSessionState(lines) {
+	const starts = new Set();
+	let state = { kind: 'none' };
+	for (const line of lines) {
+		if (line.includes('mcp__lyriks') || line.includes('mcp__unspa')) {
+			for (const item of assistantItems(line)) {
+				if (!item || item.type !== 'tool_use' || !isLyriksTool(item.name)) continue;
+				if (item.name.endsWith('__start_evolution_session')) {
+					if (typeof item.id === 'string') starts.add(item.id);
+					state = { kind: 'open' };
+				} else if (item.name.endsWith('__update_evolution_session') && item.input && item.input.end === true) {
+					state = { kind: 'ended', reason: 'ended_by_person' };
+				}
+			}
+		}
+		if (state.kind !== 'open') continue;
+		if (starts.size > 0 && line.includes('"tool_result"') && line.includes('"is_error":true')) {
+			let entry;
+			try {
+				entry = JSON.parse(line);
+			} catch {
+				entry = null;
+			}
+			const content = entry && entry.message && entry.message.content;
+			const failed = (Array.isArray(content) ? content : []).some((item) => item && item.type === 'tool_result' && starts.has(item.tool_use_id) && item.is_error === true);
+			if (failed) {
+				state = { kind: 'none' };
+				continue;
+			}
+		}
+		if (ENDED_EVENT.test(line)) {
+			const reason = ENDED_REASON.exec(line);
+			state = { kind: 'ended', reason: reason ? reason[1] : 'unknown' };
+		}
+	}
+	return state;
+}
+
+/**
+ * When and how to open the session, or nothing (ac-ai-session-auto-open). The
+ * hook cannot know whether this turn will hand the person a link, so it states
+ * the rule instead of asking for a session at every prompt: a session opened
+ * for a read or a write alone was noise the person never asked for.
+ */
+function autoSessionInstruction(project, lines, env) {
+	if (!project || env.LYRIKS_NO_AUTO_SESSION === '1') return '';
+	const state = liveSessionState(lines);
+	if (state.kind === 'open' || (state.kind === 'ended' && state.reason === 'ended_by_person')) return '';
+	return (
+		` No live session of yours is open on ${project}. Do not open one merely because you use the Lyriks MCP: open it when the work calls for it, ` +
+		'and at the latest in the turn you hand the person a link to the app (an href a Lyriks answer carries, handed whenever a page serves them ' +
+		'better than the chat), before that link; also when they ask to work with you on the pages, or when you ask them something they answer on a page. ' +
+		'Open it in the background, without a word in the chat unless it fails: ' +
+		`call start_evolution_session with project_id ${project} alone, then run the wait.command it answers (node .lyriks/tools/await-event.mjs ${project} - <session_id> ...) ` +
+		'as given, with run_in_background: it signs in by itself, nothing to set; handle each event it prints, then run it again. ' +
+		'Never hold await_evolution_event in the foreground.'
+	);
+}
+
 /** `2026-09-24T10:12:03.120Z` as `2026-09-24 10:12 UTC`, anything else as is. */
 function when(timestamp) {
 	const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(timestamp || '');
@@ -176,15 +252,19 @@ function main() {
 	const where = project ? ` (project ${project})` : '';
 	const context =
 		down +
-		`Lyriks-bound repository${where}: this request goes through the Lyriks MCP without being asked. ` +
-		'If it changes what the product does: spec first (apply_behavior_batch / patch_section / build_screen), ' +
+		`Lyriks-bound repository${where}: a request about what this product does goes through the Lyriks MCP without being asked. ` +
+		'If it changes what the product does: spec first (apply_behavior_batch / patch_section), ' +
 		'then the code, then the index sync (sync_implementation_index), in this same turn. An Evolution request ' +
 		'(get_evolution / apply_evolution_batch) is optional: open one only when the person asks for it or asks ' +
 		'for a change to be qualified before it is decided. ' +
 		'If it asks how the product ' +
 		'behaves, whether it is right, what is missing or what broke: read the spec first (get_behavior_feature, ' +
-		'get_section, get_implementation_status / gaps / drift, simulate_experience / verify_experience). ' +
-		'Only work with no user-visible effect skips the spec; say so in one line.';
+		'get_section, get_implementation_status / gaps / drift, simulate_behavior), then follow the places in the code it ' +
+		'gives into your own code tools (search, code search, code graph, editor) and tell the person where the code ' +
+		'does otherwise. A question about the code alone (how to call an API, an internal mechanism, a library) goes ' +
+		'to your code tools directly, without a Lyriks call. ' +
+		'Only work with no user-visible effect skips the spec; say so in one line.' +
+		autoSessionInstruction(project, lines, process.env);
 	process.stdout.write(
 		JSON.stringify({
 			hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: context }

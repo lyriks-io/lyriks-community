@@ -121,21 +121,21 @@ describe('CachedCompletionEvidence', () => {
 		expect(a).toBe(b);
 	});
 
-	it('keeps a reading taken while the engine was over budget only briefly', async () => {
+	it('tries again ten minutes after a reading taken while the engine was over budget', async () => {
 		let now = 0;
 		const { cache, spy } = setup(async () => evidence({ provisional: true }), { now: () => now });
 
 		await cache.execute('project-1', scope());
-		now = 30_000;
+		now = 300_000;
 		await cache.execute('project-1', scope());
 		expect(spy).toHaveBeenCalledTimes(1); // still inside the provisional window
 
-		now = 60_000;
+		now = 601_000;
 		await cache.execute('project-1', scope());
 		expect(spy).toHaveBeenCalledTimes(2); // and a retry gets a real attempt
 	});
 
-	it('keeps a complete reading past that window', async () => {
+	it('keeps a complete reading for its whole window', async () => {
 		let now = 0;
 		const { cache, spy } = setup(async () => evidence(), { now: () => now });
 
@@ -144,5 +144,28 @@ describe('CachedCompletionEvidence', () => {
 		await cache.execute('project-1', scope());
 
 		expect(spy).toHaveBeenCalledTimes(1);
+	});
+
+	it('waits longer each time the same model comes back provisional, so a model too large for the budget stops holding the engine', async () => {
+		let now = 0;
+		const { cache, spy } = setup(async () => evidence({ provisional: true }), { now: () => now });
+		const read = () => cache.execute('project-1', scope());
+		await read();
+		now += 601_000;
+		await read();
+		expect(spy).toHaveBeenCalledTimes(2);
+		// Second provisional in a row: twenty minutes now.
+		now += 601_000;
+		await read();
+		expect(spy).toHaveBeenCalledTimes(2);
+		now += 601_000;
+		await read();
+		expect(spy).toHaveBeenCalledTimes(3);
+		// Bounded: however many in a row, it is tried again within the hour.
+		for (let i = 0; i < 12; i++) {
+			now += 3_600_001;
+			await read();
+		}
+		expect(spy).toHaveBeenCalledTimes(15);
 	});
 });

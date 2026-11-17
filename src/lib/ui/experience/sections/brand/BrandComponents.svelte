@@ -121,7 +121,7 @@
 					onclick={() => addComp(c.name, c.kind)}
 					class="inline-flex items-center gap-1.5 rounded-field border border-line bg-surface px-2.5 py-1 text-xs text-ink-600 transition-colors hover:border-brand-300 hover:text-brand-600"
 				>
-					<span class="rounded px-1 text-[9px] font-bold {badge(c.kind).cls}">{badge(c.kind).label.slice(0, 2).toLowerCase()}</span>
+					<span class="rounded px-1 text-[0.5625rem] font-bold {badge(c.kind).cls}">{badge(c.kind).label.slice(0, 2).toLowerCase()}</span>
 					{c.name}
 				</button>
 			{/each}
@@ -137,7 +137,7 @@
 			{@const p = preview(c)}
 			<div class="space-y-3 rounded-field border border-line bg-surface-sunken p-3">
 				<div class="flex items-center gap-2">
-					<span class="rounded px-1.5 py-0.5 text-[10px] font-bold {badge(c.refKind).cls}">{badge(c.refKind).label}</span>
+					<span class="rounded px-1.5 py-0.5 text-[0.625rem] font-bold {badge(c.refKind).cls}">{badge(c.refKind).label}</span>
 					<div class="flex-1"><TextInput value={c.refName} placeholder="Component name" oninput={(v) => patch(c.id, { refName: v })} /></div>
 					<IconButton name="x" label="Remove component" danger onclick={() => remove(c.id)} />
 				</div>

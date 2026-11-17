@@ -1,8 +1,11 @@
 import { redirect } from '@sveltejs/kit';
+import { legacyPageTarget } from '$ui/spec360/legacy-addresses';
 import type { PageServerLoad } from './$types';
 
-/** Legacy route — Data & flows folded into Infrastructure & Data. Deep-link
- *  params (`?node=` anchors from the graph/search) survive the hop. */
+/**
+ * An old address kept so bookmarks and stored links still open something
+ * (criterion 84162c34). Data & flows folded into Infrastructure, which is Technology & data of Knowledge now.
+ */
 export const load: PageServerLoad = ({ params, url }) => {
-	throw redirect(307, `/projects/${params.projectId}/infrastructure${url.search}`);
+	redirect(308, legacyPageTarget(params.projectId, 'data', url.searchParams));
 };

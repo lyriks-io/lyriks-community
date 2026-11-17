@@ -1,10 +1,9 @@
 import { error, json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { isSection } from '$lib/shared/sections';
-import { validateSectionDraft } from '$application/validate-section-draft';
-import { capabilityRegistry, validateCapabilityReferences } from '$application/capability-registry';
-import { parseUsersDraft } from '$application/parse-users-draft';
+import { validateSectionDraft } from '$application/specification/validate-section-draft';
+import { capabilityRegistry, validateCapabilityReferences, withCarriedGrants } from '$application/specification/capability-registry';
+import { parseUsersDraft } from '$application/specification/parse-users-draft';
 import type { RequestHandler } from './$types';
 
 /** Read-only validation despite POST: the proposed document is never persisted. */
@@ -15,15 +14,16 @@ export const POST: RequestHandler = async (event) => {
 	await requireProjectAccess(event, projectId, 'read');
 	const section = typeof body?.section === 'string' ? body.section : '';
 	if (!isSection(section)) error(400, 'Unknown section');
-	const services = getServices();
+	const services = event.locals.services;
 	if (!(await services.projectExists(projectId))) error(404, 'Project not found');
-	const issues = validateSectionDraft(section, body?.draft);
+	const issues = validateSectionDraft(section, body?.draft, await services.loadSpecLanguage.generated(projectId));
 	const checks = ['existing-section-authoring-guards'];
 	if (section === 'users' && issues.length === 0) {
 		const draft = parseUsersDraft(body?.draft, projectId);
 		if (draft.permissions.length) {
 			const derived = await services.refreshDerivedCapabilities.execute(projectId);
-			issues.push(...validateCapabilityReferences(draft, capabilityRegistry(draft, derived)));
+			const carried = withCarriedGrants(draft, derived);
+			issues.push(...validateCapabilityReferences(carried, capabilityRegistry(carried, derived)));
 		}
 		checks.push('live-capability-references');
 	}

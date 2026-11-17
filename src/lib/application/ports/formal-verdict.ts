@@ -45,6 +45,11 @@ export interface FormalCoherenceReport {
 	 * the other fields are placeholders, and nothing is proven until it lands.
 	 */
 	readonly pending?: boolean;
+	/**
+	 * True when the verdict is the previous one: the mirror changed since and the
+	 * back is proving it again behind this answer.
+	 */
+	readonly stale?: boolean;
 }
 
 /**

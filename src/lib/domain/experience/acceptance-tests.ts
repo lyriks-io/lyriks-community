@@ -20,6 +20,37 @@ import { screenPath } from './draft';
 import { buildAcceptanceSpec, type AcceptanceAssertion, type JourneyFlow } from './acceptance';
 import { fieldStatePath, type BuilderElementNode } from './builder';
 import { simulate } from './simulate';
+import { NBSP, quoteName, type SpecLanguage } from '$domain/language';
+
+/** The prose the generated tests carry, in the language of the spec; code stays code. */
+const TEXTS = {
+	en: {
+		completes: (journey: string) => `completes the "${journey}" journey`,
+		simulationFailed:
+			'The prototype simulation failed. Repair and re-verify it before accepting this generated test.',
+		mapInteraction: 'Map this scripted interaction to a real UI assertion before accepting the journey.',
+		unverifiedPath: (gap: string) => `Unverified prototype path: ${gap}`,
+		criterion: (title: string, screen: string, trigger: string) => `${title} (on "${screen}", on ${trigger})`,
+		bindManually: (text: string) => `acceptance (bind manually): ${text}`
+	},
+	fr: {
+		completes: (journey: string) => `réalise le parcours ${quoteName('fr', journey)}`,
+		simulationFailed:
+			"La simulation du prototype a échoué. Réparez-la et vérifiez-la de nouveau avant d'accepter ce test généré.",
+		mapInteraction:
+			"Associez cette interaction scriptée à une vraie vérification de l'interface avant d'accepter le parcours.",
+		unverifiedPath: (gap: string) => `Chemin du prototype non vérifié${NBSP}: ${gap}`,
+		criterion: (title: string, screen: string, trigger: string) =>
+			`${title} (sur ${quoteName('fr', screen)}, au déclencheur ${quoteName('fr', trigger)})`,
+		bindManually: (text: string) => `acceptation (à relier à la main)${NBSP}: ${text}`
+	}
+} as const;
+
+/** The header of the generated spec file in French; the English one stays where it always was. */
+const FRENCH_HEADER = [
+	`// Tests d'acceptation E2E, générés depuis le prototype Experience vérifié.`,
+	`// Ciblent les routes et les noms accessibles (à surcharger par une TargetMap ou lyriks.map.json).`
+];
 
 /** Maps the prototype onto a real app (existing projects); every field optional. */
 export interface TargetMap {
@@ -121,10 +152,12 @@ function journeyBlock(
 	draft: ProjectExperienceDraft,
 	f: JourneyFlow,
 	map: TargetMap,
-	counts: { bound: number; annotated: number }
+	counts: { bound: number; annotated: number },
+	lang: SpecLanguage = 'en'
 ): string {
+	const t = TEXTS[lang];
 	const lines: string[] = [];
-	lines.push(`  test(${q(`completes the "${f.name}" journey`)}, async ({ page }) => {`);
+	lines.push(`  test(${q(t.completes(f.name))}, async ({ page }) => {`);
 	const entry = f.startScreenId
 		? routeFor(map, f.startScreenId, f.stops[0]?.screen ?? '', f.entryPath ?? '/')
 		: f.entryPath;
@@ -133,12 +166,12 @@ function journeyBlock(
 		lines.push(`    await expect(page).toHaveURL(${urlRe(entry)});`);
 	}
 	const run = simulate(draft.builder, { startScreenId: f.startScreenId, actions: f.script });
-	if (!run.ok) lines.push(`    test.fixme(true, ${q('The prototype simulation failed. Repair and re-verify it before accepting this generated test.')});`);
+	if (!run.ok) lines.push(`    test.fixme(true, ${q(t.simulationFailed)});`);
 	for (const [index, action] of f.script.entries()) {
 		const result = run.actions[index];
 		const node = result?.resolvedNodeId ? draft.builder.nodes[result.resolvedNodeId] : null;
 		if (node?.kind !== 'element' || action.tab !== undefined || action.expectError) {
-			lines.push(`    test.fixme(true, ${q('Map this scripted interaction to a real UI assertion before accepting the journey.')});`);
+			lines.push(`    test.fixme(true, ${q(t.mapInteraction)});`);
 			continue;
 		}
 		const baseLocator = locator(node.label || 'element', node.elementKind, map);
@@ -160,16 +193,16 @@ function journeyBlock(
 			}
 		}
 	}
-	for (const gap of f.flowGaps) lines.push(`    test.fixme(true, ${q(`Unverified prototype path: ${gap}`)});`);
+	for (const gap of f.flowGaps) lines.push(`    test.fixme(true, ${q(t.unverifiedPath(gap))});`);
 	for (const c of f.criteria) {
-		lines.push(`    // ${c.title} (on "${c.screen}", on ${c.whenTrigger})`);
-		for (const t of c.then) {
-			const obs = observableFor(draft, t, map);
+		lines.push(`    // ${t.criterion(c.title, c.screen, c.whenTrigger)}`);
+		for (const then of c.then) {
+			const obs = observableFor(draft, then, map);
 			if (obs) {
 				lines.push(`    ${obs}`);
 				counts.bound++;
 			} else {
-				lines.push(`    // acceptance (bind manually): ${t.text}`);
+				lines.push(`    // ${t.bindManually(then.text)}`);
 				counts.annotated++;
 			}
 		}
@@ -180,20 +213,25 @@ function journeyBlock(
 
 export function generateAcceptanceTests(
 	draft: ProjectExperienceDraft,
-	map: TargetMap = {}
+	map: TargetMap = {},
+	lang: SpecLanguage = 'en'
 ): AcceptanceTests {
-	const spec = buildAcceptanceSpec(draft);
+	const spec = buildAcceptanceSpec(draft, lang);
 	const counts = { bound: 0, annotated: 0 };
 	const out: string[] = [
-		`// Acceptance E2E — generated from the verified Experience prototype.`,
-		`// Targets routes + accessible names (override via a TargetMap / lyriks.map.json).`,
+		...(lang === 'fr'
+			? FRENCH_HEADER
+			: [
+					`// Acceptance E2E — generated from the verified Experience prototype.`,
+					`// Targets routes + accessible names (override via a TargetMap / lyriks.map.json).`
+				]),
 		`import { test, expect } from '@playwright/test';`,
 		''
 	];
 	for (const f of spec.features) {
 		if (!f.entryPath && f.criteria.length === 0) continue;
 		out.push(`test.describe(${q(f.name)}, () => {`);
-		out.push(journeyBlock(draft, f, map, counts));
+		out.push(journeyBlock(draft, f, map, counts, lang));
 		out.push(`});`, '');
 	}
 	return {

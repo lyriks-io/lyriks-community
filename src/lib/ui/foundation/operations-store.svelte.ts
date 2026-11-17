@@ -17,6 +17,7 @@ import {
 import type { CoherenceResult } from '$domain/foundation';
 import type { Session, ToastNotifierPort } from '$application/ports';
 import { SectionAutosave, type SaveStatus } from '$ui/shell/section-autosave.svelte';
+import { specLanguageAccessor } from '$ui/language/spec-language-context';
 
 export type { SaveStatus };
 
@@ -41,8 +42,11 @@ export class OperationsStore {
 	// Migration section and the coherence rail follow it.
 	migrationExpected = $state(true);
 
+	/** The spec's language, from the project it is opened in: its checks read in it. */
+	readonly #lang = specLanguageAccessor();
+
 	coherence = $derived.by<CoherenceResult>(() =>
-		computeOperationsCoherence(this.draft, this.migrationExpected)
+		computeOperationsCoherence(this.draft, this.migrationExpected, this.#lang())
 	);
 
 	readonly session: Session;
@@ -119,6 +123,13 @@ export class OperationsStore {
 	};
 
 	/* ────────────────────────────── QUALITY ────────────────────────────── */
+	/** The picked standards, also joined in the one-line field earlier readers know. */
+	setA11yStandards = (values: string[]) => {
+		this.draft.quality.a11yStandards = values;
+		this.draft.quality.a11yLevel = values.join(', ');
+		this.#touch();
+	};
+
 	setQualityField = <K extends keyof OperationsQuality>(
 		field: K,
 		value: OperationsQuality[K]

@@ -103,14 +103,14 @@
 					<button
 						type="button"
 						onclick={() => (layout = 'horizontal')}
-						class="rounded-md px-2 py-1 text-[11px] font-semibold {layout === 'horizontal'
+						class="rounded-md px-2 py-1 text-[0.6875rem] font-semibold {layout === 'horizontal'
 							? 'bg-surface text-ink-900 shadow-sm'
 							: 'text-ink-400'}">Horizontal</button
 					>
 					<button
 						type="button"
 						onclick={() => (layout = 'vertical')}
-						class="rounded-md px-2 py-1 text-[11px] font-semibold {layout === 'vertical'
+						class="rounded-md px-2 py-1 text-[0.6875rem] font-semibold {layout === 'vertical'
 							? 'bg-surface text-ink-900 shadow-sm'
 							: 'text-ink-400'}">Vertical</button
 					>
@@ -121,7 +121,7 @@
 					class="grid size-7 place-items-center rounded-field border border-line text-ink-500 hover:text-ink-700"
 					title="Zoom out">−</button
 				>
-				<span class="w-10 text-center text-[11px] tabular-nums text-ink-400">{Math.round(zoom * 100)}%</span>
+				<span class="w-10 text-center text-[0.6875rem] tabular-nums text-ink-400">{Math.round(zoom * 100)}%</span>
 				<button
 					type="button"
 					onclick={() => (zoom = Math.min(2, +(zoom + 0.1).toFixed(2)))}
@@ -154,7 +154,7 @@
 							{screen.name || 'Untitled screen'}
 						</span>
 					</div>
-					<div class="mt-1 flex items-center gap-1.5 text-[10px] text-ink-400">
+					<div class="mt-1 flex items-center gap-1.5 text-[0.625rem] text-ink-400">
 						{#if templateName(screen.templateId)}
 							<span class="truncate text-brand-500">⊂ {templateName(screen.templateId)}</span>
 						{/if}

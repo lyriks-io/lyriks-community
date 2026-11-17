@@ -110,6 +110,17 @@ export function sameEmail(a: string | null | undefined, b: string | null | undef
 	return x.length > 0 && x === y;
 }
 
+/** Bulk writes preserve who owns a team; ownership is assigned separately. */
+export function preservesTeamOwners(current: Team, replacement: Team): boolean {
+	const identities = (team: Team) => team.collaborators
+		.filter((person) => person.role === 'owner')
+		.map((person) => JSON.stringify([person.id, person.email.trim().toLowerCase()]))
+		.sort();
+	const before = identities(current);
+	const after = identities(replacement);
+	return before.length === after.length && before.every((identity, index) => identity === after[index]);
+}
+
 /**
  * Whether `email` may delete the project. Once an owner is specified on the
  * team, deletion is reserved to the owner(s) — matched by email. A team with
@@ -120,6 +131,17 @@ export function canDeleteProject(team: Team, email: string | null | undefined): 
 	const owners = team.collaborators.filter((c) => c.role === 'owner');
 	if (owners.length === 0) return true;
 	return owners.some((c) => sameEmail(c.email, email));
+}
+
+/**
+ * Whether the caller may change the project's options (ac-proj-settings): an
+ * admin or the owner of the workspace, or one of the project's owners. Unlike
+ * deletion, a project with no owner named opens its settings to nobody but the
+ * workspace's admins: settings are never left open by default.
+ */
+export function administersProject(workspaceRole: string | null | undefined, team: Team, email: string | null | undefined): boolean {
+	if (workspaceRole === 'owner' || workspaceRole === 'admin') return true;
+	return team.collaborators.some((c) => c.role === 'owner' && sameEmail(c.email, email));
 }
 
 /**

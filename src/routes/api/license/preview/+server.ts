@@ -1,5 +1,4 @@
 import { json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireAdmin } from '$lib/server/admin.server';
 import type { RequestHandler } from './$types';
 
@@ -20,6 +19,6 @@ export const POST: RequestHandler = async (event) => {
 	requireAdmin(event);
 	const body = (await event.request.json().catch(() => ({}))) as { key?: unknown };
 	const key = typeof body.key === 'string' ? body.key : '';
-	const result = await getServices().previewLicense.execute(key);
+	const result = await event.locals.services.previewLicense.execute(key);
 	return json(result, { status: result.ok ? 200 : 400 });
 };

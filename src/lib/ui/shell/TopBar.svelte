@@ -1,59 +1,69 @@
 <script lang="ts">
-	import { Logo } from '$ui/design-system';
-	import FeedbackButton from '$ui/shell/FeedbackButton.svelte';
-	import GlobalSearch from '$ui/portfolio/GlobalSearch.svelte';
-	import ProjectSearch from '$ui/shell/ProjectSearch.svelte';
-	import UserMenu from '$ui/shell/UserMenu.svelte';
-	import type { WorkspaceSummary } from '$application/ports';
-	// Edition badge, Control Center and the behavior link live in the left Sidebar;
-	// member management lives in Settings → Members; the page's "?" belongs to the
-	// page itself (PageHeading), which is what freed this bar of an element it had
-	// to position over the body beneath it. What is left is deliberately lean:
-	// logo · search · feedback · user. THE app-wide navigation bar — the portfolio home and
-	// every project page render this same component so the chrome never drifts.
+	import { shell } from './shell-state.svelte';
+	import SideIcon from './SideIcon.svelte';
 
-	interface Props {
-		/** Present inside a project; scopes the search and the user menu's tools. */
-		projectId?: string;
-		/** Signed-in user's email; drives the user menu (absent for the dev session). */
-		sessionEmail?: string;
-		/** The app-wide resolved name of the active user, shown in the user menu. */
-		memberName?: string;
-		/** Caller's teams + active one — the user menu's workspace switcher. */
-		workspaces?: WorkspaceSummary[];
-		activeWorkspace?: string | null;
-	}
-	let {
-		projectId,
-		sessionEmail,
-		memberName,
-		workspaces = [],
-		activeWorkspace = null
-	}: Props = $props();
+	/**
+	 * The slim paper bar above every page (criterion 8a6a568b): on a phone the
+	 * Menu that opens the navigation (criterion d5c9c712). It holds no chip of
+	 * the reader's AI: Ask my AI in the navigation alone says whether it is
+	 * connected (criterion 4cb97f74). It names no
+	 * trail: the navigation lights the section, the tab bar of Knowledge its
+	 * chapter, and each page names itself. With nothing to hold, a wide screen
+	 * shows no bar at all. It carries the role of the old app bar
+	 * (data-app-bar): what sticks under the top of the page sticks under it.
+	 */
 </script>
 
-<!--
-	z-[45]: the header is its own stacking context, so the menus it drops
-	(user menu, project search) can never rise above it. Side panels such as the
-	Control Center sit at z-40 and modal overlays at z-50; the header therefore
-	stands between them, or a menu opened while the panel is open lands behind it.
--->
-<header class="bg-brand-gradient relative z-[45] flex h-14 shrink-0 items-center gap-4 px-5 text-white shadow-lg shadow-violet-500/10">
-	<a href="/" class="flex items-center gap-2 rounded-lg font-display text-lg font-bold tracking-tight outline-none transition hover:text-white/90 focus-visible:ring-2 focus-visible:ring-white/60" aria-label="Lyriks home">
-		<Logo size={26} />
-		Lyriks
-	</a>
-
-	<!-- Right-aligned cluster, identical shape everywhere so the bar
-	     doesn't shift when you enter or leave a project. -->
-	<div class="ml-auto flex flex-1 items-center justify-end gap-3">
-		{#if projectId}
-			<!-- Inside a project: search every object in THIS project. -->
-			<ProjectSearch {projectId} tone="dark" />
-		{:else}
-			<GlobalSearch tone="dark" />
-		{/if}
-		<FeedbackButton />
-		<UserMenu email={sessionEmail} {memberName} {workspaces} {activeWorkspace} {projectId} />
-	</div>
+<!-- A wide screen shows no bar; a phone keeps it for its Menu (criterion 8a6a568b). -->
+<header data-app-bar class="lk-top bare">
+	<button type="button" class="burger" aria-label="Menu" aria-expanded={shell.menuOpen} onclick={() => (shell.menuOpen = true)}><SideIcon name="menu" size={18} /></button>
 </header>
+
+<style>
+	/* The design's top bar (.top, .burger): paper, a 2px ink rule under it. */
+	.lk-top {
+		position: relative;
+		z-index: 20;
+		display: flex;
+		flex: none;
+		align-items: center;
+		gap: 12px;
+		box-sizing: border-box;
+		height: 56px;
+		min-width: 0;
+		padding: 0 20px;
+		border-bottom: 2px solid var(--color-ink);
+		background: var(--color-paper);
+		color: var(--color-ink);
+	}
+	.burger {
+		display: none;
+		flex: none;
+		align-items: center;
+		justify-content: center;
+		width: 38px;
+		height: 38px;
+		padding: 0;
+		border: 1.5px solid var(--color-ink);
+		background: var(--color-paper);
+		color: var(--color-ink);
+		cursor: pointer;
+	}
+	.burger:hover {
+		background: var(--color-ink);
+		color: var(--color-paper);
+	}
+	@media (min-width: 981px) {
+		.lk-top.bare {
+			display: none;
+		}
+	}
+	@media (max-width: 980px) {
+		.lk-top {
+			padding: 0 16px;
+		}
+		.burger {
+			display: inline-flex;
+		}
+	}
+</style>

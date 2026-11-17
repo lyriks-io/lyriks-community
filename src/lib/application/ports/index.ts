@@ -46,6 +46,7 @@ export type {
 	FeatureScore,
 	FeatureSummary,
 	FeatureVerdict,
+	BrokenStatement,
 	ImplementationCoverage,
 	InvariantCounterexample,
 	ModelCheckReport,
@@ -55,9 +56,26 @@ export type {
 	ScenarioAssertionResult,
 	ScenarioReport,
 	ScenarioResult,
-	SimulateArgs,
-	SimulationResult,
+	EngineAnswer,
+	ProjectBehavior,
+	SimulateStepsArgs,
+	SimulateStepsResult,
+	WhatIfArgs,
+	ProveProjectRulesArgs,
+	WhatIfProjectArgs,
+	WhatIfResult,
+	WalkStepArgs,
+	SkippedAction,
 	SpecGap,
+	SpecProof,
+	SpecProofGoal,
+	SpecProofLead,
+	SpecProofDeadlocks,
+	SpecProofFinding,
+	SpecProofStuckState,
+	SpecProofStep,
+	SpecProofPath,
+	SpecProofReach,
 	UnreachedAction,
 	UnspaghettitAdvisorPort,
 	VerificationVerdict
@@ -66,7 +84,8 @@ export type {
 	AiSuggesterPort,
 	BriefAnalysis,
 	SectionSuggestion,
-	PersonaSuggestion
+	PersonaSuggestion,
+	PersonaContextPassage
 } from './ai-suggester';
 export type { TelemetryEvent, TelemetryPort } from './telemetry';
 export type { ClockPort } from './clock';
@@ -105,7 +124,8 @@ export type {
 	ContainerResourcesPort,
 	DatastoreVersionProbePort,
 	EngineVersionProbePort,
-	HostFactsPort
+	HostFactsPort,
+	SolverStatus
 } from './system-probes';
 export type { BackSyncOutboxPort, BackSyncPending } from './back-sync-outbox';
 export type { AccessAction, AccessDecision, ProjectAccessPort } from './project-access';
@@ -125,8 +145,10 @@ export type { FormalCoherenceReport, FormalVerdictPort } from './formal-verdict'
 export type { WorkspaceMemberNamePort } from './member-name';
 export { BackHttpError } from './back-http-error';
 export type { ProjectCatalogPort } from './project-catalog';
+export type { ActiveProjectStorePort } from './active-project-store';
 export type { PortfolioRepositoryPort, ProjectMeta } from './portfolio-repository';
 export type { TeamGatewayPort, NewCollaboratorInput } from './team-gateway';
+export type { TeamJobsPort, PersonJobs } from './team-jobs';
 export type {
 	BindingHookInstall,
 	BindingInstallTarget,
@@ -151,3 +173,6 @@ export type {
 } from './feature-maturity-scorer';
 export type { ProjectModelRevisionPort } from './project-model-revision';
 export type { FeatureAcceptanceReaderPort } from './feature-acceptance-reader';
+export type { LanguageModelAnswer, LanguageModelConnection, LanguageModelPort, LanguageModelRequest } from './language-model';
+export type { SecretCipherPort } from './secret-cipher';
+export type { ProofSwitchPort } from './proof-switch';

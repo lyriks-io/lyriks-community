@@ -1,9 +1,10 @@
 import { error, isHttpError, json, type RequestEvent } from '@sveltejs/kit';
-import { getServices, type AppServices } from '$composition/container.server';
+import { type AppServices } from '$composition/container.server';
 import { publishSectionChange } from '$lib/server/sync-bus.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { commitRevision, expectedRevision } from '$lib/server/draft-lock.server';
 import type { SectionDraftSaveOptions } from '$application/ports';
+import { isFoundationSection, withFoundationLock } from './foundation-lock.server';
 
 /**
  * Run a section's kernel-mutating steps, turning an *unexpected* throw into a
@@ -66,7 +67,7 @@ export interface SectionSaveSpec<TDraft, TResult extends object> {
  * failed push is retried with backoff by the composition-root drain worker.
  * The catch here is a last resort so the promise is never dropped unhandled.
  */
-function mirrorToBack(services: AppServices, projectId: string, section: string): void {
+export function mirrorToBack(services: AppServices, projectId: string, section: string): void {
 	void services
 		.scheduleBackSync(projectId)
 		.catch((e) =>
@@ -114,7 +115,7 @@ export async function saveSectionDraft<TDraft, TResult extends object>(
 	const projectId = typeof body?.projectId === 'string' ? body.projectId : '';
 	if (!projectId) error(400, 'projectId is required');
 	await requireProjectAccess(event, projectId, 'write');
-	const services = getServices();
+	const services = event.locals.services;
 
 	// The project must already exist. `requireProjectAccess` returns immediately
 	// when auth is off — the standalone appliance and every dev setup — so before
@@ -138,37 +139,106 @@ export async function saveSectionDraft<TDraft, TResult extends object>(
 		origin: request.headers.get('x-lyriks-client')
 	};
 
-	if (spec.atomic) {
-		const result = await guardSectionWrite(spec.section, () =>
-			spec.persist(draft, services, projectId, save)
-		);
-		if (result === null) error(409, STALE_REVISION_MESSAGE);
-		if (spec.mirror !== false) mirrorToBack(services, projectId, spec.section);
-		return json(result);
-	}
-
-	const revision = await commitRevision(projectId, spec.section, request);
-	let result: TResult | null;
-	try {
-		result = await guardSectionWrite(spec.section, () =>
-			spec.persist(draft, services, projectId, save)
-		);
-	} catch (e) {
-		await services.draftLock
-			.rollback(projectId, spec.section, revision)
-			.catch((re) =>
-				console.warn(
-					`[draft] revision rollback failed [${spec.section}]:`,
-					re instanceof Error ? re.message : re
-				)
+	return withFoundationLock(services, projectId, spec.section, async () => {
+		const foundation = isFoundationSection(spec.section);
+		if (spec.atomic && !foundation) {
+			const result = await guardSectionWrite(spec.section, () =>
+				spec.persist(draft, services, projectId, save)
 			);
-		throw e;
+			if (result === null) error(409, STALE_REVISION_MESSAGE);
+			if (spec.mirror !== false) mirrorToBack(services, projectId, spec.section);
+			return json(result);
+		}
+
+		const revisionSection = foundation ? 'foundation' : spec.section;
+		const revision = await commitRevision(services, projectId, revisionSection, request);
+		let result: TResult | null;
+		try {
+			result = await guardSectionWrite(spec.section, () =>
+				spec.persist(draft, services, projectId, foundation ? { ...save, expectedRevision: null } : save)
+			);
+			if (result === null) error(409, STALE_REVISION_MESSAGE);
+		} catch (e) {
+			await services.draftLock
+				.rollback(projectId, revisionSection, revision)
+				.catch((re) =>
+					console.warn(
+						`[draft] revision rollback failed [${spec.section}]:`,
+						re instanceof Error ? re.message : re
+					)
+				);
+			throw e;
+		}
+		if (spec.mirror !== false) mirrorToBack(services, projectId, spec.section);
+		publishSectionChange({
+			projectId,
+			section: spec.section,
+			origin: save.origin
+		});
+		return json({ ...result, revision });
+	});
+}
+
+/**
+ * The same save, run inside the server for a write no HTTP client sent: the
+ * landing of a request's section changes (ac-evo-draft-section-landing). The
+ * section goes through its own guards, parser and save, its revision moves
+ * under the one read when the change was laid on it, and the pages showing it
+ * refresh. Answers the sentence that refused it rather than throwing.
+ */
+export async function writeSectionInProcess<TDraft>(
+	services: AppServices,
+	projectId: string,
+	spec: SectionSaveSpec<TDraft, object>,
+	body: Record<string, unknown>,
+	options: { readonly expectedRevision: number | null; readonly origin: string | null }
+): Promise<{ readonly ok: true } | { readonly ok: false; readonly reason: string }> {
+	return withFoundationLock(services, projectId, spec.section, () =>
+		writeSectionInProcessLocked(services, projectId, spec, body, options));
+}
+
+async function writeSectionInProcessLocked<TDraft>(
+	services: AppServices,
+	projectId: string,
+	spec: SectionSaveSpec<TDraft, object>,
+	body: Record<string, unknown>,
+	options: { readonly expectedRevision: number | null; readonly origin: string | null }
+): Promise<{ readonly ok: true } | { readonly ok: false; readonly reason: string }> {
+	const reasonOf = (e: unknown): string => {
+		if (isHttpError(e)) return typeof e.body?.message === 'string' ? e.body.message : `refused (${e.status})`;
+		return e instanceof Error ? e.message : String(e);
+	};
+	const document = { ...body, projectId };
+	let draft: TDraft;
+	try {
+		await spec.validate?.(document, services, projectId);
+		draft = spec.parse(document, projectId);
+	} catch (e) {
+		return { ok: false, reason: reasonOf(e) };
+	}
+	const foundation = isFoundationSection(spec.section);
+	const revisionSection = foundation ? 'foundation' : spec.section;
+	const save: SectionDraftSaveOptions = { expectedRevision: foundation ? null : options.expectedRevision, origin: options.origin };
+	if (spec.atomic && !foundation) {
+		try {
+			const result = await spec.persist(draft, services, projectId, save);
+			if (result === null) return { ok: false, reason: STALE_REVISION_MESSAGE };
+		} catch (e) {
+			return { ok: false, reason: reasonOf(e) };
+		}
+		if (spec.mirror !== false) mirrorToBack(services, projectId, spec.section);
+		return { ok: true };
+	}
+	const revision = await services.draftLock.commit(projectId, revisionSection, options.expectedRevision);
+	if (revision === null) return { ok: false, reason: STALE_REVISION_MESSAGE };
+	try {
+		const result = await spec.persist(draft, services, projectId, save);
+		if (result === null) throw new Error(STALE_REVISION_MESSAGE);
+	} catch (e) {
+		await services.draftLock.rollback(projectId, revisionSection, revision).catch(() => {});
+		return { ok: false, reason: reasonOf(e) };
 	}
 	if (spec.mirror !== false) mirrorToBack(services, projectId, spec.section);
-	publishSectionChange({
-		projectId,
-		section: spec.section,
-		origin: save.origin
-	});
-	return json({ ...result, revision });
+	publishSectionChange({ projectId, section: spec.section, origin: options.origin });
+	return { ok: true };
 }

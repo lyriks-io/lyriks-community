@@ -1,5 +1,4 @@
 import { error, json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireBehaviorFeatureAccess, featureIdCollisions, featureIdCollisionMessage } from '$lib/server/behavior-feature-access.server';
 import type { RequestHandler } from './$types';
 
@@ -9,9 +8,9 @@ export const POST: RequestHandler = async (event) => {
 		error(400, 'projectId, featureId, surfaceId and stateDefinitionId are required');
 	const { projectId, featureId, surfaceId, stateDefinitionId } = body;
 	await requireBehaviorFeatureAccess(event, projectId, featureId, 'write');
-	const clashes = await featureIdCollisions(projectId, featureId);
+	const clashes = await featureIdCollisions(event.locals.services, projectId, featureId);
 	if (clashes.length) error(409, featureIdCollisionMessage(projectId, featureId, clashes));
-	const services = getServices();
+	const services = event.locals.services;
 	const result = await services.deleteBehaviorState.execute({ projectId, featureId, surfaceId, stateDefinitionId });
 	if (result.ok) void services.scheduleBackSync(projectId).catch(() => {});
 	return json(result);

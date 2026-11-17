@@ -6,8 +6,6 @@
 
 import type { Option } from '$domain/shared';
 
-export type RulesTab = 'inventory' | 'edge_cases';
-
 /** What kind of problem an Issue is. Plain labels — no behavioral-model jargon. */
 export const ISSUE_KINDS = [
 	{ code: 'contradiction', label: 'Contradiction', hint: 'Two rules disagree' },

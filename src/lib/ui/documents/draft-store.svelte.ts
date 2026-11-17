@@ -1,11 +1,14 @@
 import {
 	createDocumentSource,
+	DOCUMENT_KINDS,
+	sourceAccess,
 	type DocumentKind,
 	type DocumentSource,
 	type ProjectDocumentsDraft
 } from '$domain/documents';
 import type { Session, ToastNotifierPort } from '$application/ports';
 import { SectionAutosave, type SaveStatus } from '$ui/shell/section-autosave.svelte';
+import { createFilter } from '$ui/design-system';
 
 export type { SaveStatus };
 
@@ -16,7 +19,28 @@ export type { SaveStatus };
  */
 export class DocumentsStore {
 	draft = $state<ProjectDocumentsDraft>(null as unknown as ProjectDocumentsDraft);
-	filter = $state('');
+	/** The shared list toolbar's state: the search box plus the facets of its Filters panel. */
+	readonly filter = createFilter<DocumentSource>({
+		fields: (s) => [s.title, s.note, s.url],
+		placeholder: 'Filter sources…',
+		noun: 'sources',
+		facets: [
+			{ key: 'kind', label: 'Kind', value: (s) => s.kind, options: DOCUMENT_KINDS.map((k) => ({ value: k.code, label: k.label })) },
+			{
+				key: 'access',
+				label: 'Can be opened',
+				value: (s) => sourceAccess(s),
+				options: [
+					{ value: 'link', label: 'Through a link' },
+					{ value: 'inline', label: 'Content only' },
+					{ value: 'unreachable', label: 'Nobody can open it' },
+					{ value: 'empty', label: 'Nothing filled in' }
+				]
+			},
+			{ key: 'decision', label: 'Technical decisions', kind: 'toggle', value: (s) => !!s.decision },
+			{ key: 'evidence', label: 'Test results', kind: 'toggle', value: (s) => !!s.evidence }
+		]
+	});
 	selectedId = $state<string | null>(null);
 
 	readonly session: Session;
@@ -51,16 +75,7 @@ export class DocumentsStore {
 		return this.#autosave.lastError;
 	}
 
-	filtered = $derived.by<DocumentSource[]>(() => {
-		const q = this.filter.trim().toLowerCase();
-		if (!q) return this.draft.sources;
-		return this.draft.sources.filter(
-			(s) =>
-				s.title.toLowerCase().includes(q) ||
-				s.note.toLowerCase().includes(q) ||
-				s.url.toLowerCase().includes(q)
-		);
-	});
+	filtered = $derived.by<DocumentSource[]>(() => this.filter.apply(this.draft.sources));
 
 	hydrate = (incoming: ProjectDocumentsDraft, revision = 0) =>
 		this.#autosave.hydrate(incoming, revision);
@@ -69,8 +84,12 @@ export class DocumentsStore {
 
 	flushNow = () => this.#autosave.flushNow();
 
-	setFilter = (v: string) => {
-		this.filter = v;
+	/** Back to the whole register (what adding a source needs, so the new row shows). */
+	clearFilter = () => this.filter.clear();
+	/** Filter on one source by its name, as if the author had typed it. */
+	filterOn = (id: string) => {
+		const source = this.draft.sources.find((s) => s.id === id);
+		if (source) this.filter.query = source.title || source.url;
 	};
 	select = (id: string | null) => {
 		this.selectedId = id;

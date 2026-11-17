@@ -78,7 +78,7 @@
 			</Button>
 		</div>
 		{#if leaves.length === 0}
-			<p class="mt-2 text-[11px] text-ink-400">This project has no features to export yet.</p>
+			<p class="mt-2 text-[0.6875rem] text-ink-400">This project has no features to export yet.</p>
 		{/if}
 	</div>
 
@@ -99,9 +99,9 @@
 						<div class="flex items-start justify-between gap-3">
 							<div class="min-w-0 flex-1">
 								<p class="text-sm font-semibold text-ink-800">{t.title || 'Untitled requirement'}</p>
-								<p class="text-[11px] text-ink-400">from {t.sourceProjectName || 'unknown project'}</p>
-								{#if t.description}<p class="mt-1 text-[13px] text-ink-600">{t.description}</p>{/if}
-								<div class="mt-1 flex flex-wrap gap-3 text-[11px] text-ink-500">
+								<p class="text-[0.6875rem] text-ink-400">from {t.sourceProjectName || 'unknown project'}</p>
+								{#if t.description}<p class="mt-1 text-[0.8125rem] text-ink-600">{t.description}</p>{/if}
+								<div class="mt-1 flex flex-wrap gap-3 text-[0.6875rem] text-ink-500">
 									{#if t.problem}<span>Problem ✓</span>{/if}
 									{#if t.value}<span>Value ✓</span>{/if}
 									<span>{t.acceptanceCriteria.length} acceptance criteria</span>

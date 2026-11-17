@@ -48,7 +48,7 @@ export const CAPABILITY_HELP: Record<string, HelpEntry> = {
 	},
 	foundation: {
 		title: 'Foundation',
-		what: 'Where the PRODUCT is defined: the brief, the business bet (pain, outcome, KPIs, success & kill criteria, risks), the market, and the product-level expectations on tech, security and operations. The stack itself lives in Data & Architecture; detailed rules live in Functional.',
+		what: 'Where the PRODUCT is defined: the brief, the business bet (pain, outcome, KPIs, success & kill criteria, risks), the market, and the product-level expectations on tech, security and operations. The stack itself lives in Tech & Data; detailed rules live in Functional.',
 		how: [
 			'Fill the brief, then the Business tab: the problem, the expected outcome and how you will measure them.',
 			'Frame the market and the product-level technical & security expectations (integrations, performance, trust).',
@@ -69,7 +69,7 @@ export const CAPABILITY_HELP: Record<string, HelpEntry> = {
 			'Clear roles and permissions are the backbone of an enterprise-grade spec and drive the run-mode simulator’s per-persona gating.'
 	},
 	features: {
-		title: 'Feature',
+		title: 'Features',
 		what: 'The feature tree: the product broken into families and leaf features, with MVP scope and a release roadmap.',
 		how: [
 			'Build the tree of families and features.',
@@ -81,14 +81,14 @@ export const CAPABILITY_HELP: Record<string, HelpEntry> = {
 	},
 	experience: {
 		title: 'Experience',
-		what: 'The product’s journeys and screens: a live, clickable prototype plus the reusable component library.',
+		what: 'How the product looks and flows: the design.md a coding agent reads, the journeys and the screens they visit.',
 		how: [
-			'Design journeys as flows of screens.',
-			'Wire components and simulate the experience per persona.',
-			'Verify coverage so every journey is reachable and complete.'
+			'Write the design.md from the brand: identity, colors, typography, examples.',
+			'Map the journeys step by step, with the test fixtures they need.',
+			'List every screen with its route and the steps that visit it.'
 		],
 		value:
-			'A verified experience is the highest-fidelity input to AI generation: the closer to real it is, the less rework (and token spend) implementation takes.'
+			'A precise design.md and an honest screen inventory are what an AI coder needs to ship the right UI the first time.'
 	},
 	functional: {
 		title: 'Functional',
@@ -101,7 +101,7 @@ export const CAPABILITY_HELP: Record<string, HelpEntry> = {
 			'Where automated behavior is specified: define permissions, consequences and failure paths before implementation.'
 	},
 	infrastructure: {
-		title: 'Data & Architecture',
+		title: 'Tech & Data',
 		what: 'Where the product runs: hosts, databases, regions and the data topology, plus the whole project as one connected graph.',
 		how: [
 			'Declare hosts, databases and regions.',
@@ -113,24 +113,51 @@ export const CAPABILITY_HELP: Record<string, HelpEntry> = {
 	},
 	glossary: {
 		title: 'Glossary',
-		what: 'The project’s canonical vocabulary: approved terms, their definitions, and banned synonyms.',
+		what: 'The project’s canonical vocabulary: approved terms, their definitions, and the words to avoid.',
 		how: [
 			'Add each governed term with its definition.',
-			'Mark allowed versus banned synonyms.',
+			'Mark allowed synonyms and the words to avoid.',
 			'Governed words are highlighted wherever they appear in the app.'
 		],
 		value:
 			'One canonical vocabulary stops the downstream LLM drifting. It is the cheapest quality control there is: consistent language in, consistent (and cheaper) output out.'
 	},
 	coherence: {
-		title: 'Project health',
-		what: 'The health dashboard for the whole spec: the readiness and coherence scores, the breaches behind them, and the approval queue.',
+		title: 'Health',
+		what: 'The score of the project and every point that weighs on it: the coherence gaps of every severity, what the completeness audit flags and what the code says about the spec.',
 		how: [
-			'Read the scores and the blocking gaps.',
-			'Work the breach list to raise readiness.',
-			'Inspect the evidence behind a score before deciding what is ready to build.'
+			'Read the points, the heaviest first, and narrow them by severity.',
+			'Open a point to see where it comes from and what to do, then fix it where it lives.',
+			'Reject a point the product is right without, or turn it into an evolution.'
 		],
 		value:
-			'The scores help locate specification gaps. They do not certify runtime correctness or control an AI budget.'
+			'One list and one score say how the project stands. The score helps locate gaps; it does not certify runtime correctness.'
+	},
+	generate: {
+		title: 'Generate specs',
+		what: 'The spec generator, with the guarantee tiers it runs under and the threshold it waits for.',
+		how: ['Pick the guarantee tiers.', 'Set the threshold.', 'Generate the specs once nothing blocks.'],
+		value: 'The generated documents are read from the same specification the project health reads.'
+	},
+	traceability: {
+		title: 'Traceability',
+		what: 'Every feature as a requirement, traced to its acceptance criteria, behavior, source and release; the named versions of the spec; and who signed off what.',
+		how: [
+			'Coverage: read the matrix, where each red cell is a gap to close.',
+			'Baselines: freeze the spec at discovery, design or launch; each one records the scores, the feature count and a full requirements snapshot you can compare and export.',
+			'Approvals: track who reviews what and record the rationale behind every approval or accepted risk.'
+		],
+		value:
+			'A requirement nobody can trace is one nobody can defend. A lightweight worklist, not a workflow engine.'
+	},
+	documents: {
+		title: 'Documents & Sources',
+		what: 'A register of the interviews, research, links, regulations and evidence behind the spec, so any requirement can cite its source.',
+		how: [
+			'Register a source with its title, kind and reference.',
+			'Cite it from any field of the spec.'
+		],
+		value:
+			'Every claim says where it comes from. Not a document store: it records the reference, not the bytes.'
 	}
 };

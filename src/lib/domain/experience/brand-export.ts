@@ -1,8 +1,8 @@
 /**
- * "Export LLM brief" — deterministic, pure serializers of the brand model.
+ * The design.md and its companions: deterministic, pure serializers of the brand model.
  *
- * Three shapes for a downstream model: a Markdown brief, a tokens JSON bundle,
- * and CSS custom properties. Ported from the prototype; no IO, no side effects.
+ * The design.md is the file a coding agent reads to build the product's UI on-brand;
+ * the tokens JSON bundle and the CSS custom properties sit beside it. No IO, no side effects.
  */
 import { resolveMarkers, type ProjectBrand } from './brand';
 
@@ -121,11 +121,15 @@ export function brandExportCss(brand: ProjectBrand): string {
 	return lines.join('\n');
 }
 
-/** A human-readable Markdown brief covering the whole brand. */
+/**
+ * The design.md: what a coding agent reads to build the UI on-brand. A part whose
+ * source is empty is left out, never filled with a default.
+ */
 export function brandExportMarkdown(brand: ProjectBrand): string {
 	const id = brand.identity;
 	const out: string[] = [];
-	out.push(`# Brand brief, ${id.name || 'Untitled'}`);
+	out.push(`# design.md, ${id.name || 'Untitled'}`);
+	out.push(`\nThe design reference for any agent building the UI of ${id.name || 'this product'}: follow it over any default look.`);
 	if (id.baseline) out.push(`\n> ${id.baseline}\n`);
 	if (id.missionOneLiner) out.push(`**Mission.** ${id.missionOneLiner}\n`);
 	if (id.toneAdjectives.length) out.push(`**Tone.** ${id.toneAdjectives.join(', ')}\n`);
@@ -133,8 +137,8 @@ export function brandExportMarkdown(brand: ProjectBrand): string {
 	if (id.toneDoSay) out.push(`### Do say\n\n${id.toneDoSay}\n`);
 	if (id.toneDontSay) out.push(`### Don't say\n\n${id.toneDontSay}\n`);
 
-	out.push('\n## Logo & assets\n');
 	const lr = brand.logo.rules;
+	if (Object.values(lr).some((v) => safe(v)) || brand.logo.variants.length) out.push('\n## Logo & assets\n');
 	if (lr.clearSpace) out.push(`- **Clear space.** ${lr.clearSpace}`);
 	if (lr.backgroundsAllowed) out.push(`- **Allowed backgrounds.** ${lr.backgroundsAllowed}`);
 	if (lr.backgroundsForbidden) out.push(`- **Forbidden.** ${lr.backgroundsForbidden}`);
@@ -162,7 +166,7 @@ export function brandExportMarkdown(brand: ProjectBrand): string {
 	}
 
 	const typo = brand.typography;
-	if (Object.keys(typo.families).length || typo.roles.length || typo.scale.length || typo.weights.length) {
+	if (Object.values(typo.families).some((f) => f.stack || f.fallback) || typo.roles.length || typo.scale.length || typo.weights.length) {
 		out.push('\n## Typography\n');
 		Object.entries(typo.families).forEach(([slot, f]) => {
 			if (f.stack || f.fallback) out.push(`- **${slot}.** ${f.stack || ''}${f.fallback ? `, fallback: ${f.fallback}` : ''}`);

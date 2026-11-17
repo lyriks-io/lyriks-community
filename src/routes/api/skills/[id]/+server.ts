@@ -1,5 +1,4 @@
 import { error, json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import type { RequestHandler } from './$types';
 
 /**
@@ -12,8 +11,8 @@ import type { RequestHandler } from './$types';
  *  - `?download=1`: the install variant as a markdown attachment (the Settings
  *    → Skills Download button — a plain anchor, no client-side blob juggling).
  */
-export const GET: RequestHandler = async ({ params, url }) => {
-	const skill = getServices().skillCatalog.getSkill(params.id);
+export const GET: RequestHandler = async ({ params, url, locals }) => {
+	const skill = locals.services.skillCatalog.getSkill(params.id);
 	if (!skill) error(404, `Unknown skill "${params.id}"`);
 
 	if (url.searchParams.get('download') === '1') {

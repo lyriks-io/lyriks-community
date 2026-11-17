@@ -39,23 +39,29 @@ const isRootSpoke = (link: ForceLink): boolean => {
 	return source.kind === 'project' || target.kind === 'project';
 };
 
+/** The most steps a still layout takes to settle before it is drawn. */
+const STILL_TICKS = 300;
+
 /**
  * Canvas-friendly force layout. D3's Barnes–Hut many-body force replaces the
  * former O(n²) all-pairs repulsion, and alpha decay stops the timer once the
  * graph settles. Call `alpha(...).restart()` only after an interaction.
+ * `still` (reduced motion, criterion da3bc837) settles the graph before its
+ * first drawing, so its nodes never fly into place.
  */
 export function createForceLayout(
 	nodes: ForceNode[],
 	links: ForceLink[],
 	onTick: () => void,
-	onEnd?: () => void
+	onEnd?: () => void,
+	still = false
 ): Simulation<ForceNode, ForceLink> {
 	const link = forceLink<ForceNode, ForceLink>(links)
 		.id((node) => node.id)
 		.distance((edge) => (isRootSpoke(edge) ? 245 : isSemantic(edge.kind) ? 82 : edge.kind === 'contains' ? 112 : 145))
 		.strength((edge) => (isRootSpoke(edge) ? 0.035 : isSemantic(edge.kind) ? 0.72 : edge.kind === 'contains' ? 0.24 : 0.42));
 
-	return forceSimulation<ForceNode>(nodes)
+	const simulation = forceSimulation<ForceNode>(nodes)
 		.force('link', link)
 		.force(
 			'charge',
@@ -74,4 +80,13 @@ export function createForceLayout(
 		.velocityDecay(0.38)
 		.on('tick', onTick)
 		.on('end', () => onEnd?.());
+	if (still) {
+		simulation.stop();
+		for (let i = 0; i < STILL_TICKS && simulation.alpha() > simulation.alphaMin(); i++) simulation.tick();
+		queueMicrotask(() => {
+			onTick();
+			onEnd?.();
+		});
+	}
+	return simulation;
 }

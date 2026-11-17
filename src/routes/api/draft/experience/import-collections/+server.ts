@@ -1,5 +1,4 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import type { RequestHandler } from './$types';
 
@@ -31,7 +30,7 @@ export const POST: RequestHandler = async (event) => {
 	if (body?.seedCount !== undefined && (typeof body.seedCount !== 'number' || !Number.isInteger(body.seedCount) || body.seedCount < 0 || body.seedCount > 100))
 		error(400, 'seedCount must be an integer from 0 to 100');
 
-	const services = getServices();
+	const services = event.locals.services;
 	const result = await services.importDataCollections.execute(projectId, entityNames, {
 		refresh,
 		seedCount: body?.seedCount as number | undefined

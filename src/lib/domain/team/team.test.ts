@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	administersProject,
 	canDeleteProject,
 	canSeeProjectAsCollaborator,
 	emptyTeam,
@@ -100,5 +101,24 @@ describe('canDeleteProject', () => {
 		expect(canDeleteProject(emptyTeam(), null)).toBe(true);
 		const ownerless = teamOf(collaborator({ role: 'contributor', email: 'grace@company.com' }));
 		expect(canDeleteProject(ownerless, 'someone-else@company.com')).toBe(true);
+	});
+});
+
+describe('who administers a project [criterion:ac-leaf-ac-proj-settings]', () => {
+	const team: Team = { collaborators: [collaborator({ email: 'owner@acme.io', role: 'owner' }), collaborator({ email: 'dev@acme.io', role: 'contributor' })] };
+
+	it('is an admin or the owner of the workspace, whatever the project', () => {
+		expect(administersProject('admin', emptyTeam(), 'anyone@acme.io')).toBe(true);
+		expect(administersProject('owner', emptyTeam(), 'anyone@acme.io')).toBe(true);
+	});
+
+	it('is the project owner among the others, matched by email', () => {
+		expect(administersProject('member', team, 'Owner@Acme.io')).toBe(true);
+		expect(administersProject('member', team, 'dev@acme.io')).toBe(false);
+		expect(administersProject(null, team, null)).toBe(false);
+	});
+
+	it('is nobody else when the project names no owner', () => {
+		expect(administersProject('member', emptyTeam(), 'dev@acme.io')).toBe(false);
 	});
 });

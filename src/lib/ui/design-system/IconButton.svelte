@@ -22,9 +22,9 @@
 	{onclick}
 	title={label}
 	aria-label={label}
-	class="grid size-6 shrink-0 place-items-center rounded text-ink-400 transition-colors disabled:opacity-30 {danger
-		? 'hover:bg-danger-50 hover:text-danger-600'
-		: 'hover:bg-surface-sunken hover:text-ink-700'} {klass}"
+	class="grid size-6 shrink-0 place-items-center border-[1.5px] border-line text-ink-3 transition-colors disabled:opacity-30 {danger
+		? 'hover:border-red-ink hover:text-red-ink'
+		: 'hover:border-ink hover:text-ink'} {klass}"
 >
 	<Icon {name} {size} />
 </button>

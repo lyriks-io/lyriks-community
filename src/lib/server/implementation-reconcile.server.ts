@@ -1,6 +1,6 @@
-import { getServices } from '$composition/container.server';
+import type { AppServices } from '$composition/container.server';
 import { persistFeaturesDraft } from '$lib/server/features-write.server';
-import type { StatusReconciliation } from '$application/use-cases/reconcile-implementation-statuses';
+import type { StatusReconciliation } from '$application/specification/reconcile-implementation-statuses';
 
 /**
  * Persisting half of the coverage→status reconciliation: plan the upgrades,
@@ -9,13 +9,12 @@ import type { StatusReconciliation } from '$application/use-cases/reconcile-impl
  * No changes → no write, no revision bump.
  */
 export async function reconcileImplementationStatuses(
-	projectId: string,
+	services: AppServices, projectId: string,
 	featureIds?: readonly string[]
 ): Promise<StatusReconciliation[]> {
-	const services = getServices();
 	const plan = await services.reconcileImplementationStatuses.execute(projectId, { featureIds });
 	if (plan.changes.length === 0) return [];
-	await persistFeaturesDraft(plan.draft);
+	await persistFeaturesDraft(services, plan.draft);
 	return plan.changes;
 }
 
@@ -27,10 +26,10 @@ export async function reconcileImplementationStatuses(
  * explicit reconcile call.
  */
 export function scheduleImplementationReconcile(
-	projectId: string,
+	services: AppServices, projectId: string,
 	featureIds?: readonly string[]
 ): void {
-	void reconcileImplementationStatuses(projectId, featureIds).catch((e) =>
+	void reconcileImplementationStatuses(services, projectId, featureIds).catch((e) =>
 		console.warn(
 			'[implementation] status reconcile failed:',
 			e instanceof Error ? e.message : e

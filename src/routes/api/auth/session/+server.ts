@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { SESSION_COOKIE } from '$lib/server/session-cookie.server';
+import { requestIdentity } from '$lib/server/request-identity.server';
 import type { RequestHandler } from './$types';
 
 /**
@@ -13,8 +13,8 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async (event) => {
 	const token = event.cookies.get(SESSION_COOKIE);
 	if (!token) error(401, 'unauthenticated');
-	const services = getServices();
-	const account = await services.identity.verify(token);
+	const services = event.locals.services;
+	const account = requestIdentity(event.request, token) ?? await services.identity.verify(token);
 	if (account === 'unreachable') error(503, 'identity unavailable');
 	if (!account) error(401, 'unauthenticated');
 	const role = await services.roleGate.verdict(token, 'mcp', null);

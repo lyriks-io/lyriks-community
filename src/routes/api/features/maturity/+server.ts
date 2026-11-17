@@ -1,5 +1,4 @@
 import { json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireBehaviorFeatureAccess } from '$lib/server/behavior-feature-access.server';
 import type { RequestHandler } from './$types';
 
@@ -26,6 +25,6 @@ export const GET: RequestHandler = async (event) => {
 
 	await requireBehaviorFeatureAccess(event, projectId, featureId, 'read');
 
-	const maturity = await getServices().loadFeatureMaturityReport.execute(projectId, featureId);
+	const maturity = await event.locals.services.loadFeatureMaturityReport.execute(projectId, featureId);
 	return json({ maturity });
 };

@@ -1,9 +1,9 @@
+import type { AppServices } from '$composition/container.server';
 import { error, type RequestEvent } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import type { AccessAction } from '$application/ports';
 import { dataModelFeatureId, experienceFeatureId } from '$application/projection/aux-feature-ids';
 import { requireProjectAccess } from './project-access.server';
-import { featureIdCollisionMessage } from '$application/feature-id-collision';
+import { featureIdCollisionMessage } from '$application/specification/feature-id-collision';
 
 export { featureIdCollisionMessage };
 
@@ -19,7 +19,7 @@ export async function requireBehaviorFeatureAccess(
 	const owns =
 		featureId === experienceFeatureId(projectId) ||
 		featureId === dataModelFeatureId(projectId) ||
-		(await getServices().loadFeaturesDraft.execute(projectId)).features.some(
+		(await event.locals.services.loadFeaturesDraft.execute(projectId)).features.some(
 			(feature) => feature.id === featureId
 		);
 	if (!owns) error(404, 'Feature not found in project');
@@ -46,8 +46,8 @@ export async function requireBehaviorFeatureAccess(
  * them would blank a page that works.
  */
 export async function featureIdCollisions(
-	projectId: string,
+	services: AppServices, projectId: string,
 	featureId: string
 ): Promise<readonly string[]> {
-	return getServices().detectFeatureIdCollision.execute(projectId, featureId);
+	return services.detectFeatureIdCollision.execute(projectId, featureId);
 }

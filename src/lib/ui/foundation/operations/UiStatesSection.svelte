@@ -20,12 +20,7 @@
 	const current = $derived(selected ? store.draft.screenStates[selected] : undefined);
 </script>
 
-<SectionCard
-	eyebrow="UI states"
-	icon="monitor"
-	title="Five states per screen the LLM must always handle"
-	subtitle="Without these the LLM ships happy-path-only UI. Cover empty / loading / error / success / partial-data per screen."
->
+<SectionCard icon="monitor" title="UI states">
 	{#if store.screens.length === 0}
 		<div class="rounded-field border border-dashed border-ink-200 bg-surface-sunken p-6 text-center text-sm text-ink-400">
 			No screen declared yet. Add screens in Experience first, then describe their states here.
@@ -44,7 +39,7 @@
 							: 'text-ink-600 hover:bg-surface-sunken'}"
 					>
 						<span class="flex-1 truncate font-mono">{screen}</span>
-						<span class="text-[10px] font-mono {count === 5 ? 'text-emerald-600' : 'text-ink-400'}">{count}/5</span>
+						<span class="text-[0.625rem] font-mono {count === 5 ? 'text-success-600' : 'text-ink-400'}">{count}/5</span>
 					</button>
 				{/each}
 			</div>

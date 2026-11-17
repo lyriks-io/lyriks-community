@@ -2,6 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { existsSync } from 'node:fs';
 import { unspaghettitSubprocessCwd, unspaghettitSubprocessEnv } from './subprocess-env.server';
+import { stopProcessDescendants } from './process-descendants.server';
 
 export interface UnspaEngineConfig {
 	/** Absolute path to the Unspaghettit MCP server bin (typically `…/unspaghettit/mcp-server/bin.cjs`). */
@@ -12,6 +13,8 @@ export interface UnspaEngineConfig {
 	readonly platformVersion?: string;
 	/** Ceiling for a single engine call; see `DEFAULT_CALL_TIMEOUT_MS`. */
 	readonly callTimeoutMs?: number;
+	/** Whether the engine proves with its native solver; without it no solver runs. */
+	readonly proofs?: boolean;
 }
 
 /** What a single engine call may override on the connection defaults. */
@@ -65,7 +68,10 @@ export function isRequestTimeout(e: unknown): boolean {
 export class UnspaEngineClient {
 	#cfg: UnspaEngineConfig;
 	#client: Client | null = null;
+	readonly #transports = new WeakMap<Client, StdioClientTransport>();
 	#connecting: Promise<Client | null> | null = null;
+	/** Moves on at every recycle: a connection opened before it is stale. */
+	#generation = 0;
 	/** Epoch ms of the last connect failure; gates a short retry cooldown. */
 	#lastFailAt = 0;
 	/** Don't spawn-storm a broken engine, but DO retry after this window. */
@@ -76,6 +82,14 @@ export class UnspaEngineClient {
 	constructor(cfg: UnspaEngineConfig, label = 'unspa-engine') {
 		this.#cfg = cfg;
 		this.#label = label;
+		// One live client per role and process. The services are built once in
+		// production, but a dev server rebuilds them on every reload of its
+		// modules: the client it replaces would otherwise keep its engine
+		// subprocess alive for the life of the server (29 of them, 2.6 GB, seen).
+		const live = liveClients();
+		const previous = live.get(label);
+		if (previous && previous !== this) previous.recycle();
+		live.set(label, this);
 	}
 
 	get snapshotsRoot(): string {
@@ -116,15 +130,32 @@ export class UnspaEngineClient {
 		const client = this.#client;
 		this.#client = null;
 		this.#connecting = null;
-		try {
-			// `close()` is async (it ends stdin, then SIGTERMs): fire it and swallow
-			// the rejection so a dead pipe can't surface as an unhandled rejection.
-			void Promise.resolve(
-				(client as { close?: () => unknown } | null)?.close?.()
-			).catch(() => {});
-		} catch {
-			// best-effort — a dead pipe may already be gone
-		}
+		this.#generation += 1;
+		void this.#closeClient(client);
+	}
+
+	async #closeClient(client: Client | null): Promise<void> {
+		if (!client) return;
+		stopProcessDescendants(this.#transports.get(client)?.pid);
+		try { await client.close?.(); } catch { /* A dead pipe may already be gone. */ }
+	}
+
+	/** Keep text and tool-error envelopes while sharing the JSON calls' queue and deadline. */
+	callTool(
+		name: string,
+		args: Record<string, unknown>,
+		opts?: EngineCallOptions
+	): Promise<unknown | null> {
+		return this.#inTurn(async () => {
+			const client = await this.client();
+			if (!client) return null;
+			try {
+				return await client.callTool({ name, arguments: args }, undefined, this.#requestOptions(opts));
+			} catch (e) {
+				this.#onCallFailure(name, e);
+				return null;
+			}
+		});
 	}
 
 	/**
@@ -132,7 +163,15 @@ export class UnspaEngineClient {
 	 * (engine unreachable, non-JSON text, tool error). Centralizes the
 	 * connect → callTool → extractText → safeJson chain every read shares.
 	 */
-	async callJson(
+	callJson(
+		name: string,
+		args: Record<string, unknown>,
+		opts?: EngineCallOptions
+	): Promise<unknown | null> {
+		return this.#inTurn(() => this.#callJsonNow(name, args, opts));
+	}
+
+	async #callJsonNow(
 		name: string,
 		args: Record<string, unknown>,
 		opts?: EngineCallOptions
@@ -165,7 +204,15 @@ export class UnspaEngineClient {
 	 * the untraced elements, and that IS the answer the caller must act on),
 	 * whereas reads are happy to degrade silently.
 	 */
-	async callJsonOrError(
+	callJsonOrError(
+		name: string,
+		args: Record<string, unknown>,
+		opts?: EngineCallOptions
+	): Promise<{ ok: true; value: unknown } | { ok: false; error: string } | null> {
+		return this.#inTurn(() => this.#callJsonOrErrorNow(name, args, opts));
+	}
+
+	async #callJsonOrErrorNow(
 		name: string,
 		args: Record<string, unknown>,
 		opts?: EngineCallOptions
@@ -191,6 +238,15 @@ export class UnspaEngineClient {
 			this.#onCallFailure(name, e);
 			return null;
 		}
+	}
+
+	#turn: Promise<unknown> = Promise.resolve();
+
+	/** Start each budget when its computation can run, after earlier calls finish. */
+	#inTurn<T>(call: () => Promise<T>): Promise<T> {
+		const run = this.#turn.then(call, call);
+		this.#turn = run.catch(() => undefined);
+		return run;
 	}
 
 	/** The deadline this call runs under: its own, else the connection's. */
@@ -219,18 +275,22 @@ export class UnspaEngineClient {
 	}
 
 	/** Read an MCP resource's text payload (e.g. `unspa://operations`). */
-	async readResourceText(uri: string): Promise<string | null> {
+	readResourceText(uri: string): Promise<string | null> {
+		return this.#inTurn(() => this.#readResourceTextNow(uri));
+	}
+
+	async #readResourceTextNow(uri: string): Promise<string | null> {
 		const client = await this.client();
 		if (!client) return null;
 		try {
-			const resource = await client.readResource({ uri });
+			const resource = await client.readResource({ uri }, this.#requestOptions());
 			const text = resource.contents.find(
 				(content): content is Extract<(typeof resource.contents)[number], { text: string }> =>
 					'text' in content
 			)?.text;
 			return typeof text === 'string' ? text : null;
 		} catch (e) {
-			console.warn(`[${this.#label}] readResource ${uri} failed:`, msg(e));
+			this.#onCallFailure(`readResource ${uri}`, e);
 			return null;
 		}
 	}
@@ -241,25 +301,36 @@ export class UnspaEngineClient {
 		// Recent failure → stay quiet until the cooldown elapses, then retry.
 		if (Date.now() - this.#lastFailAt < UnspaEngineClient.#RETRY_COOLDOWN_MS) return null;
 
-		this.#connecting = this.#connect()
+		const generation = this.#generation;
+		const connecting: Promise<Client | null> = this.#connect()
 			.then((client) => {
+				// Replaced while it was connecting (a dev server rebuilt its
+				// services), or dropped by a recycle since: nothing will ever use
+				// this subprocess, so stop it now rather than leave it running.
+				if (liveClients().get(this.#label) !== this || generation !== this.#generation) {
+					void this.#closeClient(client);
+					if (this.#connecting === connecting) this.#connecting = null;
+					return this.#generation === generation ? null : this.client();
+				}
 				// Clear the cached client if the subprocess ever closes, so the next
-				// call transparently respawns instead of hammering a dead pipe.
+				// call transparently respawns instead of hammering a dead pipe. Only
+				// this client: an old one closing late must not forget its successor,
+				// whose subprocess would then run on with nobody to stop it.
 				client.onclose = () => {
-					this.#client = null;
+					if (this.#client === client) this.#client = null;
 				};
 				this.#client = client;
-				this.#connecting = null;
+				if (this.#connecting === connecting) this.#connecting = null;
 				return client;
 			})
 			.catch((e) => {
 				console.warn(`[${this.#label}] subprocess connect failed:`, msg(e));
 				this.#lastFailAt = Date.now();
-				this.#client = null;
-				this.#connecting = null;
+				if (this.#connecting === connecting) this.#connecting = null;
 				return null;
 			});
-		return this.#connecting;
+		this.#connecting = connecting;
+		return connecting;
 	}
 
 	async #connect(): Promise<Client> {
@@ -272,16 +343,31 @@ export class UnspaEngineClient {
 			command: process.execPath,
 			args: [this.#cfg.mcpBinPath],
 			cwd: unspaghettitSubprocessCwd(),
-			env: unspaghettitSubprocessEnv(process.env, this.#cfg.snapshotsRoot)
+			env: unspaghettitSubprocessEnv(process.env, this.#cfg.snapshotsRoot, this.#cfg.proofs === true)
 		});
 		const client = new Client(
 			{ name: 'lyriks-platform', version: this.#cfg.platformVersion || 'dev' },
 			{ capabilities: {} }
 		);
-		await client.connect(transport);
+		this.#transports.set(client, transport);
+		try {
+			await client.connect(transport);
+		} catch (error) {
+			// A failed handshake can still have spawned a process and opened pipes.
+			// Release them before the retry cooldown, preserving the original error.
+			await this.#closeClient(client);
+			throw error;
+		}
 		console.log(`[${this.#label}] connected (snapshots=${this.#cfg.snapshotsRoot})`);
 		return client;
 	}
+}
+
+/** The client holding each role in this process, kept across module reloads. */
+function liveClients(): Map<string, UnspaEngineClient> {
+	const holder = globalThis as { __lyriksEngineClients?: Map<string, UnspaEngineClient> };
+	holder.__lyriksEngineClients ??= new Map();
+	return holder.__lyriksEngineClients;
 }
 
 export function msg(e: unknown): string {

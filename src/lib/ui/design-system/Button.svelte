@@ -30,20 +30,24 @@
 		children
 	}: Props = $props();
 
+	// The design's button (.ly-btn): square, a 1.5px ink border, a bold uppercase
+	// label, and the hard press shadow of `pressable`. Ghost is the one quiet
+	// variant: no border, no shadow, it only tints under the pointer.
 	const base =
-		'inline-flex items-center justify-center gap-2 font-medium rounded-pill transition-colors disabled:opacity-50 disabled:pointer-events-none select-none';
+		'inline-flex items-center justify-center gap-2 font-bold uppercase tracking-[0.07em] whitespace-nowrap rounded-none disabled:opacity-40 disabled:pointer-events-none select-none';
+	const pressed = 'border-[1.5px] border-ink-900 pressable';
 
 	const sizes: Record<ButtonSize, string> = {
 		sm: 'h-8 px-3 text-xs',
-		md: 'h-10 px-4 text-sm'
+		md: 'h-10 px-4 text-xs'
 	};
 
 	const variants: Record<ButtonVariant, string> = {
-		primary: 'bg-brand-gradient text-white shadow-brand hover:brightness-105',
-		outline: 'border border-line-strong text-ink-700 bg-surface hover:bg-surface-sunken',
-		ghost: 'text-ink-500 hover:text-ink-900 hover:bg-surface-sunken',
-		danger: 'border border-danger-500/30 text-danger-500 bg-danger-50 hover:bg-danger-500 hover:text-white',
-		soft: 'bg-brand-50 text-brand-600 hover:bg-brand-100'
+		primary: `${pressed} bg-brand-500 text-white`,
+		outline: `${pressed} bg-transparent text-ink-900`,
+		ghost: 'text-ink-700 hover:bg-surface-sunken hover:text-ink-900',
+		danger: `${pressed} bg-danger-600 text-white`,
+		soft: `${pressed} bg-brand-100 text-brand-500`
 	};
 
 	const cls = $derived(`${base} ${sizes[size]} ${variants[variant]} ${klass}`);

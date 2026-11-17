@@ -1,4 +1,5 @@
 import { authEnforced } from '$lib/server/auth-policy.server';
+import { isAdmin } from '$lib/server/admin.server';
 import { canUseSharedEditor } from '$lib/server/shared-editor-access.server';
 import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
@@ -8,12 +9,16 @@ import { isLicenseValid } from '$domain/licensing';
 import { runWithRequestContext } from '$lib/server/request-context.server';
 import { enforceTrustedOrigin } from '$lib/server/csrf.server';
 import { isMcpPath, mcpTarget, proxyToMcp } from '$lib/server/mcp-proxy.server';
+import { followAiProjectCalls } from '$lib/server/retrospec-ai.server';
 import {
 	editorForbidden,
 	isUnspaPath,
 	proxyToUnspa,
 	unspaTarget
 } from '$lib/server/unspa-proxy.server';
+import { slowRequestLine } from '$lib/server/slow-requests.server';
+import { rememberRequestIdentity } from '$lib/server/request-identity.server';
+import { inactiveProjectResponse } from '$lib/server/active-project.server';
 import {
 	SESSION_COOKIE,
 	deleteSessionCookie,
@@ -217,7 +222,20 @@ function withSecurityHeaders(event: Parameters<Handle>[0]['event'], res: Respons
 	return res;
 }
 
-export const handle: Handle = async ({ event, resolve }) => {
+// The MCP's calls on a project are announced as the AI's activity there (retrospec-ai.server.ts); a slow request is logged.
+export const handle: Handle = async (input) => {
+	// The one place a request receives the composition root: routes read it from here.
+	input.event.locals.services = getServices();
+	const started = performance.now();
+	const res = await followAiProjectCalls(input, handleRequest);
+	// A page's data fetched on navigation is told apart from a whole page served.
+	const path = input.event.isDataRequest ? `${input.event.url.pathname} (data)` : input.event.url.pathname;
+	const slow = slowRequestLine(input.event.request.method, path, performance.now() - started);
+	if (slow) console.warn(slow);
+	return res;
+};
+
+const handleRequest: Handle = async ({ event, resolve }) => {
 	// Vite folds `dev` to false in the shipped build: no appliance reaches the exemption.
 	const authRequired = authEnforced();
 	event.locals.authRequired = authRequired;
@@ -252,6 +270,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 		if (devEditor && isUnspaPath(event.url.pathname)) {
 			return withSecurityHeaders(event, await proxyToUnspa(event, devEditor));
 		}
+		const inactive = await inactiveProjectResponse(event);
+		if (inactive) return withSecurityHeaders(event, inactive);
 		return runWithRequestContext({ token: null, workspaceId: null, session: devSession }, async () =>
 			withSecurityHeaders(event, await resolve(event))
 		);
@@ -273,6 +293,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 			// via the `reason` flag added to the redirect below.
 			backUnreachable = true;
 		} else if (account) {
+			rememberRequestIdentity(event.request, token, account);
 			session = {
 				isAuthenticated: true,
 				email: account.email,
@@ -350,6 +371,24 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const licenseBlock = await enforceActivation(event);
 	if (licenseBlock) return withSecurityHeaders(event, licenseBlock);
 
+	// The password was the last thing the install asked for itself: an administrator
+	// now decides what may leave it, before the product opens (action d431d906).
+	// Behind the two walls above so the three never bounce a request between them;
+	// pages only, so the form can save. Everybody else goes through: the installation
+	// simply stays shut until an administrator comes.
+	if (
+		session.isAuthenticated &&
+		!session.mustChangePassword &&
+		!event.url.pathname.startsWith('/api/') &&
+		event.url.pathname !== '/first-configuration' &&
+		event.url.pathname !== '/activate' &&
+		!PUBLIC_PATHS.has(event.url.pathname) &&
+		isAdmin(event) &&
+		!(await getServices().loadInstallConfiguration.execute()).validated
+	) {
+		redirect(303, '/first-configuration');
+	}
+
 	// Behavior dashboard on this origin: forwarded only past the session wall
 	// and licence gate above, so the platform's own login is what guards it
 	// (see unspa-proxy.server.ts). Same-origin by construction, so the iframe
@@ -368,6 +407,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Read by the back HTTP adapter and the session adapter. (The token never
 	// leaves the cookie; the session and workspace id are client-safe.)
 	const workspaceId = event.cookies.get('lyriks_active_ws') ?? null;
+	// Community works on its active project alone (EVO-001).
+	const inactive = await inactiveProjectResponse(event);
+	if (inactive) return withSecurityHeaders(event, inactive);
 	return runWithRequestContext({ token: token ?? null, workspaceId, session }, async () =>
 		withSecurityHeaders(event, await resolve(event))
 	);

@@ -159,11 +159,27 @@ export async function openSession(endpoint) {
 /** Call one tool whose answer is JSON text (every Lyriks tool) and parse it. */
 export async function callToolJson(session, name, args) {
 	const text = await session.callTool(name, args);
+	let answer;
 	try {
-		return JSON.parse(text);
+		answer = JSON.parse(text);
 	} catch {
 		throw new Error(`${name} answered text that is not JSON: ${text.slice(0, 300)}`);
 	}
+	return uncapped(answer);
+}
+
+/**
+ * The gateway caps a long answer as `{ _capped, bytes, partial }`: the answer
+ * itself is `partial`, with its long lists cut. A script reading the top level
+ * printed the cap as the result (an accepted batch read as refused, a sync's
+ * counters as `{ _capped, bytes }`), so the answer is unwrapped here, once for
+ * every script, and keeps `capped: true` to say lists may be cut.
+ */
+export function uncapped(answer) {
+	if (answer && typeof answer === 'object' && answer._capped === true && answer.partial && typeof answer.partial === 'object') {
+		return { ...answer.partial, capped: true };
+	}
+	return answer;
 }
 
 /** Run a script body, print a failure as one line on stderr, and exit 1 on it. */

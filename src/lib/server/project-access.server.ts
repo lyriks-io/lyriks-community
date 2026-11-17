@@ -1,10 +1,23 @@
 import { error, type RequestEvent } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import type { AccessAction } from '$application/ports';
 import { callerCanSeeProject } from '$lib/server/project-scope.server';
+import { requireActiveProject } from '$lib/server/active-project.server';
 
 /** httpOnly cookie carrying the back JWT (see hooks.server.ts). */
 const COOKIE = 'lyriks_session';
+
+/**
+ * The gate every project read and write passes: on Community, the project must
+ * be the active one (EVO-001, any auth mode); then the caller's own access.
+ */
+export async function requireProjectAccess(
+	event: Pick<RequestEvent, 'locals' | 'cookies'>,
+	projectId: string,
+	action: AccessAction
+): Promise<void> {
+	await requireActiveProject(event, projectId);
+	await authorizeProjectAccess(event, projectId, action);
+}
 
 /**
  * Per-request authorization gate for a project-scoped route or page load.
@@ -21,7 +34,7 @@ const COOKIE = 'lyriks_session';
  * `event` is anything carrying `locals` + `cookies` — a SvelteKit RequestEvent
  * or a load event both qualify.
  */
-export async function requireProjectAccess(
+export async function authorizeProjectAccess(
 	event: Pick<RequestEvent, 'locals' | 'cookies'>,
 	projectId: string,
 	action: AccessAction
@@ -29,10 +42,11 @@ export async function requireProjectAccess(
 	if (!event.locals.authRequired) return;
 
 	const token = event.cookies.get(COOKIE) ?? null;
-	const decision = await getServices().projectAccess.authorize(projectId, token, action);
+	const decision = await event.locals.services.projectAccess.authorize(projectId, token, action);
 	if (!decision.ok) {
 		if (decision.reason === 'unauthenticated') error(401, 'unauthenticated');
 		if (decision.reason === 'not_found') error(404, 'Project not found');
+		if (decision.reason === 'unavailable') error(503, 'Project access service is temporarily unavailable. Try again.');
 		error(403, 'forbidden');
 	}
 

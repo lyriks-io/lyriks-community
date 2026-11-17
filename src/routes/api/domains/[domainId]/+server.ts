@@ -1,5 +1,4 @@
 import { error, json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { callerAllowedDomains } from '$lib/server/domain-scope.server';
 import type { RequestHandler } from './$types';
 
@@ -12,7 +11,7 @@ export const PATCH: RequestHandler = async (event) => {
 	await requireDomainAccess(event);
 	const body = (await event.request.json().catch(() => null)) as Record<string, unknown> | null;
 	if (!body) error(400, 'JSON body is required');
-	const services = getServices();
+	const services = event.locals.services;
 	const existing = (await services.listDomains.execute()).find(
 		(domain) => domain.id === event.params.domainId
 	);
@@ -29,7 +28,7 @@ export const PATCH: RequestHandler = async (event) => {
 
 export const DELETE: RequestHandler = async (event) => {
 	await requireDomainAccess(event);
-	const result = await getServices().removeDomain.execute(event.params.domainId);
+	const result = await event.locals.services.removeDomain.execute(event.params.domainId);
 	if (!result.removed) error(409, result.reason ?? 'Domain removal failed');
 	return json({ removed: true, domainId: event.params.domainId });
 };

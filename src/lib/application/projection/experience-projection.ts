@@ -25,6 +25,7 @@ import type { ProjectUsersDraft } from '$domain/users';
 import type { BehaviorOp } from '$application/ports';
 import type { UnspaFeatureSnapshot, UnspaTag } from '$lib/unspa-schema';
 import { experienceFeatureId } from './aux-feature-ids';
+import { NBSP, quoteName, type SpecLanguage } from '$domain/language';
 
 /**
  * The Lyriks-owned RESIDUE for the Experience section (Step 05) — the full authored
@@ -305,6 +306,12 @@ export interface ExperienceOpsContext {
 	 * Experience mirror never contradicts the behavior model it sits beside.
 	 */
 	declaredStates?: ReadonlyMap<string, DeclaredState>;
+	/**
+	 * The language the spec is written in: the descriptions and intents this
+	 * projection stores follow it (English when absent). Names and ids never
+	 * do, so switching language rewrites the prose of the same elements.
+	 */
+	lang?: SpecLanguage;
 }
 
 /**
@@ -321,9 +328,10 @@ export function experienceDraftToBehaviorOps(
 ): BehaviorOp[] {
 	const roleName = (id: string) => ctx.users?.roles.find((r) => r.id === id)?.name || 'Role';
 	const exId = experienceFeatureId(draft.projectId);
+	const text = experienceTexts(ctx.lang ?? 'en');
 
-	const journeyBuilt = buildBehavior(draft, draft.journeys, roleName);
-	const builderBuilt = buildBuilderBehavior(draft, roleName, ctx.declaredStates);
+	const journeyBuilt = buildBehavior(draft, draft.journeys, roleName, text);
+	const builderBuilt = buildBuilderBehavior(draft, roleName, text, ctx.declaredStates);
 	const built: BuiltBehavior = {
 		surfaces: [...journeyBuilt.surfaces, ...builderBuilt.surfaces],
 		personas: dedupeBy([...journeyBuilt.personas, ...builderBuilt.personas], (p) => p.id),
@@ -335,8 +343,7 @@ export function experienceDraftToBehaviorOps(
 			kind: 'upsertExperienceFeature',
 			featureId: exId,
 			name: 'Experience',
-			description:
-				'Consolidated user experience projected from the Experience section: every journey as a workflow surface, its steps as actions. Generated; edit in the Lyriks Experience section or detail it in unspa.',
+			description: text.featureDescription,
 			tags: [{ type: 'kind', value: 'experience' }] as UnspaTag[],
 			surfaces: built.surfaces as unknown as Record<string, unknown>[],
 			personas: built.personas as unknown as Record<string, unknown>[],
@@ -429,7 +436,8 @@ interface BuiltBehavior {
 function buildBehavior(
 	experience: ProjectExperienceDraft,
 	journeys: Journey[],
-	roleName: (id: string) => string
+	roleName: (id: string) => string,
+	text: ExperienceTexts
 ): BuiltBehavior {
 	const eventNames = new Set<string>();
 	const screenName = (id: string | null) =>
@@ -475,7 +483,7 @@ function buildBehavior(
 				return {
 					id: `act-${step.id}`,
 					name: step.name || 'Step',
-					intent: stepIntent(step.name, screenName(step.linkedScreenId), ops, reads),
+					intent: stepIntent(text, step.name, screenName(step.linkedScreenId), ops, reads),
 					parameters: [],
 					requiredStates: [],
 					rules: [],
@@ -490,7 +498,7 @@ function buildBehavior(
 				id: `srf-${journey.id}`,
 				name: journey.name || 'Journey',
 				type: 'workflow',
-				description: journeyDescription(journey, roleName),
+				description: journeyDescription(text, journey, roleName),
 				stateDefinitions: [],
 				rules: [],
 				invariants: [],
@@ -504,7 +512,7 @@ function buildBehavior(
 	const personas: UnspaPersona[] = [...roleIds].map((id) => ({
 		id: `per-${id}`,
 		name: roleName(id),
-		description: `Actor role from Users & Permissions that performs one or more journeys.`,
+		description: text.journeyPersonaDescription,
 		stateOverrides: [],
 		parameterOverrides: []
 	}));
@@ -512,7 +520,7 @@ function buildBehavior(
 	const events: UnspaEvent[] = [...eventNames].map((name, i) => ({
 		id: `evt-${i}-${slug(name)}`,
 		name,
-		description: 'Emitted while the experience flow runs.'
+		description: text.journeyEventDescription
 	}));
 
 	return { surfaces, personas, events };
@@ -554,18 +562,16 @@ const incrementStep = (raw: string | undefined): number => {
  * so a reader of the model knows the UI only fires it conditionally.
  */
 const uiEffectDescription = (
+	text: ExperienceTexts,
 	label: string,
 	trigger: string,
 	guard: { path: string; op: string; expected: unknown } | null
-): string =>
-	`Derived from the ${trigger} wiring of "${label}" in the Experience Builder.` +
-	(guard
-		? ` The builder applies it only when ${guard.path} ${guard.op} ${JSON.stringify(guard.expected)}.`
-		: '');
+): string => text.uiEffect(label, trigger) + (guard ? text.uiEffectGuard(guard) : '');
 
 function buildBuilderBehavior(
 	experience: ProjectExperienceDraft,
 	roleName: (id: string) => string,
+	text: ExperienceTexts,
 	declaredStates?: ReadonlyMap<string, DeclaredState>
 ): BuiltBehavior {
 	const b = experience.builder;
@@ -606,7 +612,7 @@ function buildBuilderBehavior(
 				actions.push({
 					id: builderActionId(el),
 					name: `Set ${el.label || 'field'}`,
-					intent: `Writes the ${el.label || 'field'} input into state ${path}.`,
+					intent: text.fieldIntent(el.label || 'field', path),
 					parameters: [
 						{
 							name: slug(el.label || 'value'),
@@ -649,7 +655,7 @@ function buildBuilderBehavior(
 						type: 'set_state',
 						path: t.effect.target,
 						value: stateLiteral(t.effect.value),
-						description: uiEffectDescription(el.label || el.elementKind, t.trigger, guard)
+						description: uiEffectDescription(text, el.label || el.elementKind, t.trigger, guard)
 					});
 				}
 				if (t.effect.kind === 'toggleState' && t.effect.target) {
@@ -659,7 +665,7 @@ function buildBuilderBehavior(
 						type: 'set_state',
 						path: t.effect.target,
 						value: { kind: 'not', operand: { kind: 'state', path: t.effect.target } },
-						description: uiEffectDescription(el.label || el.elementKind, t.trigger, guard)
+						description: uiEffectDescription(text, el.label || el.elementKind, t.trigger, guard)
 					});
 				}
 				if (t.effect.kind === 'incrementState' && t.effect.target) {
@@ -673,7 +679,7 @@ function buildBuilderBehavior(
 							left: { kind: 'state', path: t.effect.target },
 							right: { kind: 'literal', value: incrementStep(t.effect.value) }
 						},
-						description: uiEffectDescription(el.label || el.elementKind, t.trigger, guard)
+						description: uiEffectDescription(text, el.label || el.elementKind, t.trigger, guard)
 					});
 				}
 				if (t.effect.kind === 'navigate' && t.effect.target)
@@ -708,7 +714,7 @@ function buildBuilderBehavior(
 			actions.push({
 				id: builderActionId(el),
 				name: el.label || 'Action',
-				intent: builderActionIntent(el, screenName(screenId)),
+				intent: builderActionIntent(text, el, screenName(screenId)),
 				parameters: [],
 				requiredStates: [...new Set(requiredStates)],
 				rules: [],
@@ -724,7 +730,7 @@ function buildBuilderBehavior(
 			id: screenSurfaceId(screenId),
 			name: screenName(screenId),
 			type: 'screen',
-			description: 'Designed surface from the Experience Builder.',
+			description: text.screenDescription,
 			stateDefinitions,
 			rules: [],
 			invariants: [],
@@ -748,14 +754,14 @@ function buildBuilderBehavior(
 	const personas: UnspaPersona[] = [...roleIds].map((id) => ({
 		id: `per-${id}`,
 		name: roleName(id),
-		description: 'Persona that gates one or more builder elements.',
+		description: text.builderPersonaDescription,
 		stateOverrides: [],
 		parameterOverrides: []
 	}));
 	const events: UnspaEvent[] = [...eventNames].map((name, i) => ({
 		id: `evt-b-${i}-${slug(name)}`,
 		name,
-		description: 'Emitted by a builder element.'
+		description: text.builderEventDescription
 	}));
 	return { surfaces, personas, events };
 }
@@ -849,12 +855,12 @@ function visibilityOf(el: BuilderElementNode): unknown {
 	return { path: v.path, op: v.op, expected: v.expected ?? null };
 }
 
-function builderActionIntent(el: BuilderElementNode, screen: string): string {
-	const bits = [el.label?.trim() || 'Interactive element.', `On screen: ${screen}.`];
+function builderActionIntent(text: ExperienceTexts, el: BuilderElementNode, screen: string): string {
+	const bits = [el.label?.trim() || text.interactiveElement, text.onScreen(screen)];
 	if (el.wiring.binding)
-		bits.push(`Bound to ${el.wiring.binding.targetKind}: ${el.wiring.binding.targetRef || '(unset)'}.`);
+		bits.push(text.boundTo(el.wiring.binding.targetKind, el.wiring.binding.targetRef));
 	if (el.wiring.scenarios.length)
-		bits.push(`Scenarios: ${el.wiring.scenarios.map((s) => s.title).join(', ')}.`);
+		bits.push(text.scenarios(el.wiring.scenarios.map((s) => s.title)));
 	return bits.join(' ');
 }
 
@@ -870,31 +876,141 @@ function dedupeBy<T>(list: T[], key: (t: T) => string): T[] {
 	return out;
 }
 
-function journeyDescription(journey: Journey, roleName: (id: string) => string): string {
+function journeyDescription(
+	text: ExperienceTexts,
+	journey: Journey,
+	roleName: (id: string) => string
+): string {
 	const actors = journey.actorRoleIds.map(roleName).filter(Boolean);
-	const bits = [journey.description?.trim() || `Journey: ${journey.name || '(unnamed)'}.`];
-	if (actors.length) bits.push(`Performed by: ${actors.join(', ')}.`);
+	const bits = [journey.description?.trim() || text.journeyFallback(journey.name)];
+	if (actors.length) bits.push(text.performedBy(actors));
 	return bits.join(' ');
 }
 
 function stepIntent(
+	text: ExperienceTexts,
 	name: string,
 	screen: string | null,
 	ops: { kind: string; label: string }[],
 	reads: { mode: string; entityName: string; fields: string[] }[]
 ): string {
-	const bits = [name?.trim() || 'Step in the journey.'];
-	if (screen) bits.push(`On screen: ${screen}.`);
+	const bits = [name?.trim() || text.stepFallback];
+	if (screen) bits.push(text.onScreen(screen));
 	const calls = ops.filter((o) => o.kind !== 'event' && o.label.trim()).map((o) => o.label);
-	if (calls.length) bits.push(`Calls: ${calls.join(', ')}.`);
+	if (calls.length) bits.push(text.calls(calls));
 	if (reads.length) {
-		const r = reads
-			.filter((x) => x.entityName.trim())
-			.map((x) => `${x.mode} ${x.entityName}${x.fields.length ? ` {${x.fields.join(', ')}}` : ''}`);
-		if (r.length) bits.push(`Data: ${r.join('; ')}.`);
+		const r = reads.filter((x) => x.entityName.trim()).map((x) => text.dataRead(x.mode, x.entityName, x.fields));
+		if (r.length) bits.push(text.data(r));
 	}
 	return bits.join(' ');
 }
+
+/**
+ * The prose this projection stores on the Experience feature, in the spec's
+ * language. Names from the model (labels, screens, roles, state paths) are
+ * quoted as they are; the English texts are the historical ones, byte for byte.
+ */
+interface ExperienceTexts {
+	featureDescription: string;
+	journeyPersonaDescription: string;
+	journeyEventDescription: string;
+	screenDescription: string;
+	builderPersonaDescription: string;
+	builderEventDescription: string;
+	interactiveElement: string;
+	stepFallback: string;
+	uiEffect(label: string, trigger: string): string;
+	uiEffectGuard(guard: { path: string; op: string; expected: unknown }): string;
+	fieldIntent(label: string, path: string): string;
+	onScreen(screen: string): string;
+	boundTo(kind: string, ref: string): string;
+	scenarios(titles: string[]): string;
+	journeyFallback(name: string): string;
+	performedBy(actors: string[]): string;
+	calls(labels: string[]): string;
+	dataRead(mode: string, entity: string, fields: string[]): string;
+	data(reads: string[]): string;
+}
+
+const EN_TEXTS: ExperienceTexts = {
+	featureDescription:
+		'Consolidated user experience projected from the Experience section: every journey as a workflow surface, its steps as actions. Generated; edit in the Lyriks Experience section or detail it in unspa.',
+	journeyPersonaDescription: `Actor role from Users & Permissions that performs one or more journeys.`,
+	journeyEventDescription: 'Emitted while the experience flow runs.',
+	screenDescription: 'Designed surface from the Experience Builder.',
+	builderPersonaDescription: 'Persona that gates one or more builder elements.',
+	builderEventDescription: 'Emitted by a builder element.',
+	interactiveElement: 'Interactive element.',
+	stepFallback: 'Step in the journey.',
+	uiEffect: (label, trigger) => `Derived from the ${trigger} wiring of "${label}" in the Experience Builder.`,
+	uiEffectGuard: (guard) =>
+		` The builder applies it only when ${guard.path} ${guard.op} ${JSON.stringify(guard.expected)}.`,
+	fieldIntent: (label, path) => `Writes the ${label} input into state ${path}.`,
+	onScreen: (screen) => `On screen: ${screen}.`,
+	boundTo: (kind, ref) => `Bound to ${kind}: ${ref || '(unset)'}.`,
+	scenarios: (titles) => `Scenarios: ${titles.join(', ')}.`,
+	journeyFallback: (name) => `Journey: ${name || '(unnamed)'}.`,
+	performedBy: (actors) => `Performed by: ${actors.join(', ')}.`,
+	calls: (labels) => `Calls: ${labels.join(', ')}.`,
+	dataRead: (mode, entity, fields) => `${mode} ${entity}${fields.length ? ` {${fields.join(', ')}}` : ''}`,
+	data: (reads) => `Data: ${reads.join('; ')}.`
+};
+
+/** What a binding targets, with its article, so the sentence never guesses a gender. */
+const FR_BINDING_KINDS: Readonly<Record<string, string>> = {
+	state: "l'état",
+	event: "l'événement",
+	surface: "l'écran"
+};
+
+const FR_DATA_MODES: Readonly<Record<string, string>> = { read: 'en lecture', write: 'en écriture' };
+
+const frList = (names: string[]) => names.map((name) => quoteName('fr', name)).join(', ');
+
+/** A builder guard in words: the operator code never reaches a French sentence. */
+const frGuard = (guard: { path: string; op: string; expected?: unknown }): string => {
+	const value = quoteName('fr', String(guard.expected ?? ''));
+	switch (guard.op) {
+		case 'eq':
+			return `${guard.path} vaut ${value}`;
+		case 'neq':
+			return `${guard.path} ne vaut pas ${value}`;
+		case 'truthy':
+			return `${guard.path} est renseigné`;
+		case 'falsy':
+			return `${guard.path} n'est pas renseigné`;
+		default:
+			return `${guard.path} ${guard.op} ${value}`;
+	}
+};
+
+const FR_TEXTS: ExperienceTexts = {
+	featureDescription: `Expérience utilisateur consolidée, projetée depuis la section Expérience${NBSP}: chaque parcours y devient une surface de workflow, et ses étapes des actions. Générée${NBSP}; à modifier dans la section Expérience de Lyriks ou à détailler dans unspa.`,
+	journeyPersonaDescription:
+		"Rôle d'acteur défini dans Utilisateurs et permissions, qui réalise un ou plusieurs parcours.",
+	journeyEventDescription: "Émis pendant le déroulement du parcours d'expérience.",
+	screenDescription: "Surface conçue dans le constructeur d'expérience.",
+	builderPersonaDescription: "Persona qui conditionne l'accès à un ou plusieurs éléments du constructeur.",
+	builderEventDescription: 'Émis par un élément du constructeur.',
+	interactiveElement: 'Élément interactif.',
+	stepFallback: 'Étape du parcours.',
+	uiEffect: (label, trigger) =>
+		`Déduit du câblage ${quoteName('fr', trigger)} de ${quoteName('fr', label)} dans le constructeur d'expérience.`,
+	uiEffectGuard: (guard) => ` Le constructeur ne l'applique que si ${frGuard(guard)}.`,
+	fieldIntent: (label, path) => `Écrit la saisie du champ ${quoteName('fr', label)} dans l'état ${path}.`,
+	onScreen: (screen) => `Sur l'écran ${quoteName('fr', screen)}.`,
+	boundTo: (kind, ref) =>
+		`Lié à ${FR_BINDING_KINDS[kind] ?? quoteName('fr', kind)}${NBSP}: ${ref || '(non défini)'}.`,
+	scenarios: (titles) => `Scénarios${NBSP}: ${frList(titles)}.`,
+	journeyFallback: (name) => `Parcours ${name ? quoteName('fr', name) : 'sans nom'}.`,
+	performedBy: (actors) => `Réalisé par${NBSP}: ${frList(actors)}.`,
+	calls: (labels) => `Appels${NBSP}: ${frList(labels)}.`,
+	dataRead: (mode, entity, fields) =>
+		`${quoteName('fr', entity)} ${FR_DATA_MODES[mode] ?? mode}${fields.length ? ` {${fields.join(', ')}}` : ''}`,
+	data: (reads) => `Données${NBSP}: ${reads.join(`${NBSP}; `)}.`
+};
+
+const experienceTexts = (lang: SpecLanguage): ExperienceTexts => (lang === 'fr' ? FR_TEXTS : EN_TEXTS);
 
 /** A dotted, lowercase event name (keeps existing dotted labels intact). */
 function eventName(label: string): string {

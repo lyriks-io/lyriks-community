@@ -32,6 +32,9 @@ export interface OperationsQuality {
 	availabilityPct: string;
 	bundleSizeKb: string;
 	ttiMs: string;
+	/** The accessibility standards and commitments held to, picked from ACCESSIBILITY_STANDARDS or typed. */
+	a11yStandards: string[];
+	/** The same standards joined in one line, kept for the readers of the former free-text field. */
 	a11yLevel: string;
 	browsers: string;
 	perfNotes: string;
@@ -85,6 +88,53 @@ export interface FoundationOperationsDraft {
 	lastSavedAt: string | null;
 }
 
+/* ── Answers offered on the Requirements page, so a person picks rather than types ── */
+
+/** Accessibility standards and commitments a product commonly holds to. */
+export const ACCESSIBILITY_STANDARDS: readonly string[] = [
+	'WCAG 2.2 AA',
+	'WCAG 2.2 AAA',
+	'WCAG 2.1 AA',
+	'EN 301 549',
+	'RGAA 4.1',
+	'Section 508',
+	'Keyboard-only navigation',
+	'Screen reader support',
+	'Reduced motion',
+	'High contrast mode'
+];
+
+/** Date formats, each read through one example date. */
+export const DATE_FORMATS = [
+	{ code: 'DD/MM/YYYY', label: 'DD/MM/YYYY (31/12/2026)' },
+	{ code: 'MM/DD/YYYY', label: 'MM/DD/YYYY (12/31/2026)' },
+	{ code: 'YYYY-MM-DD', label: 'YYYY-MM-DD (2026-12-31)' },
+	{ code: 'D MMMM YYYY', label: 'D MMMM YYYY (31 December 2026)' },
+	{ code: 'DD.MM.YYYY', label: 'DD.MM.YYYY (31.12.2026)' }
+] as const;
+
+/** Number formats, each read through one example amount. */
+export const NUMBER_FORMATS = [
+	{ code: '1,234.56', label: '1,234.56 (comma thousands, dot decimals)' },
+	{ code: '1 234,56', label: '1 234,56 (space thousands, comma decimals)' },
+	{ code: '1.234,56', label: '1.234,56 (dot thousands, comma decimals)' },
+	{ code: "1'234.56", label: "1'234.56 (apostrophe thousands, dot decimals)" }
+] as const;
+
+/** The currencies most products are priced in, by ISO 4217 code. */
+export const CURRENCIES = [
+	{ code: 'EUR', label: 'EUR (Euro)' },
+	{ code: 'USD', label: 'USD (US dollar)' },
+	{ code: 'GBP', label: 'GBP (Pound sterling)' },
+	{ code: 'CHF', label: 'CHF (Swiss franc)' },
+	{ code: 'CAD', label: 'CAD (Canadian dollar)' },
+	{ code: 'JPY', label: 'JPY (Yen)' },
+	{ code: 'CNY', label: 'CNY (Yuan)' },
+	{ code: 'INR', label: 'INR (Indian rupee)' },
+	{ code: 'AUD', label: 'AUD (Australian dollar)' },
+	{ code: 'BRL', label: 'BRL (Brazilian real)' }
+] as const;
+
 export function createEmptyI18n(): OperationsI18n {
 	return {
 		primaryLocale: '',
@@ -105,6 +155,7 @@ export function createEmptyQuality(): OperationsQuality {
 		availabilityPct: '',
 		bundleSizeKb: '',
 		ttiMs: '',
+		a11yStandards: [],
 		a11yLevel: '',
 		browsers: '',
 		perfNotes: ''

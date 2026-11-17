@@ -9,6 +9,7 @@ import {
 	writeFileSync
 } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
+import { kernelArtifactFromFile, kernelArtifactPath, type KernelArtifact } from '$domain/portability';
 
 import type {
 	LoadedFolder,
@@ -41,8 +42,11 @@ export class FsReconciliationStore implements ReconciliationStorePort {
 		this.#root = resolve(root);
 	}
 
-	async loadCandidates(folderKeys: readonly string[]): Promise<LoadedFolder[]> {
-		return folderKeys.map((folderKey) => this.#loadFolder(folderKey));
+	async loadCandidates(folderKeys: readonly string[], options?: { readonly includeArtifacts?: boolean }): Promise<LoadedFolder[]> {
+		return folderKeys.map((folderKey) => {
+			const folder = this.#loadFolder(folderKey);
+			return options?.includeArtifacts ? { ...folder, artifacts: this.#readArtifacts(this.#folderDir(folderKey)) } : folder;
+		});
 	}
 
 	async promoteCanonical(input: PromoteCanonicalInput): Promise<void> {
@@ -65,6 +69,17 @@ export class FsReconciliationStore implements ReconciliationStorePort {
 					feature
 				});
 			}
+			// An import supplies its complete evidence set. A reconciliation keeps
+			// the canonical folder's evidence when it only replaces the models.
+			const artifacts = input.artifacts ?? this.#readArtifacts(canonicalDir);
+			const paths = new Set<string>();
+			for (const artifact of artifacts) {
+				const path = kernelArtifactPath(artifact);
+				if (paths.has(path)) throw new Error(`Duplicate evidence file: ${path}`);
+				paths.add(path);
+				this.#ensureOwnedDir(join(staging, artifact.kind === 'source' ? 'sources' : ''));
+				this.#writeFile(join(staging, path), artifact.document);
+			}
 			// 2. Back up any existing canonical folder into the quarantine, then swap.
 			//    Two renames aren't a single atomic step, but each is atomic and the
 			//    use-case is retryable: a crash between them leaves either the intact
@@ -77,6 +92,25 @@ export class FsReconciliationStore implements ReconciliationStorePort {
 		} finally {
 			if (existsSync(staging)) rmSync(staging, { recursive: true, force: true });
 		}
+	}
+
+	#readArtifacts(dir: string): KernelArtifact[] {
+		if (!existsSync(dir)) return [];
+		const artifacts: KernelArtifact[] = [];
+		const read = (relativeName: string) => {
+			const artifact = kernelArtifactFromFile(relativeName, readJson(join(dir, relativeName)));
+			if (!artifact) throw new Error(`Invalid project evidence file: ${relativeName}`);
+			artifacts.push(artifact);
+		};
+		for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+			if (entry.isFile() && (entry.name.endsWith('.provenance.json') || entry.name.endsWith('.implementation-status.json'))) read(entry.name);
+			if (entry.isDirectory() && entry.name === 'sources') {
+				for (const source of readdirSync(join(dir, 'sources'), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+					if (source.isFile() && source.name.endsWith('.source.json')) read(`sources/${source.name}`);
+				}
+			}
+		}
+		return artifacts;
 	}
 
 	async quarantine(folderKey: string, stamp: string): Promise<string | null> {
@@ -161,7 +195,7 @@ export class FsReconciliationStore implements ReconciliationStorePort {
 	}
 }
 
-function readJson(path: string): { project?: unknown; feature?: unknown } | null {
+function readJson(path: string): Record<string, unknown> | null {
 	try {
 		return JSON.parse(readFileSync(path, 'utf8'));
 	} catch {

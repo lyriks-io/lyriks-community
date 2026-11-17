@@ -41,7 +41,7 @@
 	<BrandSectionHeader kicker="Colors" title="Color tokens & semantic mapping" />
 
 	<div class="space-y-2">
-		<p class="text-[11px] font-bold uppercase tracking-widest text-ink-400">Color tokens</p>
+		<p class="text-[0.6875rem] font-bold uppercase tracking-widest text-ink-400">Color tokens</p>
 		{#each colors.tokens as t (t.id)}
 			<div class="flex items-start gap-2 rounded-field border border-line bg-surface-sunken p-2.5">
 				<span class="size-10 shrink-0 rounded border border-line" style="background:{t.value || '#000'}"></span>
@@ -63,14 +63,14 @@
 	</div>
 
 	<div class="space-y-2">
-		<p class="text-[11px] font-bold uppercase tracking-widest text-ink-400">Semantic colors</p>
+		<p class="text-[0.6875rem] font-bold uppercase tracking-widest text-ink-400">Semantic colors</p>
 		<div class="grid gap-2 md:grid-cols-2">
 			{#each BRAND_SEMANTIC_KEYS as s (s.key)}
 				{@const val = colors.semantic[s.key]}
 				<div class="flex items-center gap-2 rounded-field border border-line bg-surface-sunken p-2">
 					<span class="size-8 shrink-0 rounded border border-line" style="background:{val || 'transparent'}"></span>
 					<div class="min-w-0 flex-1">
-						<div class="truncate text-[10px] font-semibold uppercase tracking-widest text-ink-400">{s.label}</div>
+						<div class="truncate text-[0.625rem] font-semibold uppercase tracking-widest text-ink-400">{s.label}</div>
 						<TextInput value={val} placeholder="#FFFFFF or color-token-name" oninput={(v) => setSemantic(s.key, v)} class="mt-0.5" />
 					</div>
 				</div>

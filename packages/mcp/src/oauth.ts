@@ -15,6 +15,11 @@ function baseUrl(): string {
 }
 const cors = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' }
 const LIMIT = 1000
+// A code is single-use and bound to its client, callback and PKCE verifier, so
+// its lifetime only has to cover a copy by hand: a client whose callback is a
+// web page (Antigravity) shows the code and the person pastes it into the
+// client. One minute was overrun by that copy; ten is RFC 6749's ceiling.
+const CODE_TTL_MS = 10 * 60_000
 const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '[::1]']
 interface Client { redirectUris: string[]; name: string; registered: boolean }
 interface Authorization {
@@ -224,7 +229,9 @@ export function registerOAuthRoutes(app: Hono<{ Variables: HonoVariables }>): vo
     c.header('Content-Security-Policy', `default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'`)
     const notice = client.registered ? '' :
       '<p>This client presented a registration this Lyriks install did not issue (one from an earlier version, for instance). It is waiting for the answer on this computer, so it signs in here like any other client.</p>'
-    return c.html(page(`Connect ${client.name}?`, `${notice}<p>This client will be able to read and change the Lyriks projects your account can access.</p><p>Client callback: <code>${escapeHtml(redirectUri)}</code></p><p>Approve only if you started this connection and trust this client.</p><form method="post" action="/mcp/oauth/authorize"><input type="hidden" name="consent" value="${nonce}"><button name="decision" value="allow">Allow access</button><button name="decision" value="deny">Cancel</button></form>`))
+    const pasteHint = isLoopback(redirectUri) ? '' :
+      '<p>After you allow access, the client may show you a code: paste it into the client within 10 minutes.</p>'
+    return c.html(page(`Connect ${client.name}?`, `${notice}<p>This client will be able to read and change the Lyriks projects your account can access.</p><p>Client callback: <code>${escapeHtml(redirectUri)}</code></p>${pasteHint}<p>Approve only if you started this connection and trust this client.</p><form method="post" action="/mcp/oauth/authorize"><input type="hidden" name="consent" value="${nonce}"><button name="decision" value="allow">Allow access</button><button name="decision" value="deny">Cancel</button></form>`))
   })
 
   // The consent POST must come from a browser on this origin. Browsers say so
@@ -258,7 +265,7 @@ export function registerOAuthRoutes(app: Hono<{ Variables: HonoVariables }>): vo
     prune(codes)
     if (codes.size >= LIMIT) return c.json({ error: 'temporarily_unavailable' }, 429, cors)
     const code = randomToken()
-    codes.set(code, { ...entry, expiresAt: Date.now() + 60_000 })
+    codes.set(code, { ...entry, expiresAt: Date.now() + CODE_TTL_MS })
     return c.redirect(callback(entry.redirectUri, entry.state, { code }), 303)
   })
 

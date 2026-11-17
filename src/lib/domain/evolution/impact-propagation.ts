@@ -1,6 +1,7 @@
 import { MAX_IMPACT_DEPTH, type ImpactHypothesis, type ImpactNodeKind, type ImpactSection } from './enums';
 import type { EvolutionRequest, ImpactFinding } from './draft';
 import { stableId } from './ids';
+import { NBSP, quoteName, type SpecLanguage } from '$domain/language';
 
 /**
  * The impact report, computed: what moves when the touched features move.
@@ -156,6 +157,20 @@ export interface PropagationInput {
 	 * there because of what exists or because of what is being proposed.
 	 */
 	readonly draftNodeIds?: ReadonlySet<string>;
+	/**
+	 * Where the request's section changes and changes to the rules sit in the
+	 * graph (ac-evo-draft-section-impact): the walk starts from them too, like
+	 * from a draft, and what they reach names the change it came from.
+	 */
+	readonly changeStarts?: readonly { readonly nodeId: string; readonly changeId: string }[];
+	/**
+	 * The features the change uses without changing them (ac-evo-imp-used): the
+	 * walk starts from them too, one link away from the change, so what rests on
+	 * them reads as reached further, never as something the change edits.
+	 */
+	readonly usedLeafIds?: readonly string[];
+	/** The language of the spec: the notes are stored, so they are written in it. */
+	readonly lang?: SpecLanguage;
 }
 
 /**
@@ -187,13 +202,54 @@ const RELATION_WORDS: Readonly<Record<string, string>> = {
 	exception_to: 'one is an exception to the other'
 };
 
+const RELATION_WORDS_FR: Readonly<Record<string, string>> = {
+	depends_on: "l'un dépend de l'autre",
+	dependency: "l'un dépend de l'autre",
+	contains: "l'un fait partie de l'autre",
+	belongs_to: "l'un fait partie de l'autre",
+	accesses: "ce rôle peut s'en servir",
+	reads: "l'un lit l'autre",
+	writes: "l'un écrit l'autre",
+	uses: "l'un utilise l'autre",
+	binds: "l'un est lié à l'autre",
+	shows: "l'un affiche l'autre",
+	navigate: "l'un mène à l'autre",
+	transitions: "un changement d'état les relie",
+	relates: 'le modèle de données les relie',
+	tests: "l'un teste l'autre",
+	guards: "l'un protège l'autre",
+	emits: "l'un émet l'autre",
+	triggers: "l'un déclenche l'autre",
+	performs: "l'un exécute l'autre",
+	flags: "l'un signale l'autre",
+	derives: "l'un est dérivé de l'autre",
+	supersedes: "l'un remplace l'autre",
+	exception_to: "l'un est une exception à l'autre"
+};
+
 /**
  * Why a node is in the list, in one sentence a person reads without the graph
  * open (ac-evo-imp: every line says what joined it to the change). It used to
  * print the node kind and the raw relation name, `feature reached in 1 link
  * from X, through "depends_on"`, which is the graph talking to itself.
  */
-export function reachedSentence(path: readonly string[], hops: number, via: string): string {
+export function reachedSentence(
+	path: readonly string[],
+	hops: number,
+	via: string,
+	lang: SpecLanguage = 'en'
+): string {
+	if (lang === 'fr') {
+		const from = quoteName('fr', path[0] ?? 'le changement');
+		if (hops <= 1) {
+			const relation = RELATION_WORDS_FR[via] ?? `reliés par ${quoteName('fr', via.replace(/_/g, ' '))}`;
+			return `À côté de ${from}${NBSP}: ${relation}.`;
+		}
+		const restsOn = quoteName('fr', path[path.length - 1] ?? path[0] ?? 'le changement');
+		return hops === 2
+			? `Repose sur ${restsOn}, qui est à côté de ${from}.`
+			: `Repose sur ${restsOn}, à ${hops} liens de ${from}.`;
+	}
 	const from = path[0] ?? 'the change';
 	if (hops <= 1) {
 		const relation = RELATION_WORDS[via] ?? `linked as "${via.replace(/_/g, ' ')}"`;
@@ -204,6 +260,10 @@ export function reachedSentence(path: readonly string[], hops: number, via: stri
 		? `Rests on "${restsOn}", which is next to "${from}".`
 		: `Rests on "${restsOn}", ${hops} links from "${from}".`;
 }
+
+/** Why a node rests on a feature the change uses as it stands (ac-evo-imp-used). */
+export const usedSentence = (feature: string, lang: SpecLanguage = 'en'): string =>
+	lang === 'fr' ? `Repose sur ${quoteName('fr', feature)}, que le changement utilise tel quel.` : `Rests on "${feature}", which the change uses as it stands.`;
 
 /**
  * Breadth-first over the graph, both directions, from every touched feature,
@@ -227,7 +287,12 @@ export function propagateImpact(input: PropagationInput): ImpactFinding[] {
 		link(edge.to, edge.from, edge.kind);
 	}
 
-	const starts = touchedNodeIds(input.request.leafIds).filter((id) => byId.has(id));
+	const touchedStarts = touchedNodeIds(input.request.leafIds).filter((id) => byId.has(id));
+	const usedStarts = touchedNodeIds(input.usedLeafIds ?? []).filter((id) => byId.has(id) && !touchedStarts.includes(id));
+	const changeOf = new Map<string, string>();
+	for (const s of input.changeStarts ?? []) if (byId.has(s.nodeId) && !touchedStarts.includes(s.nodeId) && !changeOf.has(s.nodeId)) changeOf.set(s.nodeId, s.changeId);
+	const changeStarts = [...changeOf.keys()];
+	const starts = [...touchedStarts, ...usedStarts, ...changeStarts];
 	const startSet = new Set(starts);
 	interface Visit {
 		readonly hops: number;
@@ -240,10 +305,11 @@ export function propagateImpact(input: PropagationInput): ImpactFinding[] {
 	}
 	const drafted = input.draftNodeIds ?? new Set<string>();
 	const visited = new Map<string, Visit>();
-	let frontier: { id: string; visit: Visit }[] = starts.map((id) => ({
-		id,
-		visit: { hops: 0, path: [], via: '', fromDraft: drafted.has(id), origin: id }
-	}));
+	let frontier: { id: string; visit: Visit }[] = [
+		...touchedStarts.map((id) => ({ id, visit: { hops: 0, path: [], via: '', fromDraft: drafted.has(id), origin: id } })),
+		...usedStarts.map((id) => ({ id, visit: { hops: 1, path: [], via: 'uses', fromDraft: false, origin: id } })),
+		...changeStarts.map((id) => ({ id, visit: { hops: 0, path: [], via: '', fromDraft: true, origin: id } }))
+	];
 	for (const f of frontier) visited.set(f.id, f.visit);
 	while (frontier.length > 0) {
 		const next: { id: string; visit: Visit }[] = [];
@@ -288,14 +354,17 @@ export function propagateImpact(input: PropagationInput): ImpactFinding[] {
 			nodeLabel: node.label,
 			nodeKind: placement.nodeKind,
 			groupPath: [...visit.path],
-			note: reachedSentence(visit.path, visit.hops, visit.via),
+			note: usedStarts.includes(visit.origin)
+				? usedSentence(byId.get(visit.origin)?.label ?? visit.origin, input.lang)
+				: reachedSentence(visit.path, visit.hops, visit.via, input.lang),
 			codeWork: codeWorkOf(input.hypothesis, visit.hops),
 			depth: visit.hops,
 			severity: severityOf(input.hypothesis, visit.hops),
 			migrationImplied: isData ? migrationOf(input.hypothesis, visit.hops) : null,
 			ruleWork: isRule ? ruleWorkOf(input.hypothesis, visit.hops) : null,
 			fromDraft: visit.fromDraft,
-			fromLeafId: visit.origin.replace(/^feature:(beh:)?/, '')
+			...(changeOf.has(visit.origin) ? { fromChange: changeOf.get(visit.origin)! } : { fromLeafId: visit.origin.replace(/^feature:(beh:)?/, '') }),
+			...(usedStarts.includes(visit.origin) ? { fromUsed: true } : {})
 		});
 	}
 
@@ -317,7 +386,10 @@ export function propagateImpact(input: PropagationInput): ImpactFinding[] {
 			nodeLabel: term.term,
 			nodeKind: 'term',
 			groupPath: [],
-			note: 'This agreed word names something the change moves; check the definition still holds.',
+			note:
+				input.lang === 'fr'
+					? `Ce terme convenu nomme quelque chose que le changement déplace${NBSP}; vérifiez que sa définition tient toujours.`
+					: 'This agreed word names something the change moves; check the definition still holds.',
 			codeWork: null,
 			depth: 1,
 			severity: 'low',

@@ -1,11 +1,11 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import Card from './Card.svelte';
-	import Icon from './Icon.svelte';
-	import type { SubTab } from './SubTabBar.svelte';
+	import SlideHighlight from './SlideHighlight.svelte';
+	import type { PillTab } from './PillTabs.svelte';
 
 	interface Props {
-		tabs: SubTab[];
+		tabs: PillTab[];
 		active: string;
 		onSwitch: (id: string) => void;
 		/** The active sub-section's content, rendered in the right-hand column. */
@@ -13,14 +13,47 @@
 	}
 	let { tabs, active, onSwitch, children }: Props = $props();
 
+	// One highlight slides from the old entry to the new one, in the tab bars'
+	// violet gradient; the names are drawn again in white in an overlay clipped
+	// to it, so a name turns white exactly where the highlight covers it. Until
+	// it is placed (server render) the selected entry paints its own gradient.
+	let list = $state<HTMLDivElement>();
+	let placed = $state(false);
+
+	// Shared by the entries and their white copy so the two lay out to the pixel.
+	const ENTRY = 'flex w-full items-center gap-2.5 rounded-field border px-3 py-2';
+	const NAME = 'text-[0.78125rem] font-semibold leading-tight';
+	// The selected entry wears ink, its name in paper (the design's selection, .ly-chip.is-on).
+	const GRADIENT = 'bg-ink';
+
 	// Second-level nav as a left sidebar floating sticky panel (matches the Ops /
 	// Foundation layout) instead of a full-width horizontal bar: the nav stays put
 	// while the section content scrolls beside it.
 </script>
 
 <div class="grid items-start gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
-	<Card class="md:sticky md:top-2" padding={false}>
-		<div class="space-y-0.5 p-2" role="tablist">
+	<Card class="md:sticky md:top-[calc(var(--page-header-h,0px)_+_0.5rem)]" padding={false}>
+		<div bind:this={list} class="relative space-y-0.5 p-2" role="tablist">
+			<SlideHighlight
+				container={list}
+				target={`[data-tab-id="${active}"]`}
+				watch={tabs.map((t) => t.id).join()}
+				class={GRADIENT}
+				radius={0}
+				onPlaced={(p) => (placed = p)}
+			>
+				{#snippet overlay()}
+					<div class="space-y-0.5 p-2">
+						{#each tabs as tab (tab.id)}
+							<div class="{ENTRY} border-transparent text-paper">
+								<div class="min-w-0 flex-1">
+									<div class="{NAME}">{tab.label}</div>
+								</div>
+							</div>
+						{/each}
+					</div>
+				{/snippet}
+			</SlideHighlight>
 			{#each tabs as tab (tab.id)}
 				{@const isActive = tab.id === active}
 				<button
@@ -28,26 +61,17 @@
 					role="tab"
 					aria-selected={isActive}
 					onclick={() => onSwitch(tab.id)}
-					class="flex w-full items-center gap-2.5 rounded-field border px-3 py-2 text-left transition {isActive
-						? 'border-brand-200 bg-brand-50 text-ink-900'
-						: 'border-transparent text-ink-600 hover:bg-surface-sunken'}"
+					title={tab.desc}
+					data-tab-id={tab.id}
+					class="relative {ENTRY} text-left {isActive
+						? placed
+							? 'border-transparent text-ink-2'
+							: `border-transparent text-paper ${GRADIENT}`
+						: 'border-transparent text-ink-2 transition-colors duration-150 hover:bg-surface-sunken hover:text-ink'}"
 				>
-					<Icon name={tab.icon} size={16} class={isActive ? 'text-brand-500' : 'text-ink-400'} />
 					<div class="min-w-0 flex-1">
-						<div class="text-[12.5px] font-semibold leading-tight">{tab.label}</div>
-						{#if tab.desc}
-							<div class="truncate text-[9.5px] leading-snug text-ink-400">{tab.desc}</div>
-						{/if}
+						<div class="{NAME}">{tab.label}</div>
 					</div>
-					{#if tab.count !== undefined && tab.count !== '' && `${tab.count}` !== '0'}
-						<span
-							class="shrink-0 rounded px-1.5 py-0.5 font-mono text-[9.5px] {isActive
-								? 'bg-brand-100 text-brand-700'
-								: 'bg-surface-sunken text-ink-500'}"
-						>
-							{tab.count}
-						</span>
-					{/if}
 				</button>
 			{/each}
 		</div>

@@ -1,251 +1,149 @@
 ---
 name: lyriks-retrospec
-description: "Reverse-engineer an EXISTING product into its Lyriks spec (retro-spec), product-first: model what its users see and do, in their words; the codebase is evidence, never the subject. Triggers on 'ingest this codebase', 'retro spec', 'reverse engineer this app', 'spec the existing product', 'clone this app into Lyriks', 'adopt this product', 'start from a codebase'. Wraps lyriks-build with the product-language law, real-theme extraction, UI-walk screen inventory and behavior-complete data modeling, so the user barely needs to intervene."
+description: "Reverse-engineer an EXISTING product into its Lyriks spec (retro-spec), product-first: model what its users see and do, in their words; the codebase, the documentation or the prototype is evidence, never the subject. Triggers on 'ingest this codebase', 'retro spec', 'reverse engineer this app', 'spec the existing product', 'clone this app into Lyriks', 'adopt this product', 'start from a codebase', 'spec this prototype', 'retro-spec this mockup / Figma / design artifact'. Wraps lyriks-build with the product-language law, real-theme extraction, UI-walk screen inventory and behavior-complete data modeling, so the user barely needs to intervene."
 ---
 
 # /lyriks-retrospec
 
-Turn a product that already exists into its Lyriks specification. Lyriks
-captures PRODUCT knowledge: what the product does for its users, how it looks,
-what information it manages, who may do what. It is not a codebase browser.
+Turn a product that exists into its Lyriks specification: what it does for its
+users, how it looks, what information it manages, who may do what.
 
 **The one law: the code is evidence; the product is the subject.** You read
-source files to know what is true, but what you WRITE describes the product a
-user experiences. If a section would only make sense to the team that wrote
-the code, it is wrong.
-
-The finished spec's reader is a product manager, a designer, or a newcomer
-seeing the product for the first time. Test every sentence against that
-reader.
+the code to know what is true; what you WRITE describes the product a user
+experiences, for a product manager, a designer or a newcomer.
 
 ## The one-line kickoff
 
-The user owes you one sentence, nothing more: *"With the help of the Lyriks
-MCP, ingest this entire codebase into the Lyriks project "Acme" (id
-acme-1a2b3c)."* Everything else is here and in the MCP's own instructions.
-Never ask for a fuller brief, and never wait for one.
-
-1. **Load the playbooks first.** Call `sync_skills` with `client` set to what
-   you are, install what it returns the way each `installTargets` entry says,
-   and follow this skill in full. If the catalog does not carry
-   `lyriks-retrospec`, say so: this install does not ship it.
+1. **Load the playbooks**: `sync_skills`, install what it returns, follow this skill in full.
 2. **Resolve the target project, never create a second one.**
-   - The sentence says *create the Lyriks project "Acme"* (optionally *in the
-     domain "X"*): create it first with `create_wizard_project` (that name,
-     `source_mode: "code_to_spec"`, the domain resolved by name through
-     `list_domains`), unless an empty project of that name already exists,
-     which you reuse. Then author into it.
-   - The sentence names an existing project: `list_wizard_projects` resolves
-     that name or id to the project you author into.
-   - It names none: the target is the card whose `sourceMode` is
-     `code_to_spec` (created "From a codebase" in Lyriks) and whose
-     `featureCount` is still 0. Several qualify: ask which. None exists:
-     create one with `create_wizard_project`, then set its Foundation identity
-     `sourceMode` to `code_to_spec`.
-   - Author every section into that project and never change its
-     `sourceMode`.
-3. **"Entire" means entire.** Walk the whole product, not a sample: every
-   entry point, every navigation item, every screen, form and table. Stop only
-   at the Order of work's end, and at the questions the Low-intervention
-   protocol allows.
+   - "Create the project X": `create_wizard_project` (`source_mode: "code_to_spec"`, domain by `list_domains`) unless an empty one of that name exists.
+   - A named project: `list_wizard_projects`.
+   - From a design (a clickable prototype, a mockup, a Figma file): the
+     same, with `source_mode: "from_figma"`; see *A product known from its
+     prototype or its design*.
+   - None named: the card whose `sourceMode` is `code_to_spec` and `featureCount` 0; several, ask; none, create one. Never change its `sourceMode`.
+3. **"Entire" means entire**: every entry point, navigation item, screen, form and table.
+4. **Read what done means first:** `assess_project_completeness` on the
+   empty project lists what your work ends on; run it at every checkpoint.
 
-## The product-language law (non-negotiable)
+## The product-language law
 
-Everything authored in `users`, `features`, `foundation`, `experience`,
-`data`, `rules`, `glossary` and journey/step names uses the words a daily USER
-of the product would say.
+Outside architecture and provenance, use a daily USER's words.
+Banned outside the `architecture` section, the infrastructure map and spans:
+file, module, component, class, function and variable names, and framework
+vocabulary (stores, endpoints, props, middleware, ORM). A non-engineer who uses
+the product must recognize every name.
 
-Banned outside the `architecture` section and provenance spans:
-
-- file, folder, module, component, class, function and variable names;
-- framework, library and infrastructure vocabulary (stores, endpoints,
-  props, middleware, ORM, container names);
-- repo-derived feature names ("parse-experience-builder handling" is a
-  module; "Design screens visually" is a feature).
-
-Litmus test before every save: would a non-engineer who uses this product
-daily recognize this name and this sentence? If not, rewrite before saving.
-
-Register is not language. This law governs the REGISTER (the user's words, no
-code jargon); lyriks-behavior's vocabulary language law governs the LANGUAGE
-of code-facing names: entities, fields, enum values, state paths, events,
-actions, parameters, surfaces, roles and collections are English even when the
-product is French. The product's French lives in the labels you transcribe
-and in the descriptions, never in a name the spec-to-code map will carry.
-The platform already enforces the edges (the glossary rejects code
-identifiers; data entities are named in the Glossary's words); your job is to
-apply the same register everywhere in between.
+Code-facing names stay English (`lyriks-behavior`).
 
 ## Walk the UI, not the file tree
 
-- Inventory the product the way a user meets it. Run the app when you can
-  (load the project's run skill if one exists); otherwise read the router,
-  navigation and layout files AS EVIDENCE and transcribe what they render:
-  every nav item, page heading, tab, dialog, empty state, banner.
-- Know what you are looking at when the app runs: a live instance renders the
-  product's chrome THROUGH whatever demo project it happens to hold. The
-  CODEBASE is the source of truth for the Experience; screenshots are
-  comparison evidence. Transcribe the chrome (layout, labels, tokens, empty
-  states); NEVER transcribe the loaded demo project's data - its project
-  names, personas, cores, counts, scores or verdicts are that project's
-  content, not the product, and must never leak into the model.
-- The feature split is by USER CAPABILITY (what can be done with the
-  product), never by module. Folder names never name features. Cores are the
-  product's pillars as a user would list them.
-- Journeys are the real paths through the real navigation, one per goal a
-  persona actually pursues.
-- Roles come from the product's real authentication and permission behavior,
-  not from a `roles` enum's spelling.
-- Transcribed screens must be faithful copies of what the end user sees:
-  same labels, same ordering, same vocabulary, same casing. Empty fields
-  beat invented ones; if you did not see it, leave it out and say why.
+- Run the app when you can; otherwise read the router, navigation and layouts AS EVIDENCE and transcribe what they render: nav items, headings, tabs, dialogs, empty states, banners.
+- A running instance shows its chrome THROUGH a demo project: transcribe the chrome, NEVER the demo's data (names, personas, counts, scores).
+- Features split by USER CAPABILITY, never by module; cores are the pillars a user would list.
+- Journeys follow the real navigation, one per goal a persona pursues.
+- Roles come from real access checks, one per distinct check (*Count the surface*), never from a menu link.
+- Each screen carries its real title, route and purpose. Not seen: left out, and say why.
 
 ## Design fidelity: extract, never invent
 
-The first rendering must look like the product, not like a generic mockup.
+1. Read the identity from the product's assets (CSS variables, Tailwind config, tokens, fonts, logos, computed styles) and follow `lyriks-design` Rule 1: exact values under the code's names.
+2. The palette (`brand.colors.palette`): primary, secondary, tertiary, each `base`, `hover`, `active` only where the stylesheet states that colour; text and surfaces in `brand.colors.semantic`; the stylesheet in `brand.sourceIds`. `check_design` holds a design file against it.
+3. Every screen in `screens[]`, each journey step linked to its screen.
 
-1. BEFORE any `build_screen`: extract the real theme from the product's own
-   assets (brand CSS custom properties, Tailwind config, design tokens,
-   computed styles of the running app): accent, background, ink, font
-   families, radius, density, dark or light. Set `builder.theme` from that
-   evidence (nearest `preset` first, explicit values on top).
-2. Load `lyriks-design` and follow it; transcribe each screen top-down like
-   nesting dolls (shared chrome, skeleton, sections, elements), making every
-   pass content-complete.
-3. Verify side by side: `verify_experience` frames against the real screens.
-   A screen that does not look like the product is a defect to fix in the
-   same pass, not a draft to improve later.
-
-**WHEN YOU CANNOT SEE, SAY SO. Never let it pass silently.** Through the MCP
-alone there is no render: `simulate_experience` proves a flow reaches its end
-and proves nothing whatsoever about how the screen looks. So a transcription
-built without eyes on it is unverified work, and the one dishonest move is to
-report it as done. Instead:
-
-- transcribe from the SOURCE, never from what you picture: the real labels,
-  the real order, the real tokens read out of the stylesheet;
-- when the renderer cannot express something the real page does (a grid
-  placement, a sticky column, a gradient), approximate with the dominant
-  value and WRITE THE DIVERGENCE into the screen's description, in one
-  sentence naming what the product does and what the prototype does instead;
-- say in your report that the screens were not seen, and ask for a screenshot
-  or for the run to be opened. A person spends ten seconds confirming what you
-  cannot check at all.
-
-If the runtime you are in has a browser or a shell, use it: that is the whole
-difference between transcribed and verified, and the cost is one screenshot.
+**When you cannot see, say so**, and ask for a screenshot or the theme file.
 
 ## Data model: behavior-complete, product-named
 
-The data section is reconciled from TWO mandatory sources; neither alone is
-enough.
+1. **Everything the behavior model knows**: every entity, state and event of every leaf exists in `data.entities` or is excluded with a reason; the audit reports the rest as `behavior-entity-unmodeled`.
+2. **Everything the UI shows**: columns, form fields, filters, badges; `enumValues` are the words on screen.
+3. **Every relation the product has**, from UI and storage evidence. Resolve orphans (`unrelated-entity`, `data-entity-unrelated`) or justify `standalone: true`. Record `onDelete` (`cascade`, `set_null`, `restrict`) only from code; required links never take `set_null`.
+4. **Every field linked to the state that holds it**, as you capture: `link_data_fields` in the same pass, plus each table's existence state. `get_data_links` lists what remains; never link on a name alone. A field a person unlinked stays so.
 
-1. **Everything the behavior model knows.** Enumerate every entity, typed
-   state and event across ALL leaf features (`get_behavior_context`,
-   `get_knowledge_graph`, feature snapshots). Every behavior entity must
-   exist in `data.entities`, or be explicitly excluded with a written
-   rationale. `assess_project_completeness` reports every uncovered behavior
-   entity as a `behavior-entity-unmodeled` warning: a retro-spec is not done
-   while one remains.
-2. **Everything the UI shows.** Table columns, form fields, detail pages,
-   filters and badges are the product's real field list and real enum
-   vocabulary. `enumValues` are the exact words visible in the product.
-3. **Every relation the product really has.** Relations come from what
-   screens show together AND from what the code stores together (foreign
-   keys, owner ids, `xxxId` fields, join tables, a `projectId` on every
-   section row). Every entity carries the relation to what owns it or is
-   pointed at by what references it; a table nobody points at and that
-   points at nothing is an orphan, and orphans are a defect. The platform
-   checks it on every data write (`unrelated-entity` in the write's
-   `coherenceIssues`) and in `assess_project_completeness`
-   (`data-entity-unrelated`, which fails the `data` check): read the
-   response of each data write and fix the orphans in the same pass, from
-   evidence, never by inventing a link. A genuinely standalone table says
-   so in its description.
+Name entities and fields in the Glossary's words (`Invoice`, not
+`invoice_record_v2`), and say on each journey step which records it reads or
+writes (`stepDataReads`).
 
-Name entities and fields in the product's words (the Glossary's words), never
-in the schema's (`Invoice`, not `invoice_record_v2`). Then
-`import_data_collections` (never while an `unrelated-entity` issue is still
-open), and seed demo rows that look like the product's real data, copied from
-what it displays.
+## Infrastructure code: the map, never a feature
 
-## Adopting the codebase: when, why, and what first
+Terraform, Terragrunt, Helm, manifests and Ansible say where the product lives,
+never what a user does: no feature, screen, journey or role.
 
-Adoption is the evidence chain UNDER the retro-spec: every modeled element
-traced to the exact code span it came from, spotted-but-unmodeled behavior
-parked as candidates, and the spans seeded into implementation coverage so
-spec-vs-code drift detection is armed.
+| Declared | Authored as |
+|---|---|
+| a VM, cluster, serverless runtime | `data.hosts` row (`kind`, `provider`, `region`) |
+| a managed database, cache, search index | `data.databases` row on its host |
+| a load balancer, gateway, queue, opened flow | `data.interfaces` row (`protocol`, `fromBrick`, `toBrick`) |
+| Terraform, Helm, the cluster runtime | `architecture.techChoices`, `layer: "infra"` |
+| encryption, data residency, backups | `architecture.constraints` row |
 
-**Adopt (default) when the repo is yours and alive**: you will keep changing
-this code, so you want `get_implementation_gaps` / `get_implementation_drift`
-to notice when code and spec diverge, and you want the spec auditable (the
-finalize gate refuses an element nobody traced, so nothing can be invented).
+Read each value with what consumes it (a `yamldecode` call, a chart). Draw
+production only. Tables come from the data model (`entities[].databaseId`).
+Cite the files in `architecture.sourceIds`, and report that nobody watches it:
+the map is a snapshot of the frozen commit. An infrastructure-only repository
+feeds the project of the product it hosts. Never create a project for it alone.
 
-**Skip adoption when the spec is one-shot or the code is out of reach**: a
-competitor teardown, a UI-only transcription, a product you will never
-maintain. Tracing spans costs a full read of the implementing files; spend it
-where drift detection will pay it back.
+## Adopting the codebase
 
-Before adopting, in this order and for these reasons:
+**Code to spec always adopts, without asking**: trace elements, dispose
+candidates, seed the index. Skip only on the person's word and report the spec
+as a snapshot nobody watches.
 
-1. **Walk the UI and split the features FIRST.** Spans are recorded per
-   feature analysis; a wrong split means re-tracing everything. The split
-   comes from user capabilities, so it must exist before any code is read
-   in anger.
-2. **Register the code sources properly**: `attach_source` with
-   `kind:"code"` and the file's repo-relative path, only the files that
-   carry behavior, never the whole tree. The path lands verbatim in the
-   implementation index, so a wrong path poisons drift detection later.
-3. **Keep the product-language law up.** Adoption reads code all day, which
-   is exactly when technical naming creeps into the model. The element is
-   named for the user ("Archive a conversation"); the SPAN points at the
-   code. Both, never a compromise between them.
+1. **Walk the UI and split the features FIRST**: spans are recorded per feature.
+2. **Attach the code properly**: only the files that carry behaviour, with the shipped script, never retyped: `node .lyriks/tools/attach-source.mjs <feature_id> <path...> --commit <frozen sha>`. A retyped file comes back altered and every span after the change points at the wrong text.
+   **Where no script can reach Lyriks**, attach through the tool with exact
+   content and `sha256` (`git show <sha>:<path> | sha256sum`). A mismatch stores
+   nothing; resend the exact frozen text.
+3. **Keep the product language**: the element is named for the user, the span points at the code.
 
-**The mapping law (one concept: adopt, implement, trace).** A spec↔code
-mapping is only real when the code itself is captured. Never record or
-report a bare `{file, line}`: that is a claim the engine cannot check, and
-the dashboard stamps such locations `unverified`. The span flow IS the
-evidence flow: attach the file, record the spans, finalize, seed, sync.
-Spans carry the code, so every seeded index entry gets a real `signature`
-line and the implementation panel can show the code beside the spec.
-Pushing locations straight through `report_implementation_status` without
-snippets produces an unverifiable report and is never an acceptable
-shortcut for adoption. Leave zero unverified locations behind; if you
-cannot capture the code, say so instead of reporting the location.
+**The mapping law**: capture code, never bare `{file, line}`. Supply snippets
+to `report_implementation_status`; leave zero unverified locations.
 
-Then, per feature, while authoring behavior: read the implementing files,
-model product-first, `record_element_spans` in batch, and park anything you
-spotted but did not model with `stage_candidates` so it is not silently
-dropped. Close every candidate with `dispose_candidate` (accepted names the
-element it became; rejected and out-of-scope carry a rationale). Read
-`get_provenance` before `finalize_analysis`: together they are exactly what
-the gate checks. Finally `seed_implementation_index` and
-`sync_implementation_index`, which is what turns the retro-spec into a
-living spec instead of a snapshot. Seed LAST, once nothing else will be
-authored: an entry carries the spec version it was stamped with, so any write
-that lands afterwards makes every entry read stale and the drift report says
-nothing. Read the sync's `shared` block too: a key several features declare
-(a state path is not unique) holds ONE location, the last one seeded.
+Per feature: read the files, model product-first, `record_element_spans` in
+batch, `stage_candidates` for what you did not model and `dispose_candidate`
+for each (accepted names its element; the others carry a rationale), the
+adversarial pass, `get_provenance`, `finalize_analysis`. Finally
+`seed_implementation_index` with `sync:true` (it lands the entries in the same
+call, the safe path where no script runs), write the entries into
+`.unspa.json`, and read `synced.incomplete` and `shared`. Seed LAST: a later
+write makes every entry stale.
+
+## Every element says where it comes from
+
+1. **Use reachable product history too**: connected trackers, wikis, drives, PRs, Figma, chat and repository docs. Report unavailable sources at the first checkpoint.
+2. **Register each source** in `documents.sources` (lyriks-build, *Sources & citations*); give `attach_source` its `register_id`: one source, one id.
+3. **Cite on every element**: code first, then tickets/pages. Attach and span a ticket that states a rule better than code too.
+4. **Cite the passage**: `cite_passages` with the `source_id`, the element's `anchor`, the shortest `words` as the source reads them, and `takes` (what the element took). Quote, never paraphrase.
+
+The audit blocks (`extracted-source-missing`) while an element cites no source.
+
+## A refusal belongs to the server
+
+**A rule that refuses is spanned on the check that rejects the request.**
+A handler, a service, a form or serializer validation, a permission class, a
+middleware. A condition that only hides or disables a control in a template
+says who sees it, never that the request is refused. A request the server
+accepts anyway is a finding for `rules.issues[]`, never a guard. Quote a
+refusal message only when the code holds it verbatim.
+
+**The product's own tests are evidence.**
+Read each feature's tests before its rules; a test asserting a refusal is
+cited beside the server span.
+
+Trace the caller: a definition or unit test does not prove the check runs.
+Page-only checks are never server refusals or `Mirrored:` assumptions. Search all
+frozen variants before claiming absence. Account for retained but unexposed code
+and its missing exposure without inventing an entry point; prototype controls
+and samples keep their separate classification below.
 
 ## Freeze the baseline, then count what you must cover
 
-Two disciplines separate a retro-spec that finishes from one that drifts for
-weeks. Both come from a field run that adopted a 47-module product into 83
-features; neither is optional on a codebase you cannot hold in your head.
+**Freeze one commit and read only through it**: register the SHA and read with
+`git show <sha>:<path>`, never the working tree. Lift it once, at
+reconciliation, and say so.
 
-**Freeze one commit and read only through it.** Take the SHA at the start,
-register it as evidence, and read every file with `git show <sha>:<path>`.
-Never the working tree, never a shared branch: both move under you, and a
-branch carrying partially merged work hands you two halves of two different
-products in the same session. The freeze is what keeps a span recorded on day
-one true on day four. Lift it once, deliberately, at the reconciliation step,
-and say so when you do.
-
-**Count the surface before you model it.** "Have I covered everything?" cannot
-be answered without a denominator, and the denominator is never the file count.
-Pick the smallest set of countable things such that, once each one is either
-modeled or consciously dropped, the product holds no behaviour you have not
-seen. Derive it from the repo's own spine:
+**Count the surface before you model it.** The denominator is never the file
+count; take the smallest countable set that leaves no unseen behaviour:
 
 | The repo is organised by | Count |
 |---|---|
@@ -254,86 +152,150 @@ seen. Derive it from the repo's own spine:
 | routes and handlers (Go, Express, serverless) | the public endpoints, grouped by resource |
 | a front end over an API you do not own | the screens, plus the calls each one makes |
 | layers rather than domains (controllers/, services/) | the persisted models first, then the entry points per model |
+| infrastructure code (Terraform, Terragrunt, Helm, manifests) | the resources that run, store or carry data, and every route between them |
+| a clickable prototype or a design (one HTML file, a design canvas, a Figma prototype) | the interactions (every click, key and input handler), the conditional displays, the fixed and script-built labels, the state variables, and the cases of every sample catalogue |
 
-Two rules keep the count honest. A denominator must be **enumerable without
-judgment**: one command lists it, and two people get the same list. And every
-row must end at modeled or dropped-with-a-reason, never blank, so the ledger
-can only be finished truthfully. Keep it outside the tool, beside the project,
-and update it at the end of each slice.
+A denominator is listed by one command, the same for two people, and every
+row ends modelled or dropped with a reason.
 
-**Log every ambiguity and resolve it by reading.** An item that could belong to
-two domains (a join table, a rules engine that looks like routing) gets a line
-naming the two candidates, the code that decides, and the verdict. Never
-resolve one by preference, and never leave it implicit: the next session
-re-litigates whatever you left unwritten.
+**The ledger is a file, and a gate.**
+`.lyriks/retrospec-ledger.md`: one line per counted item, where it is modelled
+or why it was dropped. Update it after each slice; never call `finish_project`
+while a line is blank.
 
-**The atomic unit is the feature, not the slice.** Tracing, staging and the
-finalize gate all take a feature id. A slice is done when every one of its
-features is finalized; a half-finalized slice is not progress you can trust.
+Whatever the spine, five lists always enter the ledger:
 
-**Code first, intent second.** When the product also has target documents (PRDs,
-a Figma the app has not caught up with), model the code baseline to completion
-FIRST and treat those documents as the delta afterwards. The Experience is the
-real screens, not the intended ones. Doing it the other way round produces a
-spec that describes a product nobody has, and no gap you can act on.
+- **The API, endpoint by endpoint.**
+  Each endpoint is an action on the `api` channel, method and path as its
+  operation, a parameter per filter, page or flag, what it answers in its
+  description, each error a block rule or an outcome. Reads count as much as
+  writes. An endpoint named only in prose is not modelled.
+- **Every access check of the code.**
+  Decorators, permission classes, staff against superuser, tokens, single
+  sign-on: which roles reach which capabilities, yes or no. Two checks that
+  let in different people are two roles, never one merged flag. The API client and the identity provider are personas or actors,
+  each is an actor of the journey it serves (sign-in, API).
+- **Every screen, administration and settings pages included.** With the route or file that declares it: a page declared in
+  metadata or configuration counts as much as a coded one.
+- **Every setting that changes what the product does.** A toggle, a flag, a preference, an environment variable read at runtime, with the behaviour it switches.
+- **Every rule on personal or sensitive data.** What is masked, never logged, never sent to a third party: a rule spanned on the
+  code that enforces it.
+
+**Log every ambiguity and resolve it by reading**: the two candidates, the
+code that decides, the verdict. **The feature is the unit**: a slice is done
+when every feature in it is finalized. **Code first, intent second**: target
+documents are the delta after the code baseline.
+
+## A product known from its documentation
+
+**The pages are the denominator**: every page gets a ledger line (modelled
+where, source only, or set aside and why). Store each kept page's text
+(`attach_source` with `register_id`) and cite passages. Each kind of page has
+its place: lyriks-build, *Where each kind of document goes*. What the pages
+leave open is a recorded decision, never a guess.
+
+## A product known from its prototype or its design
+
+A prototype holds four layers: what the screens show, when, what each control
+really does, and sample data that states rules. The first alone gives a
+plausible spec.
+
+1. **Read every file whole, and say so.** Measure each file and its longest
+   line first; read a long line in pieces to its end. Never cut in silence.
+2. **Count before writing, layer by layer, in the ledger:** fixed and
+   script-built labels; conditional displays and their alternate states
+   (empty, filtered to nothing, error, selected); every interaction with what
+   its handler really does; state variables and attributes (`readonly`,
+   `disabled`, `aria-*`); each case of every sample catalogue; delays; styles.
+3. **Sort every element into product, sample data or prototype control, and
+   write the sort down.** Names, people and counts on screen are samples;
+   layout, theme or fake-activity switches are controls.
+4. **A sample catalogue states rules: take the rule, never the instance.**
+5. **A label is not a behaviour.** A Save button over `readonly` fields edits
+   nothing; a function no control calls is no feature. What only a label
+   suggests is a deduction for `rules.issues`.
+6. **The prototype is a source like any other:** register it, store its text,
+   cite it and its passages. `from_figma` is audited like code.
+7. **Prove the end with three readings, never with an impression:** every
+   fixed label has its counterpart in the spec or a ledger line; every handler
+   its rule, action or reason to drop; `assess_project_completeness` and its
+   health.
+
+## Challenge each feature, then prove the spec against the code
+
+**An adversarial pass before `finalize_analysis`, feature by feature.**
+The gate checks that every element is traced, never that its span says what
+the element claims. Reread each refusal, invariant, rationale and message
+against its span: is the check on the server, the message verbatim, the
+condition complete, the rationale true on creation AND update? When you can
+start a sub-agent, a separate reviewer makes this pass.
+
+Review alone when needed: counterexample, exact state/events, correction, rerun,
+provenance and proof limits. Use `lyriks-behavior`'s producer/observer sequence.
+Preserve valid conventions; archive the before and source for each correction.
+
+Stabilize Data/Experience projections before final locking; recheck candidates
+and untraced elements despite `finalized:true`. Apply `lyriks-delivery` Step 4's
+layered source/index checks. Prefer preserving reopen; a destructive reset needs
+authorization and a full replay plan, never deletion of real behavior.
+
+**Prove against the code whenever it runs.**
+Export the scenarios (`export_behavior_scenarios`), run them against the real
+code or match each to an existing test, and bring the results back with
+`node .lyriks/tools/ingest-results.mjs` (lyriks-delivery, Step 4), each test
+named after its `titleToken`. Report the share proven: actions with a passing
+run, out of how many. An audit at 100 with green scenarios proves the model
+consistent with itself, never that it matches the code. When nothing could
+run, say so.
+
+## Complementary run
+
+Every later run starts from the spec, erases nothing, and takes the delta from
+the code's history, never from two AI readings.
+
+Handoff: project/instance, frozen commits, decisions, confirmed writes, remaining
+work and partial proofs, never credentials. Attribute model/effort only when
+known, without quality comparisons. Resume missing work from receipts; count ids
+and actual results. Distinguish expired auth, 403, 503, unknown write result and
+verification budget; none proves insufficient RAM.
+
+1. Read what the project holds (`get_project`, its plan by default); `report_retrospec_reading` with no argument gives the starting commit and the hand edits Code drift lists.
+2. With a commit, check it exists (`git cat-file -e <sha>^{commit}`); if not, tell the person and stop.
+3. Freeze the new commit and read only the delta: `git diff --name-only <from>..<new>` (without a commit, the files that differ from their attached version), changed or new documents, the code of each hand edit, the ledger's new or lost lines.
+4. A run that holds its changes writes nothing: do as its prompt says (`changes`, `finished`, later `written`). Any other run writes what is new or changed, citing as on a first run. Leave untouched elements as they are (a rewritten element goes back to validation). Whatever is gone, or contradicts a validated value, becomes a finding for a person.
+5. For each hand edit, `report_retrospec_reading` `checks`: its `anchor`, `says: "same"` or `"other"`, with `code` and `where`. Change neither the edit nor the code.
+6. Sync the touched features' index, report the commit you read, run the final check.
+
+**The whole product again** (when the prompt says so): read every source
+element by element against the spec: confirm without
+rewording, complete, correct, cite the new sources.
 
 ## Low-intervention protocol
 
-The user should not have to correct you; they should only decide.
-
-- Ask the user ONLY: (a) the `scope.mode` at the start, (b) facts the product
-  cannot show you (internal pricing, an admin area you cannot reach), and
-  (c) the final `finish_project` go.
-- Everything else: read, do not ask. Names come from the product, never from
-  the user's patience.
-- Report at checkpoints (scope declared, features authored, screens built,
-  audits green) instead of asking questions at each step. "Audits green" means
-  every measure the product displays, named one by one: the completion audit AND
-  the Control Center's coherence, coverage and build readiness. One number
-  without its subject, or the best of several passed off as the only one, is a
-  report the user corrects with a screenshot.
-- This is lyriks-build's autonomous mode. When the user asks to be
-  accompanied, lyriks-build's checkpoint protocol applies here too: decisions
-  the product itself cannot answer are recorded in the same register and
-  presented in the same batches.
+- Ask ONLY what the next line gives to a person.
+- **Your work, or a person's decision.** Only the `scope.mode`, approvals
+  (terms, sections), the `finish_project` go and facts the product cannot
+  show belong to a person. The scope's capabilities, every feature's
+  behaviour (never left at 0% unless shells or a target stage were asked), section
+  assessments, data links and the audit are yours: never report them as "a
+  decision" or "to do on request".
+- **Done is proven, never felt.** Announce nothing before the ledger has no
+  blank line and `assess_project_completeness` ran after your last write;
+  then hand over a coverage report (verified and by which check, deduced,
+  open and who decides), not a claim.
+- Report at checkpoints, never ask at each step: "audits green" is the completion AND the Project health beside it. Asked to be accompanied, lyriks-build's protocol applies.
 
 ## Order of work
 
-1. `documents`: register the evidence (codebase, brand assets, any docs) as
-   sources, each one reachable per lyriks-build's *Sources & citations* (a
-   web address, or the content in the note; a code file attached with
-   `attach_source`, never a local path in `url`); everything you author cites
-   them.
-   **`attach_source` takes a `feature_id` and a `file_name`, so it cannot run
-   here.** Attaching a code file is per feature, and the features do not exist
-   until step 4. At this step you write the `documents.sources[]` rows only:
-   the repository's web address for each file, and in `note` the verbatim
-   sentence the spec will rest on. Attach the files themselves while authoring
-   each feature's behavior, which is where *Adopting the codebase* puts them
-   anyway. Registering a source and attaching its code are two moments, not
-   one, and a skill that reads otherwise costs every agent the same failed
-   call.
-2. `scope`: the capability inventory from the UI walk, each item tied to its
-   sources. Choose `scope.mode` with the user.
-3. `users`: roles and personas from real auth behavior.
-4. `features`: the capability tree, cores as product pillars; then
-   `lyriks-behavior` for FULL depth per leaf, evidence from the code. When
-   adopting (see above), attach each feature's implementing files as code
-   sources, record spans and stage candidates as you go.
-5. `data`: the two-source reconciliation above.
-6. `experience`: theme extraction, then screens per `lyriks-design`, then
-   wiring and simulation.
-7. `rules`, `glossary`, and the remaining contexts per `lyriks-build`.
-8. Audits: `get_experience_coverage`, `find_inconsistencies`,
-   `assess_project_completeness` (resolve every issue INCLUDING
-   `behavior-entity-unmodeled` warnings), `audit_project_scope`, and
-   `finish_project` only on the user's word.
+1. `documents`: register sources now; attach code per feature at step 4 (`attach_source` needs a `feature_id`).
+2. `scope`: the inventory from the UI walk, with its sources; `scope.mode` with the user.
+3. `users`: distinct access checks, API client and identity provider, each with its `behaviorValues` (lyriks-build step 9).
+4. `features`: the capability tree, then `lyriks-behavior` at full depth per leaf, adopting as you go (*Adopting the codebase*).
+5. `data`: the reconciliation above, then the infrastructure map when its code is within reach.
+6. `experience`: journeys from the real navigation, the screen inventory, the design.md sources (`lyriks-design`).
+7. `rules`, `glossary`, the remaining contexts per `lyriks-build`.
+8. `find_inconsistencies`, `assess_project_completeness` (including `behavior-entity-unmodeled`), `audit_project_scope`, code proof; `finish_project` only on the user's word and with no blank ledger line.
+9. Before finish, `report_retrospec_reading` (`commit`, `repository`) records the next run's baseline.
 
-## Relation to the other skills
-
-`lyriks-build` governs sections and completion; `lyriks-design` governs
-screens; `lyriks-behavior` governs feature depth; `lyriks-delivery` governs what
-happens after, when the spec meets a tracker and the code starts moving again. This skill adds the
-retro-spec laws on top: product language, UI-walk inventory, theme
-extraction, and the behavior-complete data model. When they seem to conflict,
-the product-language law wins everywhere except inside `architecture`.
+When skills seem to conflict, the product-language law wins everywhere except
+in `architecture` and the infrastructure map.

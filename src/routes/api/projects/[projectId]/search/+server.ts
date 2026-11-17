@@ -1,5 +1,4 @@
 import { json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { nodeSourceHref, nodeContextLabel } from '$domain/graph/node-link';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import type { RequestHandler } from './$types';
@@ -14,7 +13,7 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async (event) => {
 	const { params } = event;
 	await requireProjectAccess(event, params.projectId, 'read');
-	const graph = await getServices().loadKnowledgeGraph.execute(params.projectId);
+	const graph = await event.locals.services.loadKnowledgeGraph.execute(params.projectId);
 	const items = graph.nodes
 		.map((node) => {
 			const href = nodeSourceHref(params.projectId, node);

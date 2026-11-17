@@ -18,9 +18,9 @@ describe('kickoffPrompt from a codebase', () => {
 		sourceMode: 'code_to_spec'
 	});
 
-	it('is one sentence that names the target and nothing else', () => {
+	it('is one sentence that names the target, adopts the codebase and asks for every source (ac-proj-code-adopt, ac-proj-code-sources)', () => {
 		expect(prompt).toBe(
-			'With the help of the Lyriks MCP, ingest this entire codebase into the Lyriks project "Returns Portal" (id returns-portal-a1b2c3).'
+			'With the help of the Lyriks MCP, ingest and adopt this entire codebase into the Lyriks project "Returns Portal" (id returns-portal-a1b2c3): trace every element you extract to the code it comes from, and cite every other source you can reach (the tools connected to you, the documents of this repository).'
 		);
 	});
 
@@ -29,7 +29,7 @@ describe('kickoffPrompt from a codebase', () => {
 		expect(prompt.split('\n')).toHaveLength(1);
 	});
 
-	it('ignores ticked sources: the codebase is the source', () => {
+	it('needs nothing ticked: every source the agent reaches is cited', () => {
 		expect(
 			kickoffPrompt({ productName: 'X', projectId: 'x-1', sourceMode: 'code_to_spec', sources: ['jira'] })
 		).not.toContain('Jira');
@@ -85,7 +85,7 @@ describe('kickoffPrompt before the project exists', () => {
 		expect(
 			kickoffPrompt({ productName: 'Returns Portal', sourceMode: 'code_to_spec', domainName: 'Customer Success' })
 		).toBe(
-			'With the help of the Lyriks MCP, create the Lyriks project "Returns Portal" in the domain "Customer Success" and ingest this entire codebase into it.'
+			'With the help of the Lyriks MCP, create the Lyriks project "Returns Portal" in the domain "Customer Success", then ingest and adopt this entire codebase into it: trace every element you extract to the code it comes from, and cite every other source you can reach (the tools connected to you, the documents of this repository).'
 		);
 	});
 

@@ -25,7 +25,7 @@ export const POST: RequestHandler = async (event) => {
 		: undefined;
 
 	await requireProjectAccess(event, projectId, 'write');
-	const changes = await reconcileImplementationStatuses(projectId, featureIds);
+	const changes = await reconcileImplementationStatuses(event.locals.services, projectId, featureIds);
 	return json({
 		ok: true,
 		changes,

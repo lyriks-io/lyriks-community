@@ -1,5 +1,4 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireBehaviorFeatureAccess } from '$lib/server/behavior-feature-access.server';
 import type { RequestHandler } from './$types';
 
@@ -27,7 +26,10 @@ export const GET: RequestHandler = async (event) => {
 
 	await requireBehaviorFeatureAccess(event, projectId, featureId, 'read');
 
-	const services = getServices();
-	const assessment = await services.assessFeature.execute(featureId);
+	// The solver's first pass by default, at once; `complete=1` asks the full
+	// proof, which the drawer asks next when the first pass says more is to come.
+	const complete = url.searchParams.get('complete') === '1';
+	const services = event.locals.services;
+	const assessment = await services.assessFeature.execute(featureId, projectId, complete ? { complete } : undefined);
 	return json({ available: assessment.available, behavior: assessment.behavior, assessment });
 };

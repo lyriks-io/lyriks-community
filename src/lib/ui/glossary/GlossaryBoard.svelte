@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button, Icon, ScoreRing, type Tone } from '$ui/design-system';
+	import { Button, Icon } from '$ui/design-system';
 	import { GLOSSARY_LOCALES, type GlossaryLocale } from '$domain/glossary';
 	import { countTermUsages } from '$domain/glossary';
 	import type { DocumentSource } from '$domain/documents';
@@ -12,9 +12,6 @@
 	}
 	let { store }: Props = $props();
 
-	const healthTone = (score: number): Tone =>
-		score >= 67 ? 'strong' : score >= 34 ? 'at-risk' : 'critical';
-
 	const parseList = (value: string): string[] =>
 		value
 			.split(',')
@@ -23,46 +20,17 @@
 </script>
 
 <div class="space-y-6">
-	<!-- Glossary health -->
+	<!-- Only how many terms are approved (spec: criterion bbb8d1b2): no health
+	     score, no verdict, no other bar; each row keeps its own counts. -->
 	{#if store.health.total > 0}
 		{@const h = store.health}
 		<section class="rounded-card border border-line bg-surface p-4">
-			<div class="flex flex-wrap items-center gap-5">
-				<div class="flex items-center gap-3">
-					<ScoreRing score={h.score} tone={healthTone(h.score)} size={48} />
-					<div>
-						<p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
-							Glossary health
-						</p>
-						<p class="text-sm font-semibold text-ink-800">
-							{h.total} term{h.total > 1 ? 's' : ''} governed
-						</p>
-					</div>
-				</div>
-				<div class="grid min-w-[260px] flex-1 grid-cols-3 gap-3">
-					{#each [{ label: 'Defined', a: h.defined, pct: h.definedPct }, { label: 'Used in specs', a: h.used, pct: h.usedPct }, { label: 'Approved', a: h.approved, pct: h.approvedPct }] as m (m.label)}
-						<div>
-							<div class="mb-1 flex items-baseline justify-between">
-								<span class="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-400"
-									>{m.label}</span
-								>
-								<span class="text-[11px] text-ink-500">{m.a}/{h.total}</span>
-							</div>
-							<div class="h-1.5 overflow-hidden rounded-pill bg-surface-sunken">
-								<div class="h-full rounded-pill bg-brand-500" style="width:{m.pct}%"></div>
-							</div>
-						</div>
-					{/each}
-				</div>
-				<span
-					class="shrink-0 rounded-pill px-3 py-1.5 text-xs font-semibold {h.bannedInUse > 0
-						? 'bg-danger-50 text-danger-700'
-						: 'bg-success-50 text-success-700'}"
-				>
-					{h.bannedInUse > 0
-						? `${h.bannedInUse} banned word${h.bannedInUse > 1 ? 's' : ''} in use`
-						: 'No banned words in use'}
-				</span>
+			<div class="mb-1 flex items-baseline justify-between">
+				<span class="text-[0.625rem] font-semibold uppercase tracking-[0.1em] text-ink-400">Approved</span>
+				<span class="text-[0.6875rem] text-ink-500">{h.approved}/{h.total}</span>
+			</div>
+			<div class="h-1.5 overflow-hidden rounded-pill bg-surface-sunken">
+				<div class="h-full rounded-pill bg-brand-500" style="width:{h.approvedPct}%"></div>
 			</div>
 		</section>
 	{/if}
@@ -71,12 +39,12 @@
 	{#if store.suggestions.length > 0}
 		<section class="rounded-card border border-accent-200 bg-accent-50/40 p-4">
 			<div class="mb-1.5 flex items-center justify-between gap-3">
-				<span class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent-600">
+				<span class="flex items-center gap-2 text-[0.6875rem] font-semibold uppercase tracking-[0.14em] text-accent-600">
 					<Icon name="sparkles" size={14} /> Suggested from your brief
 				</span>
 				<button
 					type="button"
-					class="text-[11px] font-semibold text-accent-600 hover:text-accent-700"
+					class="text-[0.6875rem] font-semibold text-accent-600 hover:text-accent-700"
 					onclick={() => store.suggestions.forEach((s) => store.addNamedTerm(s.term))}>Add all</button
 				>
 			</div>
@@ -106,20 +74,20 @@
 			placeholder="Search a term, definition or synonym"
 			class="min-w-[200px] flex-1 rounded-field border border-line bg-surface px-3 py-2 text-sm text-ink-800 outline-none placeholder:text-ink-300"
 		/>
-		<label class="flex items-center gap-1.5 text-[11px] text-ink-500">
+		<label class="flex items-center gap-1.5 text-[0.6875rem] text-ink-500">
 			<input
 				type="checkbox"
 				checked={store.showAvoidOnly}
 				onchange={() => store.toggleAvoidOnly()}
 			/>
-			with banned synonyms only
+			with words to avoid only
 		</label>
 		<Button variant="outline" size="sm" onclick={() => store.addTerm()}>
 			<Icon name="plus" size={14} /> Add term
 		</Button>
 	</div>
 
-	<p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
+	<p class="text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-ink-400">
 		{store.filtered.length} of {store.draft.terms.length} term{store.draft.terms.length !== 1
 			? 's'
 			: ''}
@@ -167,7 +135,7 @@
 									>{/if}
 							</span>
 							<span
-								class="shrink-0 rounded-pill border border-line px-1.5 py-0.5 text-[9px] font-bold text-ink-500"
+								class="shrink-0 rounded-pill border border-line px-1.5 py-0.5 text-[0.5625rem] font-bold text-ink-500"
 								>{t.locale.toUpperCase()}</span
 							>
 							<span class="hidden flex-1 truncate text-xs text-ink-400 sm:block">
@@ -177,13 +145,13 @@
 							</span>
 							{#if t.synonymsAvoid.length > 0}
 								<span
-									class="shrink-0 rounded-pill bg-danger-50 px-1.5 py-0.5 text-[9px] font-bold text-danger-700"
-									>{t.synonymsAvoid.length} banned</span
+									class="shrink-0 rounded-pill bg-danger-50 px-1.5 py-0.5 text-[0.5625rem] font-bold text-danger-700"
+									>{t.synonymsAvoid.length} to avoid</span
 								>
 							{/if}
 							{#if t.term.trim()}
 								<span
-									class="shrink-0 rounded-pill px-1.5 py-0.5 text-[9px] font-bold {usage > 0
+									class="shrink-0 rounded-pill px-1.5 py-0.5 text-[0.5625rem] font-bold {usage > 0
 										? 'bg-info-50 text-info-600'
 										: 'bg-surface-sunken text-ink-400'}"
 									>{usage > 0 ? `${usage} use${usage > 1 ? 's' : ''}` : 'unused'}</span
@@ -195,7 +163,7 @@
 								type="button"
 								onclick={() => store.toggleApproved(t.id)}
 								title={t.status === 'approved' ? 'Approved - click to set back to draft' : 'Draft - click to approve'}
-								class="inline-flex h-6 shrink-0 items-center gap-1 rounded-field px-2 text-[10px] font-bold {t.status ===
+								class="inline-flex h-6 shrink-0 items-center gap-1 rounded-field px-2 text-[0.625rem] font-bold {t.status ===
 								'approved'
 									? 'bg-success-50 text-success-700'
 									: 'bg-surface-sunken text-ink-500 hover:text-ink-700'}"
@@ -238,7 +206,7 @@
 							</div>
 							<div class="grid gap-2 md:grid-cols-2">
 								<label class="block">
-									<span class="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-success-700"
+									<span class="mb-1 block text-[0.625rem] font-semibold uppercase tracking-[0.1em] text-success-700"
 										>Allowed synonyms</span
 									>
 									<input
@@ -249,8 +217,8 @@
 									/>
 								</label>
 								<label class="block">
-									<span class="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-danger-700"
-										>Banned synonyms</span
+									<span class="mb-1 block text-[0.625rem] font-semibold uppercase tracking-[0.1em] text-danger-700"
+										>Words to avoid</span
 									>
 									<input
 										value={t.synonymsAvoid.join(', ')}
@@ -261,7 +229,7 @@
 								</label>
 							</div>
 							<label class="block">
-								<span class="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-400"
+								<span class="mb-1 block text-[0.625rem] font-semibold uppercase tracking-[0.1em] text-ink-400"
 									>Example sentence</span
 								>
 								<input
@@ -273,7 +241,7 @@
 							</label>
 							{#if t.example.trim() && t.term.trim()}
 								<div class="rounded-field border border-brand-200 bg-brand-50/40 px-2 py-1.5 text-xs text-ink-700">
-									<span class="mr-1.5 text-[9px] font-bold uppercase tracking-widest text-brand-600">Preview</span>
+									<span class="mr-1.5 text-[0.5625rem] font-bold uppercase tracking-widest text-brand-600">Preview</span>
 									<GlossaryText text={t.example} terms={store.draft.terms} />
 								</div>
 							{/if}

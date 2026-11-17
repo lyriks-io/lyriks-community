@@ -1,203 +1,757 @@
 @import 'tailwindcss';
 
 /*
- * Self-hosted fonts — vendored woff2 in static/fonts, served by the app itself.
- * No runtime CDN / external font package, so the app works fully air-gapped.
- * Variable fonts: one file per subset covers every weight (100–900).
+ * Self-hosted fonts: vendored woff2 in static/fonts, served by the app itself.
+ * No runtime CDN or external font package, so the app works fully air-gapped.
+ * IBM Plex Sans and IBM Plex Mono are the only faces of the design system:
+ * static weights 400 to 700, Latin subsets (SIL OFL 1.1, static/fonts/IBM-PLEX-OFL.txt).
  */
 @font-face {
-	font-family: 'Inter';
+	font-family: 'IBM Plex Sans';
 	font-style: normal;
-	font-weight: 100 900;
+	font-weight: 400;
 	font-display: swap;
-	src: url('/fonts/inter-latin.woff2') format('woff2');
+	src: url('/fonts/ibm-plex-sans-latin-400-normal.woff2') format('woff2');
 	unicode-range:
 		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
 		U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
-	font-family: 'Inter';
+	font-family: 'IBM Plex Sans';
 	font-style: normal;
-	font-weight: 100 900;
+	font-weight: 400;
 	font-display: swap;
-	src: url('/fonts/inter-latin-ext.woff2') format('woff2');
+	src: url('/fonts/ibm-plex-sans-latin-ext-400-normal.woff2') format('woff2');
 	unicode-range:
 		U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
 		U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 @font-face {
-	font-family: 'Space Grotesk';
+	font-family: 'IBM Plex Sans';
 	font-style: normal;
-	font-weight: 100 900;
+	font-weight: 500;
 	font-display: swap;
-	src: url('/fonts/space-grotesk-latin.woff2') format('woff2');
+	src: url('/fonts/ibm-plex-sans-latin-500-normal.woff2') format('woff2');
 	unicode-range:
 		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
 		U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
-	font-family: 'Space Grotesk';
+	font-family: 'IBM Plex Sans';
 	font-style: normal;
-	font-weight: 100 900;
+	font-weight: 500;
 	font-display: swap;
-	src: url('/fonts/space-grotesk-latin-ext.woff2') format('woff2');
+	src: url('/fonts/ibm-plex-sans-latin-ext-500-normal.woff2') format('woff2');
+	unicode-range:
+		U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+		U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+	font-family: 'IBM Plex Sans';
+	font-style: normal;
+	font-weight: 600;
+	font-display: swap;
+	src: url('/fonts/ibm-plex-sans-latin-600-normal.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+		U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+	font-family: 'IBM Plex Sans';
+	font-style: normal;
+	font-weight: 600;
+	font-display: swap;
+	src: url('/fonts/ibm-plex-sans-latin-ext-600-normal.woff2') format('woff2');
+	unicode-range:
+		U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+		U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+	font-family: 'IBM Plex Sans';
+	font-style: normal;
+	font-weight: 700;
+	font-display: swap;
+	src: url('/fonts/ibm-plex-sans-latin-700-normal.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+		U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+	font-family: 'IBM Plex Sans';
+	font-style: normal;
+	font-weight: 700;
+	font-display: swap;
+	src: url('/fonts/ibm-plex-sans-latin-ext-700-normal.woff2') format('woff2');
+	unicode-range:
+		U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+		U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+	font-family: 'IBM Plex Mono';
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url('/fonts/ibm-plex-mono-latin-400-normal.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+		U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+	font-family: 'IBM Plex Mono';
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url('/fonts/ibm-plex-mono-latin-ext-400-normal.woff2') format('woff2');
+	unicode-range:
+		U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+		U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+	font-family: 'IBM Plex Mono';
+	font-style: normal;
+	font-weight: 500;
+	font-display: swap;
+	src: url('/fonts/ibm-plex-mono-latin-500-normal.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+		U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+	font-family: 'IBM Plex Mono';
+	font-style: normal;
+	font-weight: 500;
+	font-display: swap;
+	src: url('/fonts/ibm-plex-mono-latin-ext-500-normal.woff2') format('woff2');
+	unicode-range:
+		U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+		U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+	font-family: 'IBM Plex Mono';
+	font-style: normal;
+	font-weight: 600;
+	font-display: swap;
+	src: url('/fonts/ibm-plex-mono-latin-600-normal.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+		U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+	font-family: 'IBM Plex Mono';
+	font-style: normal;
+	font-weight: 600;
+	font-display: swap;
+	src: url('/fonts/ibm-plex-mono-latin-ext-600-normal.woff2') format('woff2');
+	unicode-range:
+		U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+		U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+	font-family: 'IBM Plex Mono';
+	font-style: normal;
+	font-weight: 700;
+	font-display: swap;
+	src: url('/fonts/ibm-plex-mono-latin-700-normal.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+		U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+	font-family: 'IBM Plex Mono';
+	font-style: normal;
+	font-weight: 700;
+	font-display: swap;
+	src: url('/fonts/ibm-plex-mono-latin-ext-700-normal.woff2') format('woff2');
 	unicode-range:
 		U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
 		U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
 /*
- * ──────────────────────────────────────────────────────────────────────────
- *  LYRIKS DESIGN SYSTEM — single source of truth
- *  Every token below generates Tailwind utilities (bg-*, text-*, border-*,
- *  rounded-*, shadow-*, font-*). UI primitives in src/lib/ui/design-system
- *  compose ONLY these tokens — never raw hex values. See DESIGN_SYSTEM.md.
- * ──────────────────────────────────────────────────────────────────────────
+ * LYRIKS DESIGN SYSTEM: single source of truth (see DESIGN_SYSTEM.md).
+ * Paper and ink: a cream page, sand blocks, black ink, square corners, hard
+ * shadows that say what can be pressed, and three brand hues (blue, violet,
+ * orange). Every token below generates Tailwind utilities (bg-*, text-*,
+ * border-*, rounded-*, shadow-*, font-*). Components compose ONLY these
+ * tokens, never raw hex values.
+ *
+ * The first block is the palette, the design's tokens.css as it stands. The
+ * blocks after it are the roles the components were written against (brand,
+ * surfaces, ink, status, the Evolution and Specification 360° pages), each
+ * resolved to the palette; a hex value in a role block is a step between two
+ * palette colours that the palette itself does not name.
  */
 @theme {
-	/* ---- Typography -------------------------------------------------------- */
-	--font-sans:
-		'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
-		sans-serif;
-	/* Brand / display face (logo wordmark, headings) — matches the Lyriks logo. */
-	--font-display: 'Space Grotesk', 'Inter', ui-sans-serif, system-ui, sans-serif;
+	/* ---- Typography: IBM Plex, Sans for reading, Mono for labels, codes and numbers ---- */
+	--font-sans: 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
+	--font-display: 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
+	--font-mono: 'IBM Plex Mono', Menlo, ui-monospace, monospace;
+	--font-evo: 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
+	--font-evo-mono: 'IBM Plex Mono', Menlo, ui-monospace, monospace;
 
-	/* ---- Brand (violet → pink) — the v3 mockup palette (#7C3AED → #EC4899) ---- */
-	--color-brand-50: #f5f3ff;
-	--color-brand-100: #ede9fe;
-	--color-brand-200: #ddd6fe;
-	--color-brand-300: #c4b5fd;
-	--color-brand-400: #a78bfa; /* mockup violet-400 */
-	--color-brand-500: #7c3aed; /* the violet — gradient start */
-	--color-brand-600: #6d28d9; /* mockup violet-600 — hover */
-	--color-brand-700: #5b21b6; /* pressed */
+	/* ---- The palette ---- */
+	--color-paper: #fbf9f5; /* the page */
+	--color-toner: #f1ede2; /* a block on the page */
+	--color-toner-1: #f6f3ec; /* a field, a tile inside a block */
+	--color-toner-2: #d6cdb4; /* the empty part of a gauge, a chip on a block */
+	--color-line: #e1dccf; /* rules between rows, borders */
+	--color-ink: #111114; /* text, the app bar, what is on */
+	--color-ink-2: #3a3a40; /* body text */
+	--color-ink-3: #55555c; /* secondary text, field borders */
+	--color-ink-4: #8a8a92; /* muted text on ink */
+	--color-night: #2a2a31; /* rules and borders on ink */
+	--color-blue: #0066ff; /* Product; marks, bars, focus */
+	--color-violet: #bb46f5; /* Coherence */
+	--color-orange: #ffa101; /* Business; the launching action, counts */
+	--color-magenta: #fa5fb2; /* a regression */
+	--color-green: #1fa98a; /* validated, in order */
+	--color-red: #e63946; /* a major point, an error */
+	--color-blue-ink: #0047b3; /* the colour as text or as a filled action */
+	--color-violet-ink: #8a1fc4;
+	--color-orange-ink: #8a5500;
+	--color-green-ink: #0f6650;
+	--color-red-ink: #b3202c;
+	--color-magenta-ink: #b3237a;
+	--color-blue-tint: #d6e3f7; /* the colour as a background */
+	--color-violet-tint: #ebddf3;
+	--color-orange-tint: #f5e3be;
+	--color-green-tint: #d3e8dc;
+	--color-red-tint: #f3d5cf;
+	--color-red-on-ink: #ff7a7f; /* the colour as text on ink */
+	--color-blue-on-ink: #6ea4ff;
+	/* No pure white or black: paper is the lightest colour (the page, and the text on ink), ink the darkest. */
+	--color-white: #fbf9f5;
+	--color-black: #111114;
 
-	/* Pink end of the brand gradient (mockup pink-500 #EC4899) */
-	--color-magenta-400: #f472b6;
-	--color-magenta-500: #ec4899;
+	/* ---- Brand: the action colour is the design's blue (filled actions, links, focus) ---- */
+	--color-brand-50: #ebf1fb;
+	--color-brand-100: #d6e3f7; /* blue-tint */
+	--color-brand-200: #b5ccf2;
+	--color-brand-300: #6ea4ff; /* blue-on-ink */
+	--color-brand-400: #0066ff; /* blue */
+	--color-brand-500: #0047b3; /* blue-ink: the filled action, a link */
+	--color-brand-600: #003d9e; /* hover */
+	--color-brand-700: #00327f; /* pressed */
+	--color-magenta-400: #fa5fb2;
+	--color-magenta-500: #b3237a;
 
-	/* ---- Accent (selection / form-factor blue, mockup blue-500 #3B82F6) ---- */
-	--color-accent-50: #eff6ff;
-	--color-accent-100: #dbeafe;
-	--color-accent-200: #bfdbfe;
-	--color-accent-400: #60a5fa;
-	--color-accent-500: #3b82f6;
-	--color-accent-600: #2563eb;
+	/* ---- Accent: a selection, in the same blue ---- */
+	--color-accent-50: #ebf1fb;
+	--color-accent-100: #d6e3f7;
+	--color-accent-200: #b5ccf2;
+	--color-accent-400: #0066ff;
+	--color-accent-500: #0066ff;
+	--color-accent-600: #0047b3;
+	--color-accent-700: #003d9e;
 
-	/* ---- Surfaces (mockup lightmode content + dark rail) ------------------- */
-	--color-canvas: #f8fafc; /* app background (mockup .lightmode) */
-	--color-surface: #ffffff; /* cards           */
-	--color-surface-sunken: #f1f5f9; /* inset fields (mockup bg-ink-800) */
-	--color-sidebar: #0b0b14; /* dark rail (mockup ink-900)  */
-	--color-sidebar-soft: #16161f; /* hovered item (mockup ink-800) */
-	--color-sidebar-line: #1f1f2c; /* dividers (mockup ink-700)  */
+	/* ---- Surfaces: paper page, sand blocks, ink chrome ---- */
+	--color-canvas: #fbf9f5; /* paper: the app background */
+	--color-surface: #f1ede2; /* toner: cards, lists, panels */
+	--color-surface-card: #f1ede2;
+	--color-surface-sunken: #f6f3ec; /* toner-1: a field or a tile inside a block */
+	--color-sidebar: #111114; /* ink */
+	--color-sidebar-soft: #2a2a31; /* night: an item under the pointer */
+	--color-sidebar-line: #2a2a31;
 
-	/* ---- Ink (text) — slate ramp (mockup lightmode text) ------------------- */
-	--color-ink-900: #0f172a; /* headings        */
-	--color-ink-800: #1e293b; /* strong body     */
-	--color-ink-700: #334155; /* body            */
-	--color-ink-600: #475569; /* secondary       */
-	--color-ink-500: #64748b; /* muted           */
-	--color-ink-400: #6b7280; /* labels / hints — darkened to meet WCAG AA 4.5:1 as text on white/canvas */
-	--color-ink-300: #cbd5e1; /* faint / icons   */
-	--color-ink-200: #e2e8f0; /* disabled / rule */
-	--color-ink-100: #f1f5f9; /* subtle fills    */
-	--color-ink-on-dark: #f1f5f9; /* text on sidebar */
-	--color-ink-on-dark-muted: #94a3b8;
+	/* ---- Ink (text): the design's four inks on one ramp ---- */
+	--color-ink-900: #111114; /* ink: headings */
+	--color-ink-800: #26262b;
+	--color-ink-700: #3a3a40; /* ink-2: body */
+	--color-ink-600: #47474e;
+	--color-ink-500: #55555c; /* ink-3: muted */
+	--color-ink-400: #5f5f66; /* labels and hints: WCAG AA 4.5:1 on paper and on toner */
+	--color-ink-300: #a9a59d; /* faint icons */
+	--color-ink-200: #d6cdb4; /* toner-2: disabled, a rule */
+	--color-ink-100: #f6f3ec; /* toner-1: subtle fills */
+	--color-ink-on-dark: #fbf9f5; /* paper on ink */
+	--color-ink-on-dark-muted: #8a8a92; /* ink-4 */
 
-	/* ---- Lines (slate, mockup lightmode borders) --------------------------- */
-	--color-line: #e2e8f0;
-	--color-line-strong: #cbd5e1;
+	/* ---- Lines ---- */
+	--color-line-strong: #8a8a92; /* ink-4: an emphasized or hovered border */
 
-	/* ---- Semantic (status) ------------------------------------------------ */
-	/* Full ramps so utilities like `text-success-600` / `bg-warning-400` and
-	   inline `var(--color-danger-400)` resolve — components reference 50–700
-	   across all four, not just the 50/500 anchors. */
-	/* success — emerald / mint (mockup mint-500 #10B981) */
-	--color-success-50: #ecfdf5;
-	--color-success-100: #d1fae5;
-	--color-success-200: #a7f3d0;
-	--color-success-300: #6ee7b7;
-	--color-success-400: #34d399;
-	--color-success-500: #10b981;
-	--color-success-600: #059669;
-	--color-success-700: #047857;
+	/* ---- Status: green / orange / red / blue, each a full ramp (50-700) ---- */
+	--color-success-50: #e9f3ed;
+	--color-success-100: #d3e8dc; /* green-tint */
+	--color-success-200: #a9d4be;
+	--color-success-300: #6cc0a6;
+	--color-success-400: #3db89c;
+	--color-success-500: #1fa98a; /* green */
+	--color-success-600: #158a70;
+	--color-success-700: #0f6650; /* green-ink */
 
-	/* warning — amber (mockup amber-500 #F59E0B) */
-	--color-warning-50: #fffbeb;
-	--color-warning-100: #fef3c7;
-	--color-warning-200: #fde68a;
-	--color-warning-300: #fcd34d;
-	--color-warning-400: #fbbf24;
-	--color-warning-500: #f59e0b;
-	--color-warning-600: #d97706;
-	--color-warning-700: #b45309;
+	--color-warning-50: #faf0dc;
+	--color-warning-100: #f5e3be; /* orange-tint */
+	--color-warning-200: #f9cf85;
+	--color-warning-300: #ffbf4d;
+	--color-warning-400: #ffad26;
+	--color-warning-500: #ffa101; /* orange */
+	--color-warning-600: #c77a00;
+	--color-warning-700: #8a5500; /* orange-ink */
 
-	/* danger — red (Tailwind red, harmonizes with the mockup's family) */
-	--color-danger-50: #fef2f2;
-	--color-danger-100: #fee2e2;
-	--color-danger-200: #fecaca;
-	--color-danger-300: #fca5a5;
-	--color-danger-400: #f87171;
-	--color-danger-500: #ef4444;
-	--color-danger-600: #dc2626;
-	--color-danger-700: #b91c1c;
+	--color-danger-50: #f9e8e4;
+	--color-danger-100: #f3d5cf; /* red-tint */
+	--color-danger-200: #efb4ac;
+	--color-danger-300: #ee8a8c;
+	--color-danger-400: #ea5a64;
+	--color-danger-500: #e63946; /* red */
+	--color-danger-600: #b3202c; /* red-ink */
+	--color-danger-700: #8e1822;
 
-	/* ---- Info (status blue, mockup blue family) ---------------------------- */
-	--color-info-50: #eff6ff;
-	--color-info-100: #dbeafe;
-	--color-info-200: #bfdbfe;
-	--color-info-300: #93c5fd;
-	--color-info-400: #60a5fa;
-	--color-info-500: #3b82f6;
-	--color-info-600: #2563eb;
+	--color-info-50: #ebf1fb;
+	--color-info-100: #d6e3f7; /* blue-tint */
+	--color-info-200: #b5ccf2;
+	--color-info-300: #8db2ea;
+	--color-info-400: #6ea4ff;
+	--color-info-500: #0066ff; /* blue */
+	--color-info-600: #0047b3; /* blue-ink */
+	--color-info-700: #003d9e;
 
-	/* ---- Radii ------------------------------------------------------------ */
-	--radius-field: 0.625rem; /* inputs, tiles   */
-	--radius-card: 1rem; /* section cards   */
-	--radius-pill: 999px;
+	/* ---- Shape: every corner is square; only a circle (rounded-full) stays round ---- */
+	--radius: 0;
+	--radius-xs: 0;
+	--radius-sm: 0;
+	--radius-md: 0;
+	--radius-lg: 0;
+	--radius-xl: 0;
+	--radius-2xl: 0;
+	--radius-3xl: 0;
+	--radius-4xl: 0;
+	--radius-field: 0;
+	--radius-card: 0;
+	--radius-pill: 0;
+	--radius-evo-card: 0;
+	--radius-evo-btn: 0;
 
-	/* ---- Elevation -------------------------------------------------------- */
-	--shadow-card: 0 1px 2px rgb(16 16 26 / 0.04), 0 4px 16px rgb(16 16 26 / 0.04);
-	--shadow-pop: 0 8px 28px rgb(16 16 26 / 0.12);
-	/* Visible on light AND colored surfaces: white gap + brand ring (>=3:1, WCAG 2.4.11). */
-	--shadow-focus: 0 0 0 2px #ffffff, 0 0 0 4px var(--color-brand-500);
-	/* Glowing primary button / active nav (mockup: shadow-violet-500/30). */
-	--shadow-brand: 0 10px 30px -8px rgb(124 58 237 / 0.45);
+	/* ---- Elevation: no soft shadow; a hard ink shadow says that something can be pressed or floats ---- */
+	--shadow-press: 3px 3px 0 #111114; /* a button at rest */
+	--shadow-lift: 4px 4px 0 #111114; /* a button under the pointer, a menu */
+	--shadow-press-paper: 3px 3px 0 #fbf9f5; /* a button on ink */
+	--shadow-offset-blue: 8px 8px 0 #0066ff; /* the signature offset box */
+	--shadow-offset-orange: 6px 6px 0 #ffa101;
+	--shadow-2xs: 0 0 #0000;
+	--shadow-xs: 0 0 #0000;
+	--shadow-sm: 0 0 #0000;
+	--shadow-md: 3px 3px 0 #111114;
+	--shadow-lg: 4px 4px 0 #111114;
+	--shadow-xl: 6px 6px 0 #111114;
+	--shadow-2xl: 6px 6px 0 #111114;
+	--shadow-card: 0 0 #0000; /* a block is flat */
+	--shadow-pop: 4px 4px 0 #111114; /* a menu, a dialog, a popover */
+	--shadow-focus: 0 0 0 2px #fbf9f5, 0 0 0 4px #0047b3;
+	--shadow-brand: 3px 3px 0 #111114; /* the filled action */
+
+	/* ---- The Evolution and Specification 360° pages: their roles, on the same palette ---- */
+	/* The voice of the LLM, reserved to the editorial note (EditorialNote.svelte): the design's violet. */
+	--color-evo-plum: #8a1fc4; /* violet-ink */
+	--color-evo-plum-wash: #f3ecf4;
+	--color-evo-plum-line: #d9bfe9;
+	--color-evo-plum-dash: #bb46f5; /* violet */
+	--color-evo-plum-muted: #5e4a68;
+	--color-evo-plum-rule: #c6a6da;
+	--color-evo-plum-ink: #111114;
+	--color-evo-page: #f6f3ec; /* toner-1: the page background, under the boxed sections */
+	--color-evo-ink: #111114; /* text, current step */
+	--color-evo-ink-2: #3a3a40; /* body text on tinted bands */
+	--color-evo-ink-3: #3a3a40; /* greyed button text */
+	--color-evo-muted: #55555c; /* kicker, secondary text, resting icon */
+	--color-evo-faint: #6e6e76; /* pending stamp text */
+	--color-evo-faint-2: #8a8a92; /* pending stamp dashes, empty cell, a row's chevron */
+	--color-evo-line: #e1dccf; /* card border, number pill */
+	--color-evo-line-soft: #d6cdb4; /* rule inside a card, a neutral status chip */
+	--color-evo-control: #55555c; /* the border of a field and of a secondary button */
+	--color-evo-sunken: #f6f3ec; /* a tile inside a card */
+	--color-evo-chip: #d6cdb4; /* neutral chip */
+	--color-evo-grey: #d6cdb4; /* greyed call to action (not the next best action) */
+	--color-evo-violet: #0047b3; /* the filled action: blue-ink */
+	--color-evo-violet-ink: #0047b3; /* action text, a link */
+	--color-evo-violet-soft: #d6e3f7; /* blue-tint: an action chip, the editing pencil */
+	--color-evo-violet-wash: #e6ebf1; /* a band in the action colour */
+	--color-evo-violet-line: #9dbbe9;
+	--color-evo-violet-dash: #0066ff; /* a value the AI proposes */
+	--color-evo-red: #b3202c; /* red-ink */
+	--color-evo-red-soft: #f3d5cf; /* red-tint */
+	--color-evo-red-line: #e3a49c;
+	--color-evo-orange: #8a5500; /* orange-ink */
+	--color-evo-orange-soft: #f5e3be; /* orange-tint */
+	--color-evo-orange-line: #e8c27a;
+	--color-evo-green: #0f6650; /* green-ink */
+	--color-evo-green-stroke: #1fa98a; /* green */
+	--color-evo-green-soft: #d3e8dc; /* green-tint */
+	--color-evo-green-line: #9fcdb5;
+	--color-evo-blue: #0047b3;
+	--color-evo-minor-cell: #f5e3be; /* a minor impact counted in a table */
+	--color-evo-minor-ink: #8a5500;
+	--color-evo-amber: #ffa101; /* a minor impact in a distribution bar */
+	--color-evo-green-deep: #0f6650; /* the green light band */
+	--color-evo-green-pale: #d3e8dc; /* text on the green light band */
+	--color-evo-blue-soft: #d6e3f7;
+	--color-evo-note: #f8ebcf; /* a constraint, as a note beside the use cases */
+	--color-evo-note-line: #e8c27a;
+	--color-evo-canvas: #f6f3ec; /* the dotted canvas a diagram sits on: toner-1 */
+	--color-evo-canvas-dot: #d6cdb4; /* toner-2 */
+	--color-evo-violet-edge: #b5ccf2; /* the edge of what the evolution adds, in a diagram */
+	--color-evo-erd-changed: #f5e3be; /* the data diagram's own colours (data-drafts.ts) */
+	--color-evo-erd-changed-edge: #ffa101;
+	--color-evo-erd-removed: #f3d5cf;
+	--color-evo-erd-removed-edge: #e63946;
+	--color-evo-code: #fbf9f5; /* text of a code block, the only dark block */
+	--color-evo-grad-from: #111114; /* what wore the old gradient (an active tab, the AI's marks) wears ink */
+	--color-evo-grad-to: #111114;
+	--color-evo-tab-line: #e1dccf; /* segmented control border */
+	--color-evo-tab-text: #55555c; /* segmented control, resting segment */
+	--color-evo-journey: #0047b3; /* a journey */
+	--color-evo-journey-soft: #e6ebf1;
+	--color-evo-journey-line: #b5ccf2;
+	--color-evo-teal: #0f6650;
+	--color-evo-track: #d6cdb4; /* toner-2: the empty part of a bar */
+	--color-evo-hover: #f6f3ec; /* a row under the pointer */
+	--color-evo-major: #e63946; /* a major point, a red square */
+	--color-evo-minor: #ffa101; /* a minor point, an orange square */
+	--color-evo-drift: #ffa101; /* the count of code drift in the app bar */
+	--shadow-evo-tab: 0 0 #0000; /* an active segment is ink, flat */
+
+	/* ---- Motion of the Evolution pages: what appears rises in, what waits spins or pulses ---- */
+	--animate-lk-in: lk-in 0.45s ease both;
+	--animate-lk-in-fast: lk-in 0.2s ease both;
+	--animate-lk-up: lk-up 0.3s ease both;
+	--animate-lk-fade: lk-fade 0.2s ease both;
+	--animate-lk-spin: lk-spin 0.8s linear infinite;
+	--animate-lk-pulse: lk-pulse 1.2s ease-in-out infinite;
+	--animate-lk-pop: lk-pop 0.35s ease both;
+	--animate-lk-sweep: lk-sweep 1.6s ease-in-out infinite;
+	/* The Specification 360° validated: the card bursts in, confetti falls, the finishing button nudges. */
+	--animate-lk-burst: lk-burst 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+	--animate-lk-nudge: lk-nudge 0.9s ease 2;
+	/* A tab of the app bar arriving (the project opened it: a fade and a 6px rise) and leaving (a fade, then it folds). */
+	--animate-lk-navin: lk-navin 0.45s ease-out 0.2s both;
+	--animate-lk-navout: lk-navout 0.6s ease forwards;
+	/* Something the AI is writing right now: its mark breathes. */
+	--animate-lk-ai: lk-ai 1s ease-in-out infinite;
+	@keyframes lk-navin {
+		0% {
+			opacity: 0;
+			transform: translateY(6px);
+		}
+		100% {
+			opacity: 1;
+			transform: none;
+		}
+	}
+	@keyframes lk-navout {
+		0% {
+			opacity: 1;
+			max-width: 320px;
+		}
+		55% {
+			opacity: 0;
+			max-width: 320px;
+		}
+		100% {
+			opacity: 0;
+			max-width: 0;
+			padding-left: 0;
+			padding-right: 0;
+			margin-left: 0;
+			margin-right: 0;
+		}
+	}
+	@keyframes lk-ai {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.55;
+		}
+	}
+	@keyframes lk-in {
+		from {
+			opacity: 0;
+			transform: translateY(10px);
+		}
+		to {
+			opacity: 1;
+			transform: none;
+		}
+	}
+	@keyframes lk-up {
+		from {
+			opacity: 0;
+			transform: translateY(16px);
+		}
+		to {
+			opacity: 1;
+			transform: none;
+		}
+	}
+	@keyframes lk-fade {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+	@keyframes lk-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+	@keyframes lk-pulse {
+		0%,
+		100% {
+			opacity: 1;
+			transform: scale(1);
+		}
+		50% {
+			opacity: 0.35;
+			transform: scale(0.75);
+		}
+	}
+	@keyframes lk-pop {
+		0% {
+			transform: scale(0.4);
+		}
+		70% {
+			transform: scale(1.15);
+		}
+		100% {
+			transform: scale(1);
+		}
+	}
+	/* A light passing along a bar while something is being written, whatever its progress. */
+	@keyframes lk-sweep {
+		from {
+			transform: translateX(-100%);
+		}
+		to {
+			transform: translateX(300%);
+		}
+	}
+	@keyframes lk-burst {
+		0% {
+			transform: scale(0.6);
+			opacity: 0;
+		}
+		60% {
+			transform: scale(1.06);
+			opacity: 1;
+		}
+		100% {
+			transform: scale(1);
+			opacity: 1;
+		}
+	}
+	@keyframes lk-fall {
+		0% {
+			transform: translateY(-12vh) rotate(0deg);
+			opacity: 1;
+		}
+		100% {
+			transform: translateY(105vh) rotate(720deg);
+			opacity: 0.9;
+		}
+	}
+	@keyframes lk-nudge {
+		0% {
+			box-shadow: 0 0 0 0 rgb(0 102 255 / 0.55);
+			transform: scale(1);
+		}
+		40% {
+			box-shadow: 0 0 0 8px rgb(0 102 255 / 0);
+			transform: scale(1.08);
+		}
+		100% {
+			box-shadow: 0 0 0 0 rgb(0 102 255 / 0);
+			transform: scale(1);
+		}
+	}
 }
 
-/* The signature Lyriks gradient — the v3 mockup: linear-gradient(135deg, #7C3AED → #EC4899).
-   Top bar, active nav, primary buttons. */
+/* The design draws no gradient. What wore one keeps its utility and wears a flat fill, still as a background image so
+   it covers a background colour on the same element as the gradient did. */
 @utility bg-brand-gradient {
-	background-image: linear-gradient(
-		135deg,
-		var(--color-brand-500) 0%,
-		var(--color-magenta-500) 100%
-	);
+	background-image: linear-gradient(var(--color-brand-500), var(--color-brand-500));
 }
-
 @utility gradient-violet {
-	background-image: linear-gradient(
-		135deg,
-		var(--color-brand-500) 0%,
-		var(--color-magenta-500) 100%
-	);
+	background-image: linear-gradient(var(--color-brand-500), var(--color-brand-500));
 }
-
-/* Warm accent gradient (mockup .gradient-warm): amber → pink. */
 @utility gradient-warm {
-	background-image: linear-gradient(
-		135deg,
-		var(--color-warning-500) 0%,
-		var(--color-magenta-500) 100%
-	);
+	background-image: linear-gradient(var(--color-orange), var(--color-orange));
+}
+/* An active segmented tab, the AI's marks: ink. */
+@utility bg-evo-gradient {
+	background-image: linear-gradient(var(--color-evo-grad-from), var(--color-evo-grad-to));
 }
 
-/* Dark glass panel (mockup .glass): overlays / menus on dark chrome. */
+/* Dark panel over the ink chrome: overlays, menus. */
 @utility glass {
-	background-color: rgb(22 22 31 / 0.7);
+	background-color: rgb(17 17 20 / 0.92);
 	backdrop-filter: blur(12px);
-	border: 1px solid rgb(255 255 255 / 0.06);
+	border: 1px solid var(--color-night);
+}
+
+/* The design's pressable control (.ly-btn): a hard ink shadow at rest says it can be pressed; under the pointer it
+   lifts a pixel toward the reader, and pressed it sinks into the place its shadow held. */
+@utility pressable {
+	box-shadow: var(--shadow-press);
+	transition:
+		transform 0.08s ease,
+		box-shadow 0.08s ease,
+		background-color 0.2s ease;
+	/* The lift exists only where a pointer hovers: a tapped control never stays lifted (criterion 42e3defe). */
+	@media (hover: hover) {
+		&:hover:not(:disabled, [aria-disabled='true']) {
+			box-shadow: var(--shadow-lift);
+			transform: translate(-1px, -1px);
+		}
+	}
+	&:active:not(:disabled, [aria-disabled='true']) {
+		box-shadow: none;
+		transform: translate(3px, 3px);
+	}
+	&:disabled,
+	&[aria-disabled='true'] {
+		box-shadow: none;
+	}
+}
+
+/* The pressable control on ink (.ly-dark .ly-btn): a paper border and a hard paper shadow, the same lift and sink. */
+@utility pressable-paper {
+	border-color: var(--color-paper);
+	box-shadow: var(--shadow-press-paper);
+	transition:
+		transform 0.08s ease,
+		box-shadow 0.08s ease;
+	@media (hover: hover) {
+		&:hover:not(:disabled, [aria-disabled='true']) {
+			box-shadow: 4px 4px 0 var(--color-paper);
+			transform: translate(-1px, -1px);
+		}
+	}
+	&:active:not(:disabled, [aria-disabled='true']) {
+		box-shadow: none;
+		transform: translate(3px, 3px);
+	}
+}
+
+/* The design's quiet action (.ly-quiet): an uppercase word on a thick ink underline, the light action beside a filled
+   one ("Reject"). The underline thickens under the pointer and thins as the word is pressed down. Look only: the
+   element keeps its own height and padding. */
+@utility quiet {
+	background: none;
+	border: 0;
+	border-bottom: 3px solid currentColor;
+	font-size: 0.75rem;
+	font-weight: 700;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+	cursor: pointer;
+	transition:
+		border-width 0.08s ease,
+		transform 0.08s ease;
+	@media (hover: hover) {
+		&:hover:not(:disabled) {
+			border-bottom-width: 5px;
+		}
+	}
+	&:active:not(:disabled) {
+		border-bottom-width: 1.5px;
+		transform: translateY(2px);
+	}
+	&:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+}
+
+/* A filled action drawn by hand (bg-evo-violet, bg-brand-500) wears the press shadow as the design's buttons do; a
+   component layer rule, so a shadow utility on the element still wins. */
+@layer components {
+	:is(button, a[href], [role='button']):is(.bg-evo-violet, .bg-brand-500):not(:disabled, [aria-disabled='true']) {
+		box-shadow: var(--shadow-press);
+	}
+}
+
+/* The feel of the Evolution design: a button darkens a touch under the pointer
+   and sinks a pixel when pressed. Scoped to the Evolution pages. A row's own
+   target (data-row-target, BarRow) stretches its ::after over the row: a filter
+   or a transform would make the button the box of that ::after and shrink the
+   target to the name under the pointer, which then leaves it, so the cursor
+   flickered and a press could miss (spec: criterion a845b18f). */
+.evo-motion :where(button, a) {
+	transition:
+		filter 0.15s ease,
+		transform 0.15s ease,
+		box-shadow 0.15s ease,
+		background-color 0.2s ease;
+}
+@media (hover: hover) {
+	.evo-motion :where(button):not(:disabled, [data-row-target], .pressable, [data-own-press]):hover {
+		filter: brightness(0.95);
+	}
+}
+.evo-motion :where(button):not(:disabled, [data-row-target], .pressable, [data-own-press]):active {
+	transform: translateY(1px);
+}
+
+/* The room under a page's last block (PageFrame.svelte): 96px for what floats at the window's bottom, less on a
+   phone, 24px once the page's actions sit in the app's foot (below). */
+.lk-page {
+	--page-end: 96px;
+	padding-bottom: var(--page-end);
+}
+
+/* The Specification 360° column keeps 80px under its last block, as the v2 design does. */
+.lk-page-narrow {
+	--page-end: 80px;
+}
+
+/* The full-width page of the sidebar design keeps 48px under its last block. */
+.lk-page-wide {
+	--page-end: 48px;
+}
+
+/* The page column (PageFrame.svelte) on a phone, at the design's 760px breakpoint.
+   Unlayered, so it wins over the column's padding and gap utilities. */
+@media (max-width: 760px) {
+	.lk-page {
+		--page-end: 72px;
+		padding-top: 20px;
+		padding-inline: 16px;
+		gap: 24px;
+	}
+	.lk-page h1 {
+		font-size: 1.5rem;
+	}
+	.lk-page.lk-page-narrow {
+		gap: 0;
+		padding-top: 24px;
+	}
+	.lk-page.lk-page-wide {
+		gap: 0;
+		padding-top: 16px;
+	}
+	/* Tab rows and step bars stay on one line and scroll sideways, as the design does on a phone. */
+	nav[aria-label='Evolution steps'],
+	nav[aria-label='Knowledge base'],
+	nav[aria-label='Retrospec steps'],
+	nav[aria-label='Specification sections'],
+	.lk-page [role='tablist'] {
+		flex-wrap: nowrap !important;
+		overflow-x: auto;
+		max-width: 100%;
+		box-sizing: border-box;
+		scrollbar-width: none;
+	}
+	nav[aria-label='Evolution steps'] > *,
+	nav[aria-label='Knowledge base'] > *,
+	nav[aria-label='Retrospec steps'] > *,
+	nav[aria-label='Specification sections'] > *,
+	.lk-page [role='tablist'] > * {
+		flex: 0 0 auto !important;
+		white-space: nowrap;
+	}
 }
 
 /* Focus-&-flash: a brand ring that blooms and fades when a "Fix now" / anchor
@@ -205,15 +759,347 @@
    $ui/shell/focus-field.ts; neutralized by the reduced-motion rule below. */
 @keyframes focus-flash {
 	0% {
-		box-shadow: 0 0 0 0 rgb(124 58 237 / 0.55);
+		box-shadow: 0 0 0 0 rgb(0 102 255 / 0.55);
 	}
 	100% {
-		box-shadow: 0 0 0 7px rgb(124 58 237 / 0);
+		box-shadow: 0 0 0 7px rgb(0 102 255 / 0);
 	}
 }
 .focus-flash {
 	animation: focus-flash 1.2s ease-out;
 	border-radius: var(--radius-card);
+}
+
+/* Where a link to a conversation landed (landOn in landing-mark.ts, criterion
+   0bdc1d4f): the message or the conversation outlined in blue ink on a light
+   blue ground for three seconds, then faded. The fade ends just before the
+   script takes the class off (3 s), so nothing blinks back; under reduced
+   motion the animation is cut and the mark holds still until then. */
+@keyframes lk-landed {
+	0%,
+	72% {
+		outline-color: var(--color-evo-violet);
+		background-color: var(--color-evo-violet-soft);
+	}
+	93%,
+	100% {
+		outline-color: transparent;
+		background-color: transparent;
+	}
+}
+.lk-landed {
+	outline: 2px solid var(--color-evo-violet);
+	outline-offset: 2px;
+	background-color: var(--color-evo-violet-soft);
+	animation: lk-landed 3.2s ease-out;
+}
+
+/* The place an address or the AI's guide opened on an Evolution request, marked
+   for a moment with the design's violet glow (markPlace in evo-scroll.ts); the
+   outline stays visible when the reduced-motion rule stops the glow. */
+@keyframes lk-glow {
+	0%,
+	100% {
+		box-shadow: 0 0 0 0 rgb(0 102 255 / 0.45);
+	}
+	50% {
+		box-shadow: 0 0 0 8px rgb(0 102 255 / 0);
+	}
+}
+.evo-place-mark {
+	border-radius: var(--radius-evo-btn);
+	outline: 2px solid var(--color-evo-violet);
+	outline-offset: 3px;
+	animation: lk-glow 1.2s ease-in-out 2;
+}
+
+/* The page's next action: the first Validate still waiting on the reader, filled whatever its block draws (evo-scroll watchNextToValidate). */
+button[data-evo-validate][data-evo-next] {
+	background-color: var(--color-evo-violet);
+	color: var(--color-paper);
+	box-shadow: var(--shadow-press);
+}
+/* On the Specification 360° that check stays one of the element's four acts: outlined and flat, only tinted blue
+   to guide the eye, never a filled square with a hard shadow (criterion a4ef7658). */
+[data-four-acts] button[data-evo-validate][data-evo-next] {
+	border-color: var(--color-blue-ink);
+	background-color: var(--color-blue-tint);
+	color: var(--color-blue-ink);
+	box-shadow: none;
+}
+
+/* With its actions in the app's foot, a page needs little room below its last block. */
+:root:has(#app-foot > *) .lk-page {
+	--page-end: 24px;
+}
+
+/* A spring as a CSS easing, for transitions that pop (overshoot 16 %, then settle): springCurve({ omega: 22,
+   zeta: 0.5 }) of design-system/spring-easing.ts, one sample in two. A browser without linear() keeps the
+   fallback declared before it. */
+:root {
+	--ease-pop: cubic-bezier(0.34, 1.4, 0.64, 1);
+	--ease-pop: linear(0, 0.2093, 0.6031, 0.9381, 1.1205, 1.1624, 1.1219, 1.0573, 1.0052, 0.9785, 0.9738, 0.9813, 0.9918, 0.9999, 1.0038, 1.0042, 1.0028, 1.0011, 0.9999, 1);
+}
+
+/* A Validate shows a thumbs-up beside its label while pointed at (BlockControls), what pressing it gives: it
+   springs in from below, tilting into place, and on leave tips back and folds away. Pressed, it takes off as the
+   validation's badge (validate-motion). */
+.validate-thumb {
+	display: inline-grid;
+	place-items: center;
+	width: 0;
+	margin-left: 0;
+	opacity: 0;
+	scale: 0.3;
+	rotate: -28deg;
+	translate: 0 4px;
+	transition:
+		width 200ms cubic-bezier(0.4, 0, 0.2, 1),
+		margin-left 200ms cubic-bezier(0.4, 0, 0.2, 1),
+		opacity 150ms ease-in,
+		scale 200ms cubic-bezier(0.4, 0, 1, 1),
+		rotate 200ms cubic-bezier(0.4, 0, 1, 1),
+		translate 200ms cubic-bezier(0.4, 0, 1, 1);
+}
+button:not(:disabled):is(:hover, :focus-visible) > .validate-thumb {
+	width: 14px;
+	margin-left: 6px;
+	opacity: 1;
+	scale: 1;
+	rotate: 0deg;
+	translate: 0 0;
+	transition:
+		width 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+		margin-left 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+		opacity 120ms ease-out,
+		scale 520ms var(--ease-pop),
+		rotate 520ms var(--ease-pop),
+		translate 520ms var(--ease-pop);
+}
+
+/* The app's tooltip (TooltipHost): an ink bubble that springs in toward what it describes, its arrow on it, and
+   slips away. */
+.app-tooltip {
+	opacity: 0;
+	transform: translateY(4px) scale(0.94);
+	transform-origin: var(--arrow) 100%;
+	transition:
+		opacity 90ms ease-in,
+		transform 120ms ease-in;
+}
+.app-tooltip[data-below] {
+	transform: translateY(-4px) scale(0.94);
+	transform-origin: var(--arrow) 0;
+}
+.app-tooltip[data-shown] {
+	opacity: 1;
+	transform: none;
+	transition:
+		opacity 120ms ease-out,
+		transform 300ms var(--ease-pop);
+}
+/* The arrow: a square turned on its corner, its two outer sides bordered like the bubble. */
+.app-tooltip-arrow {
+	position: absolute;
+	bottom: -4.5px;
+	left: var(--arrow);
+	width: 8px;
+	height: 8px;
+	translate: -50% 0;
+	rotate: 45deg;
+	background: inherit;
+	border-right: 1px solid var(--color-night);
+	border-bottom: 1px solid var(--color-night);
+}
+.app-tooltip[data-below] .app-tooltip-arrow {
+	top: -4.5px;
+	bottom: auto;
+	border: 0;
+	border-left: 1px solid var(--color-night);
+	border-top: 1px solid var(--color-night);
+}
+@media (prefers-reduced-motion: reduce) {
+	.app-tooltip,
+	.app-tooltip[data-below] {
+		transform: none;
+	}
+}
+
+/* A validation the reader can take back (BlockControls): once armed (withdraw-arm.ts: pointed at a moment, or a
+   first touch), its Validated slides away for Withdraw, on a soft red, and only then does a click take it back; it
+   slides back at once as it disarms. Both words share one place, so the pill keeps its width. */
+.withdraw-swap {
+	display: inline-grid;
+}
+.withdraw-swap > * {
+	grid-area: 1 / 1;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	transition:
+		opacity 160ms ease,
+		translate 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.withdraw-hover {
+	opacity: 0;
+	translate: 0 80%;
+}
+button.withdrawable[data-armed] {
+	background-color: var(--color-evo-red-soft);
+	color: var(--color-evo-red);
+	transition:
+		background-color 0.2s ease,
+		color 0.2s ease;
+}
+button[data-armed] > .withdraw-swap > .withdraw-rest {
+	opacity: 0;
+	translate: 0 -80%;
+}
+button[data-armed] > .withdraw-swap > .withdraw-hover {
+	opacity: 1;
+	translate: 0 0;
+}
+
+/* A block's Delete shows only while its own block is pointed at (reveal-with-block.ts), keeping its room so nothing
+   moves; reached by the keyboard or holding its list open, it shows too. A touch screen points at nothing: it stays. */
+@media (hover: hover) {
+	[data-reveal-with-block] {
+		opacity: 0;
+		scale: 0.85;
+		transition:
+			opacity 160ms ease,
+			scale 160ms ease;
+	}
+	[data-reveal-with-block]:is([data-shown], :focus-within, :has([aria-expanded='true'])) {
+		opacity: 1;
+		scale: 1;
+		transition:
+			opacity 180ms ease-out,
+			scale 360ms var(--ease-pop);
+	}
+}
+
+/* The app's foot (PageFoot) stays low: every button and link in it reads compact, whatever size its page gives it. */
+#app-foot :is(button, a) {
+	min-height: 34px;
+	padding-inline: 14px;
+	font-size: 0.8125rem;
+}
+#app-foot :is([data-review-control], [data-evo-validate], [data-validate-all]) {
+	min-height: 28px;
+	height: 28px;
+}
+
+/* The mark of the reader's AI on its floating chip (AiSessionChip, ac-ai-session-band). Listening or connecting, it
+   only breathes, slowly. While the AI works it comes alive: a living cell that keeps changing form as it swirls, a
+   halo rippling out of it, a slow light drifting through the chip and over what the AI does. Asked for less motion,
+   the app-wide rule stills it all on a resting shape. */
+.ai-mark {
+	flex: none;
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	background: var(--color-evo-green-stroke);
+	animation: lk-ai-breathe 2.8s ease-in-out infinite;
+}
+.ai-mark[data-alive] {
+	width: 14px;
+	height: 14px;
+	border-radius: 58% 42% 55% 45% / 45% 58% 42% 55%;
+	background:
+		radial-gradient(circle, rgb(31 169 138 / 0.95) 0 18%, transparent 64%),
+		conic-gradient(from 30deg, var(--color-green-ink), var(--color-green), var(--color-green-tint), var(--color-green-ink));
+	animation:
+		lk-ai-blob 3.4s ease-in-out infinite,
+		lk-ai-swirl 6s linear infinite,
+		lk-ai-ripple 2.2s ease-out infinite;
+}
+.ai-chip-alive {
+	background-image: linear-gradient(105deg, transparent 0%, rgb(211 232 220 / 0.6) 22%, rgb(247 244 236 / 0.7) 38%, transparent 55%, rgb(211 232 220 / 0.45) 78%, transparent 100%);
+	background-size: 260% 100%;
+	animation:
+		lk-ai-drift 7s ease-in-out infinite alternate,
+		lk-ai-aura 3.6s ease-in-out infinite;
+}
+.ai-chip-alive .ai-doing {
+	background: linear-gradient(90deg, rgb(15 102 80 / 0.85) 0% 40%, var(--color-green) 50%, rgb(15 102 80 / 0.85) 60% 100%) 150% 0 / 200% 100%;
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+	animation: lk-ai-shimmer 2.6s linear infinite;
+}
+@keyframes lk-ai-breathe {
+	0%,
+	100% {
+		opacity: 1;
+		transform: scale(1);
+	}
+	50% {
+		opacity: 0.55;
+		transform: scale(0.8);
+	}
+}
+@keyframes lk-ai-blob {
+	0%,
+	100% {
+		border-radius: 58% 42% 55% 45% / 45% 58% 42% 55%;
+	}
+	25% {
+		border-radius: 40% 60% 36% 64% / 62% 38% 62% 38%;
+	}
+	50% {
+		border-radius: 64% 36% 48% 52% / 36% 64% 44% 56%;
+	}
+	75% {
+		border-radius: 44% 56% 64% 36% / 56% 44% 36% 64%;
+	}
+}
+@keyframes lk-ai-swirl {
+	0% {
+		transform: rotate(0deg) scale(1);
+	}
+	50% {
+		transform: rotate(180deg) scale(1.12);
+	}
+	100% {
+		transform: rotate(360deg) scale(1);
+	}
+}
+@keyframes lk-ai-ripple {
+	from {
+		box-shadow: 0 0 0 0 rgb(31 169 138 / 0.5);
+	}
+	to {
+		box-shadow: 0 0 0 7px rgb(31 169 138 / 0);
+	}
+}
+@keyframes lk-ai-drift {
+	from {
+		background-position: 0% 50%;
+	}
+	to {
+		background-position: 100% 50%;
+	}
+}
+@keyframes lk-ai-aura {
+	0%,
+	100% {
+		box-shadow: var(--shadow-press);
+	}
+	50% {
+		box-shadow:
+			var(--shadow-press),
+			0 0 0 3px rgb(31 169 138 / 0.25);
+	}
+}
+@keyframes lk-ai-shimmer {
+	from {
+		background-position: 150% 0;
+	}
+	to {
+		background-position: -50% 0;
+	}
 }
 
 @layer base {
@@ -228,11 +1114,11 @@
 		color: var(--color-ink-700);
 	}
 
-	/* Consistent, on-brand focus ring for every interactive element. */
+	/* One focus mark for every interactive element, the design's: a 2px blue outline standing 3px off the control,
+	   so it never hides the control's own border or press shadow. */
 	:where(button, a, input, textarea, select, [tabindex]):focus-visible {
-		outline: none;
-		box-shadow: var(--shadow-focus);
-		border-radius: var(--radius-field);
+		outline: 2px solid var(--color-blue-ink);
+		outline-offset: 3px;
 	}
 
 	/* Respect users who ask for less motion (WCAG 2.3.3): neutralize animations,
@@ -246,5 +1132,82 @@
 			transition-duration: 0.01ms !important;
 			scroll-behavior: auto !important;
 		}
+
+		/* Reduced motion keeps the change, not the movement (criterion da3bc837): what rises, pops or bursts
+		   in fades in instead of coming as a hard cut, and a transition the page marks data-reduced-fade (a
+		   page, a drawer, a message, each switched to a fade in its script) keeps its fade. In this layer,
+		   and more specific than the rule above, so they win over it. */
+		:is(
+				.animate-lk-in,
+				.animate-lk-in-fast,
+				.animate-lk-up,
+				.animate-lk-fade,
+				.animate-lk-pop,
+				.animate-lk-burst,
+				.animate-lk-navin
+			) {
+			animation: lk-fade 150ms ease both !important;
+		}
+		[data-reduced-fade] {
+			animation-duration: 150ms !important;
+		}
 	}
+}
+
+/* More contrast when the system asks for it (criterion dc06b679): rules and borders in ink, the muted and
+   secondary text in the body's ink, faint icons darker, and a thicker focus mark. Unlayered, so it wins over
+   the theme's own values. */
+@media (prefers-contrast: more) {
+	:root {
+		--color-line: #55555c;
+		--color-line-strong: #111114;
+		--color-evo-line: #55555c;
+		--color-evo-line-soft: #8a8a92;
+		--color-evo-control: #111114;
+		--color-ink-3: #3a3a40;
+		--color-ink-300: #55555c;
+		--color-ink-400: #3a3a40;
+		--color-ink-500: #3a3a40;
+		--color-evo-muted: #3a3a40;
+		--color-ink-4: #b4b4bb;
+	}
+	:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+		outline-width: 3px;
+	}
+}
+
+/*
+ * Every project page scrolls in its own `flex-1 overflow-y-auto` area. With a
+ * classic (non-overlay) scrollbar, a long page and a short one differ in width
+ * by the scrollbar, so the content jumps sideways when one switches between
+ * them. Reserving the scrollbar's place keeps the width the same on every page.
+ */
+.page-scroll-host > .overflow-y-auto {
+	scrollbar-gutter: stable;
+}
+
+/* A text of the Specification 360° in the Edit mode (StagedText, criterion 41514698), after the design: a blue dashed
+   outline, tinted under the pointer, outlined solid while typed in, an orange mark on its left once changed. */
+.staged-text {
+	min-width: 2ch;
+	outline: 1px dashed color-mix(in srgb, var(--color-blue) 55%, transparent);
+	outline-offset: 2px;
+	cursor: text;
+	transition: background-color 0.1s;
+}
+.staged-text:hover {
+	background-color: color-mix(in srgb, var(--color-blue-tint) 70%, transparent);
+}
+.staged-text:focus {
+	outline: 2px solid var(--color-blue);
+	background-color: var(--color-paper);
+	color: var(--color-ink);
+}
+.staged-text[data-edited] {
+	box-shadow: inset 3px 0 0 var(--color-orange);
+	padding-left: 6px;
+}
+.staged-text:empty::before {
+	content: attr(data-placeholder);
+	color: var(--color-ink-4, #8a8a90);
 }

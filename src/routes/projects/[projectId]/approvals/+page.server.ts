@@ -4,7 +4,7 @@ import type { PageServerLoad } from './$types';
 /**
  * Approvals has been merged into the Traceability capability as its "Approvals"
  * tab (matching the prototype's information architecture). This route is kept
- * only so old deep-links and Control Center "Fix now" targets still resolve — it
+ * only so old deep-links and a "Fix now" link of What Lyriks noticed targets still resolve — it
  * redirects to the merged page with the approvals tab pre-selected. The approvals
  * draft + /api/.../approvals endpoints are unchanged; it is now rendered inside
  * Traceability.

@@ -27,7 +27,7 @@ export interface FeatureMaturityIssue {
 export interface FeatureMaturityReport {
 	readonly score: number;
 	readonly maxScore: number;
-	/** `round(score / maxScore * 100)`: the 0-100 the TRL ladder maps. */
+	/** `round(score / maxScore * 100)`: the 0-100 the maturity stages read. */
 	readonly percentage: number;
 	/** Failed checks, critical first. Empty when the feature passes everything. */
 	readonly issues: readonly FeatureMaturityIssue[];

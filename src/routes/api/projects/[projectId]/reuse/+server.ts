@@ -1,5 +1,4 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import type { RequestHandler } from './$types';
 
@@ -17,7 +16,7 @@ export const POST: RequestHandler = async (event) => {
 		featureId?: unknown;
 		templateId?: unknown;
 	};
-	const services = getServices();
+	const services = event.locals.services;
 
 	if (body.action === 'export' && typeof body.featureId === 'string') {
 		const library = await services.exportRequirement.execute(projectId, body.featureId);

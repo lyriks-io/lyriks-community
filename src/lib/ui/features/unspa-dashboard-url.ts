@@ -8,8 +8,8 @@
 import { browser, dev } from '$app/environment';
 import { page } from '$app/state';
 import { env } from '$env/dynamic/public';
-import { memberNameFromEmail } from '$domain/team/member-name';
-import type { RuleOrigin } from '$application/index-feature-rules';
+import { memberNameFromEmail } from '$domain/team';
+import type { RuleOrigin } from '$application/specification/index-feature-rules';
 
 /** Default appliance port of the behavior dashboard. */
 const DASHBOARD_PORT = '3003';
@@ -74,11 +74,6 @@ function dashboardLink(path: string, base: string | null, extra: string[]): stri
 	return `${base}${suffix}${suffix.includes('?') ? '&' : '?'}${query}`;
 }
 
-/** Brand-tagged link to one project's behavior model. */
-export function unspaProjectHref(projectId: string, base = unspaDashboardBase()): string | null {
-	return unspaDashboardHref(`/projects/${encodeURIComponent(projectId)}`, base);
-}
-
 /**
  * Bare dashboard route of a single feature, without base or brand context.
  * For the EMBEDDED editor (BehaviorEditorFrame), which adds those itself.
@@ -97,7 +92,7 @@ export function unspaFeatureHref(featureId: string, base = unspaDashboardBase())
  * hosts it selected and the action's own card expanded. `focus=action:<id>`
  * names the `data-focus-target` the editor renders on every action card, so the
  * user lands on the action they clicked instead of on the surface around it.
- * For the EMBEDDED editor; `unspaActionHref` is the same target as a full link.
+ * For the EMBEDDED editor.
  */
 export function unspaActionPath(featureId: string, surfaceId: string, actionId: string): string {
 	const parts: string[] = [];
@@ -107,14 +102,48 @@ export function unspaActionPath(featureId: string, surfaceId: string, actionId: 
 	return `${unspaFeaturePath(featureId)}${query}`;
 }
 
-/** Brand-tagged link to a single action, for a dedicated new-tab affordance. */
-export function unspaActionHref(
+/** One element an action panel lists, as the behavior editor addresses it. */
+export type ActionElement =
+	| { kind: 'scenario' | 'parameter'; id: string }
+	| { kind: 'state'; path: string }
+	| { kind: 'event'; name: string }
+	| { kind: 'transition'; toSurfaceId: string };
+
+/**
+ * Bare dashboard route that opens the editor ON one element an action lists,
+ * pulsed (spec: criterion ca999e75). A scenario or a parameter lives in its
+ * action's card, so its surface is selected and the editor expands the action
+ * from the id; a state, an event and a transition live on their own tab. A
+ * `focus` token is only sent for the anchors the editor renders.
+ */
+export function unspaActionElementPath(
 	featureId: string,
 	surfaceId: string,
-	actionId: string,
-	base = unspaDashboardBase()
-): string | null {
-	return unspaDashboardHref(unspaActionPath(featureId, surfaceId, actionId), base);
+	element: ActionElement
+): string {
+	const parts: string[] = [];
+	let focus: string;
+	switch (element.kind) {
+		case 'scenario':
+		case 'parameter':
+			if (surfaceId) parts.push(`surface=${encodeURIComponent(surfaceId)}`);
+			focus = `${element.kind}:${element.id}`;
+			break;
+		case 'state':
+			parts.push('tab=states');
+			focus = `state:${element.path}`;
+			break;
+		case 'event':
+			parts.push('tab=events');
+			focus = `event:${element.name}`;
+			break;
+		case 'transition':
+			parts.push('tab=transitions');
+			focus = `transition:${surfaceId}:${element.toSurfaceId}`;
+			break;
+	}
+	parts.push(`focus=${encodeURIComponent(focus)}`);
+	return `${unspaFeaturePath(featureId)}?${parts.join('&')}`;
 }
 
 /**
@@ -122,11 +151,10 @@ export function unspaActionHref(
  * whose embedded editor opens on `path` (a dashboard route from the builders
  * above; null or omitted = the project itself).
  *
- * The rule for the whole app: a behavior link stays inside Lyriks. Only a
- * DEDICATED "open in a dedicated tab" affordance next to it hands out a
- * `unspa*Href` with `target="_blank"`. Use this one from another page; on the
- * Features page itself, call the page's `onOpenEditor` callback instead, which
- * switches tab without a round-trip.
+ * The rule for the whole app: a behavior link stays inside Lyriks, the editor
+ * framed in the Behavior tab. Use this one from another page; on the Features
+ * page itself, call the page's `onOpenEditor` callback instead, which switches
+ * tab without a round-trip.
  */
 export function behaviorTabHref(projectId: string, path?: string | null): string {
 	const parts = ['tab=behavior'];
@@ -135,7 +163,7 @@ export function behaviorTabHref(projectId: string, path?: string | null): string
 }
 
 /**
- * Deep link that opens the behavior editor on the exact tab that edits one
+ * Editor route that opens the behavior editor on the exact tab that edits one
  * rule/invariant, per the dashboard contract
  * (`/features/<id>?tab=&surface=&panel=&focus=`):
  *   surface rule       → ?surface=<sid>&panel=rules&focus=rule:<id>
@@ -144,18 +172,9 @@ export function behaviorTabHref(projectId: string, path?: string | null): string
  *   action invariant   → ?surface=<sid>&focus=action:<actionId>  (edited inside the action card)
  *   feature invariant  → ?tab=invariants
  * A `focus` token is only sent where the editor renders the matching
- * `data-focus-target` anchor, so a link never pulses at nothing. Returns `null`
- * for project-level constraints (no feature) — link those with `unspaProjectHref`.
+ * `data-focus-target` anchor, so a link never pulses at nothing. Returns null
+ * for project-level constraints (no feature): those open the project itself.
  */
-export function unspaRuleHref(
-	rule: { kind: 'rule' | 'invariant'; nodeId: string; origin: RuleOrigin },
-	base = unspaDashboardBase()
-): string | null {
-	const path = unspaRulePath(rule);
-	return path ? unspaDashboardHref(path, base) : null;
-}
-
-/** The same rule deep link as a bare path, for the EMBEDDED editor. */
 export function unspaRulePath(rule: {
 	kind: 'rule' | 'invariant';
 	nodeId: string;

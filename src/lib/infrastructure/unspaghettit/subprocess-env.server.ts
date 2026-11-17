@@ -35,10 +35,29 @@ const PASSTHROUGH = [
 	'WINDIR'
 ] as const;
 
-/** Minimal environment for the isolated optional engine subprocess. */
+/** How an installation that proves may tune its solver (processes, timeouts, binary). */
+const SOLVER_TUNING = [
+	'UNSPA_SOLVER_PROCESSES',
+	'UNSPA_SOLVER_IDLE_MS',
+	'UNSPA_SOLVER_LIMIT_S',
+	'UNSPA_Z3_PATH',
+	'UNSPA_PROOF_CACHE'
+] as const;
+
+/** The proof module an installation that proves loads into the engine, unless the host names another. */
+export const PROOF_MODULE = '@lyriks/unspa-prover';
+
+/**
+ * Minimal environment for the isolated optional engine subprocess. `proofs`
+ * says whether this installation proves the spec (Enterprise): the engine then
+ * loads the proof module (UNSPA_PROVER), which runs the native solver or none,
+ * never the WebAssembly one, which can take gigabytes per proof. Without it
+ * the engine holds no solver and loads none.
+ */
 export function unspaghettitSubprocessEnv(
 	host: NodeJS.ProcessEnv,
-	snapshotsRoot: string
+	snapshotsRoot: string,
+	proofs = false
 ): Record<string, string> {
 	const child: Record<string, string> = {};
 	for (const key of PASSTHROUGH) {
@@ -52,5 +71,14 @@ export function unspaghettitSubprocessEnv(
 	// stops holding two naming conventions (ours id-named, the engine's
 	// slug-named). Engines that predate the option ignore the variable.
 	child.UNSPA_FILE_NAMING = 'id';
+	// An operator may still turn the solver off on an installation that proves.
+	child.UNSPA_SOLVER = proofs && host.UNSPA_SOLVER?.trim().toLowerCase() !== 'off' ? 'native' : 'off';
+	if (proofs) {
+		child.UNSPA_PROVER = host.UNSPA_PROVER?.trim() || PROOF_MODULE;
+		for (const key of SOLVER_TUNING) {
+			const value = host[key];
+			if (value) child[key] = value;
+		}
+	}
 	return child;
 }

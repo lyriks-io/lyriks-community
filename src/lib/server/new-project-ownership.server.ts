@@ -1,5 +1,5 @@
+import type { AppServices } from '$composition/container.server';
 import { error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { seedOwnerCollaborator } from './seed-owner-collaborator.server';
 
 /**
@@ -19,14 +19,14 @@ import { seedOwnerCollaborator } from './seed-owner-collaborator.server';
  * on a standalone (auth-off) install: single trusted tenant, no team to pin.
  */
 export async function resolveOwningWorkspace(
-	locals: App.Locals,
+	services: AppServices, locals: App.Locals,
 	requestedWorkspaceId: string | null
 ): Promise<string | null> {
 	if (!locals.authRequired) return null;
 	// A single-operator install (auth on, no Back) has no team to pin either.
-	if (!getServices().identity.multiUser) return null;
+	if (!services.identity.multiUser) return null;
 
-	const teams = await getServices().workspaces.listForCaller();
+	const teams = await services.workspaces.listForCaller();
 	if (teams.length === 0) {
 		error(409, 'You are not a member of any workspace yet. Ask your administrator to invite you to one.');
 	}
@@ -48,13 +48,11 @@ export async function resolveOwningWorkspace(
  * Must run inside the pinned request context (token + target workspace).
  */
 export async function ownNewProject(
-	locals: App.Locals,
+	services: AppServices, locals: App.Locals,
 	projectId: string,
 	auditAction: string
 ): Promise<void> {
 	if (!locals.authRequired) return;
-
-	const services = getServices();
 	// No Back to mirror to, and the one operator already owns everything.
 	if (!services.identity.multiUser) return;
 	await services.pushEnvelopeToBack.execute(projectId);
@@ -70,5 +68,5 @@ export async function ownNewProject(
 		});
 		error(502, 'Could not register the project on the server. Please try again.');
 	}
-	await seedOwnerCollaborator(projectId, locals.session?.email);
+	await seedOwnerCollaborator(services, projectId, locals.session?.email);
 }

@@ -60,7 +60,7 @@
 							</button>
 						</div>
 					{/each}
-					<label class="flex h-16 w-24 cursor-pointer items-center justify-center gap-1 rounded border border-dashed border-line-strong text-[11px] font-medium text-ink-500 transition-colors hover:border-brand-400 hover:text-brand-600">
+					<label class="flex h-16 w-24 cursor-pointer items-center justify-center gap-1 rounded border border-dashed border-line-strong text-[0.6875rem] font-medium text-ink-500 transition-colors hover:border-brand-400 hover:text-brand-600">
 						<Icon name="plus" size={13} /> Add
 						<input type="file" accept="image/*" multiple class="hidden" onchange={(e) => addShots(pg.id, pg.screenshotRefs, e)} />
 					</label>

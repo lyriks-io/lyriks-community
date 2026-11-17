@@ -29,3 +29,21 @@ describe('inferKind', () => {
 		).toBe('missing');
 	});
 });
+
+// Criterion 97f2df12: the proof travels to the card as is.
+describe('toProductCoherence: a proven finding', () => {
+	it('carries the proof of a gap to its card', async () => {
+		const { toProductCoherence } = await import('./incoherence');
+		const proof = { given: 'the starting state', when: ['Take one (qty 3)'], then: 'the stock is negative' };
+		const product = toProductCoherence(
+			{
+				gaps: [{ id: 'unspa-proven-0', severity: 'high', title: 'The system shall...', detail: 'x', sourceStep: 'features', blocking: true, proof }],
+				dimensions: [],
+				readinessScore: 50,
+				coherenceScore: 50
+			} as never,
+			() => ({ capabilityId: 'features', capabilityTitle: 'Features', fixRoute: '/f' })
+		);
+		expect(product.incoherences[0]?.proof).toEqual(proof);
+	});
+});

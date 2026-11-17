@@ -35,17 +35,27 @@ export interface AnalysedProject {
 }
 
 export interface CoherenceMappingInput {
-	readonly request: Pick<EvolutionRequest, 'id' | 'leafIds' | 'coherenceReport'>;
+	readonly request: Pick<EvolutionRequest, 'id' | 'leafIds' | 'coherenceReport' | 'coherenceBaseline' | 'specVersion'>;
 	readonly analysis: AnalysedProject;
 	/** Leaf id -> name, so a gap that names a feature by its name is matched too. */
 	readonly leafNames: Readonly<Record<string, string>>;
 	readonly at: string;
+	/**
+	 * The behaviour verification the analysis folds in had not answered in time
+	 * (ac-evo-coh-same-reading): no baseline is taken from such a reading.
+	 */
+	readonly partial?: boolean;
 }
 
 export interface CoherenceMapping {
 	readonly report: EvolutionRequest['coherenceReport'];
 	readonly findings: CoherenceFinding[];
+	/** The findings the product carried before the request: set at the first check only. */
+	readonly baseline?: string[];
 }
+
+/** An anchor that is a page address fragment, not a node anyone can name. */
+const isAddressFragment = (v: string) => /[&?=/#]/.test(v);
 
 function axisOf(gap: AnalysedGap): CoherenceAxis {
 	const step = (gap.sourceStep ?? '').toLowerCase();
@@ -99,9 +109,11 @@ export function mapCoherenceAnalysis(input: CoherenceMappingInput): CoherenceMap
 		// The other node at fault: what the gap is about when that is not the
 		// touched feature itself, else the gap's own anchor.
 		const other = [gap.subject, gap.featureRef, gap.fixAnchor].find(
-			(v): v is string => typeof v === 'string' && v.trim() !== '' && v !== requestNodeId
+			(v): v is string =>
+				typeof v === 'string' && v.trim() !== '' && v !== requestNodeId && !isAddressFragment(v)
 		);
-		const existingNodeId = other ?? gap.id;
+		// With no other node named, the finding is about the touched feature itself.
+		const existingNodeId = other ?? requestNodeId;
 		const step = gap.sourceStep && gap.sourceStep.trim() !== '' ? gap.sourceStep : 'coherence';
 		const finding: CoherenceFinding = {
 			id: stableId('coh', request.id, gap.id),
@@ -115,6 +127,14 @@ export function mapCoherenceAnalysis(input: CoherenceMappingInput): CoherenceMap
 		};
 		findings.push({ ...finding, published: canPublishFinding(finding).ok });
 	}
+	// The engine reads the product as it stands, without the drafts. What it says
+	// at the request's first check, before any freeze wrote anything, the product
+	// already carried: it is shown, and it never holds the request.
+	// A partial reading shows its findings that way too, but the baseline waits
+	// for a complete one, so a cold cache never decides what the product carried.
+	const firstCheck = !request.coherenceBaseline && request.specVersion === 0;
+	const baseline = new Set(firstCheck ? findings.map((f) => f.id) : (request.coherenceBaseline ?? []));
+	for (const f of findings) f.scope = baseline.has(f.id) ? 'inherited' : 'request';
 	const order: Record<FindingSeverity, number> = { blocking: 0, major: 1, minor: 2 };
 	findings.sort((a, b) => order[a.severity] - order[b.severity] || a.title.localeCompare(b.title));
 
@@ -129,7 +149,8 @@ export function mapCoherenceAnalysis(input: CoherenceMappingInput): CoherenceMap
 			requestDelta: previous === null ? 0 : score - previous,
 			ranAt: input.at
 		},
-		findings
+		findings,
+		...(firstCheck && !input.partial ? { baseline: [...baseline] } : {})
 	};
 }
 
@@ -138,10 +159,13 @@ export function withCoherenceReading(
 	request: EvolutionRequest,
 	mapping: CoherenceMapping
 ): EvolutionRequest {
+	// A risk a person accepted stays accepted on the same finding across checks.
+	const risks = new Map(request.coherenceFindings.filter((f) => f.risk).map((f) => [f.id, f.risk]));
 	return {
 		...request,
 		coherenceReport: mapping.report,
-		coherenceFindings: mapping.findings,
-		coherenceGateClosed: false
+		coherenceFindings: mapping.findings.map((f) => (risks.has(f.id) ? { ...f, risk: risks.get(f.id) } : f)),
+		coherenceGateClosed: false,
+		...(mapping.baseline ? { coherenceBaseline: mapping.baseline } : {})
 	};
 }

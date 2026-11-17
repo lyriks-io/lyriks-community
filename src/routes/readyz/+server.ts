@@ -1,5 +1,4 @@
 import { json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { busBackend } from '$lib/server/sync-bus.server';
 import type { RequestHandler } from './$types';
 
@@ -16,9 +15,9 @@ import type { RequestHandler } from './$types';
  * operator can see how far Back lags behind local saves. Both are additive:
  * the original `{ status, bus }` shape is unchanged.
  */
-export const GET: RequestHandler = async () => {
+export const GET: RequestHandler = async ({ locals }) => {
 	try {
-		const services = getServices();
+		const services = locals.services;
 		await services.pingDatastore();
 		const body: Record<string, unknown> = { status: 'ready', bus: busBackend() };
 		if (services.backSyncConfigured()) {

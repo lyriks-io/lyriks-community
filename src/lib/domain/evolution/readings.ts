@@ -47,7 +47,8 @@ function behaviourStatus(model: LeafBehaviour, openedAt: string): string {
 export interface ReadingInputs {
 	/** The behaviour model of every touched leaf; null when none is authored. */
 	readonly behaviourByLeaf: Readonly<Record<string, LeafBehaviour | null>>;
-	readonly grants: readonly { roleId: string; capabilityId: string; action?: string }[];
+	/** One access per role and capability: a grant carries no verb. */
+	readonly grants: readonly { roleId: string; capabilityId: string }[];
 	readonly roles: readonly { id: string; name: string }[];
 	/** Entity names the data model holds. */
 	readonly dataEntities: readonly string[];
@@ -212,19 +213,13 @@ function readGrants(
 			moving: []
 		};
 	}
-	const perLeaf = request.leafIds.map((leafId) => {
-		const rows = inputs.grants.filter((g) => g.capabilityId === leafId);
-		const byRole = new Map<string, Set<string>>();
-		for (const g of rows) {
-			const verbs = byRole.get(g.roleId) ?? new Set<string>();
-			verbs.add(g.action ?? 'all');
-			byRole.set(g.roleId, verbs);
-		}
-		return { leafId, byRole };
-	});
+	const perLeaf = request.leafIds.map((leafId) => ({
+		leafId,
+		roleIds: new Set(inputs.grants.filter((g) => g.capabilityId === leafId).map((g) => g.roleId))
+	}));
 	const impacted = impactsIn(request, 'permissions');
 	if (field.path === '03-personas.roles') {
-		const roleIds = [...new Set(perLeaf.flatMap((p) => [...p.byRole.keys()]))];
+		const roleIds = [...new Set(perLeaf.flatMap((p) => [...p.roleIds]))];
 		return {
 			key,
 			fieldPath: field.path,
@@ -240,13 +235,10 @@ function readGrants(
 			moving: []
 		};
 	}
-	const granted = perLeaf.every((p) => p.byRole.size > 0);
+	const granted = perLeaf.every((p) => p.roleIds.size > 0);
 	const filled = impactRan || granted;
 	const names = perLeaf.flatMap((p) =>
-		[...p.byRole.entries()].map(
-			([roleId, verbs]) =>
-				`${roleName(roleId)}: ${[...verbs].join(', ')}${request.leafIds.length > 1 ? ` on ${p.leafId}` : ''}`
-		)
+		[...p.roleIds].map((roleId) => `${roleName(roleId)}${request.leafIds.length > 1 ? ` on ${p.leafId}` : ''}`)
 	);
 	return {
 		key,

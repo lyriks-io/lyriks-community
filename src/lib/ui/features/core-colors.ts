@@ -17,7 +17,7 @@ export interface CoreToneStyle {
 /* Five palette slots + the neutral fallback. Tones are color identities: the
  * legacy billing vocabulary and the domain-neutral one share the same slots. */
 const infoStyle: CoreToneStyle = {
-	card: 'border-info-300 bg-info-50/80 shadow-[0_14px_30px_rgba(14,165,233,0.16)]',
+	card: 'border-info-300 bg-info-50/80',
 	icon: 'bg-info-500 text-white',
 	text: 'text-info-600',
 	soft: 'bg-info-100 text-info-600',
@@ -26,7 +26,7 @@ const infoStyle: CoreToneStyle = {
 	ring: 'ring-info-300'
 };
 const brandStyle: CoreToneStyle = {
-	card: 'border-brand-300 bg-brand-50/80 shadow-[0_14px_30px_rgba(124,58,237,0.16)]',
+	card: 'border-brand-300 bg-brand-50/80',
 	icon: 'bg-brand-500 text-white',
 	text: 'text-brand-700',
 	soft: 'bg-brand-100 text-brand-700',
@@ -35,7 +35,7 @@ const brandStyle: CoreToneStyle = {
 	ring: 'ring-brand-300'
 };
 const dangerStyle: CoreToneStyle = {
-	card: 'border-danger-300 bg-danger-50/80 shadow-[0_14px_30px_rgba(239,68,68,0.15)]',
+	card: 'border-danger-300 bg-danger-50/80',
 	icon: 'bg-danger-500 text-white',
 	text: 'text-danger-700',
 	soft: 'bg-danger-100 text-danger-700',
@@ -44,7 +44,7 @@ const dangerStyle: CoreToneStyle = {
 	ring: 'ring-danger-300'
 };
 const warningStyle: CoreToneStyle = {
-	card: 'border-warning-300 bg-warning-50/85 shadow-[0_14px_30px_rgba(245,158,11,0.18)]',
+	card: 'border-warning-300 bg-warning-50/85',
 	icon: 'bg-warning-500 text-white',
 	text: 'text-warning-700',
 	soft: 'bg-warning-100 text-warning-700',
@@ -53,7 +53,7 @@ const warningStyle: CoreToneStyle = {
 	ring: 'ring-warning-300'
 };
 const successStyle: CoreToneStyle = {
-	card: 'border-success-300 bg-success-50/80 shadow-[0_14px_30px_rgba(34,197,94,0.16)]',
+	card: 'border-success-300 bg-success-50/80',
 	icon: 'bg-success-500 text-white',
 	text: 'text-success-700',
 	soft: 'bg-success-100 text-success-700',
@@ -74,7 +74,7 @@ export const CORE_TONE_STYLE: Record<CoreTone, CoreToneStyle> = {
 	reporting: successStyle,
 	insight: successStyle,
 	custom: {
-		card: 'border-ink-200 bg-surface-sunken shadow-[0_14px_30px_rgba(15,23,42,0.1)]',
+		card: 'border-ink-200 bg-surface-sunken',
 		icon: 'bg-ink-700 text-white',
 		text: 'text-ink-700',
 		soft: 'bg-surface-sunken text-ink-700',
@@ -82,6 +82,22 @@ export const CORE_TONE_STYLE: Record<CoreTone, CoreToneStyle> = {
 		selected: 'border-ink-300 bg-surface-sunken ring-2 ring-ink-200',
 		ring: 'ring-ink-300'
 	}
+};
+
+/**
+ * The one look every core shares in the feature tree. A colour per core read
+ * as a status or a priority it never was, so the tree draws every core and
+ * every feature row the same: a white card, a hairline border, a grey mark,
+ * and the core told apart by its name alone.
+ */
+export const NEUTRAL_CORE_STYLE: CoreToneStyle = {
+	card: 'border-line bg-surface-card shadow-card',
+	icon: 'bg-surface-sunken text-ink-500',
+	text: 'text-ink-500',
+	soft: 'bg-surface-sunken text-ink-600',
+	feature: 'border-line bg-surface hover:border-line-strong',
+	selected: 'border-line-strong bg-surface ring-2 ring-brand-200',
+	ring: 'ring-brand-300'
 };
 
 export function coreToneForDisplay(tone: unknown, index = 0): CoreTone {

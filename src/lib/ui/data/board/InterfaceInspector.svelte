@@ -34,7 +34,7 @@
 			>
 			<div class="min-w-0 flex-1">
 				<p class="text-base font-bold text-ink-900">Interface</p>
-				<p class="text-[11px] text-ink-400">How two bricks talk.</p>
+				<p class="text-[0.6875rem] text-ink-400">How two bricks talk.</p>
 			</div>
 			<button
 				type="button"
@@ -45,7 +45,7 @@
 		</div>
 
 		<label class="block">
-			<span class="mb-1 block text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400"
+			<span class="mb-1 block text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-ink-400"
 				>Protocol</span
 			>
 			<select
@@ -61,7 +61,7 @@
 
 		<div class="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
 			<label class="block">
-				<span class="mb-1 block text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400"
+				<span class="mb-1 block text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-ink-400"
 					>From</span
 				>
 				<select
@@ -81,7 +81,7 @@
 			</label>
 			<Icon name="arrow-right" size={16} class="mb-2 text-ink-300" />
 			<label class="block">
-				<span class="mb-1 block text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400"
+				<span class="mb-1 block text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-ink-400"
 					>To</span
 				>
 				<select
@@ -102,14 +102,14 @@
 		</div>
 
 		{#if !resolves}
-			<p class="flex items-start gap-1.5 rounded-field border border-warning-300 bg-warning-50/50 px-2 py-1.5 text-[11px] text-warning-700">
+			<p class="flex items-start gap-1.5 rounded-field border border-warning-300 bg-warning-50/50 px-2 py-1.5 text-[0.6875rem] text-warning-700">
 				<Icon name="info" size={13} class="mt-px shrink-0" />
 				Pick a real host or table on both ends so this link draws on the map.
 			</p>
 		{/if}
 
 		<label class="block">
-			<span class="mb-1 block text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400"
+			<span class="mb-1 block text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-ink-400"
 				>Operation</span
 			>
 			<input
@@ -125,7 +125,7 @@
 			oninput={(e) => store.updateInterface(iface.id, 'description', e.currentTarget.value)}
 			placeholder="What flows across this interface, and when."
 			rows="2"
-			class="w-full resize-none rounded-field border border-line bg-surface px-2 py-1.5 text-[11px] text-ink-600 outline-none placeholder:text-ink-300"
+			class="w-full resize-none rounded-field border border-line bg-surface px-2 py-1.5 text-[0.6875rem] text-ink-600 outline-none placeholder:text-ink-300"
 		></textarea>
 	</div>
 {/if}

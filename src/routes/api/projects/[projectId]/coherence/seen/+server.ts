@@ -1,5 +1,4 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { seenSectionFor } from '$lib/server/coherence-visit.server';
 import type { RequestHandler } from './$types';
@@ -18,7 +17,7 @@ export const POST: RequestHandler = async (event) => {
 	const gapIds = Array.isArray(body.gapIds)
 		? body.gapIds.filter((g): g is string => typeof g === 'string' && g.length > 0)
 		: [];
-	const services = getServices();
+	const services = event.locals.services;
 	const session = services.currentSession();
 	await services.projectResidue.save(projectId, seenSectionFor(session.email), {
 		gapIds,

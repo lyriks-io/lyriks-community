@@ -13,8 +13,8 @@ import type { ProjectRowSnapshot } from '$domain/portability';
  */
 export interface ProjectPortabilityStorePort {
 	read(projectId: string): Promise<ProjectRowSnapshot>;
-	/** Replace every row this project owns, in one transaction. */
-	write(projectId: string, rows: ProjectRowSnapshot): Promise<void>;
+	/** Replace content in one transaction; an overwrite preserves the live local authority rows. */
+	write(projectId: string, rows: ProjectRowSnapshot, options?: { readonly preserveLocalTeam: boolean }): Promise<void>;
 	/** Whether any row already exists under this id — the import collision guard. */
 	exists(projectId: string): Promise<boolean>;
 }

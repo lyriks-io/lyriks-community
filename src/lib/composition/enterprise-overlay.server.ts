@@ -1,4 +1,4 @@
-import type { Tier } from '$domain/tier/tier';
+import type { Tier } from '$domain/tier';
 import type { StateDeletionCheckPort } from '$application/ports/state-deletion-check';
 import type { ProjectExperienceDraft } from '$domain/experience';
 import type {
@@ -31,6 +31,7 @@ import type {
 	SessionPort,
 	TeamGatewayPort,
 	WorkspaceDirectoryPort,
+	TeamJobsPort,
 	WorkspaceMemberNamePort
 } from '$application/ports';
 import type { Capability } from '$ui/shell/capabilities';
@@ -92,6 +93,8 @@ export interface OverlayPorts {
 	teamGateway?: TeamGatewayPort;
 	workspaces?: WorkspaceDirectoryPort;
 	memberName?: WorkspaceMemberNamePort;
+	/** What each person does, read to suggest who validates; nobody's job by default. */
+	teamJobs?: TeamJobsPort;
 	hooks?: EnterpriseHooks;
 	capabilities?: Capability[];
 	/** Wrap the heuristic checker with the formal verdict; built late, once the drafts exist. */
@@ -102,6 +105,12 @@ export interface OverlayPorts {
 }
 
 export interface EnterpriseOverlay {
+	/**
+	 * Whether the engine proves with its solver (Z3). Proof is an Enterprise
+	 * capability: without the overlay the engine runs no solver at all, and no
+	 * page, score or AI tool carries a proof.
+	 */
+	readonly proofs?: boolean;
 	/** The adapters this overlay contributes, from what the composition root already built. */
 	ports(ctx: OverlayContext): OverlayPorts;
 	/**

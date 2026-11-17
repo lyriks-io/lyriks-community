@@ -1,5 +1,4 @@
 import { error, json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { isSection } from '$lib/shared/sections';
 import type { RequestHandler } from './$types';
@@ -23,7 +22,7 @@ export const GET: RequestHandler = async (event) => {
 	if (!limit) error(400, 'limit must be at least 1');
 	const includeChecks = params.get('includeChecks');
 	if (includeChecks !== null && !['true', 'false'].includes(includeChecks)) error(400, 'includeChecks must be true or false');
-	const services = getServices();
+	const services = event.locals.services;
 	if (!(await services.projectExists(projectId))) error(404, 'Project not found');
 	const report = await services.readProjectElaboration.execute(projectId, includeChecks === 'true');
 	const expected = params.get('expectedSnapshot');

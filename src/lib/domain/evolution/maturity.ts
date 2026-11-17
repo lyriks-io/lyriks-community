@@ -2,11 +2,25 @@ import {
 	SPEC_BLOCKS,
 	fieldKey,
 	fieldsOf,
+	isAskedOn,
 	isLeafScoped,
+	subjectKindOf,
 	type BlockField,
 	type SpecBlock
 } from './blocks';
 import type { BlockState, MaturityTier } from './enums';
+import { touchedLeafIds, type EvolutionRequest } from './draft';
+import { needCriticalEmpty } from './path';
+
+/**
+ * Which touched features ask a leaf-scoped field: a subject is asked only what
+ * is its own (ac-evo-form-9). Absent, every touched feature asks every field,
+ * which is how a reading without drafts has always been computed.
+ */
+export type AskedOn = (field: BlockField, leafId: string) => boolean;
+
+const askingLeaves = (field: BlockField, leafIds: readonly string[], asks?: AskedOn): readonly string[] =>
+	asks ? leafIds.filter((leafId) => asks(field, leafId)) : leafIds;
 
 /**
  * The maturity score: how far the specification is from having no holes left.
@@ -51,8 +65,10 @@ export type OpenQuestions = ReadonlySet<string>;
 export function isOpenQuestion(
 	field: BlockField,
 	open: OpenQuestions,
-	leafIds: readonly string[]
+	leafIds: readonly string[],
+	asks?: AskedOn
 ): boolean {
+	leafIds = isLeafScoped(field) ? askingLeaves(field, leafIds, asks) : leafIds;
 	if (!isLeafScoped(field)) return open.has(fieldKey(field.path));
 	return leafIds.some((leafId) => open.has(fieldKey(field.path, leafId)));
 }
@@ -71,9 +87,11 @@ function isFieldFilled(
 	field: BlockField,
 	filled: FilledFields,
 	open: OpenQuestions,
-	leafIds: readonly string[]
+	leafIds: readonly string[],
+	asks?: AskedOn
 ): boolean {
-	if (isOpenQuestion(field, open, leafIds)) return false;
+	if (isOpenQuestion(field, open, leafIds, asks)) return false;
+	leafIds = isLeafScoped(field) ? askingLeaves(field, leafIds, asks) : leafIds;
 	if (!isLeafScoped(field)) return filled.has(fieldKey(field.path));
 	if (leafIds.length === 0) return false;
 	return leafIds.every((leafId) => filled.has(fieldKey(field.path, leafId)));
@@ -128,9 +146,10 @@ function stateOf(
 	block: SpecBlock,
 	filled: FilledFields,
 	open: OpenQuestions,
-	leafIds: readonly string[]
+	leafIds: readonly string[],
+	asks?: AskedOn
 ): BlockState {
-	const done = block.fields.filter((f) => isFieldFilled(f, filled, open, leafIds)).length;
+	const done = block.fields.filter((f) => isFieldFilled(f, filled, open, leafIds, asks)).length;
 	if (done === 0) return 'empty';
 	return done < block.fields.length ? 'in_progress' : 'complete';
 }
@@ -147,19 +166,26 @@ export function readMaturity(
 	filled: FilledFields,
 	openQuestionKeys: readonly string[] = [],
 	leafIds: readonly string[] = [],
-	blocks: readonly SpecBlock[] = SPEC_BLOCKS
+	blocks: readonly SpecBlock[] = SPEC_BLOCKS,
+	asks?: AskedOn
 ): MaturityReading {
 	const open = new Set(openQuestionKeys);
+	// A field no touched feature is asked is not part of this request's page: it
+	// is neither a hole nor an answer, so it is left out of the sum entirely.
+	const counted = (field: BlockField): boolean =>
+		!isLeafScoped(field) || leafIds.length === 0 || askingLeaves(field, leafIds, asks).length > 0;
+	const shown = blocks.map((block) => ({ ...block, fields: block.fields.filter(counted) }));
+	blocks = shown;
 	let earned = 0;
 	let available = 0;
 	let openQuestionCount = 0;
 	const criticalEmptyFields: string[] = [];
 
 	for (const field of fieldsOf(blocks)) {
-		const done = isFieldFilled(field, filled, open, leafIds);
+		const done = isFieldFilled(field, filled, open, leafIds, asks);
 		available += field.weight;
 		if (done) earned += field.weight;
-		if (isOpenQuestion(field, open, leafIds)) openQuestionCount += 1;
+		if (isOpenQuestion(field, open, leafIds, asks)) openQuestionCount += 1;
 		if (field.critical && !done) criticalEmptyFields.push(field.path);
 	}
 
@@ -169,15 +195,15 @@ export function readMaturity(
 	const perBlock = blocks.map((block): BlockReading => {
 		const total = block.fields.reduce((n, f) => n + f.weight, 0);
 		const got = block.fields.reduce(
-			(n, f) => n + (isFieldFilled(f, filled, open, leafIds) ? f.weight : 0),
+			(n, f) => n + (isFieldFilled(f, filled, open, leafIds, asks) ? f.weight : 0),
 			0
 		);
-		const openHere = block.fields.filter((f) => isOpenQuestion(f, open, leafIds)).length;
+		const openHere = block.fields.filter((f) => isOpenQuestion(f, open, leafIds, asks)).length;
 		return {
 			block,
-			state: stateOf(block, filled, open, leafIds),
+			state: stateOf(block, filled, open, leafIds, asks),
 			percent: total === 0 ? 100 : Math.round((got / total) * 100),
-			filled: block.fields.filter((f) => isFieldFilled(f, filled, open, leafIds)).length,
+			filled: block.fields.filter((f) => isFieldFilled(f, filled, open, leafIds, asks)).length,
 			openQuestions: openHere,
 			parked: block.fields.length > 0 && openHere === block.fields.length
 		};
@@ -209,4 +235,29 @@ export function firstEmptyFieldPath(
 ): string {
 	const open = new Set(openQuestionKeys);
 	return fieldsOf(blocks).find((f) => !isFieldFilled(f, filled, open, leafIds))?.path ?? '';
+}
+
+/**
+ * The maturity of one request as the gate reads it: the fields each subject is
+ * asked, plus the critical questions of the need (ac-evo-gate-need), which
+ * belong to the request rather than to any feature.
+ */
+export function readRequestMaturity(
+	request: EvolutionRequest,
+	filled: FilledFields,
+	blocks: readonly SpecBlock[]
+): MaturityReading {
+	const asks: AskedOn = (field, leafId) => isAskedOn(field, subjectKindOf(request.drafts, leafId));
+	// A question skipped on purpose is settled: it is neither a hole nor critical (ac-evo-form-question-skip).
+	const settled = new Set([...filled, ...(request.skippedQuestions ?? []).map((s) => s.key)]);
+	const reading = readMaturity(settled, request.openQuestionKeys, [...touchedLeafIds(request)], blocks, asks);
+	const need = needCriticalEmpty(request);
+	if (need.length === 0) return reading;
+	const criticalEmptyFields = [...need, ...reading.criticalEmptyFields];
+	return {
+		...reading,
+		criticalEmptyFields,
+		criticalEmptyCount: criticalEmptyFields.length,
+		tier: tierOf(reading.score, criticalEmptyFields.length)
+	};
 }

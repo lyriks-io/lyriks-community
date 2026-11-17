@@ -35,4 +35,18 @@ describe('BundledSkillCatalog (what the build actually inlines)', () => {
 		expect(second.tools.every((tool) => tool.unchanged === true && tool.content === undefined)).toBe(true);
 		expect(second.targets[0].hook?.content).toBeDefined();
 	});
+
+	it('ships a retro-spec that draws infrastructure code on the map, never as features (ac-proj-code-infra)', () => {
+		const skill = catalog.getSkill('lyriks-retrospec')!.installContent;
+		expect(skill).toContain('## Infrastructure code: the map, never a feature');
+		for (const home of ['`data.hosts`', '`data.databases`', '`data.interfaces`', '`layer: "infra"`', '`architecture.constraints`']) {
+			expect(skill).toContain(home);
+		}
+		// YAML values are read with the module that decodes them, and the report owns up to the missing drift watch.
+		expect(skill).toContain('`yamldecode`');
+		expect(skill).toContain('the map is a snapshot of the frozen commit');
+		expect(skill).toContain('Never create a project for it alone.');
+		// The register law makes room for the map, or the agent would have to rename "RDS" in a user's words.
+		expect(skill).toContain('Banned outside the `architecture` section, the infrastructure map');
+	});
 });

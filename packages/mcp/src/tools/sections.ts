@@ -93,12 +93,28 @@ export async function describeSectionHandler(
   return lyriks.get(`/api/sections/describe?section=${encodeURIComponent(args.section)}`)
 }
 
-export async function getImplementationContextHandler(
-  args: { project_id: string; screen_id: string },
-  lyriks: LyriksClient,
-): Promise<unknown> {
-  const qs = `projectId=${encodeURIComponent(args.project_id)}&screen=${encodeURIComponent(args.screen_id)}`
-  return lyriks.get(`/api/sections/context?${qs}`)
+/**
+ * The retired screen prototype: the experience section's `builder` sub-tree
+ * (layouts, simulator seeds, demo collections). It stays stored and nothing
+ * reads it any more, so no section tool reads or writes it.
+ */
+const RETIRED_PROTOTYPE_REASON =
+  'The screen prototype is retired: the experience `builder` sub-tree (layouts, simulator seeds, demo collections) is neither read nor written through the MCP. Describe the experience with journeys, steps, the screen inventory (screens) and the design.md sources (brand); acceptance tests come from export_behavior_scenarios.'
+
+function touchesRetiredPrototype(section: Section, path: string | undefined): boolean {
+  return section === 'experience' && typeof path === 'string' && (path === 'builder' || path.startsWith('builder.'))
+}
+
+function refuseRetiredPrototype(section: Section, paths: readonly (string | undefined)[]): unknown | null {
+  const hit = paths.filter((p): p is string => touchesRetiredPrototype(section, p))
+  return hit.length ? { refused: true, section, paths: hit, reason: RETIRED_PROTOTYPE_REASON } : null
+}
+
+/** A read of the experience section without the retired prototype. */
+function withoutRetiredPrototype(section: Section, draft: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (section !== 'experience' || !draft || typeof draft !== 'object' || !('builder' in draft)) return draft
+  const { builder: _builder, ...plan } = draft
+  return plan
 }
 
 export async function getSectionHandler(
@@ -108,15 +124,21 @@ export async function getSectionHandler(
   const qs = `projectId=${encodeURIComponent(args.project_id)}&section=${encodeURIComponent(args.section)}`
   const read = (await lyriks.get(`/api/sections?${qs}`)) as Record<string, unknown>
   // The big document stays here in the MCP server — only return what was asked.
-  const draft = (read && typeof read === 'object' && 'draft' in read ? read.draft : read) as Record<string, unknown>
+  const draft = withoutRetiredPrototype(
+    args.section,
+    (read && typeof read === 'object' && 'draft' in read ? read.draft : read) as Record<string, unknown>,
+  )
 
   if (args.summary) {
     return { section: args.section, projectId: args.project_id, revision: read.revision, summary: summarize(draft ?? {}) }
   }
   if (args.paths && args.paths.length > 0) {
-    const { values: selected, missingPaths } = selectPaths(draft, args.paths)
+    const retired = refuseRetiredPrototype(args.section, args.paths)
+    if (retired) return retired
+    const { values: selected, missingPaths } = selectPaths(draft ?? {}, args.paths)
     return { section: args.section, projectId: args.project_id, revision: read.revision, selected, missingPaths }
   }
+  if (args.section === 'experience' && read && typeof read === 'object' && 'draft' in read) return { ...read, draft }
   return read // full document (back-compat) — avoid for big sections; prefer summary/paths
 }
 
@@ -164,6 +186,7 @@ export async function setSectionHandler(
   // Patch escape hatch: a document of the shape { __ops: [...] } is a targeted
   // patch, not a full replace — so callers can edit a section without resending
   // huge sub-trees (e.g. the Experience builder). Delegates to patchSectionHandler.
+  if (args.section === 'experience' && 'builder' in args.document) return refuseRetiredPrototype(args.section, ['builder'])
   const ops = (args.document as { __ops?: unknown }).__ops
   if (Array.isArray(ops)) {
     return patchSectionHandler({ project_id: args.project_id, section: args.section, operations: ops as PatchOp[], expected_revision: args.expected_revision }, lyriks)
@@ -173,13 +196,16 @@ export async function setSectionHandler(
   // `collections` seeded by import_data_collections, or `builder`. Read errors
   // block writes: without the current revision, a replacement is unsafe.
   const warnings: string[] = []
+  const retained: Record<string, unknown> = {}
   let revision: number | undefined
   {
     const qs = `projectId=${encodeURIComponent(args.project_id)}&section=${encodeURIComponent(args.section)}`
     const read = (await lyriks.get(`/api/sections?${qs}`)) as Record<string, unknown>
     revision = sectionRevision(read, args.expected_revision)
     const current = ((read && typeof read === 'object' && 'draft' in read ? read.draft : read) ?? {}) as Record<string, unknown>
-    const derived = new Set(DERIVED_SUBTREES[args.section] ?? [])
+    // The retired prototype is carried over untouched: a full replace never erases it.
+    if (args.section === 'experience' && 'builder' in current) retained.builder = current.builder
+    const derived = new Set([...(DERIVED_SUBTREES[args.section] ?? []), ...Object.keys(retained)])
     const dropped = Object.keys(current).filter(
       (k) => k !== 'projectId' && !derived.has(k) && isNonEmptySubtree(current[k]) && !(k in args.document),
     )
@@ -191,7 +217,7 @@ export async function setSectionHandler(
     }
   }
   // lyriks endpoints key off projectId in the body — stamp it so the caller can't drift.
-  const body = { ...args.document, projectId: args.project_id }
+  const body = { ...args.document, ...retained, projectId: args.project_id }
   const raw = await lyriks.put(WRITE_PATHS[args.section], body, revisionHeaders(revision))
   if (revision === undefined) warnings.push(UNGUARDED_WRITE_WARNING)
   const result = dedupeCoherenceIssues(`${args.project_id}:${args.section}`, raw)
@@ -238,6 +264,8 @@ export interface PatchOp {
   find?: string
   /** append_text: what goes between the current text and `value` (default: a blank line). */
   separator?: string
+  /** set / remove at a path: the op MEANS to empty a list that holds rows (criterion 3eb55075). */
+  erase?: boolean
 }
 
 /**
@@ -446,6 +474,38 @@ function applyAppend(draft: Record<string, unknown>, op: PatchOp): OpOutcome {
   return 'changed'
 }
 
+/** How many rows a list holds, the lists nested in an object included. */
+function rowsIn(value: unknown): number {
+  if (Array.isArray(value)) return value.length
+  if (!value || typeof value !== 'object') return 0
+  return Object.values(value as Record<string, unknown>).reduce<number>((sum, child) => sum + rowsIn(child), 0)
+}
+
+/**
+ * The rows a `set` or a path `remove` would erase without saying so (criterion
+ * 3eb55075): the target holds rows (a list, or an object holding lists) and the
+ * op leaves nothing in their place (null, an empty list, a scalar, a removal).
+ * Replacing a list by other rows, or an object by another object, is a
+ * replacement the author wrote out, not an erase. A leftover test op such as
+ * `set fields = null` at the end of a batch is exactly what this holds back.
+ */
+function rowsErased(draft: Record<string, unknown>, op: PatchOp): number {
+  if (op.erase === true || !op.path) return 0
+  if (op.op !== 'set' && !(op.op === 'remove' && op.collection === undefined)) return 0
+  const current = getPath(draft, op.path)
+  const held = rowsIn(current)
+  if (held === 0) return 0
+  if (op.op === 'set') {
+    if (Array.isArray(current) && Array.isArray(op.value) && op.value.length > 0) return 0
+    if (!Array.isArray(current) && op.value && typeof op.value === 'object' && !Array.isArray(op.value)) return 0
+  }
+  return held
+}
+
+const eraseReason = (op: PatchOp, rows: number): string =>
+  `would erase the ${rows} row${rows === 1 ? '' : 's'} held at \`${op.path}\` and leave nothing in their place, so it was not applied. ` +
+  'An operation meant to empty a list carries erase:true; to drop one row, remove it by collection and id or match.'
+
 /** set / merge / remove: true when the op found its target. */
 function applyLegacy(draft: Record<string, unknown>, op: PatchOp): boolean {
   if (op.op === 'set' && op.path) {
@@ -498,6 +558,11 @@ export function applySectionPatchReport(draft: Record<string, unknown>, operatio
   validateSectionPatch(operations)
   const report: PatchReport = { applied: 0, changed: [], unchanged: [], notApplied: [] }
   for (const [index, op] of operations.entries()) {
+    const erased = rowsErased(draft, op)
+    if (erased > 0) {
+      report.notApplied.push({ index, op: op.op, target: opTarget(op), reason: eraseReason(op, erased) })
+      continue
+    }
     const outcome = isIncremental(op.op)
       ? applyIncremental(draft, op)
       : op.op === 'append'
@@ -532,6 +597,8 @@ export async function patchSectionHandler(
 ): Promise<unknown> {
   const typedOnly = refuseTypedWriteOnly(args.section)
   if (typedOnly) return typedOnly
+  const retired = refuseRetiredPrototype(args.section, args.operations.flatMap((op) => [op.path, op.collection]))
+  if (retired) return retired
   validateSectionPatch(args.operations)
   const qs = `projectId=${encodeURIComponent(args.project_id)}&section=${encodeURIComponent(args.section)}`
   const read = (await lyriks.get(`/api/sections?${qs}`)) as Record<string, unknown>
@@ -552,7 +619,7 @@ export async function patchSectionHandler(
   }
   if (args.dry_run === true) {
     const preview = { dryRun: true, persisted: false, baseRevision: revision, ...outcome,
-      warnings: report.notApplied.length ? [`${report.notApplied.length} operation(s) matched no target; inspect ids and collection paths before applying.`] : [] }
+      warnings: report.notApplied.length ? [`${report.notApplied.length} operation(s) would not be applied: read the reason of each under notApplied (an unknown id or path, or a list it would erase) before applying.`] : [] }
     let validation: unknown
     try {
       validation = await lyriks.post('/api/sections/validate', { projectId: args.project_id, section: args.section, draft: body })
@@ -603,4 +670,40 @@ function sectionRevision(read: Record<string, unknown>, expected?: number): numb
 }
 function revisionHeaders(revision: number | undefined): Record<string, string> {
   return revision === undefined ? {} : { 'x-lyriks-rev': String(revision) }
+}
+
+const PROJECT_PROTOTYPE_PATH = 'wizard_envelope.experience.builder'
+
+/** A get_project path that reaches into the retired screen prototype. */
+export function refuseRetiredPrototypeInProject(paths: readonly string[] | undefined): unknown | null {
+  const hit = (paths ?? []).filter((p) => p === PROJECT_PROTOTYPE_PATH || p.startsWith(`${PROJECT_PROTOTYPE_PATH}.`))
+  return hit.length ? { refused: true, paths: hit, reason: RETIRED_PROTOTYPE_REASON } : null
+}
+
+/** A get_project answer without the retired screen prototype, whatever its shape (full, summary or selected paths). */
+export function withoutRetiredPrototypeInProject(answer: unknown): unknown {
+  if (!answer || typeof answer !== 'object') return answer
+  const stripEnvelope = (envelope: unknown): unknown => {
+    if (!envelope || typeof envelope !== 'object') return envelope
+    const experience = (envelope as Record<string, unknown>).experience
+    if (!experience || typeof experience !== 'object' || !('builder' in experience)) return envelope
+    const { builder: _builder, ...plan } = experience as Record<string, unknown>
+    return { ...(envelope as Record<string, unknown>), experience: plan }
+  }
+  const stripProject = (project: unknown): unknown =>
+    project && typeof project === 'object' && 'wizard_envelope' in project
+      ? { ...(project as Record<string, unknown>), wizard_envelope: stripEnvelope((project as Record<string, unknown>).wizard_envelope) }
+      : project
+  const out = stripProject(answer) as Record<string, unknown>
+  if (out.summary) return { ...out, summary: stripProject(out.summary) }
+  if (out.selected && typeof out.selected === 'object') {
+    const selected: Record<string, unknown> = {}
+    for (const [path, value] of Object.entries(out.selected as Record<string, unknown>)) {
+      if (path === 'wizard_envelope') selected[path] = stripEnvelope(value)
+      else if (path === 'wizard_envelope.experience') selected[path] = (stripEnvelope({ experience: value }) as Record<string, unknown>).experience
+      else selected[path] = value
+    }
+    return { ...out, selected }
+  }
+  return out
 }

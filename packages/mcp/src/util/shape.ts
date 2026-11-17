@@ -8,6 +8,12 @@
 
 export const RESULT_CAP = Number(process.env.MCP_RESULT_CAP ?? 24000) // chars (~6k tokens)
 
+/** What follows the outline of a project: the read of the one part the agent needs. */
+export const PROJECT_OUTLINE_NEXT =
+  'Outline only, no section content. Read one section with get_section (its project_id is kernel_project_id), ' +
+  'one feature with get_behavior_feature, a sub-tree here with paths:["wizard_envelope.<section>.<key>"], ' +
+  'or the whole project with full:true (large).'
+
 function safeStringify(v: unknown): string {
   try {
     return JSON.stringify(v) ?? ''

@@ -53,6 +53,6 @@ export function readPortfolio(value: unknown, options: PortfolioReadOptions = {}
     returned: page.length,
     offset,
     nextOffset: offset + page.length < matches.length ? offset + page.length : null,
-    hint: 'Compact discovery cards. Continue with offset:nextOffset; use query to find a name/id, or get_project for full details. paths reads exact subtrees of the original portfolio.',
+    hint: 'Compact discovery cards. Continue with offset:nextOffset; use query to find a name/id, get_section to read one section of a project, or get_project for its outline. paths reads exact subtrees of the original portfolio.',
   }
 }

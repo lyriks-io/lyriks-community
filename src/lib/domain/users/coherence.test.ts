@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { computeUsersCoherence } from './coherence';
-import {
-	capabilityActions,
-	capabilityKindOf,
-	permissionCoverage,
-	type ProjectUsersDraft
-} from './draft';
-import type { PermissionAction } from './enums';
-import { CAPABILITY_SOURCES, SYSTEM_CAPABILITIES } from './enums';
+import { computeUsersCoherence, usersCountsLine } from './coherence';
+import { permissionCoverage, type ProjectUsersDraft } from './draft';
+import { SYSTEM_CAPABILITIES } from './enums';
 
 const sys = (roleId: string) =>
 	SYSTEM_CAPABILITIES.map((c) => ({
@@ -22,7 +16,7 @@ function draft(over: Partial<ProjectUsersDraft> = {}): ProjectUsersDraft {
 		roles: [{ id: 'r1', name: 'Admin', description: '', userCountMin: 1, userCountMax: null, tone: 'admin', sourceIds: [] }],
 		offStructureCapabilities: [],
 		permissions: [],
-		capabilityProfiles: [],
+		dismissedSuggestions: [],
 		lastSavedAt: null,
 		...over
 	};
@@ -98,46 +92,13 @@ describe('computeUsersCoherence — coverage-based', () => {
 	});
 });
 
-describe('the permission verbs a capability offers', () => {
-	it('offers every row the same five essentials, whatever its source', () => {
-		// Ten verbs was more choice than the matrix needs today: the wider
-		// vocabulary is hidden (not deleted), so a row's kind no longer narrows
-		// the list — intersecting an `action` row's defaults with the active verbs
-		// would have left it offering nothing but "Visible".
-		for (const source of CAPABILITY_SOURCES) {
-			expect(capabilityActions([], 'x', source.code)).toEqual([
-				'view',
-				'create',
-				'read',
-				'update',
-				'delete'
-			]);
-		}
-	});
-
-	it('never offers a hidden verb, even to a profile that authored one', () => {
-		expect(
-			capabilityActions(
-				[{ capabilityId: 'cap-1', kind: 'action', actions: ['view', 'export', 'read'] }],
-				'cap-1',
-				'off_structure'
-			)
-		).toEqual(['view', 'read']);
-	});
-
-	it('falls back to the five when an override survives no filtering', () => {
-		// A row with nothing grantable would read as an orphan capability forever.
-		for (const actions of [[], ['export', 'manage'] as PermissionAction[]]) {
-			expect(
-				capabilityActions([{ capabilityId: 'cap-1', kind: 'action', actions }], 'cap-1', 'off_structure')
-			).toEqual(['view', 'create', 'read', 'update', 'delete']);
-		}
-	});
-
-	it('still records what a row IS — the kind outlives the reduced vocabulary', () => {
-		expect(capabilityKindOf([], 'cap-1', 'off_structure', 'surface')).toBe('surface');
-		expect(
-			capabilityKindOf([{ capabilityId: 'cap-1', kind: 'governance' }], 'cap-1', 'off_structure', 'surface')
-		).toBe('governance');
+describe('the Users counts read accesses [criterion:8554bd0d]', () => {
+	it('counts one access per role and capability, however many verbs were stored', () => {
+		const stored = ['create', 'read', 'update', 'delete'].map(
+			(action) => ({ roleId: 'r1', capabilityId: 'action:f1:a1', capabilitySource: 'feature', action }) as never
+		);
+		const d = draft({ permissions: [...stored, { roleId: 'r1', capabilityId: 'action:f1:a2', capabilitySource: 'feature' }] });
+		expect(usersCountsLine(d)).toBe('1 role(s) · 2 access grant(s)');
+		expect(usersCountsLine(d, 'fr')).toBe('1 rôle(s) · 2 accès');
 	});
 });

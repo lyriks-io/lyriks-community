@@ -1,5 +1,4 @@
 import { error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireBehaviorFeatureAccess } from '$lib/server/behavior-feature-access.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { adoptionJson } from '$lib/server/adoption-endpoint.server';
@@ -40,7 +39,7 @@ export const POST: RequestHandler = async (event) => {
 	}
 
 	return adoptionJson(
-		await getServices().codeAdoption.getImplementationDrift(
+		await event.locals.services.codeAdoption.getImplementationDrift(
 			projectId,
 			body.index as BehavioralIndexPayload,
 			featureId || undefined

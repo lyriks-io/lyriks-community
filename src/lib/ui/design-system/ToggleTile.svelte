@@ -20,25 +20,25 @@
 	role="checkbox"
 	aria-checked={selected}
 	onclick={onToggle}
-	class="flex w-full items-start gap-3 rounded-field border px-3.5 py-3 text-left transition-colors {selected
-		? 'border-accent-400 bg-accent-50'
-		: 'border-line bg-surface hover:border-line-strong'}"
+	class="flex w-full items-start gap-3 border px-3.5 py-3 text-left transition-colors {selected
+		? 'border-ink bg-paper'
+		: 'border-line bg-surface-sunken hover:border-ink'}"
 >
 	<span
-		class="mt-0.5 grid size-4 shrink-0 place-items-center rounded-sm border {selected
-			? 'border-accent-500 bg-accent-500 text-white'
-			: 'border-line-strong'}"
+		class="mt-0.5 grid size-4 shrink-0 place-items-center border-[1.5px] border-ink {selected
+			? 'bg-ink text-paper'
+			: 'bg-transparent'}"
 	>
 		{#if selected}
 			<Icon name="check" size={12} />
 		{/if}
 	</span>
 	<span class="min-w-0">
-		<span class="block text-sm font-medium {selected ? 'text-accent-600' : 'text-ink-900'}">
+		<span class="block text-sm {selected ? 'font-bold text-ink' : 'font-medium text-ink'}">
 			{title}
 		</span>
 		{#if hint}
-			<span class="block text-xs text-ink-500">{hint}</span>
+			<span class="block text-xs text-ink-2">{hint}</span>
 		{/if}
 	</span>
 </button>

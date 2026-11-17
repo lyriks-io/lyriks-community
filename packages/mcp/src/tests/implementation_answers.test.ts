@@ -145,6 +145,16 @@ describe('sync_implementation_index', () => {
     expect(result.shared).toEqual({ total: 2, entries: [{ key: 'state:cart.total' }, { key: 'state:cart.open' }] })
   })
 
+  it('carries the children a sent parent came without, capped like the other lists (criterion 1f758e2d)', async () => {
+    const entries = Array.from({ length: 60 }, (_, i) => ({ key: `action:a${i}`, featureId: 'feat-1', missing: [`rule:r${i}`] }))
+    const { lyriks } = makeLyriks({ synced: 60, acks: [], incomplete: { total: 60, entries } })
+    const result = await syncIndexHandler({ project_id: 'p', index: {} }, lyriks) as { incomplete: { total: number; entries: unknown[]; entriesReturned: number } }
+    expect(result.incomplete.total).toBe(60)
+    expect(result.incomplete.entries).toHaveLength(50)
+    expect(result.incomplete.entriesReturned).toBe(50)
+    expect(SYNC_SEMANTICS.incomplete).toMatch(/send them with their parent/)
+  })
+
   it('returns every acknowledgement with verbose:true', async () => {
     const { lyriks } = makeLyriks(syncAnswer())
     const result = await syncIndexHandler({ project_id: 'p', index: {}, verbose: true }, lyriks) as { acks: unknown[] }

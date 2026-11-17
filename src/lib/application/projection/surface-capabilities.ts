@@ -47,7 +47,6 @@ export function screenCapabilities(
 		source: 'surface' as const,
 		sourceRefId: screen.category ?? '',
 		sourceRefLabel: (screen.category && coreName.get(screen.category)) || 'Transverse',
-		kind: 'surface' as const,
 		surfaceKind: 'page',
 		path: screenPath(screen)
 	}));
@@ -88,7 +87,6 @@ export function featureSurfaceCapabilities(leaves: readonly LeafSnapshot[]): Der
 				source: 'surface',
 				sourceRefId: leaf.id,
 				sourceRefLabel: leaf.name || '<unnamed feature>',
-				kind: 'surface',
 				surfaceKind: typeof candidate.type === 'string' && candidate.type ? candidate.type : 'surface'
 			});
 		}

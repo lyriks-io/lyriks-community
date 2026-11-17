@@ -79,9 +79,29 @@ export type BrandSemanticKey =
 
 export type BrandSemanticColors = Record<BrandSemanticKey, string>;
 
+/** A colour role's three shades: at rest, under the pointer, pressed (ac-brand-palette-roles). '' = not set. */
+export interface BrandShades {
+	base: string;
+	hover: string;
+	active: string;
+}
+
+export const BRAND_PALETTE_ROLES = ['primary', 'secondary', 'tertiary'] as const;
+export type BrandPaletteRole = (typeof BRAND_PALETTE_ROLES)[number];
+export const BRAND_SHADE_STATES = ['base', 'hover', 'active'] as const;
+export type BrandShadeState = (typeof BRAND_SHADE_STATES)[number];
+
+/** The strict minimum a design manages: a primary, a secondary and a tertiary colour, each in its three shades. */
+export type BrandPalette = Record<BrandPaletteRole, BrandShades>;
+
 export interface BrandColors {
 	tokens: BrandColorToken[];
 	semantic: BrandSemanticColors;
+	palette: BrandPalette;
+}
+
+export function emptyPalette(): BrandPalette {
+	return { primary: { base: '', hover: '', active: '' }, secondary: { base: '', hover: '', active: '' }, tertiary: { base: '', hover: '', active: '' } };
 }
 
 /** Semantic color slots, in display order, with their human label. */
@@ -357,6 +377,8 @@ export interface ProjectBrand {
 	pages: BrandPage[];
 	examples: BrandExample[];
 	attachments: Partial<Record<BrandSection, BrandAttachment[]>>;
+	/** The sources the brand was read from: the stylesheet, the theme, the design files (ac-brand-sources). */
+	sourceIds: string[];
 }
 
 /* ── Defaults ────────────────────────────────────────────────────────────── */
@@ -420,14 +442,15 @@ export function defaultBrand(): ProjectBrand {
 				additionalDoDont: ''
 			}
 		},
-		colors: { tokens: [], semantic: emptySemantic() },
+		colors: { tokens: [], semantic: emptySemantic(), palette: emptyPalette() },
 		typography: { families: emptyFamilies(), roles: [], scale: [], weights: [] },
 		foundation: { space: [], radius: [], shadow: [], breakpoints: [] },
 		markers: defaultMarkers(),
 		components: [],
 		pages: [],
 		examples: [],
-		attachments: {}
+		attachments: {},
+		sourceIds: []
 	};
 }
 
@@ -457,6 +480,17 @@ function rows<T>(v: unknown, map: (o: Record<string, unknown>) => T): T[] {
 function uniqueById<T extends { id: string }>(items: T[]): T[] {
 	const seen = new Set<string>();
 	return items.filter((item) => (seen.has(item.id) ? false : (seen.add(item.id), true)));
+}
+
+/** The palette read back: each role's three shades, '' where a shade is not given. */
+function paletteOf(input: unknown): BrandPalette {
+	const out = emptyPalette();
+	const src = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
+	for (const role of BRAND_PALETTE_ROLES) {
+		const shades = src[role] && typeof src[role] === 'object' ? (src[role] as Record<string, unknown>) : {};
+		for (const state of BRAND_SHADE_STATES) out[role][state] = typeof shades[state] === 'string' ? (shades[state] as string).trim() : '';
+	}
+	return out;
 }
 
 export function coerceBrand(input: unknown): ProjectBrand {
@@ -548,7 +582,8 @@ export function coerceBrand(input: unknown): ProjectBrand {
 				value: str(o.value, '#000000'),
 				usage: str(o.usage)
 			})),
-			semantic: semanticOut
+			semantic: semanticOut,
+			palette: paletteOf(colors.palette)
 		},
 		typography: {
 			families: { heading: family('heading'), body: family('body'), mono: family('mono') },
@@ -626,7 +661,8 @@ export function coerceBrand(input: unknown): ProjectBrand {
 			badCode: str(o.badCode),
 			explanation: str(o.explanation)
 		})),
-		attachments
+		attachments,
+		sourceIds: Array.isArray(src.sourceIds) ? src.sourceIds.filter((id): id is string => typeof id === 'string' && id !== '') : []
 	};
 }
 

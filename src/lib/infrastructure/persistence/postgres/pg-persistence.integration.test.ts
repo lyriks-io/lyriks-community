@@ -8,6 +8,8 @@ import { PgSectionDocumentStore } from './pg-section-documents.server';
 import { PgDraftLock } from './pg-draft-lock.server';
 import { MIGRATIONS } from './pg-migrations.server';
 import type { SectionChangeEvent } from '$application/ports';
+import { emptyRowSnapshot } from '$domain/portability';
+import { PgProjectPortabilityStore } from './pg-project-portability-store.server';
 
 const projectId = `pg-integration-${randomUUID()}`;
 const integration = process.env.LYRIKS_PG_URL ? describe : describe.skip;
@@ -106,6 +108,30 @@ integration('PostgreSQL persistence integration', () => {
 	});
 });
 
+
+integration('project restore preserves live local ownership', () => {
+	it('keeps the latest team and refuses archive owners during a content restore [criterion:d91acf2d]', async () => {
+		await ready();
+		const id = `restore-team-${randomUUID()}`;
+		const residue = new PgProjectResidueRepository();
+		const store = new PgProjectPortabilityStore();
+		const latestTeam = { collaborators: [{ id: 'real-owner', role: 'owner' }] };
+		try {
+			await residue.save(id, 'team', latestTeam);
+			await residue.save(id, 'content', { old: true });
+			await store.write(id, { ...emptyRowSnapshot(), residue: {
+				team: { collaborators: [{ id: 'archive-owner', role: 'owner' }] }, content: { restored: true }
+			} }, { preserveLocalTeam: true });
+			expect(await residue.load(id, 'team')).toEqual(latestTeam);
+			expect(await residue.load(id, 'content')).toEqual({ restored: true });
+			await pgQuery('DELETE FROM project_residue WHERE project_id = $1 AND section = $2', [id, 'team']);
+			await store.write(id, { ...emptyRowSnapshot(), residue: { team: { collaborators: [{ id: 'archive-owner', role: 'owner' }] } } }, { preserveLocalTeam: true });
+			expect(await residue.load(id, 'team')).toBeNull();
+		} finally {
+			await pgQuery('DELETE FROM project_residue WHERE project_id = $1', [id]);
+		}
+	});
+});
 
 integration('operator session version migration', () => {
 	it('invalidates sessions across provider instances after password change and logout', async () => {

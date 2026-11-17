@@ -46,12 +46,12 @@
 		border-radius: 9999px;
 		background: conic-gradient(
 			from var(--aura-angle),
-			rgb(252 211 77 / 0) 0deg,
-			rgb(252 211 77 / 1) 55deg,
-			rgb(255 255 255 / 0.95) 120deg,
-			rgb(252 211 77 / 0) 195deg,
-			rgb(252 211 77 / 1) 300deg,
-			rgb(252 211 77 / 0) 360deg
+			rgb(255 161 1 / 0) 0deg,
+			rgb(255 161 1 / 1) 55deg,
+			rgb(247 244 236 / 0.95) 120deg,
+			rgb(255 161 1 / 0) 195deg,
+			rgb(255 161 1 / 1) 300deg,
+			rgb(255 161 1 / 0) 360deg
 		);
 		filter: blur(7px);
 		pointer-events: none;

@@ -1,10 +1,6 @@
-import {
-	ACTIVE_PERMISSION_ACTION_CODES,
-	DEFAULT_KIND_BY_SOURCE,
-	HIDDEN_PERMISSION_ACTIONS,
-	SYSTEM_CAPABILITIES
-} from './enums';
-import type { CapabilityKind, CapabilitySource, PermissionAction, RoleTone } from './enums';
+import { SYSTEM_CAPABILITIES } from './enums';
+import type { CapabilitySource, RoleTone } from './enums';
+import type { SuggestionDismissal } from './suggestion-dismissals';
 
 /* ── Entities (mirror of Unspaghettit feature 33b2f79d entities) ──────── */
 
@@ -17,6 +13,19 @@ export interface Role {
 	readonly tone: RoleTone;
 	/** Ids from the project Documents & Sources register that evidence this persona. */
 	readonly sourceIds: string[];
+	/**
+	 * How the behaviour reads this role: the state values a person in it starts
+	 * with (`session.workspaceRole` = `admin`). What ties the role of the matrix to
+	 * the role a guard reads, so the two can be compared (criteria 8763ca70 and
+	 * 26262450 of feat-access-matrix). Absent or empty: the role is not compared.
+	 */
+	readonly behaviorValues?: readonly RoleBehaviorValue[];
+}
+
+/** One state value a person in a role starts with in the behaviour. */
+export interface RoleBehaviorValue {
+	readonly path: string;
+	readonly value: string | number | boolean | null;
 }
 
 export interface OffStructureCapability {
@@ -25,25 +34,17 @@ export interface OffStructureCapability {
 	readonly note: string | null;
 }
 
+/**
+ * One access: the role has access to the capability. A grant carries no verb
+ * (owner decision of 2026-11-02, criterion ac-leaf-ac-matrix-1 of
+ * feat-access-matrix): adding, editing or deleting something are actions of the
+ * model, each its own capability, so they are granted like any other. A role and
+ * a capability hold one grant at most, and no grant means no access.
+ */
 export interface PermissionGrant {
 	readonly roleId: string;
 	readonly capabilityId: string;
 	readonly capabilitySource: CapabilitySource;
-	/** The verb this grant authorises. Legacy grants may omit it (≈ all verbs). */
-	readonly action?: PermissionAction;
-}
-
-/**
- * Per-capability typing of a matrix row: what it *is*, and therefore which
- * permission verbs the matrix offers on it. Sparse — a row with no profile uses
- * `DEFAULT_KIND_BY_SOURCE` for its source. Authored by the user in the matrix
- * (or by an LLM through the MCP), never derived, so it is persisted here.
- */
-export interface CapabilityProfile {
-	readonly capabilityId: string;
-	readonly kind: CapabilityKind;
-	/** Explicit verb list; absent ⇒ the kind's defaults. */
-	readonly actions?: PermissionAction[];
 }
 
 export interface DerivedCapability {
@@ -52,15 +53,44 @@ export interface DerivedCapability {
 	readonly source: 'feature' | 'journey' | 'surface';
 	readonly sourceRefId: string;
 	readonly sourceRefLabel: string;
-	/**
-	 * Kind suggested by the upstream context (a dialog is a `surface`, a leaf
-	 * feature an `action`, …). An authored `CapabilityProfile` overrides it.
-	 */
-	readonly kind?: CapabilityKind;
 	/** For surfaces: what it is in the product — page, dialog, panel, form, … */
 	readonly surfaceKind?: string;
 	/** For surfaces: the route the page answers on, when it has one. */
 	readonly path?: string;
+	/**
+	 * For an action row: the leaf feature that declares it, and its name. The
+	 * matrix groups action rows under their feature; `sourceRefId` stays the
+	 * Core so screen access keeps grouping by Core.
+	 */
+	readonly featureId?: string;
+	readonly featureLabel?: string;
+}
+
+/**
+ * An action a feature's behavior declares, as a matrix row. The id carries the
+ * feature, so a grant on an action can be read back as access to its feature
+ * without the behavior kernel at hand.
+ */
+export const ACTION_CAPABILITY_PREFIX = 'action:';
+
+export function actionCapabilityId(featureId: string, actionId: string): string {
+	return `${ACTION_CAPABILITY_PREFIX}${featureId}:${actionId}`;
+}
+
+/** The feature an action row belongs to; null for any other capability. */
+export function featureOfActionCapability(capabilityId: string): string | null {
+	if (!capabilityId.startsWith(ACTION_CAPABILITY_PREFIX)) return null;
+	const rest = capabilityId.slice(ACTION_CAPABILITY_PREFIX.length);
+	const cut = rest.lastIndexOf(':');
+	return cut > 0 ? rest.slice(0, cut) : null;
+}
+
+/** The action an action row stands for; null for any other capability. */
+export function actionOfActionCapability(capabilityId: string): string | null {
+	if (!capabilityId.startsWith(ACTION_CAPABILITY_PREFIX)) return null;
+	const rest = capabilityId.slice(ACTION_CAPABILITY_PREFIX.length);
+	const cut = rest.lastIndexOf(':');
+	return cut > 0 && cut < rest.length - 1 ? rest.slice(cut + 1) : null;
 }
 
 /**
@@ -74,8 +104,12 @@ export interface ProjectUsersDraft {
 	roles: Role[];
 	offStructureCapabilities: OffStructureCapability[];
 	permissions: PermissionGrant[];
-	/** Sparse per-row typing; absent ⇒ the source's default kind. */
-	capabilityProfiles: CapabilityProfile[];
+	/**
+	 * Suggested personas the author removed, as a kept history of decisions:
+	 * suggestions are recomputed on every load, so a dismissal has to travel
+	 * with the section or the card would come back. Append-only on save.
+	 */
+	dismissedSuggestions: SuggestionDismissal[];
 	lastSavedAt: string | null;
 }
 
@@ -85,7 +119,7 @@ export function createEmptyUsersDraft(projectId: string): ProjectUsersDraft {
 		roles: [],
 		offStructureCapabilities: [],
 		permissions: [],
-		capabilityProfiles: [],
+		dismissedSuggestions: [],
 		lastSavedAt: null
 	};
 }
@@ -114,66 +148,13 @@ export function createOffStructureCapability(
 	return { id: newId(), label: '', note: null, ...overrides };
 }
 
-/**
- * Look up a grant by composite key; v0 is O(n) — fine for the tens-of-rows
- * scale. When `action` is omitted the check is action-agnostic ("does this role
- * have *any* access to this capability?") — that is what the coherence /
- * can-advance / experience callers want. When an `action` is passed the grant
- * must match it (a legacy action-less grant counts as authorising every action).
- */
+/** Whether a role has access to a capability. */
 export function hasGrant(
 	grants: readonly PermissionGrant[],
 	roleId: string,
-	capabilityId: string,
-	action?: PermissionAction
+	capabilityId: string
 ): boolean {
-	return grants.some(
-		(g) =>
-			g.roleId === roleId &&
-			g.capabilityId === capabilityId &&
-			(action === undefined || g.action === undefined || g.action === action)
-	);
-}
-
-/* ── Row typing: which verbs a capability actually accepts ────────────── */
-
-/**
- * The kind of a matrix row: the authored profile wins, then the kind the
- * upstream context suggested (a dialog is a surface), then the source default.
- */
-export function capabilityKindOf(
-	profiles: readonly CapabilityProfile[],
-	capabilityId: string,
-	source: CapabilitySource,
-	suggested?: CapabilityKind
-): CapabilityKind {
-	const profile = profiles.find((p) => p.capabilityId === capabilityId);
-	return profile?.kind ?? suggested ?? DEFAULT_KIND_BY_SOURCE[source];
-}
-
-/**
- * The permission verbs a row offers.
- *
- * While the vocabulary is reduced to the five essentials (see
- * `HIDDEN_PERMISSION_ACTIONS`), the row's KIND no longer narrows the list:
- * intersecting a kind's defaults with the active verbs would leave an `action`
- * row offering nothing but "Visible". So every row offers the same five, and a
- * profile may still narrow *within* them — which is what a legacy authored
- * override means once its hidden verbs are filtered out.
- *
- * Never empty: a row with nothing grantable would read as an orphan capability
- * forever, so an override that survives no filtering falls back to the five.
- */
-export function capabilityActions(
-	profiles: readonly CapabilityProfile[],
-	capabilityId: string,
-	_source: CapabilitySource,
-	_suggested?: CapabilityKind
-): readonly PermissionAction[] {
-	const override = profiles
-		.find((p) => p.capabilityId === capabilityId)
-		?.actions?.filter((a) => !HIDDEN_PERMISSION_ACTIONS.has(a));
-	return override?.length ? override : ACTIVE_PERMISSION_ACTION_CODES;
+	return grants.some((g) => g.roleId === roleId && g.capabilityId === capabilityId);
 }
 
 export interface PermissionCoverage {
@@ -202,7 +183,7 @@ export interface PermissionCoverage {
  * System capabilities are optional product facilities: they enter scope only
  * when the author grants one. Off-structure and derived product capabilities
  * are explicit scope and remain mandatory. A capability counts as covered when
- * any role holds any action on it.
+ * any role has access to it (for a feature, to it or to one of its actions).
  */
 export function permissionCoverage(
 	draft: ProjectUsersDraft,
@@ -220,11 +201,19 @@ export function permissionCoverage(
 		...draft.offStructureCapabilities.map((c) => c.id),
 		...derivedCapabilityIds
 	])];
+	// A feature is scored at feature level: any of its actions granted means
+	// somebody can do something in it (the matrix itself grants per action).
+	const holds = (roleId: string, capId: string): boolean =>
+		draft.permissions.some(
+			(g) =>
+				g.roleId === roleId &&
+				(g.capabilityId === capId || featureOfActionCapability(g.capabilityId) === capId)
+		);
 	const uncoveredCapabilityIds = capIds.filter(
-		(capId) => !draft.roles.some((r) => hasGrant(draft.permissions, r.id, capId))
+		(capId) => !draft.roles.some((r) => holds(r.id, capId))
 	);
 	const uncoveredRoleIds = draft.roles
-		.filter((r) => !capIds.some((capId) => hasGrant(draft.permissions, r.id, capId)))
+		.filter((r) => !capIds.some((capId) => holds(r.id, capId)))
 		.map((r) => r.id);
 	const totalCapabilities = capIds.length;
 	const coveredCapabilities = totalCapabilities - uncoveredCapabilityIds.length;

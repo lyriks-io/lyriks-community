@@ -6,12 +6,12 @@
  * matrix, most specific rule first:
  *
  *  1. The screen's OWN surface row. A page is a capability in its own right, so
- *     "Visible" on that row is the direct answer to "may this persona open this
- *     page?" — it wins over anything inherited.
+ *     holding its Read box is the direct answer to "may this persona open this
+ *     page?", and it wins over anything inherited.
  *  2. Otherwise the screen's Core: every screen belongs to one
  *     (`screen.category === core id`), governed by the capabilities that belong
- *     to it (its features and journeys, grouped by `coreId`). A persona may open
- *     the screen when the matrix grants its role `read` on any of them.
+ *     to it (the actions of its features and its journeys, grouped by `coreId`).
+ *     A persona may open the screen when its role holds any verb on any of them.
  *
  * A page whose own row nobody holds yet is NOT treated as forbidden — it is
  * treated as un-authored, and falls through to its Core. Otherwise adding the

@@ -6,12 +6,13 @@ const services = vi.hoisted(() => ({
 	roleGate: { verdict: vi.fn() }
 }));
 vi.mock('$composition/container.server', () => ({ getServices: () => services }));
+import { getServices } from '$composition/container.server';
 
 import { GET } from './+server';
 
 type Event = Parameters<typeof GET>[0];
 const request = (token?: string) =>
-	({ cookies: { get: () => token } }) as unknown as Event;
+	({ cookies: { get: () => token }, locals: { services: getServices() } }) as unknown as Event;
 
 async function status(token?: string): Promise<number> {
 	try {

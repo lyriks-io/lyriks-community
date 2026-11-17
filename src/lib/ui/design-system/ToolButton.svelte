@@ -27,10 +27,10 @@
 
 	const look = $derived(
 		variant === 'primary'
-			? 'border-transparent bg-brand-gradient text-white shadow-card enabled:hover:brightness-105'
+			? 'pressable border-ink bg-brand-500 text-paper'
 			: active
-				? 'border-brand-300 bg-brand-50 text-brand-600'
-				: 'border-line text-ink-600 enabled:hover:bg-surface-sunken'
+				? 'border-ink bg-ink text-paper'
+				: 'border-ink-3 text-ink enabled:hover:border-ink'
 	);
 </script>
 
@@ -41,7 +41,7 @@
 	{title}
 	{onclick}
 	aria-pressed={active || undefined}
-	class="inline-flex shrink-0 items-center gap-1 rounded-field border px-2 py-1 text-xs font-semibold transition-colors select-none disabled:opacity-40 {look} {klass}"
+	class="inline-flex shrink-0 items-center gap-1 border-[1.5px] px-2 py-1 text-xs font-bold transition-colors select-none disabled:opacity-40 {look} {klass}"
 >
 	{@render children()}
 </button>

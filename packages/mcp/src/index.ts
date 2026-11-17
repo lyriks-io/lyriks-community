@@ -13,7 +13,10 @@ import { WebStandardStreamableHTTPServerTransport }
   from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import { authenticate }                  from './auth.js'
 import { enterprise }                    from './enterprise/index.js'
+import { readEditionScope }              from './edition-scope.js'
 import { createMcpServer }               from './server.js'
+import { issueSkillsTicket, skillsScopeGuard } from './skills-ticket.js'
+import { issueSessionTicket, sessionScopeGuard } from './session-ticket.js'
 import { registerOAuthRoutes }           from './oauth.js'
 import { withKeepAlive }                 from './keep-alive.js'
 import type { HonoVariables }            from './types.js'
@@ -41,11 +44,30 @@ registerOAuthRoutes(app)
 // the 401 + WWW-Authenticate that kicks off OAuth discovery.
 app.get('/mcp', authenticate, (c) => c.text('Method Not Allowed', 405))
 
-app.post('/mcp', authenticate, async (c) => {
+// The installer's sign-in reads playbooks only (criterion 3f42911b).
+app.post('/mcp', authenticate, skillsScopeGuard, sessionScopeGuard, async (c) => {
+  const scope = c.get('token_scope') ?? null
   // Community (no overlay, or one that is not configured): every tool answers
   // from the platform.
   const ee  = enterprise?.configured() ? enterprise.bind(c.get('user_token')) : null
-  const mcp = createMcpServer(ee, c.get('user_token'))
+  // What the edition opens decides which tools are offered (EVO-001).
+  const editionScope = await readEditionScope(c.get('user_token'))
+  const mcp = createMcpServer(ee, c.get('user_token'), {
+    mcpUrl: `${(process.env.PUBLIC_BASE_URL?.trim() || new URL(c.req.url).origin).replace(/\/$/, '')}/mcp`,
+    // Where sign-in is enforced the command carries a ticket; elsewhere it needs
+    // none. The installer itself is offered nothing: it already runs.
+    signIn: () => {
+      if (scope === 'skills') return null
+      if (process.env.MCP_AUTH_REQUIRED !== '1') return { token: null }
+      return issueSkillsTicket(c.get('user_token'), c.get('user_id'))
+    },
+    // The live session's waiting command signs in by itself (criterion 26c95cc1).
+    sessionTicket: (sessionId) => {
+      if (scope === 'skills' || scope === 'session-wait') return null
+      if (process.env.MCP_AUTH_REQUIRED !== '1') return { token: null }
+      return issueSessionTicket(c.get('user_token'), c.get('user_id'), sessionId)
+    },
+  }, editionScope)
 
   // Stateless mode: sessionIdGenerator = undefined
   const transport = new WebStandardStreamableHTTPServerTransport({
@@ -53,6 +75,10 @@ app.post('/mcp', authenticate, async (c) => {
   })
 
   await mcp.connect(transport)
+  // A client that hangs up mid-call (a live session's waiting call, a long
+  // report) cancels what the call still waits on: closing the transport aborts
+  // every tool's signal, so a waiting session on the platform reads the AI gone.
+  c.req.raw.signal.addEventListener('abort', () => void transport.close(), { once: true })
   const response = await transport.handleRequest(c.req.raw)
   // A whole-project report can take longer than the caller's first-byte timeout
   // (and than a Cloudflare tunnel's read timeout). Heartbeat the SSE stream so a

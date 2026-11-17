@@ -1,4 +1,4 @@
-import type { Actor, EvolutionRequest, FieldThread, FieldThreadMessage } from './draft';
+import type { Actor, EvolutionRequest, FieldThread, FieldThreadMessage, TopicRuling } from './draft';
 import { firstRefusal, guard, type Guarded } from './guard';
 
 /**
@@ -112,9 +112,56 @@ export function openThread(input: {
 	};
 }
 
-/** A new message reopens the thread: someone is waiting again. */
+/**
+ * The message that opened the conversation a message belongs to: a message of
+ * its own opens one, a reply joins the conversation of the message it answers,
+ * a reply to a reply included (ac-evo-fthread-reply).
+ */
+export function topicOpener(thread: FieldThread, messageId: string): FieldThreadMessage | undefined {
+	const byId = new Map(thread.messages.map((m) => [m.id, m]));
+	let message = byId.get(messageId);
+	const seen = new Set<string>();
+	while (message?.replyTo && byId.has(message.replyTo) && !seen.has(message.id)) {
+		seen.add(message.id);
+		message = byId.get(message.replyTo);
+	}
+	return message;
+}
+
+/** The conversations of a thread, by the message that opened each. */
+const openers = (thread: FieldThread) => thread.messages.filter((m) => topicOpener(thread, m.id)?.id === m.id);
+
+/** Open while one of its conversations is: someone is waiting; answered once a person settled every one. */
+const stateFrom = (thread: FieldThread): FieldThread['state'] =>
+	thread.state === 'turned_into_change' ? thread.state : openers(thread).every((m) => m.ruling) ? 'answered' : 'open';
+
+function withoutRuling(message: FieldThreadMessage): FieldThreadMessage {
+	const { ruling: _ruling, ...open } = message;
+	return open;
+}
+
+/**
+ * A new message keeps the thread open while someone is waiting: a message of
+ * its own opens a conversation, a reply reopens a conversation that was
+ * resolved; one already validated stays validated.
+ */
 export function post(thread: FieldThread, message: FieldThreadMessage): FieldThread {
-	return { ...thread, state: 'open', messages: [...thread.messages, message] };
+	const joined = message.replyTo ? topicOpener(thread, message.replyTo)?.id : undefined;
+	const messages = thread.messages.map((m) => (m.id === joined && m.ruling?.state === 'resolved' ? withoutRuling(m) : m));
+	const next = { ...thread, state: 'open' as const, messages: [...messages, message] };
+	return { ...next, state: stateFrom(next) };
+}
+
+/**
+ * Settle or reopen one conversation of a thread, named by any of its
+ * messages. The thread reads answered once every conversation is settled.
+ */
+export function setTopicRuling(thread: FieldThread, messageId: string, ruling: TopicRuling | null): FieldThread {
+	const opener = topicOpener(thread, messageId);
+	if (!opener) return thread;
+	const messages = thread.messages.map((m) => (m.id !== opener.id ? m : ruling ? { ...m, ruling } : withoutRuling(m)));
+	const next = { ...thread, messages };
+	return { ...next, state: stateFrom(next) };
 }
 
 export function markAnswered(thread: FieldThread): FieldThread {

@@ -1,5 +1,5 @@
 import { error, json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
+import { projectNameStyled } from '$domain/foundation';
 import { callerAllowedDomains } from '$lib/server/domain-scope.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import type { RequestHandler } from './$types';
@@ -15,7 +15,7 @@ export const PATCH: RequestHandler = async (event) => {
 	const body = (await event.request.json().catch(() => null)) as Record<string, unknown> | null;
 	if (!body) error(400, 'JSON body is required');
 
-	const services = getServices();
+	const services = event.locals.services;
 	if (!(await services.listProjects.execute()).some((project) => project.id === projectId)) {
 		error(404, 'Project not found');
 	}
@@ -62,7 +62,10 @@ export const PATCH: RequestHandler = async (event) => {
 		target: projectId,
 		outcome: 'success'
 	});
-	return json({ updated: true, projectId });
+	// The name as it will read, and why when that is not the name sent, so a caller
+	// never takes the one style of project names for a failed rename (criterion 60d1fbca).
+	const nameStyled = typeof body.name === 'string' && result.name ? projectNameStyled(body.name, result.name) : null;
+	return json({ updated: true, projectId, name: result.name, ...(nameStyled ? { nameStyled } : {}) });
 };
 
 export const DELETE: RequestHandler = async (event) => {
@@ -71,7 +74,7 @@ export const DELETE: RequestHandler = async (event) => {
 	const body = (await event.request.json().catch(() => null)) as { confirmName?: unknown } | null;
 	const confirmName = typeof body?.confirmName === 'string' ? body.confirmName : '';
 	if (!confirmName) error(400, 'confirmName is required');
-	const result = await getServices().deleteProject.executeConfirmed({
+	const result = await event.locals.services.deleteProject.executeConfirmed({
 		projectId,
 		confirmName,
 		requesterEmail: event.locals.session?.email ?? null,
@@ -82,7 +85,7 @@ export const DELETE: RequestHandler = async (event) => {
 		if (result.reason === 'not_owner') error(403, 'Only the project owner can delete it');
 		error(400, 'confirmName does not match the project name');
 	}
-	getServices().audit.record({
+	event.locals.services.audit.record({
 		action: 'project.delete',
 		actor: event.locals.session?.email ?? 'dev',
 		target: projectId,

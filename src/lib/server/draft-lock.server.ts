@@ -1,5 +1,5 @@
+import type { AppServices } from '$composition/container.server';
 import { error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { REVISION_HEADER } from '$lib/shared/draft-revision';
 
 export { REVISION_HEADER };
@@ -20,11 +20,11 @@ export function expectedRevision(request: Request): number | null {
  * guard and BEFORE persisting, so a stale write never reaches the store.
  */
 export async function commitRevision(
-	projectId: string,
+	services: AppServices, projectId: string,
 	section: string,
 	request: Request
 ): Promise<number> {
-	const next = await getServices().draftLock.commit(projectId, section, expectedRevision(request));
+	const next = await services.draftLock.commit(projectId, section, expectedRevision(request));
 	if (next === null) {
 		error(409, 'This section was changed by someone else. Reload to get the latest version.');
 	}

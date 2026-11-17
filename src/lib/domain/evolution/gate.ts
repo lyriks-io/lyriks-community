@@ -1,5 +1,6 @@
 import type { DraftLeaf, EvolutionRequest, GateWaiver, ImpactFinding } from './draft';
 import type { Actor } from './draft';
+import { findingHoldsGate } from './draft';
 import { ALLOW, firstRefusal, guard, type Guarded } from './guard';
 import { pendingProposals } from './proposals';
 
@@ -14,7 +15,7 @@ import { pendingProposals } from './proposals';
 
 /** Blocking findings hold a request at the gate; major and minor are arbitrated. */
 export function blockingFindingCount(request: EvolutionRequest): number {
-	return request.coherenceFindings.filter((f) => f.published && f.severity === 'blocking').length;
+	return request.coherenceFindings.filter(findingHoldsGate).length;
 }
 
 /** The waiver still standing on a request, if any. */
@@ -46,7 +47,7 @@ export function canCrossToImplementation(
 		),
 		guard(
 			blockingFindingCount(request) > 0,
-			'A blocking finding is still undecided. Fix it, accept it as a risk, or waive the gate with a stated reason.',
+			'A blocking finding this change brings is still undecided. Fix it, accept it as a risk, or waive the gate with a stated reason.',
 			'Refuses the crossing while a blocking finding is undecided against the existing spec.'
 		)
 	);
@@ -148,7 +149,7 @@ export function nothingToArbitrate(request: EvolutionRequest): boolean {
 	if (request.status !== 'open') return false;
 	if (request.impactReport.status !== 'ready') return false;
 	if (request.coherenceReport.status !== 'ready') return false;
-	if (request.coherenceFindings.some((f) => f.published)) return false;
+	if (request.coherenceFindings.some((f) => f.published && f.scope !== 'inherited' && !f.risk)) return false;
 	// Anything still waiting on a person is, by definition, something to arbitrate.
 	if (pendingProposals(request).length > 0) return false;
 	if (request.openQuestionKeys.length > 0) return false;

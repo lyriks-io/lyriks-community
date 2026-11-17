@@ -1,6 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
-import { UnknownPersonaError } from '$application/use-cases/simulate-experience';
+import { UnknownPersonaError } from '$application/analysis/simulate-experience';
 import type { SimAction, SimRequest } from '$domain/experience';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import type { RequestHandler } from './$types';
@@ -30,13 +29,14 @@ export const POST: RequestHandler = async (event) => {
 	if (!projectId) error(400, 'projectId is required');
 	await requireProjectAccess(event, projectId, 'read');
 
+	const services = event.locals.services;
 	const req: SimRequest = {
+		language: await services.loadSpecLanguage.generated(projectId),
 		personaId: typeof body?.personaId === 'string' ? body.personaId : null,
 		startScreenId: typeof body?.startScreenId === 'string' ? body.startScreenId : null,
 		actions: Array.isArray(body?.actions) ? (body.actions as SimAction[]) : []
 	};
 
-	const services = getServices();
 	try {
 		return json(await services.simulateExperience.execute(projectId, req));
 	} catch (err) {

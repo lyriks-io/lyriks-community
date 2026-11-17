@@ -6,6 +6,164 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.43] - 2026-11-17
+
+The Community edition gets its own scope and the four plans of lyriks.io, a
+feature's actions read as journeys, and an Evolution waits for one validation
+only: the Solution's, before the build.
+
+### Added
+
+- Community holds one active project. The others stay readable as inactive,
+  any of them can be made the active one, and every paid plan opens them all
+  again. Creating, importing or duplicating past that limit is refused with the
+  plan that opens it.
+- The account menu's Plans dialog lists the four offers of lyriks.io/pricing:
+  Community Edition, Solo Builder, Team and Enterprise. What Community does not
+  include reads locked, naming the plan that opens it, and Switch to <plan>
+  leads to the activation page.
+- On Community the MCP gateway offers only the tools the edition answers: the
+  Evolution and roadmap tools are not listed.
+- A feature's actions can be arranged in journeys and read as a flowchart; an
+  action opened from it reads its rules and the data it touches.
+- Each project's menu offers Duplicate and Export (.zip).
+- Ask my AI is a private chat per person.
+- Health says a formal proof is in progress and shows its verdict in place.
+- The window says Saving until every change is confirmed or refused.
+- Settings, Proofs (Enterprise): the solver is off on a new installation and an
+  administrator turns it on there, without a restart. The section reads the
+  machine's processors and memory and suggests a larger machine below 8
+  processors or 16 GB.
+
+### Changed
+
+- Validating an Evolution is optional until the build: the Specification can be
+  written and read before anyone validated it, and the freeze waits for the
+  Solution's validation only.
+- A click on someone's initials asks first, before validating or sending a
+  reminder; your own initials read YOU and come first.
+- Product and technical rules read as separate framed blocks, folded until
+  opened.
+- The TRL readout and the Readiness score are retired in favour of the
+  maturity stages.
+- The live session's waiting command signs in by itself.
+
+### Fixed
+
+- Validate all on Mismatch validates any number of changes in one save.
+- A change saved under a revision that moved meanwhile is retried, then
+  reported, never lost in silence.
+- The engine recomputes its readings when the model moves instead of on a
+  short timer, and orphaned engine and solver processes are reaped.
+- Navigation no longer reruns the whole application frame on every click.
+- A request the proxy sends on a connection the server had just closed no
+  longer fails with a 502.
+- Sign-ins survive a temporary outage of the account service.
+- A later Reverse-Specification reads the project with a tool that exists.
+
+## [0.9.42] - 2026-11-10
+
+A later Reverse-Specification writes nothing before a person validates it, and
+Mismatch is where that is decided.
+
+### Added
+
+- A first configuration right after the password, asking for every way out of
+  the installation, and an update check that reads dated releases.
+- Mismatch launches the next analysis, a delta or the whole product according
+  to what can be read.
+- An administrator reads the history of every action taken on Mismatch and by
+  the runs it reports. A decision taken back and a run cancelled stay in it.
+- Evolutions picked from the list read their concurrent impact in one report.
+
+### Changed
+
+- A later run holds what it finds. Each difference is decided on Mismatch beside
+  what the specification reads today: validated, it is written by the person's
+  AI; reverted, the code goes back; rejected, the person says what must change
+  and the AI reworks it.
+- The list of what a later run changed is read place by place, each rule under
+  the action it belongs to.
+- A run can be relaunched once its analysis is over. One not validated closes
+  and stays in the history.
+- A feature's page lists its actions with their rules inline.
+- Health is one page, and Home reads 20 cards, then the older ones on scroll.
+- The engine no longer holds a solver: proving is a module of its own, in
+  Enterprise only.
+
+### Fixed
+
+- The marks of a hand edit and the Code drift band read the hand edits again.
+- A product never rebuilt reads no Reverse-Specification, and a check with
+  nothing to check is not passed.
+- A model too large for the engine budget stops holding it, and project pages
+  carry less.
+
+## [0.9.41] - 2026-11-09
+
+A new look for the whole app, a Specification 360 read and validated in place,
+and a Reverse-Specification page that keeps every run.
+
+### Changed
+
+- The interface is redesigned: a flat navigation, a Home that lists what needs
+  you and then a journal by day, a top bar chip that only reports what your AI
+  is doing, and a new visual style (paper and ink, square corners, IBM Plex).
+- The Specification 360 replaces the old Foundation and Features tabs. Every
+  page of the spec (overview, features, data, users and permissions,
+  architecture) reads in plain words, shows the sources it rests on, and can be
+  edited, discussed and validated in place. A discussion opens at the foot of
+  the block it is about.
+- One Project health counts every point Lyriks noticed, the same on the
+  Overview, the notices and the Reverse page. The Control Center is gone; the
+  points are listed in What Lyriks noticed, one folded line per type.
+- A permission is access or no access, set per action.
+- An Evolution request has a key like a ticket number, is filled question by
+  question, carries its changes as drafts until the freeze, and follows the
+  code from its branch to its merge.
+- Old project addresses redirect to the page that holds them now.
+
+### Added
+
+- Reverse-Specification of an existing product: one page with every run, a
+  later run that reads what changed or the whole product and erases nothing, a
+  run that can be cancelled, and a run whose AI went quiet reads as paused.
+- Ask my AI on every page hands the page's question to the reader's own AI
+  session; one session covers the whole project, and a link to a conversation
+  lands on its message.
+- The bell reads as a feed, and a toast says what just happened.
+- Rules read as EARS requirements and scenarios as Given/When/Then; everything
+  Lyriks writes about a spec follows the one language its project declares.
+- The data map says what each field accepts, how tables relate and what a
+  deletion does; the data model's rules reach the behavior engine.
+- Enterprise: rules and data rules are proved by the engine's native Z3 solver.
+- An admin sets each member's job in Settings > Members, and a new product can
+  start without AI.
+- Agent playbooks are installed from the server by a shipped script, and a
+  routine sync sends only what changed.
+- Engine 0.26.0: an action says which channels it is reachable through, a
+  feature can be simulated step by step without saving, and the engine proves
+  what the examples cannot reach.
+
+### Fixed
+
+- The server no longer stops when the infrastructure page is rendered on the
+  server.
+- A large project opens at once; its health is read in the background.
+- Closing a dialog no longer breaks the app's tooltips.
+- The installer no longer warns that a licence key needs credentials when the
+  first visitor's claim activates the product, and never prints the key whole.
+- `./lyriks doctor --http-port <port>` checks the port the install will use.
+
+### Security
+
+- `.env`, which holds every secret of the appliance and the licence key, is
+  readable by its owner only (mode 600), on a new install and after an update.
+- An install no longer leaves the template address `admin@example.com` in the
+  administrator allowlist: the licence holder who claims it administers it.
+- Dependencies move past every fixable critical and high advisory: dompurify
+  3.4.17, @modelcontextprotocol/sdk 1.32.2, zod 4.6.7 and body-parser 2.4.0.
+
 ## [0.9.40] - 2026-10-12
 
 Cursor can connect to a Lyriks install that requires sign-in.

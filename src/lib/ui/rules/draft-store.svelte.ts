@@ -8,13 +8,14 @@ import {
 	type EdgeCase,
 	type EdgeOutcome,
 	type CandidateIssue,
+	type Issue,
 	type ProjectRulesDraft,
-	type RulesTab
 } from '$domain/rules';
 import type { CoherenceResult } from '$domain/shared';
 import type { ConsolidatedRule } from '$domain/rules';
 import type { Session, ToastNotifierPort } from '$application/ports';
 import { browser } from '$app/environment';
+import type { SpecLanguage } from '$domain/language';
 import { SectionAutosave, type SaveStatus } from '$ui/shell/section-autosave.svelte';
 
 export type { SaveStatus };
@@ -25,29 +26,32 @@ export type { SaveStatus };
  * debounced autosave of feature `e06f420a` is honored uniformly. Issue scanning
  * is automatic (local heuristics client-side, engine findings via the cached
  * server route — see AUTO-SCAN below); the detected issues surface in the
- * Control Center's coherence panel, never on this screen.
+ * What Lyriks noticed, never on this screen.
  */
 export class RulesStore {
 	draft = $state<ProjectRulesDraft>(null as unknown as ProjectRulesDraft);
-	activeTab = $state<RulesTab>('inventory');
 
-	coherence = $derived.by<CoherenceResult>(() => computeRulesCoherence(this.draft));
+	coherence = $derived.by<CoherenceResult>(() => computeRulesCoherence(this.draft, this.lang));
 	canAdvance = $derived.by<boolean>(() => rulesCanAdvance(this.draft));
 	missing = $derived.by<string[]>(() => missingRulesRequirements(this.draft));
 
 	readonly session: Session;
 	readonly notifier: ToastNotifierPort;
+	/** The spec's language: the issues the scan files are written in it. */
+	readonly lang: SpecLanguage;
 	readonly #autosave: SectionAutosave<ProjectRulesDraft>;
 
 	constructor(
 		initial: ProjectRulesDraft,
 		session: Session,
 		notifier: ToastNotifierPort,
-		revision = 0
+		revision = 0,
+		lang: SpecLanguage = 'en'
 	) {
 		this.draft = initial;
 		this.session = session;
 		this.notifier = notifier;
+		this.lang = lang;
 		this.#autosave = new SectionAutosave({
 			endpoint: '/api/draft/rules',
 			session,
@@ -80,10 +84,6 @@ export class RulesStore {
 
 	flushNow = () => this.#autosave.flushNow();
 
-	switchTab = (tab: RulesTab) => {
-		this.activeTab = tab;
-	};
-
 	/* ─────────────────────────── AUTO-SCAN ─────────────────────────────── */
 	// Issues appear (and retire) on their own: a quiet scan runs after load and
 	// after every live-sync hydrate (upstream rule edits and the behavior
@@ -91,7 +91,7 @@ export class RulesStore {
 	// dedup against the stored list by title, and a scan that changes nothing
 	// never touches the draft, so the save → sync → hydrate → scan cycle
 	// converges instead of looping. The issues themselves render only in the
-	// Control Center's coherence panel.
+	// What Lyriks noticed.
 	#scanTimer: ReturnType<typeof setTimeout> | null = null;
 
 	#scheduleScan = () => {
@@ -107,7 +107,7 @@ export class RulesStore {
 	 * server-side), appended when new. Silent unless something was found.
 	 */
 	#scan = async () => {
-		const candidates: CandidateIssue[] = detectIssues(this.draft.inventory);
+		const candidates: CandidateIssue[] = detectIssues(this.draft.inventory, this.lang);
 		let engineAnswered = false;
 		try {
 			const res = await fetch(
@@ -132,60 +132,20 @@ export class RulesStore {
 			(i) => !(i.autoDetected && i.status === 'open' && legacyBlob(i.title))
 		);
 
-		// Self-healing: with no triage board, an open auto-detected issue the scan
-		// no longer reports has been fixed upstream — retire it so the Control
-		// Center list converges with reality. Only when the engine answered
-		// (an offline engine would flap its findings out and back in); manually
-		// authored issues are never touched.
-		if (engineAnswered) {
-			const stillReported = new Set(candidates.map((c) => c.title.trim().toLowerCase()));
-			this.draft.issues = this.draft.issues.filter(
-				(i) =>
-					!(i.autoDetected && i.status === 'open' && !stillReported.has(i.title.trim().toLowerCase()))
-			);
-		}
-		const removed = before - this.draft.issues.length;
+		const legacyRemoved = before - this.draft.issues.length;
 
-		const seenTitles = new Set(this.draft.issues.map((i) => i.title.trim().toLowerCase()));
-		let added = 0;
-		for (const c of candidates) {
-			const title = c.title.trim().toLowerCase();
-			if (seenTitles.has(title)) continue;
-			seenTitles.add(title);
-			added += 1;
-			this.draft.issues.push(
-				createIssue({
-					kind: c.kind,
-					title: c.title,
-					detail: c.detail,
-					severity: c.severity,
-					relatedRuleIds: c.relatedRuleIds,
-					autoDetected: true
-				})
-			);
-		}
+		const merged = mergeScanFindings(this.draft.issues, candidates, engineAnswered);
+		this.draft.issues = merged.issues;
+		const removed = legacyRemoved + merged.retired;
+		const added = merged.added;
+
+		if (added > 0 || removed > 0 || merged.keyed > 0) this.#touch('rules.autoscan');
 		if (added > 0 || removed > 0) {
-			this.#touch('rules.autoscan');
 			const bits = [
 				added > 0 ? `flagged ${added} new issue${added === 1 ? '' : 's'}` : '',
 				removed > 0 ? `retired ${removed} outdated auto issue${removed === 1 ? '' : 's'}` : ''
 			].filter(Boolean);
 			this.notifier.notify('info', `Scan ${bits.join(', ')}.`);
-		}
-	};
-
-	/** Re-pull the read-only inventory from the earlier steps. */
-	refreshInventory = async () => {
-		try {
-			const res = await fetch(
-				`/api/draft/rules?projectId=${encodeURIComponent(this.draft.projectId)}`
-			);
-			if (!res.ok) throw new Error(`refresh failed (${res.status})`);
-			const { inventory } = (await res.json()) as { inventory: ConsolidatedRule[] };
-			this.draft.inventory = inventory;
-			this.notifier.notify('info', `Rules refreshed from earlier steps (${inventory.length}).`);
-		} catch (e) {
-			this.notifier.notify('error', e instanceof Error ? e.message : 'refresh failed');
 		}
 	};
 
@@ -211,6 +171,10 @@ export class RulesStore {
 	linkEdgeToIssue = (edgeCaseId: string, issueId: string | null) =>
 		this.updateEdgeCase(edgeCaseId, 'relatedIssueId', issueId);
 
+	/** Moves a case onto the feature it tests; null = the product as a whole. */
+	moveEdgeCase = (edgeCaseId: string, featureId: string | null) =>
+		this.updateEdgeCase(edgeCaseId, 'relatedFeatureId', featureId);
+
 	toggleCovered = (edgeCaseId: string) => {
 		const s = this.draft.scenarios.find((s) => s.id === edgeCaseId);
 		if (!s) return;
@@ -229,4 +193,66 @@ export class RulesStore {
 		this.draft.scenarios = [];
 		this.#touch('rules.reset');
 	};
+}
+
+/**
+ * Fold one scan's findings into the stored issues. An auto-detected issue is
+ * recognised by its `detectionKey` (what it is about), so the same finding
+ * written in another language is the SAME open issue, never a retired one plus
+ * a duplicate. An issue stored before the key existed is matched by title
+ * once, and adopts the key of the finding it matches.
+ *
+ * Self-healing: with no triage board, an open auto-detected issue the scan no
+ * longer reports has been fixed upstream, so it retires. Only when the engine
+ * answered (an offline engine would flap its findings out and back in);
+ * manually authored issues are never touched.
+ */
+export function mergeScanFindings(
+	stored: Issue[],
+	candidates: CandidateIssue[],
+	engineAnswered: boolean
+): { issues: Issue[]; added: number; retired: number; keyed: number } {
+	const titleOf = (text: string) => text.trim().toLowerCase();
+	const candidateByTitle = new Map(candidates.map((c) => [titleOf(c.title), c]));
+	let keyed = 0;
+	let issues = stored.map((issue) => {
+		if (!issue.autoDetected || issue.detectionKey) return issue;
+		const match = candidateByTitle.get(titleOf(issue.title));
+		if (!match) return issue;
+		keyed += 1;
+		return { ...issue, detectionKey: match.key };
+	});
+
+	const reportedKeys = new Set(candidates.map((c) => c.key));
+	const reportedTitles = new Set(candidates.map((c) => titleOf(c.title)));
+	const stillReported = (issue: Issue) =>
+		issue.detectionKey ? reportedKeys.has(issue.detectionKey) : reportedTitles.has(titleOf(issue.title));
+	let retired = 0;
+	if (engineAnswered) {
+		const before = issues.length;
+		issues = issues.filter((i) => !(i.autoDetected && i.status === 'open' && !stillReported(i)));
+		retired = before - issues.length;
+	}
+
+	const seenKeys = new Set(issues.flatMap((i) => (i.detectionKey ? [i.detectionKey] : [])));
+	const seenTitles = new Set(issues.map((i) => titleOf(i.title)));
+	let added = 0;
+	for (const c of candidates) {
+		if (seenKeys.has(c.key) || seenTitles.has(titleOf(c.title))) continue;
+		seenKeys.add(c.key);
+		seenTitles.add(titleOf(c.title));
+		added += 1;
+		issues.push(
+			createIssue({
+				kind: c.kind,
+				title: c.title,
+				detail: c.detail,
+				severity: c.severity,
+				relatedRuleIds: c.relatedRuleIds,
+				autoDetected: true,
+				detectionKey: c.key
+			})
+		);
+	}
+	return { issues, added, retired, keyed };
 }

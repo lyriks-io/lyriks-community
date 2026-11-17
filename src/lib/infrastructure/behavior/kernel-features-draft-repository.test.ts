@@ -105,6 +105,32 @@ describe('KernelFeaturesDraftRepository (Phase 1 Features flip)', () => {
 		expect(back!.lastSavedAt).toBe('2026-01-01T00:00:00.000Z');
 	});
 
+	it('keeps when each core feature and feature first entered the spec [criterion:2a6bff42]', async () => {
+		const { repo } = makeRepo();
+		await repo.save(sampleDraft('p1'));
+		const first = (await repo.load('p1'))!.firstSeenAt!;
+		expect(Object.keys(first).sort()).toEqual(['core-bill', 'f1', 'f2']);
+		const next = sampleDraft('p1');
+		next.features = [...next.features, { id: 'f3', name: 'Refund', coreId: 'core-bill', parentFamilyId: null, description: '', unspaghettitFeatureId: 'f3' }];
+		next.features[0] = { ...next.features[0], name: 'Invoice, renamed' };
+		await repo.save(next);
+		const after = (await repo.load('p1'))!.firstSeenAt!;
+		// A rename never moves it; the one added has its own.
+		expect(after.f1).toBe(first.f1);
+		expect(after.f3).toBeTruthy();
+	});
+
+	it('never makes new what a project held before moments were kept [criterion:2a6bff42]', async () => {
+		const { repo } = makeRepo();
+		await repo.save(sampleDraft('p1'));
+		// A residue written before firstSeenAt existed.
+		const residue = (repo as unknown as { residue: { store: Map<string, Record<string, unknown>> } }).residue.store;
+		const blob = residue.get('p1/features')!;
+		delete blob.firstSeenAt;
+		await repo.save(sampleDraft('p1'));
+		expect((await repo.load('p1'))!.firstSeenAt).toEqual({ 'core-bill': '', f1: '', f2: '' });
+	});
+
 	it('writes real Unspaghettit feature shells to the kernel (not a draft blob)', async () => {
 		const { mem, repo } = makeRepo();
 		await repo.save(sampleDraft('p1'));

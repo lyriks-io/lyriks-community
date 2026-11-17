@@ -211,7 +211,7 @@
 				return {
 					id: it.id,
 					d: bezier(a, b),
-					stroke: PROTOCOL_HEX[it.protocol as Protocol] ?? '#8b5cf6'
+					stroke: PROTOCOL_HEX[it.protocol as Protocol] ?? '#bb46f5'
 				};
 			})
 			.filter((l): l is { id: string; d: string; stroke: string } => l !== null);
@@ -271,7 +271,7 @@
 			>
 				<defs>
 					<pattern id="urbgrid" width="40" height="40" patternUnits="userSpaceOnUse">
-						<path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(15,23,42,0.04)" stroke-width="0.5" />
+						<path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(17,17,20,0.05)" stroke-width="0.5" />
 					</pattern>
 					<marker
 						id="urb-arrow"
@@ -282,7 +282,7 @@
 						markerHeight="6"
 						orient="auto-start-reverse"
 					>
-						<path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(100,116,139,0.7)" />
+						<path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(85,85,92,0.7)" />
 					</marker>
 					<marker
 						id="urb-fk-arrow"
@@ -293,7 +293,7 @@
 						markerHeight="7"
 						orient="auto-start-reverse"
 					>
-						<path d="M 0 0 L 10 5 L 0 10 z" fill="#6366f1" />
+						<path d="M 0 0 L 10 5 L 0 10 z" fill="#0066ff" />
 					</marker>
 				</defs>
 				<rect width={map.totalW} height={map.totalH} fill="url(#urbgrid)" />
@@ -351,15 +351,15 @@
 							{HOST_TYPE_GLYPH[r.kind]}
 							{kindLabel(r.kind).toUpperCase()}
 						</text>
-						<text x={r.x + 14} y={r.y + 40} fill="#0f172a" font-size="13" font-weight="700"
+						<text x={r.x + 14} y={r.y + 40} fill="#111114" font-size="13" font-weight="700"
 							>{r.name}</text
 						>
-						<text x={r.x + 14} y={r.y + 56} fill="rgba(100,116,139,0.9)" font-size="10">
+						<text x={r.x + 14} y={r.y + 56} fill="rgba(85,85,92,0.9)" font-size="10">
 							{r.kind === 'onprem'
 								? 'Customer site'
 								: `${r.provider || '-'}${r.region ? ' · ' + r.region : ''}`}
 						</text>
-						<text x={r.x + 14} y={r.y + 72} fill="rgba(100,116,139,0.75)" font-size="9">
+						<text x={r.x + 14} y={r.y + 72} fill="rgba(85,85,92,0.75)" font-size="9">
 							⛁ {r.dbLabel}
 						</text>
 
@@ -390,7 +390,7 @@
 								x={g.x + g.w - 10}
 								y={g.y + 15}
 								font-size="9"
-								fill="rgba(100,116,139,0.9)"
+								fill="rgba(85,85,92,0.9)"
 								text-anchor="end"
 							>
 								{engineLabel(g.engine)} · {g.buildings.length} table{g.buildings.length === 1 ? '' : 's'}
@@ -414,15 +414,15 @@
 										width={BW}
 										height={BH}
 										rx="6"
-										fill="#ffffff"
+										fill="#f7f4ec"
 										stroke={bSel ? eng : `${eng}8c`}
 										stroke-width={bSel ? 2.2 : 1}
 									/>
 									<rect x={b.bx} y={b.by} width="4" height={BH} rx="2" fill={eng} fill-opacity="0.8" />
-									<text x={b.bx + 12} y={b.by + 22} font-size="11" fill="#0f172a" font-weight="700"
+									<text x={b.bx + 12} y={b.by + 22} font-size="11" fill="#111114" font-weight="700"
 										>{b.name}</text
 									>
-									<text x={b.bx + 12} y={b.by + 36} font-size="9" fill="rgba(100,116,139,0.9)"
+									<text x={b.bx + 12} y={b.by + 36} font-size="9" fill="rgba(85,85,92,0.9)"
 										>{b.fields} fields</text
 									>
 									{#each Array(Math.min(8, b.fields)) as _, fi (fi)}
@@ -443,7 +443,7 @@
 								<text
 									x={g.x + g.w / 2}
 									y={g.y + GHEAD + 18}
-									fill="rgba(100,116,139,0.5)"
+									fill="rgba(85,85,92,0.5)"
 									font-size="10"
 									text-anchor="middle"
 									font-style="italic"
@@ -457,7 +457,7 @@
 							<text
 								x={r.x + r.w / 2}
 								y={r.y + r.h / 2 + 12}
-								fill="rgba(100,116,139,0.5)"
+								fill="rgba(85,85,92,0.5)"
 								font-size="10"
 								text-anchor="middle"
 								font-style="italic"
@@ -474,7 +474,7 @@
 						<path
 							d={link.d}
 							fill="none"
-							stroke="#6366f1"
+							stroke="#0066ff"
 							stroke-opacity="0.9"
 							stroke-width="1.6"
 							marker-end="url(#urb-fk-arrow)"
@@ -487,13 +487,13 @@
 
 	<!-- legend -->
 	<div
-		class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line px-1 pt-2 text-[9px] text-ink-400"
+		class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line px-1 pt-2 text-[0.5625rem] text-ink-400"
 	>
 		<span class="font-semibold uppercase tracking-widest">Hosts</span>
 		{#each HOST_KINDS as k (k.code)}
 			<span class="flex items-center gap-1">
 				<span
-					class="grid size-3.5 place-items-center rounded text-[8px]"
+					class="grid size-3.5 place-items-center rounded text-[0.5rem]"
 					style="background:{HOST_TYPE_HEX[k.code]}1a;color:{HOST_TYPE_HEX[k.code]}"
 					>{HOST_TYPE_GLYPH[k.code]}</span
 				>
@@ -516,7 +516,7 @@
 		{#if showRelations}
 			<span class="text-ink-300">·</span>
 			<span class="flex items-center gap-1"
-				><span class="inline-block w-3.5 border-t" style="border-color:#6366f1"></span> FK</span
+				><span class="inline-block w-3.5 border-t" style="border-color:#0066ff"></span> FK</span
 			>
 		{/if}
 		{#if showInterfaces && usedProtocols.length > 0}

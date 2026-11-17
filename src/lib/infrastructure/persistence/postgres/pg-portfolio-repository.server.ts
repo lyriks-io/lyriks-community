@@ -8,6 +8,7 @@ interface DomainRow {
 	description: string;
 	icon: string;
 	created_at: string;
+	position: number | null;
 }
 interface MetaRow {
 	domain_id: string | null;
@@ -18,14 +19,15 @@ interface MetaRow {
 export class PgPortfolioRepository implements PortfolioRepositoryPort {
 	async listDomains(): Promise<Domain[]> {
 		const { rows } = await pgQuery<DomainRow>(
-			'SELECT id, name, description, icon, created_at FROM domains ORDER BY created_at ASC'
+			'SELECT id, name, description, icon, created_at, position FROM domains ORDER BY created_at ASC'
 		);
 		return rows.map((r) => ({
 			id: r.id,
 			name: r.name,
 			description: r.description,
 			icon: r.icon || 'lucide:building-2',
-			createdAt: r.created_at
+			createdAt: r.created_at,
+			position: r.position ?? null
 		}));
 	}
 
@@ -38,6 +40,16 @@ export class PgPortfolioRepository implements PortfolioRepositoryPort {
 			   description = EXCLUDED.description,
 			   icon = EXCLUDED.icon`,
 			[domain.id, domain.name, domain.description, domain.icon, domain.createdAt]
+		);
+	}
+
+	/** One statement, so the folders never read half reordered; `position` is left out of saveDomain on purpose. */
+	async setDomainOrder(ids: readonly string[]): Promise<void> {
+		await pgQuery(
+			`UPDATE domains SET position = o.pos - 1
+			 FROM unnest($1::text[]) WITH ORDINALITY AS o(id, pos)
+			 WHERE domains.id = o.id`,
+			[[...ids]]
 		);
 	}
 
@@ -72,17 +84,6 @@ export class PgPortfolioRepository implements PortfolioRepositoryPort {
 			   domain_id = EXCLUDED.domain_id,
 			   updated_at = EXCLUDED.updated_at`,
 			[projectId, meta.domainId, new Date().toISOString()]
-		);
-	}
-
-	async setShipped(projectId: string, shippedAt: string | null): Promise<void> {
-		await pgQuery(
-			`INSERT INTO project_meta (project_id, domain_id, shipped_at, updated_at)
-			 VALUES ($1, NULL, $2, $3)
-			 ON CONFLICT (project_id) DO UPDATE SET
-			   shipped_at = EXCLUDED.shipped_at,
-			   updated_at = EXCLUDED.updated_at`,
-			[projectId, shippedAt, new Date().toISOString()]
 		);
 	}
 

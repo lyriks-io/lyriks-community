@@ -80,16 +80,19 @@ export type SkillSyncStatus = 'up-to-date' | 'update' | 'new';
 export interface SkillSyncEntry {
 	id: string;
 	name: string;
-	description: string;
+	/** Absent when status is "up-to-date": the client holds the guide, nothing is written. */
+	description?: string;
 	contentHash: string;
 	/** "new" = not installed; "update" = stale or unhashed; "up-to-date" = hash matches. */
 	status: SkillSyncStatus;
 	/**
 	 * Claude Code's path, kept as a scalar for clients written against the
 	 * original single-layout contract. New clients read `installTargets`.
+	 * Absent when status is "up-to-date".
 	 */
-	installPath: string;
-	installTargets: SkillInstallTarget[];
+	installPath?: string;
+	/** Absent when status is "up-to-date". */
+	installTargets?: SkillInstallTarget[];
 	/** Present only when status ≠ "up-to-date" — the file to write verbatim. */
 	installContent?: string;
 	/** Content deliberately omitted; fetch get_skill before installing or following it. */
@@ -117,8 +120,10 @@ export interface BindingHookInstall {
 	/** The Claude Code project settings file the hook is wired in. */
 	settingsPath: string;
 	/** The hook event the entry belongs to. */
-	settingsEvent: 'UserPromptSubmit';
-	/** The entry to add under `hooks.<settingsEvent>[].hooks`, unless a command naming `path` is already there. */
+	settingsEvent: 'UserPromptSubmit' | 'PreToolUse';
+	/** The tools a PreToolUse entry runs for: the `matcher` of its item under `hooks.PreToolUse`. */
+	settingsMatcher?: string;
+	/** The entry to add under `hooks.<settingsEvent>[].hooks` (the item whose matcher is `settingsMatcher`, when given), unless a command naming `path` is already there. */
 	settingsEntry: { type: 'command'; command: string; timeout: number; statusMessage: string };
 	/** The whole settings file to write when `settingsPath` does not exist yet. */
 	settingsContent: string;
@@ -133,6 +138,8 @@ export interface BindingInstallTarget {
 	pointerBlock: string;
 	/** Claude Code only: the per-prompt hook restating the binding. */
 	hook?: BindingHookInstall;
+	/** Claude Code only: the hook that allows the Lyriks tools without a prompt (ac-mcp-binding-allows-tools). */
+	toolsHook?: BindingHookInstall;
 }
 
 /**
@@ -156,8 +163,8 @@ export interface BindingToolInstall {
 	contentHash: string;
 	/** The client already holds this exact version: nothing to write, `content` is left out. */
 	unchanged?: true;
-	/** One sentence: what it does and how it is invoked. */
-	purpose: string;
+	/** One sentence: what it does and how it is invoked. Absent when `unchanged`: the installed file's header says it. */
+	purpose?: string;
 }
 
 /**

@@ -63,3 +63,5 @@ playwright-report/
 
 # Local MCP connection files may carry live bearer credentials.
 /.mcp.json
+# The proof module's packed tarball, put there by the release for the Enterprise image (Dockerfile).
+/ee/prover/*.tgz

@@ -23,4 +23,4 @@ export * from './acceptance';
 export * from './acceptance-tests';
 export * from './repo-scaffold';
 export * from './can-advance';
-export * from './events';
+export * from './design-system';

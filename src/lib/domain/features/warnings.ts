@@ -1,6 +1,47 @@
 import type { DraftWarning } from '$domain/shared';
 import { detectDuplicateFeatureIds } from './dedup';
 import type { Family, ProjectFeaturesDraft } from './draft';
+import { quoteName, type SpecLanguage } from '$domain/language';
+
+/** The warnings in the spec's language; codes never change, names and ids are quoted as they are. */
+const TEXTS = {
+	en: {
+		q: (name: string) => `"${name}"`,
+		coreMissing: (core: string) => `Core "${core}" does not exist.`,
+		familyMissing: (family: string) => `Family "${family}" does not exist.`,
+		familyOtherCore: (family: string) => `Family "${family}" belongs to a different Core.`,
+		danglingCore: (node: string, core: string) => `${node} references Core "${core}", which no longer exists.`,
+		danglingFamily: (node: string, family: string) =>
+			`${node} references parent Family "${family}", which no longer exists.`,
+		familyMismatch: (node: string, family: string) =>
+			`${node} is under Family "${family}", which belongs to a different Core.`,
+		orphanedMvp: (feature: string) => `MVP assignment targets Feature "${feature}", which no longer exists.`,
+		orphanedRoadmap: (feature: string) => `Roadmap assignment targets Feature "${feature}", which no longer exists.`,
+		orphanedRelease: (release: string) =>
+			`Roadmap assignment places a Feature in Release "${release}", which no longer exists.`,
+		duplicateId: (id: string) => `Feature id "${id}" is used by more than one feature; ids must be globally unique.`
+	},
+	fr: {
+		q: (name: string) => quoteName('fr', name),
+		coreMissing: (core: string) => `Le domaine ${quoteName('fr', core)} n'existe pas.`,
+		familyMissing: (family: string) => `La famille ${quoteName('fr', family)} n'existe pas.`,
+		familyOtherCore: (family: string) => `La famille ${quoteName('fr', family)} appartient à un autre domaine.`,
+		danglingCore: (node: string, core: string) =>
+			`${node} fait référence au domaine ${quoteName('fr', core)}, qui n'existe plus.`,
+		danglingFamily: (node: string, family: string) =>
+			`${node} fait référence à la famille parente ${quoteName('fr', family)}, qui n'existe plus.`,
+		familyMismatch: (node: string, family: string) =>
+			`${node} est rangé sous la famille ${quoteName('fr', family)}, qui appartient à un autre domaine.`,
+		orphanedMvp: (feature: string) =>
+			`Une affectation au MVP vise la fonctionnalité ${quoteName('fr', feature)}, qui n'existe plus.`,
+		orphanedRoadmap: (feature: string) =>
+			`Une affectation à la feuille de route vise la fonctionnalité ${quoteName('fr', feature)}, qui n'existe plus.`,
+		orphanedRelease: (release: string) =>
+			`Une affectation à la feuille de route place une fonctionnalité dans la version ${quoteName('fr', release)}, qui n'existe plus.`,
+		duplicateId: (id: string) =>
+			`L'id de fonctionnalité ${quoteName('fr', id)} est utilisé par plusieurs fonctionnalités${'\u00a0'}; un id doit être unique dans tout le projet.`
+	}
+} as const;
 
 /**
  * Pure membership rule for one node (Feature or Family) — the anti-corruption
@@ -13,17 +54,19 @@ import type { Family, ProjectFeaturesDraft } from './draft';
  */
 export function validateMembership(
 	membership: { coreId: string; parentFamilyId: string | null },
-	draft: Pick<ProjectFeaturesDraft, 'cores' | 'families'>
+	draft: Pick<ProjectFeaturesDraft, 'cores' | 'families'>,
+	lang: SpecLanguage = 'en'
 ): { ok: true } | { ok: false; reason: string } {
+	const t = TEXTS[lang];
 	const { coreId, parentFamilyId } = membership;
 	if (coreId !== '' && !draft.cores.some((c) => c.id === coreId)) {
-		return { ok: false, reason: `Core "${coreId}" does not exist.` };
+		return { ok: false, reason: t.coreMissing(coreId) };
 	}
 	if (parentFamilyId === null) return { ok: true }; // directly under the Core — valid
 	const family = draft.families.find((f: Family) => f.id === parentFamilyId);
-	if (!family) return { ok: false, reason: `Family "${parentFamilyId}" does not exist.` };
+	if (!family) return { ok: false, reason: t.familyMissing(parentFamilyId) };
 	if (coreId !== '' && family.coreId !== coreId) {
-		return { ok: false, reason: `Family "${parentFamilyId}" belongs to a different Core.` };
+		return { ok: false, reason: t.familyOtherCore(parentFamilyId) };
 	}
 	return { ok: true };
 }
@@ -40,14 +83,15 @@ export function validateMembership(
  * Covers: a `coreId`/`parentFamilyId` pointing at a node that doesn't exist,
  * and an MVP/roadmap assignment pointing at a feature (or release) that doesn't.
  */
-export function collectFeaturesWarnings(draft: ProjectFeaturesDraft): DraftWarning[] {
+export function collectFeaturesWarnings(draft: ProjectFeaturesDraft, lang: SpecLanguage = 'en'): DraftWarning[] {
+	const t = TEXTS[lang];
 	const warnings: DraftWarning[] = [];
 	const coreIds = new Set(draft.cores.map((c) => c.id));
 	const familyIds = new Set(draft.families.map((f) => f.id));
 	const featureIds = new Set(draft.features.map((f) => f.id));
 	const releaseIds = new Set(draft.releases.map((r) => r.id));
 
-	const label = (name: string, id: string) => (name.trim().length > 0 ? `"${name}"` : `#${id}`);
+	const label = (name: string, id: string) => (name.trim().length > 0 ? t.q(name) : `#${id}`);
 
 	// Dangling tree links. Empty coreId / null parentFamilyId mean "unassigned"
 	// (a legitimate in-progress state), so only a *non-empty* id that fails to
@@ -57,14 +101,14 @@ export function collectFeaturesWarnings(draft: ProjectFeaturesDraft): DraftWarni
 			warnings.push({
 				code: 'dangling-core-ref',
 				ref: node.id,
-				message: `${label(node.name, node.id)} references Core "${node.coreId}", which no longer exists.`
+				message: t.danglingCore(label(node.name, node.id), node.coreId)
 			});
 		}
 		if (node.parentFamilyId !== null && !familyIds.has(node.parentFamilyId)) {
 			warnings.push({
 				code: 'dangling-family-ref',
 				ref: node.id,
-				message: `${label(node.name, node.id)} references parent Family "${node.parentFamilyId}", which no longer exists.`
+				message: t.danglingFamily(label(node.name, node.id), node.parentFamilyId)
 			});
 		} else if (node.parentFamilyId !== null && node.coreId !== '') {
 			// The family exists — but does it belong to the same Core? A feature/family
@@ -75,7 +119,7 @@ export function collectFeaturesWarnings(draft: ProjectFeaturesDraft): DraftWarni
 				warnings.push({
 					code: 'family-core-mismatch',
 					ref: node.id,
-					message: `${label(node.name, node.id)} is under Family "${family.name || node.parentFamilyId}", which belongs to a different Core.`
+					message: t.familyMismatch(label(node.name, node.id), family.name || node.parentFamilyId)
 				});
 			}
 		}
@@ -87,7 +131,7 @@ export function collectFeaturesWarnings(draft: ProjectFeaturesDraft): DraftWarni
 			warnings.push({
 				code: 'orphaned-mvp-assignment',
 				ref: m.featureId,
-				message: `MVP assignment targets Feature "${m.featureId}", which no longer exists.`
+				message: t.orphanedMvp(m.featureId)
 			});
 		}
 	}
@@ -96,13 +140,13 @@ export function collectFeaturesWarnings(draft: ProjectFeaturesDraft): DraftWarni
 			warnings.push({
 				code: 'orphaned-roadmap-assignment',
 				ref: r.featureId,
-				message: `Roadmap assignment targets Feature "${r.featureId}", which no longer exists.`
+				message: t.orphanedRoadmap(r.featureId)
 			});
 		} else if (!releaseIds.has(r.releaseId)) {
 			warnings.push({
 				code: 'orphaned-roadmap-assignment',
 				ref: r.releaseId,
-				message: `Roadmap assignment places a Feature in Release "${r.releaseId}", which no longer exists.`
+				message: t.orphanedRelease(r.releaseId)
 			});
 		}
 	}
@@ -114,7 +158,7 @@ export function collectFeaturesWarnings(draft: ProjectFeaturesDraft): DraftWarni
 		warnings.push({
 			code: 'duplicate-feature-id',
 			ref: id,
-			message: `Feature id "${id}" is used by more than one feature; ids must be globally unique.`
+			message: t.duplicateId(id)
 		});
 	}
 

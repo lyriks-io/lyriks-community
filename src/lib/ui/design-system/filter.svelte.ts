@@ -135,8 +135,15 @@ export class Filter<T> {
 	};
 
 	/** Does one item survive the text box and every facet? */
-	matches = (item: T): boolean => {
-		if (!matchesQuery(this.query, ...this.spec.fields(item))) return false;
+	matches = (item: T): boolean =>
+		matchesQuery(this.query, ...this.spec.fields(item)) && this.matchesFacets(item);
+
+	/**
+	 * Does one item survive every facet, whatever the text box holds? For a
+	 * list where the text can match a CONTAINER (a tree's group name) and
+	 * should then show everything inside it that the facets still keep.
+	 */
+	matchesFacets = (item: T): boolean => {
 		for (const facet of this.facets) {
 			const picked = this.selected[facet.key] ?? [];
 			if (picked.length === 0) continue;
@@ -176,8 +183,16 @@ export class Filter<T> {
 	};
 
 	/** How many of `items` one more option would keep, for the option's badge. */
-	countFor = (facet: FacetDef<T>, option: FacetOption, items: readonly T[]): number => {
-		let n = 0;
+	countFor = (facet: FacetDef<T>, option: FacetOption, items: readonly T[]): number =>
+		this.countsFor(facet, items).get(option.value) ?? 0;
+
+	/**
+	 * Every option's badge count in one pass over `items`, keyed by option value:
+	 * a facet with hundreds of values over thousands of rows would otherwise
+	 * rescan every row once per option.
+	 */
+	countsFor = (facet: FacetDef<T>, items: readonly T[]): Map<string, number> => {
+		const counts = new Map<string, number>();
 		for (const item of items) {
 			if (!matchesQuery(this.query, ...this.spec.fields(item))) continue;
 			let ok = true;
@@ -190,9 +205,10 @@ export class Filter<T> {
 					break;
 				}
 			}
-			if (ok && valuesOf(facet, item).includes(option.value)) n++;
+			if (!ok) continue;
+			for (const v of new Set(valuesOf(facet, item))) counts.set(v, (counts.get(v) ?? 0) + 1);
 		}
-		return n;
+		return counts;
 	};
 }
 

@@ -147,6 +147,18 @@ describe('Filter', () => {
 		expect(f.countFor(status, { value: 'done', label: 'done' }, rows)).toBe(1);
 	});
 
+	it('counts every option of a facet in one pass, a row once per value it carries', () => {
+		const f = make();
+		const tags = f.facets.find((x) => x.key === 'tags')!;
+		const rows = [
+			row({ tags: ['refund', 'vat', 'refund'] }),
+			row({ tags: ['vat'] }),
+			row({ tags: [] })
+		];
+		const counts = f.countsFor(tags, rows);
+		expect(Object.fromEntries(counts)).toEqual({ refund: 1, vat: 2, [NONE_VALUE]: 1 });
+	});
+
 	it('clears text and facets together', () => {
 		const f = make();
 		f.query = 'refund';

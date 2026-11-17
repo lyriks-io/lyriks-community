@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Icon, type IconName } from '$ui/design-system';
 	import type { FormalEngineStatus } from '$domain/coherence';
-	import type { Tier as ProductTier } from '$domain/tier/tier';
+	import type { Tier as ProductTier } from '$domain/tier';
 	import type { CoherenceStore } from '../draft-store.svelte';
 
 	interface Props {
@@ -112,7 +112,7 @@
 <section class="rounded-card border border-line bg-surface p-4">
 	<div class="mb-3 flex items-center gap-2">
 		<Icon name="layers" size={14} />
-		<p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">
+		<p class="text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-ink-400">
 			Guarantee tiers · what readiness actually promises
 		</p>
 	</div>
@@ -128,11 +128,11 @@
 						<Icon name={tier.icon} size={13} />
 						{tier.label}
 					</span>
-					<span class="rounded-pill px-1.5 py-0.5 text-[9px] font-semibold {tier.badgeCls}">
+					<span class="rounded-pill px-1.5 py-0.5 text-[0.5625rem] font-semibold {tier.badgeCls}">
 						{tier.badge}
 					</span>
 				</div>
-				<p class="text-[10.5px] leading-snug text-ink-500">{tier.blurb}</p>
+				<p class="text-[0.65625rem] leading-snug text-ink-500">{tier.blurb}</p>
 			</div>
 		{/each}
 	</div>

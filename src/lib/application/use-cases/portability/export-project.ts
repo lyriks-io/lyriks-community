@@ -5,7 +5,7 @@ import {
 	type HashFn,
 	type ProjectSnapshot
 } from '$domain/portability';
-import { chooseKernelFeatures } from '$application/choose-kernel-features';
+import { chooseKernelFeatures } from '$application/specification/choose-kernel-features';
 import type {
 	ArchiveCodecPort,
 	ClockPort,
@@ -50,7 +50,7 @@ export class ExportProjectUseCase {
 		const rows = await this.rows.read(projectId);
 		if (!rows.legacyDocuments['project_drafts']) return null;
 
-		const [folder] = await this.kernel.loadCandidates([projectId]);
+		const [folder] = await this.kernel.loadCandidates([projectId], { includeArtifacts: true });
 		// A bundle addresses features by id (one zip entry per id), so a folder
 		// holding twins has to be resolved BEFORE packing, not by whichever entry
 		// the archive writes last. See `chooseKernelFeatures`.
@@ -65,7 +65,7 @@ export class ExportProjectUseCase {
 			name: identity.name,
 			description: identity.description,
 			rows,
-			kernel: { project: folder?.project ?? null, features: kernelFeatures.features },
+			kernel: { project: folder?.project ?? null, features: kernelFeatures.features, artifacts: folder?.artifacts ?? [] },
 			domain: domain
 				? { id: domain.id, name: domain.name, description: domain.description, icon: domain.icon }
 				: null

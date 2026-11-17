@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { detectIssues } from './detection';
+import { detectIssues, earsOfDetectedEdge } from './detection';
+import { readsAsEars } from './ears-keywords';
 import type { ConsolidatedRule } from './draft';
 
 let n = 0;
@@ -123,5 +124,70 @@ describe('the other heuristics still fire', () => {
 	it('H3 flags an external touchpoint with no failure path', () => {
 		const found = detectIssues([rule('Checkout', 'The member pays by card.')]);
 		expect(found.some((i) => i.kind === 'unhandled_edge')).toBe(true);
+	});
+});
+
+describe('detection in a French spec', () => {
+	const NB = ' ';
+
+	it('finds French vague terms as whole words, and titles them in French', () => {
+		const issues = detectIssues(
+			[rule('Remboursement', 'Le remboursement est traité rapidement, il évite les litiges.', { source: 'sla' })],
+			'fr'
+		).filter((i) => i.kind === 'ambiguity');
+		expect(issues.map((i) => i.key)).toEqual([expect.stringMatching(/::rapidement$/)]);
+		expect(issues[0].title).toBe(`Définir «${NB}rapidement${NB}» dans «${NB}Remboursement${NB}»`);
+		expect(issues[0].detail).toContain(`apparaît dans${NB}: «${NB}Le remboursement`);
+	});
+
+	it('does not read English vague terms into French prose', () => {
+		const issues = detectIssues([rule('Export', 'Exporter les commandes du mois.', { source: 'sla' })], 'fr');
+		expect(issues.filter((i) => i.kind === 'ambiguity')).toEqual([]);
+	});
+
+	it('asks what happens when a French external touchpoint fails', () => {
+		const [edge] = detectIssues([rule('Commande', 'Le client valide le paiement.')], 'fr').filter(
+			(i) => i.kind === 'unhandled_edge'
+		);
+		expect(edge.title).toBe(`Et si «${NB}paiement${NB}» échoue dans «${NB}Commande${NB}»${NB}?`);
+		expect(edge.detail).toContain("en cas d'échec, de refus ou de délai dépassé");
+	});
+
+	it('titles a possible conflict in French, keyed by the rule ids only', () => {
+		const a = rule('Remise', 'Les clients fidèles reçoivent une remise mensuelle sur leur abonnement.');
+		const b = rule('Tarif', 'Les clients fidèles ne reçoivent jamais de remise mensuelle.');
+		const [fr] = detectIssues([a, b], 'fr').filter((i) => i.kind === 'contradiction');
+		expect(fr.title).toBe(`Conflit possible${NB}: «${NB}Remise${NB}» contre «${NB}Tarif${NB}»`);
+		expect(fr.key).toBe(`contradiction::${[a.id, b.id].sort().join('::')}`);
+		expect(fr.detail).toContain('Simple correspondance lexicale');
+	});
+
+	it('keeps the English templates by default', () => {
+		const [edge] = detectIssues([rule('Checkout', 'The user confirms the payment.')]).filter(
+			(i) => i.kind === 'unhandled_edge'
+		);
+		expect(edge.title).toBe('What if “payment” fails in Checkout?');
+	});
+});
+
+describe('a missing failure path reads as the requirement it leaves open [criterion:ad34b2f4]', () => {
+	const NB = '\u00a0';
+	const edgeOf = (r: ReturnType<typeof rule>, lang?: 'fr') => detectIssues([r], lang).find((i) => i.kind === 'unhandled_edge')!;
+
+	it('writes the English title as an unwanted-behaviour EARS statement, the response left open', () => {
+		const ears = earsOfDetectedEdge(edgeOf(rule('Checkout', 'The user confirms the payment.')).title);
+		expect(ears).toBe('If “payment” fails in Checkout, then the system shall …');
+		expect(readsAsEars(ears)).toBe(true);
+	});
+
+	it('writes the French title in French EARS', () => {
+		const ears = earsOfDetectedEdge(edgeOf(rule('Commande', 'Le client valide le paiement.'), 'fr').title);
+		expect(ears).toBe(`Si «${NB}paiement${NB}» échoue dans «${NB}Commande${NB}», alors le système doit …`);
+		expect(readsAsEars(ears)).toBe(true);
+	});
+
+	it('leaves any other title alone, whatever wrote it', () => {
+		expect(earsOfDetectedEdge('Possible conflict: Sign in vs Invite')).toBeNull();
+		expect(earsOfDetectedEdge('Removed domain keeps serving its short links')).toBeNull();
 	});
 });

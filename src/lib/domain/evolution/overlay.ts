@@ -3,6 +3,7 @@ import { isDraftLeafId } from './draft';
 import type { PropagationGraph, PropagationNode, PropagationEdge } from './impact-propagation';
 import { stableId } from './ids';
 import { withoutQuotations } from './quotations';
+import { quoteName, type SpecLanguage } from '$domain/language';
 
 /**
  * The product as this request would leave it.
@@ -97,7 +98,35 @@ export interface DraftCoherenceInput {
 	readonly dependsOn: Readonly<Record<string, readonly string[]>>;
 	/** Words the glossary bans, with the agreed word to use instead. */
 	readonly bannedWords?: readonly { avoid: string; prefer: string }[];
+	/** The language of the spec: the titles are stored, so they are written in it. */
+	readonly lang?: SpecLanguage;
 }
+
+/** The titles of the findings only a draft can produce, in the language of the spec. */
+const DRAFT_TITLES = {
+	en: {
+		nameTaken: (name: string) => `"${name}" is already the name of an existing feature`,
+		restsOnRemoved: (label: string, dep: string) =>
+			`"${label}" would rest on "${dep}", which this same request removes`,
+		orphaned: (dependent: string, removed: string) =>
+			`"${dependent}" depends on "${removed}", which this request removes`,
+		bannedWord: (label: string, avoid: string, prefer: string) =>
+			`"${label}" uses "${avoid}", which the glossary asks to be called "${prefer}"`,
+		untestable: (label: string) =>
+			`"${label}" carries no acceptance criterion, so nothing says when it is done`
+	},
+	fr: {
+		nameTaken: (name: string) => `${quoteName('fr', name)} est déjà le nom d'une fonctionnalité existante`,
+		restsOnRemoved: (label: string, dep: string) =>
+			`${quoteName('fr', label)} reposerait sur ${quoteName('fr', dep)}, que cette même demande retire`,
+		orphaned: (dependent: string, removed: string) =>
+			`${quoteName('fr', dependent)} dépend de ${quoteName('fr', removed)}, que cette demande retire`,
+		bannedWord: (label: string, avoid: string, prefer: string) =>
+			`${quoteName('fr', label)} emploie ${quoteName('fr', avoid)}, que le glossaire demande d'appeler ${quoteName('fr', prefer)}`,
+		untestable: (label: string) =>
+			`${quoteName('fr', label)} ne porte aucun critère d'acceptation, donc rien ne dit quand le travail est terminé`
+	}
+} as const;
 
 const norm = (text: string): string => text.trim().toLowerCase().replace(/\s+/g, ' ');
 
@@ -112,6 +141,7 @@ const norm = (text: string): string => text.trim().toLowerCase().replace(/\s+/g,
 export function draftCoherence(input: DraftCoherenceInput): CoherenceFinding[] {
 	const findings: CoherenceFinding[] = [];
 	const { request, leafNames, dependsOn } = input;
+	const titles = DRAFT_TITLES[input.lang ?? 'en'];
 	const removed = new Set(
 		request.drafts.filter((d) => d.kind === 'remove' && d.baseLeafId).map((d) => d.baseLeafId as string)
 	);
@@ -128,7 +158,7 @@ export function draftCoherence(input: DraftCoherenceInput): CoherenceFinding[] {
 					id: stableId('coh-draft-name', request.id, draft.id, clash[0]),
 					axis: 'semantic',
 					severity: 'blocking',
-					title: `"${draft.name}" is already the name of an existing feature`,
+					title: titles.nameTaken(draft.name),
 					requestNodeId: draftNodeId(draft.id),
 					existingNodeId: `feature:${clash[0]}`,
 					fixNowTarget: `features.leafMeta.${clash[0]}`,
@@ -143,7 +173,7 @@ export function draftCoherence(input: DraftCoherenceInput): CoherenceFinding[] {
 				id: stableId('coh-draft-dep', request.id, draft.id, dep),
 				axis: 'structural',
 				severity: 'blocking',
-				title: `"${label}" would rest on "${leafNames[dep] ?? dep}", which this same request removes`,
+				title: titles.restsOnRemoved(label, leafNames[dep] ?? dep),
 				requestNodeId: draftNodeId(draft.id),
 				existingNodeId: `feature:${dep}`,
 				fixNowTarget: `features.leafMeta.${dep}`,
@@ -160,7 +190,7 @@ export function draftCoherence(input: DraftCoherenceInput): CoherenceFinding[] {
 					id: stableId('coh-draft-orphan', request.id, draft.id, leafId),
 					axis: 'structural',
 					severity: 'blocking',
-					title: `"${leafNames[leafId] ?? leafId}" depends on "${leafNames[draft.baseLeafId] ?? draft.baseLeafId}", which this request removes`,
+					title: titles.orphaned(leafNames[leafId] ?? leafId, leafNames[draft.baseLeafId] ?? draft.baseLeafId),
 					requestNodeId: draftNodeId(draft.id),
 					existingNodeId: `feature:${leafId}`,
 					fixNowTarget: `features.leafMeta.${leafId}`,
@@ -179,7 +209,7 @@ export function draftCoherence(input: DraftCoherenceInput): CoherenceFinding[] {
 				id: stableId('coh-draft-word', request.id, draft.id, avoid),
 				axis: 'semantic',
 				severity: 'major',
-				title: `"${label}" uses "${avoid}", which the glossary asks to be called "${banned.prefer}"`,
+				title: titles.bannedWord(label, avoid, banned.prefer),
 				requestNodeId: draftNodeId(draft.id),
 				existingNodeId: `term:${banned.prefer}`,
 				fixNowTarget: 'glossary.terms',
@@ -200,7 +230,7 @@ export function draftCoherence(input: DraftCoherenceInput): CoherenceFinding[] {
 				id: stableId('coh-draft-untestable', request.id, draft.id),
 				axis: 'functional',
 				severity: 'minor',
-				title: `"${label}" carries no acceptance criterion, so nothing says when it is done`,
+				title: titles.untestable(label),
 				requestNodeId: draftNodeId(draft.id),
 				existingNodeId: draftNodeId(draft.id),
 				fixNowTarget: `evolution.${request.id}.drafts.${draft.id}`,

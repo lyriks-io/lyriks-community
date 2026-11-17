@@ -1,5 +1,4 @@
 import type { RequestEvent } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 
 /**
  * The set of workspace ids the current caller may enumerate, for scoping the flat
@@ -16,9 +15,9 @@ export async function callerWorkspaceScope(
 ): Promise<ReadonlySet<string> | null> {
 	if (!event.locals.authRequired) return null;
 	// A single-operator install (auth on, no Back) has no teams to scope by either.
-	if (!getServices().identity.multiUser) return null;
+	if (!event.locals.services.identity.multiUser) return null;
 	try {
-		const workspaces = await getServices().workspaces.listForCaller();
+		const workspaces = await event.locals.services.workspaces.listForCaller();
 		return new Set(workspaces.map((w) => w.id));
 	} catch {
 		return new Set<string>();

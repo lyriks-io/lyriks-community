@@ -1,6 +1,5 @@
 import { json, error } from '@sveltejs/kit';
 import { isSourceModeCode } from '$domain/foundation';
-import { getServices } from '$composition/container.server';
 import { callerWorkspaceScope } from '$lib/server/workspace-scope.server';
 import { callerAllowedDomains } from '$lib/server/domain-scope.server';
 import {
@@ -9,6 +8,8 @@ import {
 	runWithRequestContext
 } from '$lib/server/request-context.server';
 import { ownNewProject, resolveOwningWorkspace } from '$lib/server/new-project-ownership.server';
+import { creationRefused, refusedCreation } from '$lib/server/project-creation-refusal.server';
+import { activeProjectState } from '$lib/server/active-project.server';
 import type { RequestHandler } from './$types';
 
 /** Audit actor from the request locals: the user email, else dev/anonymous. */
@@ -22,7 +23,7 @@ function actorOf(locals: App.Locals): string {
  * the caller's own workspaces when auth is on (multi-tenant isolation).
  */
 export const GET: RequestHandler = async (event) => {
-	const services = getServices();
+	const services = event.locals.services;
 	const scope = await callerWorkspaceScope(event);
 	const allowedDomains = await callerAllowedDomains(event);
 	const portfolio = await services.buildPortfolio.execute(
@@ -30,7 +31,10 @@ export const GET: RequestHandler = async (event) => {
 		allowedDomains,
 		event.locals.session?.email ?? null
 	);
-	return json({ portfolio });
+	// The projects panel offers to drag the folders only to who sees them all (rule 8f68eccd).
+	// Community works on one project at a time: the list marks the active one (EVO-001), null elsewhere.
+	const activeProjectId = (await activeProjectState(event.locals))?.activeProjectId ?? null;
+	return json({ portfolio, canOrderFolders: allowedDomains === null, activeProjectId });
 };
 
 /**
@@ -68,13 +72,13 @@ export const POST: RequestHandler = async (event) => {
 	const requestedWorkspaceId =
 		typeof body?.workspaceId === 'string' && body.workspaceId.length > 0 ? body.workspaceId : null;
 
-	const services = getServices();
+	const services = event.locals.services;
 
 	// Auth-on: resolve the owning team up front and validate membership, so we never
 	// register a project into a workspace the caller isn't in (unforgeable — the list
 	// is token-scoped from the back). Auth-off (standalone appliance): single trusted
 	// tenant, no team to pin.
-	const owningWorkspaceId = await resolveOwningWorkspace(locals, requestedWorkspaceId);
+	const owningWorkspaceId = await resolveOwningWorkspace(services, locals, requestedWorkspaceId);
 
 	const description = typeof body?.description === 'string' ? body.description : '';
 	const domainId = typeof body?.domainId === 'string' && body.domainId ? body.domainId : null;
@@ -87,12 +91,12 @@ export const POST: RequestHandler = async (event) => {
 	// context untouched (owningWorkspaceId null → dev workspace, unchanged behaviour).
 	const createOwned = async (): Promise<string> => {
 		const id = await services.createProject.execute({ name, description, domainId, sourceMode });
-		await ownNewProject(locals, id, 'project.create');
+		await ownNewProject(services, locals, id, 'project.create');
 		return id;
 	};
 
-	const id = owningWorkspaceId
-		? await runWithRequestContext(
+	const creation = await refusedCreation(() => owningWorkspaceId
+		? runWithRequestContext(
 				{
 					token: currentRequestToken(),
 					workspaceId: owningWorkspaceId,
@@ -101,7 +105,10 @@ export const POST: RequestHandler = async (event) => {
 				},
 				createOwned
 			)
-		: await createOwned();
+		: createOwned());
+	// Community holds one project, whoever asks: the page or an AI client (EVO-001).
+	if ('refused' in creation) creationRefused(creation.refused);
+	const id = creation.created;
 
 	services.audit.record({
 		action: 'project.create',

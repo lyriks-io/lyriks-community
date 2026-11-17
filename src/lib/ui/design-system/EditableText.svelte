@@ -87,7 +87,7 @@
 			onkeydown={(e) => e.key === 'Escape' && cancel()}
 			aria-label={ariaLabel ?? 'Field editor'}
 			rows={1}
-			class="field-sizing-content w-full resize-none rounded-md border border-brand-400/40 bg-surface-sunken px-1.5 py-0.5 text-ink-900 outline-none {klass}"
+			class="field-sizing-content w-full resize-none border border-blue bg-surface-sunken px-1.5 py-0.5 text-ink outline-none {klass}"
 		></textarea>
 	{:else}
 		<input
@@ -96,7 +96,7 @@
 			onblur={commit}
 			onkeydown={onInputKey}
 			aria-label={ariaLabel ?? 'Field editor'}
-			class="w-full rounded-md border border-brand-400/40 bg-surface-sunken px-2 py-0.5 text-ink-900 outline-none {klass}"
+			class="w-full border border-blue bg-surface-sunken px-2 py-0.5 text-ink outline-none {klass}"
 		/>
 	{/if}
 {:else}
@@ -106,9 +106,9 @@
 		aria-label={ariaLabel ?? (value ? `Edit: ${value}` : `Edit field ${placeholder}`)}
 		onclick={startEdit}
 		onkeydown={onDisplayKey}
-		class="-mx-1 cursor-text rounded-md px-1.5 py-0.5 transition-colors {klass} {value
-			? 'bg-ink-900/[0.035] hover:bg-ink-900/[0.06]'
-			: 'bg-warning-50 italic text-warning-700 ring-1 ring-inset ring-warning-200 hover:bg-warning-100'}"
+		class="-mx-1 cursor-text border bg-surface px-1.5 py-0.5 transition-colors {klass} {value
+			? 'border-line hover:border-ink'
+			: 'border-orange italic text-ink-3 hover:border-orange-ink'}"
 	>
 		{#if value}
 			<GlossaryText

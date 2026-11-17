@@ -18,6 +18,32 @@ export function nextStage(stage: RequestStage): RequestStage | null {
 	return i < 0 || i === STAGE_ORDER.length - 1 ? null : STAGE_ORDER[i + 1];
 }
 
+/** The four stages a request is worked in, between opening and delivery. */
+const WORKING_STAGES: readonly RequestStage[] = [
+	'specification',
+	'coherence',
+	'implementation',
+	'acceptance'
+];
+
+/**
+ * Whether a request is an evolution in progress, as a project card counts them:
+ * open, not delivered, in one of the four working stages, and already carrying
+ * the start of a functional spec (a drafted feature, or a frozen version). A
+ * request that only names its need is an idea, not work under way.
+ */
+export function isEvolutionInProgress(request: EvolutionRequest): boolean {
+	return (
+		request.status === 'open' &&
+		WORKING_STAGES.includes(request.stage) &&
+		(request.drafts.length > 0 || request.specVersion > 0)
+	);
+}
+
+export function countEvolutionsInProgress(requests: readonly EvolutionRequest[]): number {
+	return requests.filter(isEvolutionInProgress).length;
+}
+
 /** How many validated observations have not been folded back into the spec yet. */
 export function acceptanceDebt(request: EvolutionRequest): number {
 	return request.observations.filter((o) => o.ruling === 'validated' && !o.foldedBackAt).length;
@@ -74,6 +100,11 @@ export function canAdvance(request: EvolutionRequest, target: RequestStage): Gua
 			'A deleted dossier is out of the run; nothing moves it.'
 		),
 		guard(
+			request.status === 'cancelled',
+			'This request is cancelled: reopen it first.',
+			'A cancelled request keeps its stage until it is reopened.'
+		),
+		guard(
 			nextStage(request.stage) !== target,
 			`Only a request in ${previousOf(target)} can move to ${target}.`,
 			'The stage only ever moves forward one gate at a time; skipping or repeating a gate is refused.'
@@ -92,6 +123,11 @@ const previousOf = (stage: RequestStage): RequestStage => {
  */
 export function canRebrief(request: EvolutionRequest): Guarded {
 	return firstRefusal(
+		guard(
+			request.status === 'cancelled',
+			'This request is cancelled: reopen it first.',
+			'A cancelled request is read, not written; Reopen in its settings menu takes it back up where it stood.'
+		),
 		guard(
 			request.status === 'closed',
 			'A closed request cannot be rebriefed.',
@@ -113,6 +149,11 @@ export function canRebrief(request: EvolutionRequest): Guarded {
 export function canCloseRequest(request: EvolutionRequest): Guarded {
 	return firstRefusal(
 		guard(
+			request.status === 'cancelled',
+			'This request is cancelled: reopen it first.',
+			'Closing is the end of a delivered change, not of a cancelled one.'
+		),
+		guard(
 			acceptanceDebt(request) > 0,
 			'An accepted observation has not been written back into the spec yet.',
 			'Closing here would leave the specification describing something other than the product that was accepted.'
@@ -123,6 +164,22 @@ export function canCloseRequest(request: EvolutionRequest): Guarded {
 			'Closing before delivery would hide work that is still running.'
 		)
 	);
+}
+
+/**
+ * Stop a change that will not be carried through (ac-evo-req-cancel): at any
+ * stage, with a reason. What it already wrote into the specification stays.
+ */
+export function canCancelRequest(request: EvolutionRequest, reason: string): Guarded {
+	return firstRefusal(
+		guard(request.status !== 'open', 'Only an open request is cancelled.', 'A closed, cancelled or deleted request is not cancelled again.'),
+		guard(reason.trim() === '', 'Say why the request is cancelled.', 'Whoever reads the request later knows why it stopped.')
+	);
+}
+
+/** Take a cancelled request back up where it stood. */
+export function canReopenRequest(request: EvolutionRequest): Guarded {
+	return guard(request.status !== 'cancelled', 'Only a cancelled request is reopened.', 'An open request has nothing to reopen; a closed one has finished its run.');
 }
 
 /**

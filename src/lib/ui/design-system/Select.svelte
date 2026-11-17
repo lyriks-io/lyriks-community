@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
+	import { fieldBase, fieldBorder, fieldHeight } from './field';
 
 	interface SelectOption {
 		code: string;
@@ -10,16 +11,18 @@
 		options: readonly SelectOption[];
 		id?: string;
 		onchange?: (value: string) => void;
+		disabled?: boolean;
 		class?: string;
 	}
-	let { value, options, id, onchange, class: klass = '' }: Props = $props();
+	let { value, options, id, onchange, disabled = false, class: klass = '' }: Props = $props();
 </script>
 
 <div class="relative {klass}">
 	<select
 		{id}
+		{disabled}
 		onchange={(e) => onchange?.(e.currentTarget.value)}
-		class="h-12 w-full appearance-none rounded-field border border-line bg-surface-sunken py-2.5 pl-3.5 pr-10 text-sm text-ink-900 transition-colors hover:border-line-strong focus:border-brand-400"
+		class="{fieldBase} {fieldHeight} {fieldBorder} appearance-none py-2.5 pl-3.5 pr-10 disabled:cursor-not-allowed disabled:text-ink-500"
 	>
 		{#each options as opt (opt.code)}
 			<option value={opt.code} selected={opt.code === value}>{opt.label}</option>

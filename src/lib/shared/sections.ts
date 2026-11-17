@@ -7,7 +7,9 @@
  * endpoint each kept their own copy, and the MCP a third one in another repo —
  * which is how `approvals` and `baselines` shipped in the app while
  * staying unreachable over MCP for months. One list, checked against the actual
- * `/api/draft/*` routes by `sections.test.ts`.
+ * `/api/draft/*` routes by `sections.test.ts`. `evolution` is the one section
+ * with no raw write: it is read like the others and written only through its
+ * typed operations (`POST /api/evolution`).
  *
  * Public ids match the product capabilities. Legacy Foundation storage keys are
  * accepted only by migration adapters and are never exposed here.

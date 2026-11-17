@@ -3,7 +3,9 @@
 // and rewrites the repository's implementation index, `.unspa.json`. Shared by
 // check-index, ingest-results, sync-index and apply-batch so they agree on where
 // the index is, on what its two historical shapes look like, and on how a
-// rewrite keeps the file's own formatting. Also the command that edits it:
+// rewrite keeps the file's own formatting. Also the command that creates and
+// edits it:
+//   node .lyriks/tools/index-file.mjs init [--project <id>] [--json]
 //   node .lyriks/tools/index-file.mjs upsert <entries.json | -> [--sync [--feature <featureId>]] [--project <id>] [--dry-run] [--json]
 //   node .lyriks/tools/index-file.mjs remove <key...> [--sync --feature <featureId>] [--project <id>] [--dry-run] [--json]
 //   node .lyriks/tools/index-file.mjs set-project <id>
@@ -36,7 +38,10 @@ export function findIndexFile(from = process.cwd()) {
 export function loadIndexFile(from = process.cwd()) {
 	const path = findIndexFile(from);
 	if (!path) {
-		throw new Error(`No ${INDEX_FILE_NAME} found in ${resolve(from)} or any parent folder.`);
+		throw new Error(
+			`No ${INDEX_FILE_NAME} found in ${resolve(from)} or any parent folder. ` +
+				`Create it with: node .lyriks/tools/index-file.mjs init --project <id> (the Lyriks project this repository is specified in).`
+		);
 	}
 	const text = readFileSync(path, 'utf8');
 	let doc;

@@ -47,6 +47,12 @@ export interface Gap {
 	 * this one names. Absent ⇒ the kind's generic label.
 	 */
 	kindLabel?: string;
+	/**
+	 * What a point of this kind means, in a sentence or two, for the emitter
+	 * that knows it better than the check catalogue does (the behavior engine's
+	 * Dead end, Broken...): What Lyriks noticed shows it on its type's hover.
+	 */
+	kindMeaning?: string;
 	/** Who says so (see GapProvenance). Absent ⇒ derived from the emitting tier. */
 	provenance?: GapProvenance;
 	/** The element this is about (a feature, a role, a table), when known. */
@@ -71,6 +77,36 @@ export interface Gap {
 	 * of the project root, so the flag sits on the thing it's about.
 	 */
 	featureRef?: string;
+	/**
+	 * A proof that reads as a scenario (Given, When each step, Then what no
+	 * longer holds), when a solver proved the finding. Shown as is: it is the
+	 * finding's evidence, not an explanation to fold away.
+	 */
+	proof?: GapProof;
+	/**
+	 * What the gap stems from, when several gaps share one root (one rule broken
+	 * in several features): gaps of one cause weigh once in the score.
+	 */
+	cause?: string;
+	/**
+	 * Why the gap costs nothing although it is listed: `unverified`, the engine
+	 * could not reach it within its exploration bound (absence of evidence, never
+	 * proof of a fault); `consequence`, it follows from a cause already counted on
+	 * the same feature (its scenarios fail because a rule breaks from the start).
+	 */
+	weighs?: 'unverified' | 'consequence';
+	/**
+	 * For an item an author declared: `defect`, what the product does wrong (an
+	 * unhandled case, a contradiction); `question`, a decision still to take.
+	 * A defect weighs more than a question, both less than a detection.
+	 */
+	nature?: 'defect' | 'question';
+}
+
+export interface GapProof {
+	readonly given: string;
+	readonly when: readonly string[];
+	readonly then: string;
 }
 
 /**
@@ -128,12 +164,24 @@ export interface CoherenceAnalysis {
 	 */
 	formalEngine?: FormalEngineStatus;
 	/**
+	 * The formal engine is still proving the specification as it stands: the
+	 * analysis carries no verdict yet, or the previous one (Enterprise).
+	 */
+	formalProving?: boolean;
+	/**
 	 * Catalogue ids of the checks that actually RAN for this analysis (see
 	 * checks.ts). A check that ran and emitted no gap passed; a check absent from
 	 * this list was not run (engine offline, tier not entitled) and proves
 	 * nothing. Absent on analyses produced before the catalogue existed.
 	 */
 	checksRun?: string[];
+	/**
+	 * Features the behaviour engine has not checked yet in this reading (its
+	 * pass was capped): what it has not read proves nothing either way, so the
+	 * completion gate cannot conclude on them (ac-leaf-ac-score-completion-unchecked).
+	 * Absent when the engine reached every feature, or did not run.
+	 */
+	behaviorUnchecked?: number;
 	/**
 	 * Gaps a person settled with a traced decision (risk accepted, will not fix).
 	 * They are OUT of `gaps`, so every score reads them as resolved, and IN here so
@@ -176,7 +224,12 @@ export interface GapDecision {
 	/** A decision belongs to a person; an AI client may only report. */
 	authorKind: 'person' | 'ai_client';
 	decidedAt: string;
-	/** The gap title at decision time, so the trace reads on its own once the gap is gone. */
+	/**
+	 * The gap title at decision time, so the trace reads on its own once the gap
+	 * is gone. A display copy only: a decision finds its gap by `gapId`, a key
+	 * built from the check and the element (never from words), so a gap whose
+	 * text changes language keeps its decision.
+	 */
 	gapTitle: string;
 	/** Set when a later decision replaces this one. The original stays readable. */
 	supersededById: string | null;
@@ -198,7 +251,7 @@ export interface GapDecision {
 export interface PreparedDecision {
 	readonly id: string;
 	gapId: string;
-	/** The gap title when it was prepared, so the card reads on its own. */
+	/** The gap title when it was prepared, so the card reads on its own. A display copy: the gap is found by `gapId`. */
 	gapTitle: string;
 	status: Exclude<GapDecisionStatus, 'reopened'>;
 	reason: string;
@@ -237,7 +290,7 @@ export function coverageScoreOf(dimensions: readonly Dimension[], fallback = 0):
 }
 
 /**
- * MATURITY — the behavior-maturity dimension's own score (read as a TRL by the
+ * MATURITY — the behavior-maturity dimension's own score (read as a maturity stage by the
  * UI). `fallback` covers projects whose analysis carries no maturity dimension.
  */
 export function maturityScoreOf(dimensions: readonly Dimension[], fallback = 0): number {

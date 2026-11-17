@@ -54,17 +54,55 @@
 	});
 
 	const externalHref = $derived(unspaDashboardHref(path, editorBase) ?? editorBase);
+
+	/**
+	 * Stretch the frame down to the bottom edge of the screen. The page keeps some
+	 * padding under it; a negative bottom margin of that size takes it back, so
+	 * the frame touches the edge without making the page scroll. Re-measured
+	 * whenever the window or the page around it changes size.
+	 */
+	function fillToBottom(node: HTMLElement) {
+		const scroller = node.closest<HTMLElement>('.overflow-y-auto');
+		const update = () => {
+			node.style.marginBottom = '0px';
+			const box = node.getBoundingClientRect();
+			const viewBottom = scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight;
+			const contentBottom = scroller
+				? scroller.getBoundingClientRect().top + scroller.scrollHeight - scroller.scrollTop
+				: box.bottom;
+			const trailing = Math.max(0, contentBottom - box.bottom);
+			node.style.height = `${Math.max(320, viewBottom - box.top)}px`;
+			node.style.marginBottom = `-${trailing}px`;
+		};
+		const observer = new ResizeObserver(update);
+		observer.observe(document.documentElement);
+		if (scroller) observer.observe(scroller);
+		window.addEventListener('resize', update);
+		update();
+		return {
+			destroy() {
+				observer.disconnect();
+				window.removeEventListener('resize', update);
+			}
+		};
+	}
 </script>
 
 {#if framed}
 	<!-- Height is set explicitly: the editor is a full application, and an iframe
 	     has no intrinsic height, so without this it collapses to a few hundred
-	     pixels and the canvas inside is unusable. -->
-	<iframe
-		src={framed}
-		title="Behavior editor"
-		class="h-[calc(100vh-20rem)] min-h-125 w-full rounded-card border border-line bg-surface"
-	></iframe>
+	     pixels and the canvas inside is unusable. It takes all the height left down
+	     to the bottom of the screen, at its natural size, never zoomed out. -->
+	<div
+		use:fillToBottom
+		class="relative w-full overflow-hidden rounded-card border border-line bg-surface"
+	>
+		<iframe
+			src={framed}
+			title="Behavior editor"
+			class="absolute inset-0 h-full w-full border-0"
+		></iframe>
+	</div>
 {:else}
 	<!-- Not framable: the editor authenticates by verifying THIS app's session
 	     cookie, and browsers scope cookies by host. On another host it never

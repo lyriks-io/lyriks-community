@@ -1,7 +1,6 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { EmptyBriefError } from '$application/use-cases';
-import { parseIdentityDraft } from '$application/parse-foundation-identity';
+import { parseIdentityDraft } from '$application/specification/parse-foundation-identity';
 import type { SuggestableSection } from '$domain/foundation';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import type { RequestHandler } from './$types';
@@ -29,7 +28,7 @@ export const POST: RequestHandler = async (event) => {
 	const draft = parseIdentityDraft(body?.draft, projectId);
 
 	try {
-		const suggestion = await getServices().suggestFromSection.execute(section, brief, draft);
+		const suggestion = await event.locals.services.suggestFromSection.execute(section, brief, draft);
 		return json(suggestion);
 	} catch (e) {
 		if (e instanceof EmptyBriefError) error(422, e.message);

@@ -1,5 +1,4 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import type { TargetMap } from '$domain/experience';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import type { RequestHandler } from './$types';
@@ -22,7 +21,9 @@ export const GET: RequestHandler = async (event) => {
 	const projectId = url.searchParams.get('projectId') ?? '';
 	if (!projectId) error(400, 'projectId is required');
 	await requireProjectAccess(event, projectId, 'write');
-	return json(await getServices().generateRepoScaffold.execute(projectId));
+	const services = event.locals.services;
+	const lang = await services.loadSpecLanguage.generated(projectId);
+	return json(await services.generateRepoScaffold.execute(projectId, undefined, lang));
 };
 
 export const POST: RequestHandler = async (event) => {
@@ -33,5 +34,7 @@ export const POST: RequestHandler = async (event) => {
 	const projectId = typeof body?.projectId === 'string' ? body.projectId : '';
 	if (!projectId) error(400, 'projectId is required');
 	await requireProjectAccess(event, projectId, 'write');
-	return json(await getServices().generateRepoScaffold.execute(projectId, body?.map));
+	const services = event.locals.services;
+	const lang = await services.loadSpecLanguage.generated(projectId);
+	return json(await services.generateRepoScaffold.execute(projectId, body?.map, lang));
 };

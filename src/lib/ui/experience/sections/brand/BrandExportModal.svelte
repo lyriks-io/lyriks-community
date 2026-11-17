@@ -23,7 +23,7 @@
 	const css = $derived(brandExportCss(brand));
 
 	const TABS: { id: Tab; label: string; ext: string }[] = [
-		{ id: 'md', label: 'Markdown brief', ext: 'md' },
+		{ id: 'md', label: 'design.md', ext: 'md' },
 		{ id: 'json', label: 'Tokens JSON', ext: 'json' },
 		{ id: 'css', label: 'CSS variables', ext: 'css' }
 	];
@@ -48,7 +48,7 @@
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
 		a.href = url;
-		a.download = `${safeName}-brief.${t.ext}`;
+		a.download = t.id === 'md' ? 'design.md' : `${safeName}-tokens.${t.ext}`;
 		a.click();
 		URL.revokeObjectURL(url);
 	}
@@ -64,7 +64,7 @@
 	<div class="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card">
 		<div class="flex items-center gap-3 border-b border-line px-5 py-3">
 			<Icon name="download" size={16} />
-			<h2 class="text-sm font-bold text-ink-900">Export LLM brief</h2>
+			<h2 class="text-sm font-bold text-ink-900">design.md, tokens and CSS</h2>
 			<button type="button" onclick={onClose} class="ml-auto text-ink-400 hover:text-ink-700" aria-label="Close"><Icon name="x" size={16} /></button>
 		</div>
 

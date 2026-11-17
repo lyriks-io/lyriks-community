@@ -7,9 +7,11 @@ import {
 import type {
 	AiSuggesterPort,
 	BriefAnalysis,
+	PersonaContextPassage,
 	PersonaSuggestion,
 	SectionSuggestion
 } from '$application/ports';
+import { personaMentions } from './persona-mentions';
 
 /**
  * Deterministic, offline brief heuristics behind `AiSuggesterPort`. Keyword
@@ -39,23 +41,9 @@ export class StubAiSuggester implements AiSuggesterPort {
 		return { section, patch: { formFactors }, itemCount: formFactors.length };
 	}
 
-	async suggestPersonas(brief: string, draft: FoundationIdentityDraft): Promise<PersonaSuggestion[]> {
-		const text = `${brief} ${draft.industry}`.toLowerCase();
-		const out: PersonaSuggestion[] = [
-			{ name: 'Customer', rationale: 'Buys and manages their own orders.', userClass: 'end-user' },
-			{ name: 'Visitor', rationale: 'Browses without an account.', userClass: 'end-user' },
-			{ name: 'Admin', rationale: 'Configures the workspace and its members.', userClass: 'back-office' },
-			{ name: 'Operator', rationale: 'Runs day-to-day back-office operations.', userClass: 'back-office' }
-		];
-		if (/member|subscriber|portal|account|loyalty/.test(text))
-			out.push({ name: 'Member', rationale: 'A returning, signed-in end-user.', userClass: 'end-user' });
-		if (/support|help|ticket|service desk/.test(text))
-			out.push({ name: 'Support', rationale: 'Assists end-users with limited internal access.', userClass: 'back-office' });
-		if (/invoic|billing|finance|account|payment|dunning/.test(text)) {
-			out.push({ name: 'Finance Manager', rationale: 'Owns invoicing, dunning and cash collection.', userClass: 'back-office' });
-			out.push({ name: 'Accountant', rationale: 'Reconciles the books and closes the month.', userClass: 'back-office' });
-		}
-		return out;
+	/** Only the people the project's own text names; never a fixed starter list. */
+	async suggestPersonas(context: readonly PersonaContextPassage[]): Promise<PersonaSuggestion[]> {
+		return personaMentions(context);
 	}
 
 	/* ── keyword heuristics ──────────────────────────────────────────────── */

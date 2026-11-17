@@ -30,6 +30,28 @@ RUN node scripts/check-skill-catalog.mjs
 RUN pnpm build \
  && rm -rf node_modules \
  && pnpm install --prod --frozen-lockfile
+# Proof by the solver is an Enterprise capability, and a module of its own: the
+# engine holds no solver and loads the proof module @lyriks/unspa-prover when
+# UNSPA_PROVER names it (subprocess-env.server.ts sets it where the
+# installation proves). The module is private: the release puts its packed
+# tarball at ee/prover/unspa-prover.tgz (npm pack in lyriks-io/unspa-prover),
+# and an Enterprise image built without it fails here instead of shipping
+# without proofs. It needs no install of its own: it runs on the engine's
+# runtime and holds nothing but its source. It proves on the native solver only
+# (Z3, checked against a pinned SHA-256): a proof then peaks near 100 MB instead
+# of the 1.5 to 3 GB of the WebAssembly build, which no image keeps. It lands in
+# node_modules/@lyriks/unspa-prover/vendor/z3, copied below. A machine the
+# pinned build cannot run on (the arm64 one needs glibc 2.38, this base has
+# 2.36) proves nothing and says so. The Community image carries neither the
+# module nor a solver.
+RUN find node_modules -name 'z3-solver' -prune -exec rm -rf {} + \
+ && if [ "$LYRIKS_BUILD" = "enterprise" ]; then \
+      test -f ee/prover/unspa-prover.tgz \
+        || { echo 'The Enterprise image needs the proof module: put its packed tarball at ee/prover/unspa-prover.tgz' >&2; exit 1; }; \
+      mkdir -p node_modules/@lyriks/unspa-prover \
+      && tar xzf ee/prover/unspa-prover.tgz -C node_modules/@lyriks/unspa-prover --strip-components=1 \
+      && node node_modules/@lyriks/unspa-prover/scripts/fetch-z3.cjs; \
+    fi
 # On-prem opacity guard: the build is already minified with sourcemaps disabled
 # (vite.config.ts), but strip any stray *.map so no source is ever reconstructable
 # from the shipped image, whatever a tool or future config emits.
@@ -74,7 +96,7 @@ COPY --from=build /app/scripts/restore.mjs ./scripts/restore.mjs
 # and the Community publish scan refuses an image with a fixable high finding.
 RUN apt-get update \
  && apt-get upgrade -y --no-install-recommends \
- && apt-get install -y --no-install-recommends libpq5 liblz4-1 libzstd1 tar \
+ && apt-get install -y --no-install-recommends libpq5 liblz4-1 libzstd1 tar tini \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=postgres-client /usr/lib/postgresql/16/bin/pg_dump /usr/local/bin/pg_dump
 COPY --from=postgres-client /usr/lib/postgresql/16/bin/pg_restore /usr/local/bin/pg_restore
@@ -92,4 +114,7 @@ EXPOSE 3000
 # Container-level liveness: hit the app's /healthz (Node 22 has global fetch).
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+# Reap orphaned engine/solver children after cancellation or a deadline. Group
+# forwarding also delivers shutdown to the engine's descendants.
+ENTRYPOINT ["/usr/bin/tini", "-g", "--", "docker-entrypoint.sh"]
 CMD ["node", "server.mjs"]

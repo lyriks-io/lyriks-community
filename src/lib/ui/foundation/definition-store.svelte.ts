@@ -2,11 +2,10 @@ import {
 	AUTH_MECHANISMS,
 	CERTIFICATIONS,
 	ENCRYPTION_SCOPES,
-	createBusinessCustom,
+	canonicalConstraintTheme,
+	createConstraint,
 	createEmptyDefinitionDraft,
-	createCompetitor,
 	createIntegration,
-	createKpi,
 	createPainPointLink,
 	createPerformanceTarget,
 	createRetentionRule,
@@ -19,14 +18,13 @@ import {
 	type AuditLogLevel,
 	type AuthMechanism,
 	type AuthorizationModel,
-	type BusinessCustomReq,
 	type CertificationCode,
 	type EncryptionScope,
 	type DefinitionSourceSection,
 	type IntegrationEntry,
-	type KpiEntry,
 	type PerformanceTarget,
 	type FoundationDefinitionDraft,
+	type RequirementQuestion,
 	type RequirementsTab,
 	type RetentionRule,
 	type SlaEntry
@@ -35,6 +33,7 @@ import type { CoherenceResult, CustomerSizeCode } from '$domain/foundation';
 import type { Session, ToastNotifierPort } from '$application/ports';
 import { SectionAutosave, type SaveStatus } from '$ui/shell/section-autosave.svelte';
 import { toggleCitation } from '$domain/documents';
+import { specLanguageAccessor } from '$ui/language/spec-language-context';
 
 export type { SaveStatus };
 
@@ -58,9 +57,11 @@ export class DefinitionStore {
 	draft = $state<FoundationDefinitionDraft>(null as unknown as FoundationDefinitionDraft);
 	requirementsTab = $state<RequirementsTab>('business');
 
-	coherence = $derived.by<CoherenceResult>(() => computeDefinitionCoherence(this.draft));
+	/** The spec's language, from the project it is opened in: its checks read in it. */
+	readonly #lang = specLanguageAccessor();
+	coherence = $derived.by<CoherenceResult>(() => computeDefinitionCoherence(this.draft, this.#lang()));
 	canAdvance = $derived.by<boolean>(() => definitionCanAdvance(this.draft));
-	missing = $derived.by<string[]>(() => missingDefinitionRequirements(this.draft));
+	missing = $derived.by<string[]>(() => missingDefinitionRequirements(this.draft, this.#lang()));
 
 	readonly session: Session;
 	readonly notifier: ToastNotifierPort;
@@ -165,20 +166,6 @@ export class DefinitionStore {
 		this.draft.businessObjective.expectedOutcome = v;
 		this.#touch('definition.businessObjective.expectedOutcome');
 	};
-	addKpi = () => {
-		this.draft.businessObjective.kpis.push(createKpi());
-		this.#touch('definition.businessObjective.kpis');
-	};
-	updateKpi = <K extends keyof KpiEntry>(i: number, field: K, value: KpiEntry[K]) => {
-		const row = this.draft.businessObjective.kpis[i];
-		if (!row) return;
-		row[field] = value;
-		this.#touch('definition.businessObjective.kpis');
-	};
-	removeKpi = (i: number) => {
-		this.draft.businessObjective.kpis.splice(i, 1);
-		this.#touch('definition.businessObjective.kpis');
-	};
 	addSuccessCriterion = (t: string) => {
 		this.draft.businessObjective.successCriteria.push(t);
 		this.#touch('definition.businessObjective.successCriteria');
@@ -218,14 +205,6 @@ export class DefinitionStore {
 		this.#touch('definition.market.regulations');
 	};
 	/* MultiSelect set-variants (mockup parity) */
-	setCustomerSizes = (codes: string[]) => {
-		this.draft.market.customerSize = codes as CustomerSizeCode[];
-		this.#touch('definition.market.customerSize');
-	};
-	setSectors = (sectors: string[]) => {
-		this.draft.market.industrySectors = sectors;
-		this.#touch('definition.market.industrySectors');
-	};
 	setLanguages = (codes: string[]) => {
 		this.draft.market.languages = codes;
 		this.#touch('definition.market.languages');
@@ -236,75 +215,6 @@ export class DefinitionStore {
 	};
 
 	/* ──────────────────────── SECTION 3 · COMPETITION ────────────────────── */
-	addCompetitor = (name: string) => {
-		this.draft.competition.directCompetitors.push(createCompetitor(name));
-		this.#touch('definition.competition.directCompetitors');
-	};
-	removeCompetitor = (i: number) => {
-		this.draft.competition.directCompetitors.splice(i, 1);
-		this.#touch('definition.competition.directCompetitors');
-	};
-	setCompetitorName = (ci: number, name: string) => {
-		const competitor = this.draft.competition.directCompetitors[ci];
-		if (!competitor) return;
-		competitor.name = name;
-		this.#touch('definition.competition.directCompetitors');
-	};
-	addCompetitorStrength = (ci: number, t: string) => {
-		this.draft.competition.directCompetitors[ci]?.strengths.push(t);
-		this.#touch('definition.competition.directCompetitors');
-	};
-	removeCompetitorStrength = (ci: number, si: number) => {
-		this.draft.competition.directCompetitors[ci]?.strengths.splice(si, 1);
-		this.#touch('definition.competition.directCompetitors');
-	};
-	addCompetitorWeakness = (ci: number, t: string) => {
-		this.draft.competition.directCompetitors[ci]?.weaknesses.push(t);
-		this.#touch('definition.competition.directCompetitors');
-	};
-	removeCompetitorWeakness = (ci: number, wi: number) => {
-		this.draft.competition.directCompetitors[ci]?.weaknesses.splice(wi, 1);
-		this.#touch('definition.competition.directCompetitors');
-	};
-	addIndirectCompetitor = (t: string) => {
-		this.draft.competition.indirectCompetitors.push(t);
-		this.#touch('definition.competition.indirectCompetitors');
-	};
-	removeIndirectCompetitor = (i: number) => {
-		this.draft.competition.indirectCompetitors.splice(i, 1);
-		this.#touch('definition.competition.indirectCompetitors');
-	};
-	setBusinessModels = (models: string[]) => {
-		this.draft.competition.businessModels = models;
-		this.#touch('definition.competition.businessModels');
-	};
-	addDifferentiator = (t: string) => {
-		this.draft.competition.differentiators.push(t);
-		this.#touch('definition.competition.differentiators');
-	};
-	removeDifferentiator = (i: number) => {
-		this.draft.competition.differentiators.splice(i, 1);
-		this.#touch('definition.competition.differentiators');
-	};
-	moveDifferentiator = (i: number, dir: -1 | 1) => {
-		const list = this.draft.competition.differentiators;
-		const j = i + dir;
-		if (j < 0 || j >= list.length) return;
-		[list[i], list[j]] = [list[j], list[i]];
-		this.#touch('definition.competition.differentiators');
-	};
-	setClaimedCategory = (v: string) => {
-		this.draft.competition.claimedCategory = v;
-		this.#touch('definition.competition.claimedCategory');
-	};
-	setPositioning = (v: string) => {
-		this.draft.competition.positioning = v;
-		this.#touch('definition.competition.positioning');
-	};
-	setCompetitiveMoat = (v: string) => {
-		this.draft.competition.competitiveMoat = v;
-		this.#touch('definition.competition.competitiveMoat');
-	};
 
 	#toggleIn<T>(list: T[], value: T) {
 		const i = list.indexOf(value);
@@ -332,15 +242,6 @@ export class DefinitionStore {
 		this.#touch('definition.business.risks');
 	};
 
-	addContractualConstraint = (text: string) => {
-		this.draft.business.contractualConstraints.push(text);
-		this.#touch('definition.business.contractualConstraints');
-	};
-	removeContractualConstraint = (i: number) => {
-		this.draft.business.contractualConstraints.splice(i, 1);
-		this.#touch('definition.business.contractualConstraints');
-	};
-
 	setContractAttachment = (ref: string) => {
 		this.draft.business.contractAttachment = ref;
 		this.#touch('definition.business.contractAttachment');
@@ -363,26 +264,6 @@ export class DefinitionStore {
 	removeSla = (i: number) => {
 		this.draft.business.slas.splice(i, 1);
 		this.#touch('definition.business.slas');
-	};
-
-	/* D · Documents & custom */
-	addCustom = () => {
-		this.draft.business.custom.push(createBusinessCustom());
-		this.#touch('definition.business.custom');
-	};
-	updateCustom = <K extends keyof BusinessCustomReq>(
-		i: number,
-		field: K,
-		value: BusinessCustomReq[K]
-	) => {
-		const row = this.draft.business.custom[i];
-		if (!row) return;
-		row[field] = value;
-		this.#touch('definition.business.custom');
-	};
-	removeCustom = (i: number) => {
-		this.draft.business.custom.splice(i, 1);
-		this.#touch('definition.business.custom');
 	};
 
 	/** One sentence per chip toggle, naming the option and the direction. */
@@ -470,25 +351,6 @@ export class DefinitionStore {
 		this.draft.technical.availability = value;
 		this.#touch('definition.technical.availability');
 	};
-	/* Custom technical requirements (mockup parity) */
-	addTechCustom = () => {
-		this.draft.technical.custom.push(createBusinessCustom());
-		this.#touch('definition.technical.custom');
-	};
-	updateTechCustom = <K extends keyof BusinessCustomReq>(
-		i: number,
-		field: K,
-		value: BusinessCustomReq[K]
-	) => {
-		const row = this.draft.technical.custom[i];
-		if (!row) return;
-		row[field] = value;
-		this.#touch('definition.technical.custom');
-	};
-	removeTechCustom = (i: number) => {
-		this.draft.technical.custom.splice(i, 1);
-		this.#touch('definition.technical.custom');
-	};
 
 	/* ──────────────────────────── SECURITY TAB ──────────────────────────── */
 	toggleAuthentication = (code: AuthMechanism) => {
@@ -554,24 +416,37 @@ export class DefinitionStore {
 		this.draft.security.dataRetention.splice(i, 1);
 		this.#touch('definition.security.dataRetention');
 	};
-	/* Custom security requirements (mockup parity) */
-	addSecCustom = () => {
-		this.draft.security.custom.push(createBusinessCustom());
-		this.#touch('definition.security.custom');
+
+	/* ──────────────────────────── CONSTRAINTS ─────────────────────────── */
+	/** A typed theme reuses the offered theme it matches (case aside), or becomes a new one. */
+	addConstraint = (theme: string, description: string) => {
+		const items = this.draft.constraints.items;
+		items.push(createConstraint(canonicalConstraintTheme(theme, items), description.trim()));
+		this.#touch('definition.constraints.items');
 	};
-	updateSecCustom = <K extends keyof BusinessCustomReq>(
-		i: number,
-		field: K,
-		value: BusinessCustomReq[K]
-	) => {
-		const row = this.draft.security.custom[i];
-		if (!row) return;
-		row[field] = value;
-		this.#touch('definition.security.custom');
+	updateConstraint = (id: string, patch: { theme?: string; description?: string }) => {
+		const items = this.draft.constraints.items;
+		const i = items.findIndex((c) => c.id === id);
+		if (i < 0) return;
+		const others = items.filter((c) => c.id !== id);
+		items[i] = {
+			...items[i],
+			...(patch.theme !== undefined ? { theme: canonicalConstraintTheme(patch.theme, others) } : {}),
+			...(patch.description !== undefined ? { description: patch.description } : {})
+		};
+		this.#touch('definition.constraints.items');
 	};
-	removeSecCustom = (i: number) => {
-		this.draft.security.custom.splice(i, 1);
-		this.#touch('definition.security.custom');
+	toggleQuestionSource = (question: RequirementQuestion, sourceId: string) => {
+		const sources = this.draft.constraints.questionSources;
+		sources[question] = toggleCitation(sources[question], sourceId);
+		this.#touch(`definition.constraints.questionSources.${question}`);
+	};
+	removeConstraint = (id: string) => {
+		const items = this.draft.constraints.items;
+		const i = items.findIndex((c) => c.id === id);
+		if (i < 0) return;
+		items.splice(i, 1);
+		this.#touch('definition.constraints.items');
 	};
 
 	/* ────────────────────────────── SOURCES ─────────────────────────────── */

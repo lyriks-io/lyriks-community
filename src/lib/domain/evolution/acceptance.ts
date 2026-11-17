@@ -34,22 +34,10 @@ export function canAnnotateCapture(observation: Observation): Guarded {
  * element, and carrying an annotated capture of what the observer saw.
  */
 export function canLogObservation(observation: Observation): Guarded {
-	return firstRefusal(
-		guard(
-			observation.screenId.trim() === '',
-			'Anchor the observation to a screen before logging it.',
-			'Blocks logging an observation with no screen anchor.'
-		),
-		guard(
-			observation.elementId.trim() === '',
-			'Point at the element the observation concerns before logging it.',
-			'Blocks logging an observation with no element anchor.'
-		),
-		guard(
-			!observation.captureAnnotated,
-			'Attach a capture and annotate it before logging.',
-			'Blocks logging an observation whose capture is missing or not annotated.'
-		)
+	return guard(
+		observation.body.trim() === '',
+		'Say what you saw before logging the observation.',
+		'An observation is what a person saw on the change; an empty one says nothing to rule on.'
 	);
 }
 

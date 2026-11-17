@@ -1,5 +1,4 @@
 import { json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import type { RequestHandler } from './$types';
 
 /**
@@ -10,7 +9,7 @@ import type { RequestHandler } from './$types';
  * that has no Back to ask. It reveals nothing a visit to /login would not.
  */
 export const GET: RequestHandler = async ({ locals }) => {
-	const services = getServices();
+	const services = locals.services;
 	const unclaimed =
 		locals.authRequired && services.licenseRequired() && (await services.identity.installUnclaimed());
 	return json({ unclaimed });

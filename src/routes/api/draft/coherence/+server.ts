@@ -1,6 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
-import { parseCoherenceDraft } from '$application/parse-coherence-draft';
+import { parseCoherenceDraft } from '$application/analysis/parse-coherence-draft';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { callerKind } from '$lib/server/caller.server';
 import { saveSectionDraft } from '$lib/server/section-save.server';
@@ -19,7 +18,7 @@ export const GET: RequestHandler = async (event) => {
 	if (!projectId) error(400, 'projectId is required');
 	await requireProjectAccess(event, projectId, 'read');
 	const force = url.searchParams.get('force') === '1';
-	const services = getServices();
+	const services = event.locals.services;
 	const view = await services.loadCoherenceDraft.execute(projectId, { force });
 	return json({ analysis: view.analysis });
 };

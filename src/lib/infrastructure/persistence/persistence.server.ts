@@ -17,6 +17,7 @@ import type {
 	ProjectResidueRepositoryPort,
 	RulesDraftRepositoryPort,
 	SettingsRepositoryPort,
+	ActiveProjectStorePort,
 	OperatorProfileRepositoryPort,
 	SectionChangePublisher,
 	SectionDocumentStorePort,
@@ -31,6 +32,7 @@ import { PgProjectCatalogRepository } from './postgres/pg-project-catalog-reposi
 import { PgPortfolioRepository } from './postgres/pg-portfolio-repository.server';
 import { PgDraftLock } from './postgres/pg-draft-lock.server';
 import { PgSettingsRepository } from './postgres/pg-settings-repository.server';
+import { PgActiveProjectStore } from './postgres/pg-active-project-store.server';
 import { PgOperatorProfileRepository } from './postgres/pg-operator-profile-repository.server';
 import { PgActivationRepository } from './postgres/pg-activation-repository.server';
 import { PgProjectResidueRepository } from './postgres/pg-project-residue-repository.server';
@@ -56,6 +58,8 @@ export interface Persistence {
 	readonly projectCatalog: ProjectCatalogPort;
 	readonly portfolio: PortfolioRepositoryPort;
 	readonly settingsRepo: SettingsRepositoryPort;
+	/** The project a Community installation works on (EVO-001). */
+	readonly activeProjectStore: ActiveProjectStorePort;
 	readonly operatorProfileRepo: OperatorProfileRepositoryPort;
 	readonly activationRepo: ActivationRepositoryPort;
 	readonly projectResidue: ProjectResidueRepositoryPort;
@@ -92,6 +96,7 @@ export function buildPersistence(sectionChanges: SectionChangePublisher): Persis
 		projectCatalog: new PgProjectCatalogRepository(),
 		portfolio: new PgPortfolioRepository(),
 		settingsRepo: new PgSettingsRepository(),
+		activeProjectStore: new PgActiveProjectStore(),
 		operatorProfileRepo: new PgOperatorProfileRepository(),
 		activationRepo: new PgActivationRepository(),
 		projectResidue: new PgProjectResidueRepository(),

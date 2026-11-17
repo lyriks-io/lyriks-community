@@ -113,7 +113,7 @@
 		<button
 			type="button"
 			onclick={commit}
-			class="rounded-pill bg-brand-500 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-brand-600"
+			class="rounded-pill bg-brand-500 px-2 py-0.5 text-[0.625rem] font-semibold text-white hover:bg-brand-600"
 			title="Press Enter"
 		>
 			Add

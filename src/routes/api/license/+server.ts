@@ -1,5 +1,4 @@
 import { json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireAdmin } from '$lib/server/admin.server';
 import type { RequestHandler } from './$types';
 
@@ -13,8 +12,8 @@ import type { RequestHandler } from './$types';
  *   POST   /api/license { key }    → activate from a signed key
  *   DELETE /api/license            → clear the stored key
  */
-export const GET: RequestHandler = async () => {
-	const view = await getServices().loadActivation.execute();
+export const GET: RequestHandler = async ({ locals }) => {
+	const view = await locals.services.loadActivation.execute();
 	return json(view);
 };
 
@@ -24,7 +23,7 @@ export const POST: RequestHandler = async (event) => {
 	const body = (await request.json().catch(() => ({}))) as { key?: unknown };
 	const key = typeof body.key === 'string' ? body.key : '';
 	const actor = locals.session?.email ?? 'api';
-	const services = getServices();
+	const services = event.locals.services;
 	const result = await services.activateLicense.execute(key, actor);
 	// A fresh licence is the install's best identity default (operator name from
 	// the customer field). Seeding is best-effort and never overwrites.
@@ -39,6 +38,6 @@ export const POST: RequestHandler = async (event) => {
 export const DELETE: RequestHandler = async (event) => {
 	requireAdmin(event);
 	const { locals } = event;
-	await getServices().deactivateLicense.execute(locals.session?.email ?? 'api');
+	await event.locals.services.deactivateLicense.execute(locals.session?.email ?? 'api');
 	return json({ ok: true });
 };

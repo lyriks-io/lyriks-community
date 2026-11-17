@@ -1,6 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
-import { advisoriesToCandidateIssues } from '$application/advisories-to-issues';
+import { advisoriesToCandidateIssues } from '$application/analysis/advisories-to-issues';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import type { RequestHandler } from './$types';
 
@@ -16,8 +15,11 @@ export const GET: RequestHandler = async (event) => {
 	const projectId = event.url.searchParams.get('projectId') ?? '';
 	if (!projectId) error(400, 'projectId is required');
 	await requireProjectAccess(event, projectId, 'read');
-	const services = getServices();
+	const services = event.locals.services;
 	if (!services.advisorAvailable()) return json({ available: false, findings: [] });
-	const advisories = await services.behaviorAdvisories.get(projectId);
-	return json({ available: true, findings: advisoriesToCandidateIssues(advisories) });
+	const [advisories, lang] = await Promise.all([
+		services.behaviorAdvisories.get(projectId),
+		services.loadSpecLanguage.generated(projectId)
+	]);
+	return json({ available: true, findings: advisoriesToCandidateIssues(advisories, lang) });
 };

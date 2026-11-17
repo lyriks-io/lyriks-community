@@ -45,3 +45,13 @@ export function isAdmin(event: Pick<RequestEvent, 'locals'>): boolean {
 	const entitlements = event.locals.license?.entitlements;
 	return entitlements ? licenseBoundEmail(entitlements) === email : false;
 }
+
+/**
+ * The addresses that hold this installation: the administrators allowlisted
+ * and the licence holder. On Community they are its one user (EVO-001).
+ */
+export function installHolders(event: Pick<RequestEvent, 'locals'>): string[] {
+	const entitlements = event.locals.license?.entitlements;
+	const holder = entitlements ? licenseBoundEmail(entitlements) : null;
+	return [...adminEmails(), ...(holder ? [holder] : [])];
+}

@@ -3,7 +3,10 @@
 	import { describeDependants, fetchDependants } from '$ui/graph/dependants';
 	import {
 		FIELD_TYPES,
+		ON_DELETE,
 		childFieldsOfField,
+		isOnDelete,
+		onDeleteRefusal,
 		rootFieldsOfEntity,
 		renderEntitySchema,
 		type EntityField,
@@ -71,7 +74,7 @@
 			<select
 				value={entity.databaseId ?? ''}
 				onchange={(e) => store.updateEntity(entity.id, 'databaseId', e.currentTarget.value || null)}
-				class="rounded-field border border-line bg-surface px-1.5 py-0.5 text-[11px] text-ink-600"
+				class="rounded-field border border-line bg-surface px-1.5 py-0.5 text-[0.6875rem] text-ink-600"
 			>
 				<option value="">- place on db -</option>
 				{#each placeOptions as db (db.id)}
@@ -89,7 +92,7 @@
 		</div>
 
 		<div class="flex flex-wrap items-center justify-between gap-2">
-			<div class="inline-flex rounded-field border border-line bg-surface-sunken p-0.5 text-[11px]">
+			<div class="inline-flex rounded-field border border-line bg-surface-sunken p-0.5 text-[0.6875rem]">
 				<button
 					type="button"
 					onclick={() => (mode = 'edit')}
@@ -113,7 +116,7 @@
 				<button
 					type="button"
 					onclick={() => store.addField(entity.id)}
-					class="text-[11px] font-medium text-brand-600 hover:underline">+ field</button
+					class="text-[0.6875rem] font-medium text-brand-600 hover:underline">+ field</button
 				>
 			{/if}
 		</div>
@@ -132,10 +135,10 @@
 		{:else}
 			<!-- generated schema -->
 			<div>
-				<p class="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">
+				<p class="mb-1 text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-ink-400">
 					Readable structure
 				</p>
-				<pre class="overflow-x-auto rounded-field border border-line bg-ink-900/90 p-3 font-mono text-[11px] leading-relaxed text-ink-100">{code}</pre>
+				<pre class="overflow-x-auto rounded-field border border-line bg-ink-900/90 p-3 font-mono text-[0.6875rem] leading-relaxed text-ink-100">{code}</pre>
 			</div>
 		{/if}
 	</div>
@@ -158,12 +161,12 @@
 						value={field.name}
 						oninput={(e) => store.updateField(field.id, 'name', e.currentTarget.value)}
 						placeholder={depth === 0 ? 'field' : 'nested field'}
-						class="min-w-28 flex-1 rounded border border-line bg-surface px-2 py-1 text-[11px] font-medium text-ink-700 outline-none focus:border-brand-300"
+						class="min-w-28 flex-1 rounded border border-line bg-surface px-2 py-1 text-[0.6875rem] font-medium text-ink-700 outline-none focus:border-brand-300"
 					/>
 					<select
 						value={field.type}
 						onchange={(e) => store.setFieldType(field.id, e.currentTarget.value as FieldType)}
-						class="rounded border border-line bg-surface px-1.5 py-1 text-[10px] text-ink-600"
+						class="rounded border border-line bg-surface px-1.5 py-1 text-[0.625rem] text-ink-600"
 					>
 						{#each FIELD_TYPES as t (t.code)}
 							<option value={t.code}>{t.label}</option>
@@ -174,7 +177,7 @@
 							value={field.relationTargetEntityId ?? ''}
 							onchange={(e) =>
 								store.updateField(field.id, 'relationTargetEntityId', e.currentTarget.value || null)}
-							class="min-w-32 flex-1 rounded border border-line bg-surface px-1.5 py-1 text-[10px] {field.relationTargetEntityId
+							class="min-w-32 flex-1 rounded border border-line bg-surface px-1.5 py-1 text-[0.625rem] {field.relationTargetEntityId
 								? 'text-ink-600'
 								: 'text-danger-500'}"
 						>
@@ -183,18 +186,31 @@
 								<option value={t.id}>{t.name || 'table'}</option>
 							{/each}
 						</select>
+						<!-- What deleting the target does to this record (criterion 99e7cc77); a required link is never emptied. -->
+						<select
+							value={field.onDelete ?? ''}
+							onchange={(e) => store.setOnDelete(field.id, isOnDelete(e.currentTarget.value) ? e.currentTarget.value : null)}
+							aria-label="On delete"
+							title="What deleting the record it points at does to this one"
+							class="rounded border border-line bg-surface px-1.5 py-1 text-[0.625rem] text-ink-600"
+						>
+							<option value="">On delete: not stated</option>
+							{#each ON_DELETE as o (o.code)}
+								<option value={o.code} disabled={onDeleteRefusal(field, o.code) !== null}>On delete: {o.label.toLowerCase()}</option>
+							{/each}
+						</select>
 					{:else}
 						<input
 							value={field.defaultValue}
 							oninput={(e) => store.updateField(field.id, 'defaultValue', e.currentTarget.value)}
 							placeholder="default"
-							class="min-w-24 flex-1 rounded border border-line bg-surface px-1.5 py-1 font-mono text-[10px] text-ink-500 outline-none focus:border-brand-300"
+							class="min-w-24 flex-1 rounded border border-line bg-surface px-1.5 py-1 font-mono text-[0.625rem] text-ink-500 outline-none focus:border-brand-300"
 						/>
 					{/if}
 					<button
 						type="button"
 						onclick={() => store.addNestedField(field.id)}
-						class="rounded border border-dashed border-line px-1.5 py-1 text-[10px] font-semibold text-ink-400 hover:border-brand-300 hover:text-brand-600"
+						class="rounded border border-dashed border-line px-1.5 py-1 text-[0.625rem] font-semibold text-ink-400 hover:border-brand-300 hover:text-brand-600"
 						title="Add nested field"
 					>
 						<Icon name="plus" size={11} /> child
@@ -206,7 +222,7 @@
 						title={children.length > 0 ? 'Delete field and nested fields' : 'Delete field'}
 					><Icon name="x" size={12} /></button>
 				</div>
-				<div class="mt-1 flex flex-wrap items-center gap-2.5 pl-1 text-[10px] text-ink-400">
+				<div class="mt-1 flex flex-wrap items-center gap-2.5 pl-1 text-[0.625rem] text-ink-400">
 					<label class="flex items-center gap-1">
 						<input type="checkbox" checked={field.isId} onchange={() => store.updateField(field.id, 'isId', !field.isId)} /> id
 					</label>

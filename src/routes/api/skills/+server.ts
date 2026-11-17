@@ -1,5 +1,4 @@
 import { json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import type { RequestHandler } from './$types';
 
 /**
@@ -7,7 +6,7 @@ import type { RequestHandler } from './$types';
  * catalog metadata — like /api/settings reads, it rides the global auth wall
  * (401 when LYRIKS_AUTH_REQUIRED=1 and unauthenticated; open in local dev).
  */
-export const GET: RequestHandler = async () => {
-	const services = getServices();
+export const GET: RequestHandler = async ({ locals }) => {
+	const services = locals.services;
 	return json({ skills: services.skillCatalog.listSkills() });
 };

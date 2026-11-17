@@ -3,8 +3,8 @@
  * for it.
  *
  * ONE place, because the two directions have to agree: `data-projection` WRITES
- * these codes onto the Data Model feature, and `index-feature-resources` READS
- * every resource the kernel holds back out. A code invented on the write side
+ * these codes onto the Data Model feature, and anything reading the kernel's
+ * resources back out has to find the same codes. A code invented on the write side
  * that the kernel's enum does not contain renders as a blank chip in the
  * behavior editor and as "Unknown" here, so the mapping tables below are the
  * contract, not a convenience.

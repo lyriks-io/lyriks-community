@@ -48,8 +48,9 @@ describe('safe section patch preview', () => {
   })
   it('warns when operations matched no target', async () => {
     const { client } = setup()
-    const result = await patchSectionHandler({ project_id: 'p', section: 'experience', operations: [{ op: 'remove', collection: 'screens', id: 'missing' }], dry_run: true }, client) as { warnings: string[] }
-    expect(result.warnings[0]).toContain('matched no target')
+    const result = await patchSectionHandler({ project_id: 'p', section: 'experience', operations: [{ op: 'remove', collection: 'screens', id: 'missing' }], dry_run: true }, client) as { warnings: string[]; notApplied: Array<{ reason: string }> }
+    expect(result.warnings[0]).toContain('would not be applied')
+    expect(result.notApplied[0].reason).toContain('matched no target')
   })
   it('reports what each op did, and an idempotent retry as unchanged', async () => {
     const { get, client } = setup()

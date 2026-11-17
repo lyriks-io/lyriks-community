@@ -1,4 +1,5 @@
-import { getServices } from '$composition/container.server';
+import type { AppServices } from '$composition/container.server';
+import { sameEmail } from '$domain/team';
 
 /** Display name from an email local-part ("ada.lovelace" → "ada.lovelace"), fallback to the email. */
 function nameFromEmail(email: string): string {
@@ -22,12 +23,16 @@ function nameFromEmail(email: string): string {
  * token to be in the ambient request context.
  */
 export async function seedOwnerCollaborator(
-	projectId: string,
+	services: AppServices, projectId: string,
 	email: string | undefined,
 ): Promise<void> {
 	if (!email) return;
 	try {
-		await getServices().addCollaborator.execute({
+		// Current Back creates this owner atomically with the project. Keep the
+		// legacy seed for older services without duplicating that authority row.
+		const team = await services.loadTeam.execute(projectId);
+		if (team.collaborators.some((person) => person.role === 'owner' && sameEmail(person.email, email))) return;
+		await services.addCollaborator.execute({
 			projectId,
 			name: nameFromEmail(email),
 			email,

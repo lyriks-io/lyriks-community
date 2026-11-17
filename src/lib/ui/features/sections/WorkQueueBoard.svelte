@@ -10,8 +10,8 @@
 		type WorkAssignment,
 		type WorkStatus
 	} from '$domain/features';
-	import type { FeatureActionIndex } from '$application/index-feature-actions';
-	import type { Collaborator } from '$domain/team/team';
+	import type { FeatureActionIndex } from '$application/specification/index-feature-actions';
+	import type { Collaborator } from '$domain/team';
 	import { colorTokens, initials } from '$ui/team/team-style';
 	import type { FeaturesStore } from '../draft-store.svelte';
 	import SprintChip from '../SprintChip.svelte';
@@ -111,7 +111,7 @@
 	<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
 		<div>
 			<p class="text-sm font-semibold text-ink-900">Work queue</p>
-			<p class="text-[11px] text-ink-500">
+			<p class="text-[0.6875rem] text-ink-500">
 				Who does what next. A task enters the queue when you add it to a sprint above, give it
 				an owner in a release, or flag it in the Features tab; each member works their list in
 				order.
@@ -124,12 +124,12 @@
 		/>
 		<!-- Sprint filter -->
 		<div class="flex items-center gap-1.5">
-			<span class="text-[10px] font-semibold uppercase tracking-wide text-ink-400">Sprint</span>
+			<span class="text-[0.625rem] font-semibold uppercase tracking-wide text-ink-400">Sprint</span>
 			<div class="flex flex-wrap gap-1">
 				<button
 					type="button"
 					onclick={() => (sprintFilter = null)}
-					class="rounded-pill px-2.5 py-1 text-[11px] font-medium transition {effectiveFilter === null
+					class="rounded-pill px-2.5 py-1 text-[0.6875rem] font-medium transition {effectiveFilter === null
 						? 'bg-brand-500 text-white'
 						: 'bg-surface-sunken text-ink-500 hover:text-ink-800'}"
 				>
@@ -139,7 +139,7 @@
 					<button
 						type="button"
 						onclick={() => (sprintFilter = s.id)}
-						class="rounded-pill px-2.5 py-1 text-[11px] font-medium transition {effectiveFilter === s.id
+						class="rounded-pill px-2.5 py-1 text-[0.6875rem] font-medium transition {effectiveFilter === s.id
 							? 'bg-brand-500 text-white'
 							: 'bg-surface-sunken text-ink-500 hover:text-ink-800'}"
 					>
@@ -174,7 +174,7 @@
 					<div class="mb-2 flex items-center gap-2">
 						{#if member}
 							<span
-								class="grid size-7 shrink-0 place-items-center rounded-full text-[10px] font-bold text-white"
+								class="grid size-7 shrink-0 place-items-center text-[0.625rem] font-bold text-white"
 								style="background:{colorTokens(member.color).solid}"
 							>
 								{initials(member.name || member.email)}
@@ -183,17 +183,17 @@
 								<p class="truncate text-sm font-semibold text-ink-900">
 									{member.name || member.email}
 								</p>
-								<p class="text-[10px] text-ink-500">
+								<p class="text-[0.625rem] text-ink-500">
 									{group.doneCount}/{group.totalCount} done
 								</p>
 							</div>
 						{:else}
-							<span class="grid size-7 shrink-0 place-items-center rounded-full border border-dashed border-line text-ink-400">
+							<span class="grid size-7 shrink-0 place-items-center border border-dashed border-line text-ink-400">
 								<Icon name="users" size={13} />
 							</span>
 							<div class="min-w-0 flex-1">
 								<p class="truncate text-sm font-semibold text-ink-500">Unassigned</p>
-								<p class="text-[10px] text-ink-400">{group.totalCount} waiting for an owner</p>
+								<p class="text-[0.625rem] text-ink-400">{group.totalCount} waiting for an owner</p>
 							</div>
 						{/if}
 					</div>
@@ -211,7 +211,7 @@
 							>
 								<div class="flex items-center gap-1.5">
 									{#if isNext}
-										<span class="shrink-0 rounded-pill bg-brand-500 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-white">
+										<span class="shrink-0 rounded-pill bg-brand-500 px-1.5 py-0.5 text-[0.5rem] font-bold uppercase tracking-wide text-white">
 											Next
 										</span>
 									{/if}
@@ -250,12 +250,12 @@
 								</div>
 								<div class="mt-1 flex items-center gap-1.5 pl-0.5">
 									{#if parent}
-										<span class="truncate text-[10px] text-ink-400" title="in {parent}">in {parent}</span>
+										<span class="truncate text-[0.625rem] text-ink-400" title="in {parent}">in {parent}</span>
 									{/if}
 									<button
 										type="button"
 										onclick={() => cycleStatus(item)}
-										class="rounded-pill px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide {STATUS_META[st].cls}"
+										class="rounded-pill px-1.5 py-0.5 text-[0.5625rem] font-semibold uppercase tracking-wide {STATUS_META[st].cls}"
 										title="Click to advance status"
 									>
 										{STATUS_META[st].label}

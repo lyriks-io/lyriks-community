@@ -1,5 +1,4 @@
 import type { RequestEvent } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 
 /**
  * The set of domain ids the current caller may see, or `null` for every domain.
@@ -12,6 +11,6 @@ export async function callerAllowedDomains(
 	event: Pick<RequestEvent, 'locals' | 'cookies'>
 ): Promise<ReadonlySet<string> | null> {
 	if (!event.locals.authRequired) return null;
-	const hooks = getServices().enterpriseHooks;
+	const hooks = event.locals.services.enterpriseHooks;
 	return hooks ? hooks.callerAllowedDomains(event) : null;
 }

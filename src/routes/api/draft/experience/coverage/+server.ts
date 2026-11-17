@@ -1,5 +1,4 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import type { RequestHandler } from './$types';
 
@@ -18,7 +17,8 @@ export const GET: RequestHandler = async (event) => {
 	const projectId = url.searchParams.get('projectId') ?? '';
 	if (!projectId) error(400, 'projectId is required');
 	await requireProjectAccess(event, projectId, 'read');
-	const services = getServices();
-	const report = await services.analyzeExperienceCoverage.execute(projectId);
+	const services = event.locals.services;
+	const lang = await services.loadSpecLanguage.generated(projectId);
+	const report = await services.analyzeExperienceCoverage.execute(projectId, lang);
 	return json(report);
 };

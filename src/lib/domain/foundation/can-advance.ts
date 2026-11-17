@@ -1,5 +1,6 @@
 import type { FoundationDefinitionDraft } from './definition';
 import type { FoundationIdentityDraft } from './identity';
+import type { SpecLanguage } from '$domain/language';
 
 /**
  * The minimum bar that unlocks the next wizard step, verbatim from the spec's
@@ -13,11 +14,19 @@ export interface AdvanceRequirement {
 	readonly met: boolean;
 }
 
-export function advanceRequirements(draft: FoundationIdentityDraft): AdvanceRequirement[] {
+export function advanceRequirements(
+	draft: FoundationIdentityDraft,
+	lang: SpecLanguage = 'en'
+): AdvanceRequirement[] {
+	const fr = lang === 'fr';
 	return [
-		{ key: 'productName', label: 'Product name', met: draft.productName.trim().length > 0 },
-		{ key: 'brief', label: 'Brief', met: draft.brief.trim().length > 0 },
-		{ key: 'formFactors', label: 'At least one form factor', met: draft.formFactors.length > 0 }
+		{ key: 'productName', label: fr ? 'Nom du produit' : 'Product name', met: draft.productName.trim().length > 0 },
+		{ key: 'brief', label: fr ? 'Résumé' : 'Brief', met: draft.brief.trim().length > 0 },
+		{
+			key: 'formFactors',
+			label: fr ? "Au moins un format d'appareil" : 'At least one form factor',
+			met: draft.formFactors.length > 0
+		}
 	];
 }
 
@@ -26,26 +35,38 @@ export function identityCanAdvance(draft: FoundationIdentityDraft): boolean {
 }
 
 /** Labels of the still-missing requirements (drives the Next-step tooltip). */
-export function missingIdentityRequirements(draft: FoundationIdentityDraft): string[] {
-	return advanceRequirements(draft)
+export function missingIdentityRequirements(
+	draft: FoundationIdentityDraft,
+	lang: SpecLanguage = 'en'
+): string[] {
+	return advanceRequirements(draft, lang)
 		.filter((r) => !r.met)
 		.map((r) => r.label);
 }
 
 /**
  * Minimum bar to unlock Step 03 (Users & Permissions). Mirrors the feature
- * invariant on `6b9ffe58`: the core problem is stated and the product-level
- * constraints are locked — one authentication mechanism and a declared
- * availability target. (The stack is an Architecture concern, not definition.)
+ * invariant f134dca0: the core problem is stated and one authentication
+ * mechanism is chosen. The availability target is no longer asked for (its
+ * Performance entry is retired from the screen), so it no longer gates.
+ * (The stack is an Architecture concern, not definition.)
  */
 export function definitionCanAdvance(draft: FoundationDefinitionDraft): boolean {
 	return missingDefinitionRequirements(draft).length === 0;
 }
 
-export function missingDefinitionRequirements(draft: FoundationDefinitionDraft): string[] {
+export function missingDefinitionRequirements(
+	draft: FoundationDefinitionDraft,
+	lang: SpecLanguage = 'en'
+): string[] {
+	const fr = lang === 'fr';
 	const missing: string[] = [];
-	if (draft.businessObjective.mainProblem.trim().length === 0) missing.push('the main problem');
-	if (draft.security.authentication.length === 0) missing.push('one authentication mechanism');
-	if (draft.technical.availability.trim().length === 0) missing.push('an availability target');
+	if (draft.businessObjective.mainProblem.trim().length === 0)
+		missing.push(fr ? 'le problème principal' : 'the main problem');
+	if (draft.security.authentication.length === 0)
+		missing.push(fr ? "un mécanisme d'authentification" : 'one authentication mechanism');
+	// Retired (spec: criterion 5784d998): the availability is not asked for any more.
+	// if (draft.technical.availability.trim().length === 0)
+	// 	missing.push(fr ? 'un objectif de disponibilité' : 'an availability target');
 	return missing;
 }

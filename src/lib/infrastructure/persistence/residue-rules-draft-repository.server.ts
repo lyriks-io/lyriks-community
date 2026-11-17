@@ -5,6 +5,7 @@ import type {
 } from '$application/ports';
 import {
 	buildRulesProjection,
+	edgeCaseFeatureIds,
 	rulesAcceptanceOps,
 	rulesResidueFromDraft,
 	type RulesResidue
@@ -20,9 +21,9 @@ const SECTION = 'rules';
  * the composition root flips the section with no consumer churn.
  *
  * The issue-analysis facet lives in the residue; the **behavioral half** is the Step-06
- * edge cases, projected on save into the kernel as prose `acceptanceCriteria` on the
- * central "Experience" feature. The op
- * patches an existing feature only, so it is a no-op before Experience is saved. A
+ * Given / When / Then acceptance criteria, projected on save into the kernel as prose `acceptanceCriteria` on the
+ * feature each tests (the central "Experience" feature for a case naming none). The
+ * ops patch existing features only, so they are a no-op before those exist. A
  * one-shot, idempotent backfill seeds the residue from the legacy section document on first
  * read so the flip never blanks an existing project. `inventory` stays derived.
  */
@@ -52,9 +53,15 @@ export class ResidueRulesDraftRepository implements RulesDraftRepositoryPort {
 	}
 
 	async save(draft: ProjectRulesDraft): Promise<void> {
+		// The features the cases sat on before this save, so a case moved to
+		// another feature (or deleted) is cleared from the one it left.
+		const before = (await this.residue.load(draft.projectId, SECTION)) as RulesResidue | null;
 		await this.residue.save(draft.projectId, SECTION, rulesResidueFromDraft(draft));
-		// Project the edge cases into the kernel as acceptance criteria (no-op until the
-		// Experience feature exists; merges, never clobbers).
-		await this.behavior.apply(draft.projectId, rulesAcceptanceOps(draft.projectId, draft));
+		// Project the cases into the kernel as acceptance criteria on the feature
+		// each tests (Experience when none; merges, never clobbers).
+		await this.behavior.apply(
+			draft.projectId,
+			rulesAcceptanceOps(draft.projectId, draft, edgeCaseFeatureIds(before?.scenarios ?? []))
+		);
 	}
 }

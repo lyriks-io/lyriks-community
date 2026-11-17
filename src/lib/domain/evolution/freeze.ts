@@ -1,6 +1,7 @@
 import type { Actor, EvolutionRequest, ImplementationFinding } from './draft';
 import { canCrossToImplementation } from './gate';
 import { firstRefusal, guard, type Guarded } from './guard';
+import { snapshotOf } from './versions';
 
 /**
  * Freezing the specification into a numbered version.
@@ -40,7 +41,8 @@ export function freeze(request: EvolutionRequest, actor: Actor, at: string): Evo
 		...request,
 		specVersion: version,
 		frozen: true,
-		frozenVersions: [...request.frozenVersions, { version, at, by: actor.id }]
+		// The version keeps a copy of what it froze, so it stays readable once the request moves on (ac-evo-freeze-5).
+		frozenVersions: [...request.frozenVersions, { version, at, by: actor.id, snapshot: snapshotOf(request) }]
 	};
 }
 

@@ -1,5 +1,4 @@
 import { error, json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { SuggestionsBlockedError } from '$application/use-cases';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import type { RequestHandler } from './$types';
@@ -15,7 +14,7 @@ export const GET: RequestHandler = async (event) => {
 	const projectId = url.searchParams.get('projectId') ?? '';
 	if (!projectId) return json({ suggestions: [] }, { status: 400 });
 	await requireProjectAccess(event, projectId, 'read');
-	const services = getServices();
+	const services = event.locals.services;
 	const suggestions = await services.suggestFeatures.execute(projectId);
 	return json({ suggestions });
 };
@@ -30,7 +29,7 @@ export const POST: RequestHandler = async (event) => {
 	const projectId = typeof body?.projectId === 'string' ? body.projectId : '';
 	if (!projectId) error(400, 'projectId is required');
 	await requireProjectAccess(event, projectId, 'write');
-	const services = getServices();
+	const services = event.locals.services;
 	try {
 		const suggestions = await services.submitFeatureSuggestions.execute(
 			projectId,

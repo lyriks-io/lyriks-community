@@ -6,6 +6,7 @@ import {
 } from './enums';
 import type { EvolutionRequest, ImpactFinding } from './draft';
 import { firstRefusal, guard, type Guarded } from './guard';
+import type { SpecLanguage } from '$domain/language';
 
 /**
  * The impact report: what a change propagates to, read under one of three
@@ -45,13 +46,20 @@ export function canComputePropagation(depth: number): Guarded {
  * be checked before it can be trusted; beyond that it is neighbourhood, listed
  * so the reader can decide whether it is worth a look.
  */
-export function reachLabel(depth: number): string {
+export function reachLabel(depth: number, lang: SpecLanguage = 'en'): string {
+	if (lang === 'fr') return depth <= 1 ? 'direct' : depth === 2 ? 'par ricochet' : `à ${depth} liens`;
 	if (depth <= 1) return 'direct';
 	if (depth === 2) return 'knock-on';
 	return `${depth} steps out`;
 }
 
-export function reachMeaning(depth: number): string {
+export function reachMeaning(depth: number, lang: SpecLanguage = 'en'): string {
+	if (lang === 'fr') {
+		if (depth <= 1) return 'Le changement se fait ici. C\'est un nœud que vous ouvrirez et modifierez vous-même.';
+		if (depth === 2)
+			return "Rien n'est modifié ici. Cela repose sur quelque chose que le changement modifie, donc il faut le relire, le rejouer ou le réapprouver avant de pouvoir s'y fier.";
+		return `Plus loin dans le voisinage, atteint par ${depth - 1} liens. C'est listé pour que vous décidiez si cela vaut un coup d'œil, pas parce qu'on sait que cela bouge.`;
+	}
 	if (depth <= 1)
 		return 'The change is made here. This is a node you will open and edit yourself.';
 	if (depth === 2)

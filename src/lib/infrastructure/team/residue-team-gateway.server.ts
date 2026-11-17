@@ -1,7 +1,7 @@
-import { emptyTeam, type Collaborator, type Team } from '$domain/team/team';
+import { emptyTeam, type Collaborator, type Team } from '$domain/team';
 import type { NewCollaboratorInput, TeamGatewayPort } from '$application/ports/team-gateway';
 import type { ProjectResidueRepositoryPort } from '$application/ports/project-residue-repository';
-import { parseTeam } from '$application/parse-team';
+import { parseTeam } from '$application/collaboration/parse-team';
 
 const SECTION = 'team';
 

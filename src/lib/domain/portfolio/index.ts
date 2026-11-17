@@ -1,4 +1,4 @@
-import type { SourceModeCode } from '$domain/foundation/identity-enums';
+import type { SourceModeCode } from '$domain/foundation';
 /**
  * The portfolio layer above the wizard: one Portfolio (per install) groups
  * Projects into custom-named Domains. A project's org metadata (which domain)
@@ -16,6 +16,13 @@ export interface Domain {
 	description: string;
 	icon: string;
 	createdAt: string;
+	/**
+	 * Where the folder stands among the folders, from 0 at the top, as the last
+	 * person who dragged one left them (state domain.position, action 5ccc378f).
+	 * Absent or null while nobody placed it. Only the reorder writes it: a save of
+	 * the domain's name or description never touches it.
+	 */
+	position?: number | null;
 }
 
 /** URL-safe domain id from its name, with a caller-supplied uniqueness suffix. */
@@ -141,8 +148,12 @@ export interface ProjectCard {
 	readinessScore: number;
 	/** Correctness (0–100) — 100 minus open incoherences. */
 	coherenceScore: number;
+	/** Open incoherences (settled ones excluded): the total the Control Center counts. */
+	openIncoherences: number;
 	/** Number of leaf features (the leaf-feature count — NOT reusable UI components). */
 	featureCount: number;
+	/** Evolution requests in progress with a functional spec started (see `isEvolutionInProgress`). */
+	evolutionsInProgress: number;
 	lastSavedAt: string | null;
 	/** Where the project started (its Foundation identity); `code_to_spec` = created from a codebase. */
 	sourceMode: SourceModeCode | null;

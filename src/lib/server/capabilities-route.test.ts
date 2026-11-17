@@ -6,6 +6,7 @@ import { GET } from '../../routes/api/draft/users/capabilities/+server';
 const mocks = vi.hoisted(() => ({ access: vi.fn(), load: vi.fn(), derived: vi.fn() }));
 vi.mock('$lib/server/project-access.server', () => ({ requireProjectAccess: mocks.access }));
 vi.mock('$composition/container.server', () => ({ getServices: () => ({ loadUsersDraft: { execute: mocks.load }, refreshDerivedCapabilities: { execute: mocks.derived } }) }));
+import { getServices } from '$composition/container.server';
 
 describe('capability registry read boundary', () => {
 	beforeEach(() => {
@@ -13,7 +14,7 @@ describe('capability registry read boundary', () => {
 		mocks.load.mockResolvedValue(createEmptyUsersDraft('p'));
 		mocks.derived.mockResolvedValue({ features: [], journeys: [], surfaces: [{ id: 'screen:editor', source: 'surface', label: 'Editor' }] });
 	});
-	const event = (query = '?projectId=p') => ({ url: new URL('http://localhost/api/draft/users/capabilities' + query) }) as Parameters<typeof GET>[0];
+	const event = (query = '?projectId=p') => ({ locals: { services: getServices() }, url: new URL('http://localhost/api/draft/users/capabilities' + query) }) as Parameters<typeof GET>[0];
 	it('returns copyable canonical ids under project read access', async () => {
 		const request = event();
 		const result = await (await GET(request)).json();

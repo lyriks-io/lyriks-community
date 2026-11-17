@@ -999,32 +999,12 @@ describe('the acceptance walkthrough', () => {
 		expect(canAnnotateCapture(createObservation({ captureAttached: true })).ok).toBe(true);
 	});
 
-	it('logs only a typed, anchored, illustrated observation', () => {
-		const unanchored = createObservation({
-			screenId: '',
-			elementId: '',
-			captureAttached: true,
-			captureAnnotated: true
-		});
-		expect(canLogObservation(unanchored).ok).toBe(false);
-
-		const unannotated = createObservation({
-			screenId: 'screen-pricing',
-			elementId: 'btn-start-trial',
-			captureAttached: true,
-			captureAnnotated: false
-		});
-		expect(canLogObservation(unannotated).ok).toBe(false);
-
-		const complete = createObservation({
-			type: 'revealed_need',
-			target: 'delivered_product',
-			screenId: 'screen-pricing',
-			elementId: 'btn-start-trial',
-			captureAttached: true,
-			captureAnnotated: true
-		});
-		expect(canLogObservation(complete).ok).toBe(true);
+	it('logs an observation that says what was seen; the screen it was seen on is optional', () => {
+		expect(canLogObservation(createObservation({ body: '   ' })).ok).toBe(false);
+		expect(canLogObservation(createObservation({ body: 'The trial button does nothing.' })).ok).toBe(true);
+		expect(
+			canLogObservation(createObservation({ body: 'Wrong price shown.', screenId: 'screen-pricing', elementId: 'btn-start-trial' })).ok
+		).toBe(true);
 	});
 
 	it('takes no new message once a ruling is recorded', () => {
@@ -1140,7 +1120,7 @@ describe('the decision history', () => {
 
 describe('the parse boundary', () => {
 	it('drops an unattributed history entry, so the guard cannot be bypassed', async () => {
-		const { parseEvolutionDraft } = await import('$application/parse-evolution-draft');
+		const { parseEvolutionDraft } = await import('$application/evolution/parse-evolution-draft');
 		const parsed = parseEvolutionDraft(
 			{
 				requests: [
@@ -1172,7 +1152,7 @@ describe('the parse boundary', () => {
 	});
 
 	it('falls back on an unknown enum rather than storing it', async () => {
-		const { parseEvolutionDraft } = await import('$application/parse-evolution-draft');
+		const { parseEvolutionDraft } = await import('$application/evolution/parse-evolution-draft');
 		const parsed = parseEvolutionDraft(
 			{
 				requests: [
@@ -1219,7 +1199,7 @@ describe('writing a dossier field into the section that owns it', () => {
 			'dependsOn',
 			'sourceIds',
 			'status',
-			'trl'
+			'stage'
 		]);
 		for (const f of ALL_BLOCK_FIELDS) {
 			if (!f.canonicalPath.startsWith('features.leafMeta.')) continue;
@@ -1229,7 +1209,7 @@ describe('writing a dossier field into the section that owns it', () => {
 
 	it('writes prose into the leaf it belongs to, keeping no copy', async () => {
 		const { saveDossierField, readDossierField } = await import(
-			'$application/use-cases/save-dossier-field'
+			'$application/evolution/save-dossier-field'
 		);
 		const result = saveDossierField(emptyFeatures(), {
 			fieldPath: '02-problem.statement',
@@ -1248,7 +1228,7 @@ describe('writing a dossier field into the section that owns it', () => {
 	});
 
 	it('turns a list field into one criterion per line, keeping ids stable', async () => {
-		const { saveDossierField } = await import('$application/use-cases/save-dossier-field');
+		const { saveDossierField } = await import('$application/evolution/save-dossier-field');
 		const first = saveDossierField(emptyFeatures(), {
 			fieldPath: '05-functional.acceptance',
 			leafId: 'feat-a',
@@ -1275,7 +1255,7 @@ describe('writing a dossier field into the section that owns it', () => {
 	});
 
 	it('refuses a write the owning section would refuse, leaving no partial state', async () => {
-		const { saveDossierField } = await import('$application/use-cases/save-dossier-field');
+		const { saveDossierField } = await import('$application/evolution/save-dossier-field');
 		const draft = emptyFeatures();
 		const refusedWrite = saveDossierField(draft, {
 			fieldPath: '02-problem.statement',
@@ -1288,7 +1268,7 @@ describe('writing a dossier field into the section that owns it', () => {
 	});
 
 	it('refuses a leaf-scoped write that names no leaf', async () => {
-		const { saveDossierField } = await import('$application/use-cases/save-dossier-field');
+		const { saveDossierField } = await import('$application/evolution/save-dossier-field');
 		const result = saveDossierField(emptyFeatures(), {
 			fieldPath: '02-problem.statement',
 			leafId: null,
@@ -1299,7 +1279,7 @@ describe('writing a dossier field into the section that owns it', () => {
 	});
 
 	it('will not write a field whose home has an editor of its own', async () => {
-		const { saveDossierField } = await import('$application/use-cases/save-dossier-field');
+		const { saveDossierField } = await import('$application/evolution/save-dossier-field');
 		const result = saveDossierField(emptyFeatures(), {
 			fieldPath: '06-behavioural.invariants',
 			leafId: 'feat-a',
@@ -1313,7 +1293,7 @@ describe('writing a dossier field into the section that owns it', () => {
 
 	it('clears the value in its section when the field is emptied', async () => {
 		const { saveDossierField, readDossierField } = await import(
-			'$application/use-cases/save-dossier-field'
+			'$application/evolution/save-dossier-field'
 		);
 		const written = saveDossierField(emptyFeatures(), {
 			fieldPath: '01-origin.objective',

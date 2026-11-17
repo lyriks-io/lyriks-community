@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Gauge from '$ui/design-system/Gauge.svelte';
 	import { Icon, SearchInput, confirmDialog, matchesQuery } from '$ui/design-system';
 	import {
 		leafFeatures,
@@ -14,8 +15,8 @@
 		planStatusUpgrades,
 		type FeatureImplementationCoverage
 	} from '$application/use-cases';
-	import type { FeatureActionIndex } from '$application/index-feature-actions';
-	import type { Collaborator } from '$domain/team/team';
+	import type { FeatureActionIndex } from '$application/specification/index-feature-actions';
+	import type { Collaborator } from '$domain/team';
 	import type { FeaturesStore } from '../draft-store.svelte';
 	import AssigneeChip from '../AssigneeChip.svelte';
 	import ImplementationBadge from '../ImplementationBadge.svelte';
@@ -265,7 +266,7 @@
 		<div class="mb-3 flex items-center justify-between gap-3">
 			<div>
 				<p class="text-sm font-semibold text-ink-900">Roadmap</p>
-				<p class="text-[11px] text-ink-500">
+				<p class="text-[0.6875rem] text-ink-500">
 					{store.draft.releases.length} release{store.draft.releases.length === 1 ? '' : 's'} · {assigned.size}
 					feature{assigned.size === 1 ? '' : 's'} scheduled · {backlog.length} in the backlog
 				</p>
@@ -307,15 +308,15 @@
 					type="button"
 					data-anchor={rel.id}
 					onclick={() => (selectedReleaseId = rel.id)}
-					class="rounded-card border p-3 text-left transition-all {releaseColor(rel.order).tint} {isSelected
+					class="rounded-card border p-3 text-left transition-[border-color,box-shadow,filter] {releaseColor(rel.order).tint} {isSelected
 						? `${releaseColor(rel.order).borderSel} ring-2 ${releaseColor(rel.order).ring}`
 						: `${releaseColor(rel.order).border} hover:brightness-[0.98]`}"
 				>
 					<div class="flex items-center justify-between gap-2">
-						<span class="rounded-pill px-2 py-0.5 text-[10px] font-semibold {releaseColor(rel.order).badge}">
+						<span class="rounded-pill px-2 py-0.5 text-[0.625rem] font-semibold {releaseColor(rel.order).badge}">
 							{rel.version}
 						</span>
-						<span class="flex items-center gap-1.5 text-[10px] text-ink-500">
+						<span class="flex items-center gap-1.5 text-[0.625rem] text-ink-500">
 							{#if lifecycle === 'in-progress'}
 								<span class="rounded-pill bg-warning-50 px-1.5 py-0.5 font-semibold uppercase tracking-wide text-warning-600">
 									In progress
@@ -326,7 +327,7 @@
 					</div>
 					<p class="mt-2 text-sm font-semibold text-ink-900">{rel.name || 'Untitled release'}</p>
 					<div class="mt-3">
-						<div class="flex items-center justify-between text-[10px] text-ink-500">
+						<div class="flex items-center justify-between text-[0.625rem] text-ink-500">
 							<span>{count} features</span>
 							<span class="flex items-center gap-1.5">
 								{#if cov}
@@ -339,9 +340,7 @@
 								<span class="font-semibold text-success-600">{pct}%</span>
 							</span>
 						</div>
-						<div class="mt-1 h-1.5 overflow-hidden rounded-full bg-white/60">
-							<div class="h-full rounded-full {releaseColor(rel.order).bar}" style="width: {pct}%"></div>
-						</div>
+						<Gauge parts={[{ value: pct, tone: releaseColor(rel.order).bar }]} total={100} height={6} track="bg-white/60" class="mt-1" />
 					</div>
 				</button>
 			{/each}
@@ -362,7 +361,7 @@
 		<div class="mt-5 border-t border-line pt-5">
 			<div class="mb-4 flex flex-wrap items-end gap-x-4 gap-y-2">
 				<div class="shrink-0">
-					<label for="rel-version-{selectedRelease.id}" class="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-ink-400">Release number</label>
+					<label for="rel-version-{selectedRelease.id}" class="mb-1 block text-[0.625rem] font-semibold uppercase tracking-wide text-ink-400">Release number</label>
 					<input
 						id="rel-version-{selectedRelease.id}"
 						type="text"
@@ -373,7 +372,7 @@
 					/>
 				</div>
 				<div class="min-w-[10rem] flex-1">
-					<label for="rel-name-{selectedRelease.id}" class="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-ink-400">Release name</label>
+					<label for="rel-name-{selectedRelease.id}" class="mb-1 block text-[0.625rem] font-semibold uppercase tracking-wide text-ink-400">Release name</label>
 					<input
 						id="rel-name-{selectedRelease.id}"
 						type="text"
@@ -386,7 +385,7 @@
 				<div class="shrink-0">
 					<span
 						id="rel-weeks-{selectedRelease.id}"
-						class="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-ink-400"
+						class="mb-1 block text-[0.625rem] font-semibold uppercase tracking-wide text-ink-400"
 						>Week range</span
 					>
 					<!-- Captions the start/end pair, not one control — each input carries its own aria-label. -->
@@ -414,11 +413,9 @@
 						/>
 					</div>
 				</div>
-				<span class="flex h-9 items-center self-end text-[11px] text-ink-400">{featuresInSelected.length} features</span>
+				<span class="flex h-9 items-center self-end text-[0.6875rem] text-ink-400">{featuresInSelected.length} features</span>
 				<div class="ml-auto flex h-9 items-center gap-2 self-end">
-					<div class="h-2 w-28 overflow-hidden rounded-full bg-surface-sunken" title="Done leaves / total leaves">
-						<div class="h-full rounded-full bg-success-500 transition-all" style="width: {pct}%"></div>
-					</div>
+					<Gauge parts={[{ value: pct, tone: 'bg-success-500' }]} total={100} track="bg-surface-sunken" class="w-28" title="Done leaves / total leaves" />
 					<span class="w-9 text-right text-sm font-semibold text-success-600">{pct}%</span>
 					<button
 						type="button"
@@ -433,11 +430,11 @@
 			</div>
 
 			<div class="mb-2 flex flex-wrap items-center justify-between gap-2">
-				<p class="text-[10px] font-semibold uppercase tracking-wide text-ink-500">
+				<p class="text-[0.625rem] font-semibold uppercase tracking-wide text-ink-500">
 					Features in this release
 				</p>
 				<div class="flex items-center gap-3">
-					<span class="text-[10px] text-ink-400">Give each feature an owner and a sprint to distribute the work</span>
+					<span class="text-[0.625rem] text-ink-400">Give each feature an owner and a sprint to distribute the work</span>
 					<SearchPicker
 						options={addFeatureOptions}
 						onPick={addFeatureToSelected}
@@ -453,7 +450,7 @@
 				<!-- Scannable table: one row per feature, aligned columns. Replaces the
 				     cramped multi-segment chips — this is the "easier to read" layout. -->
 				<div class="rounded-field border border-line">
-					<div class="hidden grid-cols-[1fr_auto_auto_auto_auto] rounded-t-field gap-3 border-b border-line bg-surface-sunken/50 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-wide text-ink-400 @lg:grid">
+					<div class="hidden grid-cols-[1fr_auto_auto_auto_auto] rounded-t-field gap-3 border-b border-line bg-surface-sunken/50 px-3 py-1.5 text-[0.5625rem] font-semibold uppercase tracking-wide text-ink-400 @lg:grid">
 						<span>Feature</span>
 						<span>Status</span>
 						<span>Owner</span>
@@ -472,11 +469,11 @@
 							<!-- Feature name + core dot + code-coverage chip -->
 							<div class="col-span-2 flex min-w-0 items-center gap-2 @lg:col-span-1">
 								<span
-									class="size-2.5 shrink-0 rounded-full border border-line {CORE_PILL[tone].bg}"
+									class="size-2.5 shrink-0 border border-line {CORE_PILL[tone].bg}"
 									title={core?.name || 'Core'}
 								></span>
 								<span class="truncate text-sm text-ink-900">{feat.name || '<unnamed>'}</span>
-								<span class="hidden shrink-0 text-[9px] font-semibold uppercase tracking-wide text-ink-400 @sm:inline">
+								<span class="hidden shrink-0 text-[0.5625rem] font-semibold uppercase tracking-wide text-ink-400 @sm:inline">
 									{(core?.name || 'CORE').slice(0, 14)}
 								</span>
 								<ImplementationBadge coverage={implementation.get(feat.id)} />
@@ -496,7 +493,7 @@
 									onchange={(e) =>
 										store.updateLeafMeta(feat.id, { status: e.currentTarget.value as LeafStatus })}
 									aria-label="Feature status"
-									class="cursor-pointer bg-transparent py-1 text-[10px] font-semibold uppercase tracking-wide outline-none {STATUS_META[st].text}"
+									class="cursor-pointer bg-transparent py-1 text-[0.625rem] font-semibold uppercase tracking-wide outline-none {STATUS_META[st].text}"
 								>
 									{#each STATUS_ORDER as s (s)}
 										<option value={s}>{STATUS_META[s].label}</option>
@@ -534,7 +531,7 @@
 				</div>
 
 				<!-- Per-status count summary -->
-				<div class="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
+				<div class="mt-3 flex flex-wrap items-center gap-2 text-[0.625rem]">
 					{#each STATUS_ORDER as s (s)}
 						{@const n = visibleInSelected.filter((f) => statusOf(f.id) === s).length}
 						<span class="inline-flex items-center gap-1 rounded-pill px-2 py-0.5 {STATUS_META[s].bg} {STATUS_META[s].text}">
@@ -567,10 +564,10 @@
 		<div class="rounded-card border border-line bg-surface p-5 opacity-70 transition hover:opacity-100">
 			<div class="mb-3 flex items-center gap-2">
 				<Icon name="check" size={13} class="text-ink-400" />
-				<p class="text-[10px] font-semibold uppercase tracking-wide text-ink-500">
+				<p class="text-[0.625rem] font-semibold uppercase tracking-wide text-ink-500">
 					Shipped · {visibleShipped.length} release{visibleShipped.length > 1 ? 's' : ''}
 				</p>
-				<span class="text-[11px] text-ink-400">
+				<span class="text-[0.6875rem] text-ink-400">
 					Mark a finished release as shipped to pin it here for good
 				</span>
 			</div>
@@ -579,37 +576,37 @@
 				<div class="space-y-3">
 					{#each visibleShipped as rel, seq (rel.id)}
 						<div class="relative rounded-card border border-line bg-surface-sunken p-3">
-							<div class="absolute -left-4.5 top-3 flex h-4 w-4 items-center justify-center rounded-full border border-line bg-surface text-[9px] font-semibold text-ink-500">
+							<div class="absolute -left-4.5 top-3 flex h-4 w-4 items-center justify-center border border-line bg-surface text-[0.5625rem] font-semibold text-ink-500">
 								{seq + 1}
 							</div>
 							<div class="mb-2 flex items-center gap-2">
-								<span class="rounded-pill bg-surface px-2 py-0.5 text-[10px] font-semibold text-ink-500">
+								<span class="rounded-pill bg-surface px-2 py-0.5 text-[0.625rem] font-semibold text-ink-500">
 									{rel.version}
 								</span>
 								<span class="truncate text-xs font-medium text-ink-600">{rel.name || 'Untitled release'}</span>
-								<span class="text-[10px] text-ink-400">· W{rel.weekStart}-W{rel.weekEnd}</span>
+								<span class="text-[0.625rem] text-ink-400">· W{rel.weekStart}-W{rel.weekEnd}</span>
 								<span class="ml-auto flex items-center gap-2">
 									{#if rel.archivedAt}
-										<span class="flex items-center gap-1 text-[10px] text-ink-400" title="Pinned in history; reopening a feature no longer moves it back">
+										<span class="flex items-center gap-1 text-[0.625rem] text-ink-400" title="Pinned in history; reopening a feature no longer moves it back">
 											<Icon name="check" size={11} /> Shipped {rel.archivedAt.slice(0, 10)}
 										</span>
 										<button
 											type="button"
 											onclick={() => store.unarchiveRelease(rel.id)}
 											title="Put this release back on the board"
-											class="rounded-field border border-line px-2 py-0.5 text-[10px] font-semibold text-ink-500 hover:border-brand-300 hover:text-brand-500"
+											class="rounded-field border border-line px-2 py-0.5 text-[0.625rem] font-semibold text-ink-500 hover:border-brand-300 hover:text-brand-500"
 										>
 											Reopen
 										</button>
 									{:else}
-										<span class="text-[10px] text-ink-400" title="Derived from feature statuses; it returns to the board if a feature reopens">
+										<span class="text-[0.625rem] text-ink-400" title="Derived from feature statuses; it returns to the board if a feature reopens">
 											All features done
 										</span>
 										<button
 											type="button"
 											onclick={() => store.archiveRelease(rel.id)}
 											title="Pin this release as shipped: it stays here even if a feature is reopened later"
-											class="rounded-field bg-brand-gradient px-2.5 py-1 text-[10px] font-semibold text-white hover:shadow-card"
+											class="rounded-field bg-brand-gradient px-2.5 py-1 text-[0.625rem] font-semibold text-white hover:shadow-card"
 										>
 											Mark shipped
 										</button>
@@ -617,17 +614,17 @@
 								</span>
 							</div>
 							{#if featuresOfRelease(rel.id).length === 0}
-								<p class="text-[11px] italic text-ink-400">No feature recorded in this release.</p>
+								<p class="text-[0.6875rem] italic text-ink-400">No feature recorded in this release.</p>
 							{:else}
 								<div class="flex flex-wrap gap-1.5">
 									{#each featuresOfRelease(rel.id) as feat (feat.id)}
 										{@const core = coreOf(feat.id)}
 										<div class="inline-flex items-center gap-1.5 rounded-field border border-line bg-surface px-2 py-1">
 											<Icon name="check" size={10} class="text-ink-400" />
-											<span class="text-[9px] font-semibold uppercase tracking-wide text-ink-400">
+											<span class="text-[0.5625rem] font-semibold uppercase tracking-wide text-ink-400">
 												{(core?.name || 'CORE').slice(0, 12).toUpperCase()}
 											</span>
-											<span class="text-[11px] text-ink-500">{feat.name || '<unnamed>'}</span>
+											<span class="text-[0.6875rem] text-ink-500">{feat.name || '<unnamed>'}</span>
 										</div>
 									{/each}
 								</div>
@@ -677,7 +674,7 @@
 					{@const tone = core?.tone ?? 'custom'}
 					<div class="rounded-card border border-line bg-surface p-3">
 						<div class="flex items-center justify-between gap-2">
-							<span class="rounded-pill {CORE_PILL[tone].bg} px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide {CORE_PILL[tone].eyebrow}">
+							<span class="rounded-pill {CORE_PILL[tone].bg} px-2 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide {CORE_PILL[tone].eyebrow}">
 								{(core?.name || 'CORE').slice(0, 12).toUpperCase()}
 							</span>
 						</div>
@@ -689,7 +686,7 @@
 										type="button"
 										onclick={() => store.assignFeatureToRelease(feat.id, rel.id)}
 										title="Move to {rel.version}"
-										class="rounded-field border border-line px-1.5 py-0.5 text-[9px] font-semibold text-ink-500 hover:border-brand-300 hover:bg-white hover:text-brand-500"
+										class="rounded-field border border-line px-1.5 py-0.5 text-[0.5625rem] font-semibold text-ink-500 hover:border-brand-300 hover:bg-white hover:text-brand-500"
 									>
 										→ {rel.version}
 									</button>

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildBundle, emptyRowSnapshot, type ProjectSnapshot } from '$domain/portability';
 import type {
 	ArchiveCodecPort,
@@ -11,6 +11,8 @@ import type {
 	ReconciliationStorePort
 } from '$application/ports';
 import { ImportProjectUseCase } from './import-project';
+import { ProjectScopeRefusedError } from '$application/portfolio/project-creation-scope';
+import { locked, type ScopeCheck } from '$domain/licensing';
 
 /**
  * Identity of a copy. A copy is a NEW project, so the one thing it must never
@@ -61,7 +63,11 @@ function bundleOf(projectId = 'billos-a1b2c3'): Uint8Array {
 }
 
 /** Everything the use-case writes through, with the takenness of ids scripted. */
-function harness(taken: { rows?: string[]; kernel?: string[] } = {}, suffixes = ['aaaaaa']) {
+function harness(
+	taken: { rows?: string[]; kernel?: string[] } = {},
+	suffixes = ['aaaaaa'],
+	scope?: { execute: () => Promise<ScopeCheck> }
+) {
 	const written: string[] = [];
 	const promoted: string[] = [];
 	const removed: string[] = [];
@@ -108,9 +114,10 @@ function harness(taken: { rows?: string[]; kernel?: string[] } = {}, suffixes = 
 		lock,
 		archive,
 		clock,
-		() => suffixes[Math.min(next++, suffixes.length - 1)]
+		() => suffixes[Math.min(next++, suffixes.length - 1)],
+		scope
 	);
-	return { useCase, written, promoted, removed, attempts: () => next };
+	return { useCase, written, promoted, removed, rows, portfolio, lock, attempts: () => next };
 }
 
 describe('ImportProjectUseCase, minting a copy id', () => {
@@ -166,6 +173,109 @@ describe('ImportProjectUseCase, minting a copy id', () => {
 
 		const forced = await useCase.execute({ bytes: bundleOf(), mode: 'restore', overwrite: true });
 		expect(forced).toMatchObject({ ok: true, projectId: 'billos-a1b2c3' });
+		expect(written).toEqual(['billos-a1b2c3']);
+	});
+});
+
+describe('ImportProjectUseCase, authorizing the locked restore target', () => {
+	it('authorizes before any folder, kernel or row mutation', async () => {
+		const { useCase, written, promoted, portfolio, lock } = harness({ rows: ['billos-a1b2c3'] });
+		let locked = false;
+		vi.spyOn(lock, 'withLock').mockImplementation(async (_id, run) => {
+			locked = true;
+			try { return await run(); } finally { locked = false; }
+		});
+		const domains = vi.spyOn(portfolio, 'listDomains');
+		await expect(useCase.execute({ bytes: bundleOf(), mode: 'restore', overwrite: true }, {
+			withTarget: async (target) => {
+				expect(locked).toBe(true);
+				expect(target).toEqual({ projectId: 'billos-a1b2c3', existing: true });
+				throw new Error('forbidden');
+			}
+		})).rejects.toThrow('forbidden');
+		expect(domains).not.toHaveBeenCalled();
+		expect(written).toEqual([]);
+		expect(promoted).toEqual([]);
+	});
+
+	it('checks existence after acquiring the lock, so a preceding restore cannot be taken over', async () => {
+		const { useCase, rows, lock, written } = harness();
+		vi.spyOn(lock, 'withLock').mockImplementation(async (_id, run) => {
+			vi.spyOn(rows, 'exists').mockResolvedValue(true);
+			return run();
+		});
+		await expect(useCase.execute({ bytes: bundleOf(), mode: 'restore', overwrite: true }, {
+			withTarget: async ({ existing }) => {
+				expect(existing).toBe(true);
+				throw new Error('target requires authorization');
+			}
+		})).rejects.toThrow('target requires authorization');
+		expect(written).toEqual([]);
+	});
+
+	it('treats a kernel-only target as existing before asking to restore it', async () => {
+		const { useCase, promoted } = harness({ kernel: ['billos-a1b2c3'] });
+		const result = await useCase.execute({ bytes: bundleOf(), mode: 'restore' }, {
+			withTarget: async ({ existing }, write) => {
+				expect(existing).toBe(true);
+				return write();
+			}
+		});
+		expect(result.ok).toBe(false);
+		expect(promoted).toEqual([]);
+	});
+
+	it('preserves the live local owner team inside the storage transaction [criterion:d91acf2d]', async () => {
+		const { useCase, rows } = harness({ rows: ['billos-a1b2c3'] });
+		const read = vi.spyOn(rows, 'read');
+		const write = vi.spyOn(rows, 'write');
+		await useCase.execute({ bytes: bundleOf(), mode: 'restore', overwrite: true });
+		expect(read).not.toHaveBeenCalled();
+		expect(write).toHaveBeenCalledWith('billos-a1b2c3', expect.anything(), { preserveLocalTeam: true });
+	});
+
+	it('keeps new ownership setup inside the lock until it finishes', async () => {
+		const { useCase, lock, written } = harness();
+		let locked = false;
+		vi.spyOn(lock, 'withLock').mockImplementation(async (_id, run) => {
+			locked = true;
+			try { return await run(); } finally { locked = false; }
+		});
+		const result = await useCase.execute({ bytes: bundleOf(), mode: 'restore' }, {
+			withTarget: async ({ existing }, write) => {
+				expect(existing).toBe(false);
+				const result = await write();
+				expect(written).toEqual(['billos-a1b2c3']);
+				await Promise.resolve();
+				expect(locked).toBe(true);
+				return result;
+			}
+		});
+		expect(result.ok).toBe(true);
+		expect(locked).toBe(false);
+	});
+});
+
+describe('ImportProjectUseCase, on a Community installation holding one project (EVO-001)', () => {
+	const holdsOne = { execute: async () => locked('secondProject') };
+
+	it('refuses a copy before writing anything, saying Community holds one project', async () => {
+		const { useCase, written, promoted } = harness({}, ['a1b2c3'], holdsOne);
+
+		await expect(useCase.execute({ bytes: bundleOf(), mode: 'copy', name: 'Expensa' })).rejects.toThrow(
+			ProjectScopeRefusedError
+		);
+		await expect(useCase.execute({ bytes: bundleOf(), mode: 'copy' })).rejects.toThrow('Community holds one project.');
+		expect(written).toEqual([]);
+		expect(promoted).toEqual([]);
+	});
+
+	it('still restores over the project it holds: that is no new project', async () => {
+		const { useCase, written } = harness({ rows: ['billos-a1b2c3'] }, ['aaaaaa'], holdsOne);
+
+		const result = await useCase.execute({ bytes: bundleOf(), mode: 'restore', overwrite: true });
+
+		expect(result).toMatchObject({ ok: true, projectId: 'billos-a1b2c3' });
 		expect(written).toEqual(['billos-a1b2c3']);
 	});
 });

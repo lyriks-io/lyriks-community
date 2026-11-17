@@ -1,4 +1,6 @@
-import type { CoherenceIssue, CoherenceResult, CoherenceTone } from '$domain/shared';
+import type { CoherenceIssue, CoherenceResult } from '$domain/shared';
+import type { SpecLanguage } from '$domain/language';
+import { sectionTone } from '$domain/coherence/section-tone';
 import type { FoundationIdentityDraft } from './identity';
 
 /**
@@ -31,6 +33,8 @@ function completeness(draft: FoundationIdentityDraft): number {
 interface ConsistencyRule {
 	readonly code: string;
 	readonly message: string;
+	/** The same message in French. */
+	readonly fr: string;
 	readonly penalty: number;
 	triggered(draft: FoundationIdentityDraft): boolean;
 }
@@ -39,47 +43,48 @@ const CONSISTENCY_RULES: ConsistencyRule[] = [
 	{
 		code: 'brief-without-formfactor',
 		message: 'A brief is written but no form factor is chosen yet.',
+		fr: "Un résumé est rédigé mais aucun format d'appareil n'est encore choisi.",
 		penalty: 5,
 		triggered: (d) => d.brief.trim().length >= 40 && d.formFactors.length === 0
 	},
 	{
 		code: 'default-format-not-activated',
 		message: 'The default structured rule format is not in the activated workspace patterns.',
+		fr: "Le format de règle structuré par défaut ne fait pas partie des modèles activés de l'espace de travail.",
 		penalty: 4,
 		triggered: (d) => !d.activatedPatterns.includes(d.structuredRuleFormat)
 	},
 	{
 		code: 'family-default-not-activated',
 		message: 'A rule-family default points at a pattern that is not activated for this project.',
+		fr: "Le défaut d'une famille de règles pointe vers un modèle qui n'est pas activé pour ce projet.",
 		penalty: 4,
 		triggered: (d) =>
 			Object.values(d.ruleFamilyDefaults).some((p) => !d.activatedPatterns.includes(p))
 	},
 	{
 		code: 'no-activated-pattern',
-		message: 'No rule pattern is activated, so Rules & edge cases would have no structured form to offer.',
+		message: 'No rule pattern is activated, so the rules would have no structured form to offer.',
+		fr: "Aucun modèle de règle n'est activé, donc les règles n'auraient aucune forme structurée à proposer.",
 		penalty: 5,
 		triggered: (d) => d.activatedPatterns.length === 0
 	}
 ];
 
-function toneFor(score: number): { tone: CoherenceTone; label: string } {
-	if (score < 34) return { tone: 'critical', label: 'Critical' };
-	if (score < 67) return { tone: 'at-risk', label: 'At risk' };
-	return { tone: 'strong', label: 'Strong' };
-}
-
-export function computeIdentityCoherence(draft: FoundationIdentityDraft): CoherenceResult {
+export function computeIdentityCoherence(
+	draft: FoundationIdentityDraft,
+	lang: SpecLanguage = 'en'
+): CoherenceResult {
 	const base = completeness(draft);
 	const issues: CoherenceIssue[] = [];
 	let penalty = 0;
 	for (const rule of CONSISTENCY_RULES) {
 		if (rule.triggered(draft)) {
 			penalty += rule.penalty;
-			issues.push({ code: rule.code, message: rule.message });
+			issues.push({ code: rule.code, message: lang === 'fr' ? rule.fr : rule.message });
 		}
 	}
 	const score = Math.max(0, Math.min(100, Math.round(base - penalty)));
-	const { tone, label } = toneFor(score);
+	const { tone, label } = sectionTone(score, lang);
 	return { score, tone, label, issues };
 }

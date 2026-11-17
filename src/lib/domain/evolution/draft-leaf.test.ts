@@ -22,6 +22,7 @@ import { canAcceptProposal } from './proposals';
 import { draftCoherence, draftNodeIds, overlayGraph } from './overlay';
 import { propagateImpact, type PropagationGraph } from './impact-propagation';
 import { materialiseDrafts, type Tree } from './materialise';
+import { withSolutionValidated } from './solution-validated.fixture';
 
 /**
  * The change, carried as a draft, and the product read as it would be.
@@ -52,7 +53,8 @@ const ok = (outcome: ActOutcome): EvolutionRequest => {
 };
 const reasonOf = (outcome: ActOutcome): string => (outcome.ok ? '' : outcome.reason);
 
-const opened = (): EvolutionRequest =>
+const opened = (): EvolutionRequest => withSolutionValidated(openedRaw());
+const openedRaw = (): EvolutionRequest =>
 	ok(
 		openRequestAct(ctx(), {
 			title: 'Let members cancel late',
@@ -386,12 +388,18 @@ describe('the freeze is the one moment a dossier writes', () => {
 		expect(out.features).toEqual(tree());
 	});
 
-	it('never writes the same draft twice', () => {
+	it('never creates the same draft twice: a second freeze updates what the first created', () => {
 		const request = ok(addDraftLeafAct(ctx(), opened(), { name: 'Cancel a booking' }, known));
 		const once = materialiseDrafts(tree(), request, '2026-09-22T12:00:00.000Z');
-		const twice = materialiseDrafts(once.features, once.request, '2026-09-22T13:00:00.000Z');
-		expect(twice.changed).toBe(false);
-		expect(twice.features.features.filter((f) => f.name === 'Cancel a booking')).toHaveLength(1);
+		const reworded = {
+			...once.request,
+			drafts: once.request.drafts.map((d) => ({ ...d, description: 'Cancel it up to a day before' }))
+		};
+		const twice = materialiseDrafts(once.features, reworded, '2026-09-22T13:00:00.000Z');
+		const written = twice.features.features.filter((f) => f.name === 'Cancel a booking');
+		expect(written).toHaveLength(1);
+		expect(written[0].id).toBe(once.request.drafts[0].materialisedAs);
+		expect(written[0].description).toBe('Cancel it up to a day before');
 	});
 });
 

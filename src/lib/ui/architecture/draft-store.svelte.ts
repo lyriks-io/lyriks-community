@@ -4,6 +4,7 @@ import {
 	computeArchitectureCoherence,
 	createConstraint,
 	createTechChoice,
+	derivedKey,
 	missingArchitectureRequirements,
 	type ArchLayer,
 	type Constraint,
@@ -14,6 +15,7 @@ import { toggleCitation } from '$domain/documents';
 import type { CoherenceResult } from '$domain/shared';
 import type { Session, ToastNotifierPort } from '$application/ports';
 import { SectionAutosave, type SaveStatus } from '$ui/shell/section-autosave.svelte';
+import { specLanguageAccessor } from '$ui/language/spec-language-context';
 
 export type { SaveStatus };
 
@@ -26,15 +28,20 @@ export type { SaveStatus };
 export class ArchitectureStore {
 	draft = $state<ProjectArchitectureDraft>(null as unknown as ProjectArchitectureDraft);
 
-	coherence = $derived.by<CoherenceResult>(() => computeArchitectureCoherence(this.draft));
+	/** The spec's language, from the project it is opened in: its checks read in it. */
+	readonly #lang = specLanguageAccessor();
+	coherence = $derived.by<CoherenceResult>(() => computeArchitectureCoherence(this.draft, this.#lang()));
 	canAdvance = $derived.by<boolean>(() => architectureCanAdvance(this.draft));
 	missing = $derived.by<string[]>(() => missingArchitectureRequirements(this.draft));
 
-	/** Tech names referenced upstream but not yet on the board (by name+layer). */
+	/** Tech names referenced upstream, not on the board and not removed by the author. */
 	missingTech = $derived.by<string[]>(() => {
-		const have = new Set(this.draft.techChoices.map((t) => `${t.layer}:${t.name.trim().toLowerCase()}`));
+		const skip = new Set([
+			...this.draft.techChoices.map((t) => derivedKey(t.layer, t.name)),
+			...(this.draft.dismissedDerived ?? [])
+		]);
 		return this.draft.derivedTech
-			.filter((d) => !have.has(`${d.layer}:${d.name.trim().toLowerCase()}`))
+			.filter((d) => !skip.has(derivedKey(d.layer, d.name)))
 			.map((d) => d.name);
 	});
 
@@ -99,7 +106,16 @@ export class ArchitectureStore {
 	linkTechToDoc = (techId: string, docId: string | null) =>
 		this.updateTech(techId, 'referenceDocId', docId);
 	removeTech = (techId: string) => {
+		const removed = this.draft.techChoices.find((t) => t.id === techId);
 		this.draft.techChoices = this.draft.techChoices.filter((t) => t.id !== techId);
+		// An upstream technology removed by hand stays removed: the automatic
+		// take-in below would otherwise bring it straight back.
+		if (removed) {
+			const key = derivedKey(removed.layer, removed.name);
+			const dismissed = this.draft.dismissedDerived ?? [];
+			if (this.draft.derivedTech.some((d) => derivedKey(d.layer, d.name) === key) && !dismissed.includes(key))
+				this.draft.dismissedDerived = [...dismissed, key];
+		}
 		this.#touch('architecture.techChoices');
 	};
 
@@ -134,39 +150,33 @@ export class ArchitectureStore {
 	};
 
 	/* ──────────────────── DERIVE / REFRESH FROM UPSTREAM ────────────────── */
-	deriveStack = () => {
-		const have = new Set(
-			this.draft.techChoices.map((t) => `${t.layer}:${t.name.trim().toLowerCase()}`)
-		);
+	/**
+	 * Take in the stack already declared in Foundation & Data, with no button:
+	 * adds what is missing, never overwrites a card and never re-adds one the
+	 * author removed (`dismissedDerived`). Logical stage names components, not
+	 * technologies, so it waits for implementation decisions. Auth-guarded,
+	 * since it autosaves.
+	 */
+	takeInUpstreamStack = () => {
+		if (!this.session.isAuthenticated || architectureStage(this.draft) === 'logical') return;
+		const skip = new Set([
+			...this.draft.techChoices.map((t) => derivedKey(t.layer, t.name)),
+			...(this.draft.dismissedDerived ?? [])
+		]);
 		let created = 0;
 		for (const d of this.draft.derivedTech) {
-			const key = `${d.layer}:${d.name.trim().toLowerCase()}`;
-			if (have.has(key)) continue;
+			const key = derivedKey(d.layer, d.name);
+			if (skip.has(key)) continue;
 			this.draft.techChoices.push(createTechChoice(d.layer, { name: d.name }));
-			have.add(key);
+			skip.add(key);
 			created++;
 		}
-		if (created > 0) this.#touch('architecture.derive');
+		if (created === 0) return;
+		this.#touch('architecture.derive');
 		this.notifier.notify(
 			'info',
-			created > 0
-				? `Seeded ${created} tech card${created === 1 ? '' : 's'} from earlier steps.`
-				: 'Everything from earlier steps is already on the board.'
+			`Took in ${created} technolog${created === 1 ? 'y' : 'ies'} declared in Foundation & Data.`
 		);
-	};
-
-	/**
-	 * First open of a still-empty board: fill it from upstream automatically so
-	 * authors don't face a blank board and a button to discover. Additive to an
-	 * EMPTY board, so it can never clobber a curated stack or re-add a deleted card;
-	 * the manual "Import" button still covers later upstream additions. Auth-guarded
-	 * (deriveStack autosaves), and a no-op the moment the board holds any card.
-	 */
-	autoDeriveIfEmpty = () => {
-		if (!this.session.isAuthenticated || architectureStage(this.draft) === 'logical') return;
-		if (this.draft.techChoices.length > 0) return;
-		if (this.missingTech.length === 0) return;
-		this.deriveStack();
 	};
 
 	refreshDerived = async () => {

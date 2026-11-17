@@ -7,7 +7,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { z }                        from 'zod'
 import { Client }                   from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport }        from '@modelcontextprotocol/sdk/inMemory.js'
-import { createMcpServer, EVOLUTION_IS_OPTIONAL } from '../server.js'
+import { createMcpServer, EVOLUTION_IS_OPTIONAL, SPEC_AND_CODE_TOOLS } from '../server.js'
 import type { BoundOverlay }         from '../enterprise/overlay.js'
 
 /** A bound overlay the way the Enterprise one behaves: it registers the five tools itself. */
@@ -28,6 +28,18 @@ function makeClient(): BoundOverlay {
     },
   }
 }
+
+const RETIRED_PROTOTYPE_TOOLS = [
+  'build_screen',
+  'wire_element',
+  'add_element',
+  'get_experience_coverage',
+  'simulate_experience',
+  'verify_experience',
+  'import_data_collections',
+  'generate_acceptance_tests',
+  'generate_repo_scaffold',
+]
 
 describe('createMcpServer', () => {
   it('preserves expected revisions in both public write schemas', () => {
@@ -62,15 +74,6 @@ describe('createMcpServer', () => {
       expect(tools[name].inputSchema.safeParse(args).success, name).toBe(true)
     for (const name of ['set_section', 'patch_section'])
       expect(tools[name].inputSchema.safeParse(args).success, name).toBe(false)
-  })
-
-  it('advertises read-only elaboration with bounded paging', () => {
-    const server = createMcpServer(makeClient())
-    // @ts-expect-error testing registered wire schemas
-    const tool = server._registeredTools.get_project_elaboration
-    expect(tool.inputSchema.parse({ project_id: 'p', kind: 'question', include_checks: false, expected_snapshot: 'version', limit: 5 })).toMatchObject({ kind: 'question', include_checks: false, expected_snapshot: 'version', limit: 5 })
-    expect(() => tool.inputSchema.parse({ project_id: 'p', limit: 21 })).toThrow()
-    expect(tool.annotations.readOnlyHint).toBe(true)
   })
 
   it('retains patch dry_run and allows removals without a dummy value', () => {
@@ -139,9 +142,14 @@ describe('createMcpServer', () => {
     ]) expect(EVOLUTION_IS_OPTIONAL, phrase).toContain(phrase)
     // What the rule sends the agent to must exist.
     const names = new Set(tools.map((t) => t.name))
-    for (const name of ['apply_behavior_batch', 'patch_section', 'build_screen', 'wire_element', 'sync_implementation_index', 'get_evolution', 'apply_evolution_batch']) {
+    for (const name of ['apply_behavior_batch', 'patch_section', 'sync_implementation_index', 'get_evolution', 'apply_evolution_batch']) {
       expect(EVOLUTION_IS_OPTIONAL).toContain(name)
       expect(names.has(name), name).toBe(true)
+    }
+    // The screen prototype is retired: none of its tools is listed or named.
+    for (const retired of RETIRED_PROTOTYPE_TOOLS) {
+      expect(names.has(retired), retired).toBe(false)
+      expect(instructions, retired).not.toContain(retired)
     }
     // `add_draft_leaf` is an operation of the batch, not a tool of its own, so
     // the description has to teach it or nobody can reach it.
@@ -155,6 +163,49 @@ describe('createMcpServer', () => {
       expect(instructions).toContain(kept)
     for (const name of ['get_evolution', 'apply_evolution_batch'])
       expect(tools.find((t) => t.name === name)?.description, name).toContain(EVOLUTION_IS_OPTIONAL)
+  })
+
+  // Criterion 4cfd9e34: what Lyriks answers and what the client's code tools answer.
+  it('says what Lyriks answers and what the client\'s own code tools answer [criterion:4cfd9e34]', async () => {
+    const server = createMcpServer(makeClient())
+    const client = new Client({ name: 'code-tools-check', version: '0' })
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair()
+    await Promise.all([server.connect(serverSide), client.connect(clientSide)])
+    const instructions = client.getInstructions() ?? ''
+    const { tools } = await client.listTools()
+    await client.close()
+
+    expect(instructions).toContain(SPEC_AND_CODE_TOOLS)
+    for (const phrase of [
+      'Lyriks answers what the product must do, why, and where the code implements it',
+      'answer how the code is written',
+      'follows the places the read gives',
+      'tell the person instead of resolving it either way',
+      'A question about the code alone',
+      'without a Lyriks call',
+    ]) expect(SPEC_AND_CODE_TOOLS, phrase).toContain(phrase)
+    // The places it points at are what get_behavior_feature carries.
+    const read = tools.find((t) => t.name === 'get_behavior_feature')?.description ?? ''
+    for (const field of ['`code`', '`places`', '`notLocatedYet`', '`audits`', '`linked:false`', 'your own code tools'])
+      expect(read, field).toContain(field)
+  })
+
+  // Owner 2026-11-07: a live session opened at every use of the MCP was too much.
+  it('hands links to the app when a page serves better, and opens the live session with the link, not at every use [criterion:ac-leaf-ac-mcp-links-when-useful]', async () => {
+    const server = createMcpServer(makeClient())
+    const client = new Client({ name: 'links-check', version: '0' })
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair()
+    await Promise.all([server.connect(serverSide), client.connect(clientSide)])
+    const { tools } = await client.listTools()
+    await client.close()
+
+    const start = tools.find((t) => t.name === 'start_evolution_session')?.description ?? ''
+    expect(start).toContain('never merely because you use this MCP')
+    expect(start).toContain('whenever you hand the person a link to the app')
+    expect(start).not.toContain('at the first prompt of a conversation')
+    const batch = tools.find((t) => t.name === 'apply_evolution_batch')?.description ?? ''
+    expect(batch).toContain('whenever the page shows what your answer talks about better than the chat')
+    expect(batch).toContain('In the turn you hand a link, open the person\'s live session on the project first')
   })
 
   // Field agents asked for tools the graph already is; the recipes only name arguments it accepts.
@@ -254,14 +305,29 @@ describe('createMcpServer', () => {
       'delete_wizard_project',
       'list_domains',
       'create_domain',
-      'update_domain',
       'delete_domain',
       'assess_project_completeness',
-      'assess_portfolio_completeness',
       'audit_project_scope',
       'finish_project',
     ]) {
       expect(name in tools).toBe(true)
     }
+  })
+
+  it('registers no tool for what the interface does not offer (criterion 0aa782c2)', () => {
+    const server = createMcpServer(makeClient())
+    // @ts-expect-error accessing internal _registeredTools
+    const tools = server._registeredTools as Record<string, unknown>
+    for (const name of ['get_implementation_context', 'update_domain', 'get_project_elaboration', 'assess_portfolio_completeness'])
+      expect(name in tools, name).toBe(false)
+  })
+
+  it('names no page the interface no longer has (criterion 0aa782c2)', () => {
+    const server = createMcpServer(makeClient())
+    // @ts-expect-error accessing internal _registeredTools
+    const tools = server._registeredTools as Record<string, { description?: string }>
+    const retired = /Foundation (page|brief)|Control Center|graph explorer|Roadmap tab\b(?! of Evolutions)|Traceability|Rules tab|Users and permissions/
+    for (const [name, tool] of Object.entries(tools))
+      expect(tool.description ?? '', name).not.toMatch(retired)
   })
 })

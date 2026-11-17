@@ -1,5 +1,4 @@
 import { json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireAdmin } from '$lib/server/admin.server';
 import type { RequestHandler } from './$types';
 
@@ -16,6 +15,6 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async (event) => {
 	requireAdmin(event);
 	const force = event.url.searchParams.get('force') === '1';
-	const status = await getServices().checkForUpdate.execute(force);
+	const status = await event.locals.services.checkForUpdate.execute(force);
 	return json(status);
 };

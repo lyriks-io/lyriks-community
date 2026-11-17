@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
 	import type { ChipTone } from './Chip.svelte';
+	import { clickedWithin, floatInView } from './float-in-view';
 
 	type Option = string | { code: string; label: string };
 
@@ -27,6 +28,7 @@
 	let open = $state(false);
 	let search = $state('');
 	let root = $state<HTMLDivElement>();
+	let panel = $state<HTMLDivElement>();
 
 	const norm = $derived(
 		options.map((o) => (typeof o === 'string' ? { code: o, label: o } : o))
@@ -57,7 +59,7 @@
 		if (!open) search = '';
 	}
 	function onWindowClick(e: MouseEvent) {
-		if (open && root && !root.contains(e.target as Node)) {
+		if (open && !clickedWithin(e.target, root, panel)) {
 			open = false;
 			search = '';
 		}
@@ -83,16 +85,16 @@
 				toggle();
 			}
 		}}
-		class="flex min-h-10 w-full cursor-pointer flex-wrap items-center gap-1.5 rounded-field border bg-surface px-2 py-1.5 text-left transition-colors hover:border-line-strong {open
-			? 'border-brand-400'
-			: 'border-line'}"
+		class="flex min-h-12 w-full cursor-pointer flex-wrap items-center gap-1.5 border-[1.5px] bg-surface-sunken px-3.5 py-1.5 text-left text-sm transition-colors hover:border-ink {open
+			? 'border-blue'
+			: 'border-ink-3'}"
 	>
 		{#if values.length === 0}
-			<span class="px-1 text-xs text-ink-400">{placeholder}</span>
+			<span class="text-sm text-ink-3">{placeholder}</span>
 		{:else}
 			{#each values as v, i (v + i)}
 				<span
-					class="inline-flex items-center gap-1 rounded-pill bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-600"
+					class="inline-flex items-center gap-1 bg-ink px-2 py-0.5 text-xs font-medium text-paper"
 				>
 					{labelOf(v)}
 					<button
@@ -102,7 +104,7 @@
 							remove(i);
 						}}
 						aria-label="Remove"
-						class="-mr-0.5 leading-none text-brand-400 hover:text-danger-500"
+						class="-mr-0.5 leading-none text-toner-2 hover:text-red-on-ink"
 					>
 						<Icon name="x" size={12} />
 					</button>
@@ -112,14 +114,13 @@
 		<Icon
 			name="chevron-down"
 			size={14}
-			class="ml-auto shrink-0 text-ink-400 transition-transform {open ? 'rotate-180' : ''}"
+			class="ml-auto shrink-0 text-ink-3 transition-transform {open ? 'rotate-180' : ''}"
 		/>
 	</div>
 
+	<!-- Opens whole, inside the window, as wide as its field at least (criterion 5651ca29). -->
 	{#if open}
-		<div
-			class="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-card border border-line bg-surface shadow-card"
-		>
+		<div bind:this={panel} use:floatInView={{ anchor: root, matchWidth: true }} class="overflow-hidden border-[1.5px] border-ink bg-paper shadow-pop">
 			<input
 				use:autofocus
 				bind:value={search}
@@ -130,14 +131,14 @@
 						addCustom();
 					}
 				}}
-				class="w-full border-b border-line bg-surface-sunken px-3 py-2 text-xs text-ink-900 placeholder:text-ink-400 focus:outline-none"
+				class="w-full border-b border-line bg-surface-sunken px-3 py-2 text-xs text-ink placeholder:text-ink-3 focus:outline-none"
 			/>
 			<div class="max-h-60 overflow-y-auto">
 				{#each filtered as o (o.code)}
 					<button
 						type="button"
 						onclick={() => add(o.code)}
-						class="block w-full px-3 py-1.5 text-left text-xs text-ink-700 transition-colors hover:bg-surface-sunken"
+						class="block w-full px-3 py-1.5 text-left text-xs text-ink transition-colors hover:bg-surface-sunken"
 					>
 						{o.label}
 					</button>
@@ -146,12 +147,12 @@
 					<button
 						type="button"
 						onclick={addCustom}
-						class="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-xs text-brand-600 hover:bg-brand-50"
+						class="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-xs font-semibold text-blue-ink hover:bg-blue-tint"
 					>
 						<Icon name="plus" size={12} /> Add "{search.trim()}"
 					</button>
 				{:else if filtered.length === 0}
-					<div class="px-3 py-3 text-xs italic text-ink-400">No options.</div>
+					<div class="px-3 py-3 text-xs italic text-ink-3">No options.</div>
 				{/if}
 			</div>
 		</div>

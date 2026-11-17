@@ -1,5 +1,4 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import type { RequestHandler } from './$types';
 
@@ -33,8 +32,9 @@ export const GET: RequestHandler = async (event) => {
 		return n;
 	};
 
-	const services = getServices();
+	const services = event.locals.services;
 	const result = await services.verifyExperience.execute(projectId, {
+		language: await services.loadSpecLanguage.generated(projectId),
 		specGaps: {
 			severity: (severityRaw as 'critical' | 'recommended' | null) ?? undefined,
 			limit: intParam('gapLimit'),

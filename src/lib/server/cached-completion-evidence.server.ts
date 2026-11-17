@@ -1,5 +1,5 @@
 import type { ProjectModelRevisionPort } from '$application/ports';
-import type { CompletionEvidenceReader } from '$application/use-cases/project-completion';
+import type { CompletionEvidenceReader } from '$application/analysis/project-completion';
 import {
 	scopeContentFingerprint,
 	type CompletionEvidence,
@@ -10,11 +10,16 @@ import {
 const FRESH_MS = 10 * 60_000;
 
 /**
- * A reading taken while the engine was over budget is reused only briefly: long
- * enough to absorb a retry storm, short enough that the next real attempt gets a
- * real engine reading rather than a frozen provisional one.
+ * A reading taken while the engine was over budget is reused no longer than a
+ * complete one at first, so a passing load does not freeze a provisional reading.
+ *
+ * On a model too large for the budget every attempt ends the same way, and each
+ * one holds the single-threaded server for tens of seconds while people read:
+ * about 31 s on 280 features. So each provisional reading in a row on the same
+ * model doubles the wait.
  */
-const PROVISIONAL_MS = 45_000;
+const PROVISIONAL_MS = FRESH_MS;
+const PROVISIONAL_MAX_MS = 60 * 60_000;
 
 /** Projects held at once. Beyond this the least recently used entries are dropped. */
 const MAX_ENTRIES = 200;
@@ -24,6 +29,8 @@ interface Entry {
 	evidence: CompletionEvidence;
 	at: number;
 	provisional: boolean;
+	/** Provisional readings in a row on this same key. */
+	provisionalStreak: number;
 }
 
 /**
@@ -107,16 +114,20 @@ export class CachedCompletionEvidence implements CompletionEvidenceReader {
 	}
 
 	#expired(entry: Entry): boolean {
-		return this.now() - entry.at > (entry.provisional ? PROVISIONAL_MS : FRESH_MS);
+		const provisionalFor = Math.min(PROVISIONAL_MS * 2 ** (entry.provisionalStreak - 1), PROVISIONAL_MAX_MS);
+		return this.now() - entry.at > (entry.provisional ? provisionalFor : FRESH_MS);
 	}
 
 	#remember(projectId: string, key: string, evidence: CompletionEvidence): void {
+		const previous = this.#entries.get(projectId);
+		const provisional = evidence.provisional === true;
 		this.#entries.delete(projectId);
 		this.#entries.set(projectId, {
 			key,
 			evidence,
 			at: this.now(),
-			provisional: evidence.provisional === true
+			provisional,
+			provisionalStreak: provisional ? (previous?.key === key ? previous.provisionalStreak : 0) + 1 : 0
 		});
 		while (this.#entries.size > MAX_ENTRIES) {
 			const oldest = this.#entries.keys().next();

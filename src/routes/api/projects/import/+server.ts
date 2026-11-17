@@ -1,12 +1,13 @@
 import { error, json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { ownNewProject, resolveOwningWorkspace } from '$lib/server/new-project-ownership.server';
+import { requireProjectAccess } from '$lib/server/project-access.server';
 import {
 	currentRequestSession,
 	currentRequestToken,
 	runWithRequestContext
 } from '$lib/server/request-context.server';
 import { MAX_UPLOAD_BYTES, readUpload } from '$lib/server/import-upload.server';
+import { creationRefused, refusedCreation } from '$lib/server/project-creation-refusal.server';
 import type { RequestHandler } from './$types';
 
 /**
@@ -42,29 +43,43 @@ export const POST: RequestHandler = async (event) => {
 		error(413, `Bundle is larger than ${Math.floor(MAX_UPLOAD_BYTES / 1024 / 1024)} MB`);
 	}
 
-	const services = getServices();
-	const owningWorkspaceId = await resolveOwningWorkspace(locals, options.workspaceId);
-
-	const importOwned = async () => {
-		const result = await services.importProject.execute({ bytes, ...options.request });
-		if (!result.ok) error(400, result.error);
-		// Same ownership invariant as creation: auth-on, the importer must own the
-		// project from the moment it exists or per-project scope hides it from them.
-		await ownNewProject(locals, result.projectId, 'project.import');
-		await services.scheduleBackSync(result.projectId);
-		return result;
-	};
-
-	const result = owningWorkspaceId
-		? await runWithRequestContext(
-				{
+	const services = event.locals.services;
+	let owningWorkspaceId: string | null = null;
+	const imported = await refusedCreation(() => services.importProject.execute({ bytes, ...options.request }, {
+		withTarget: async ({ projectId, existing }, write) => {
+			if (existing) {
+				await requireProjectAccess(event, projectId, 'write');
+				const link = await services.backLinks.find(projectId);
+				owningWorkspaceId = link?.backWorkspaceId ?? null;
+				if (locals.authRequired && services.identity.multiUser && options.workspaceId &&
+					options.workspaceId !== owningWorkspaceId) {
+					error(403, 'A restore cannot move an existing project to another workspace.');
+				}
+			} else {
+				owningWorkspaceId = await resolveOwningWorkspace(services, locals, options.workspaceId);
+			}
+			const importOwned = async () => {
+				const imported = await write();
+				if (!imported.ok) return imported;
+				// An overwrite replaces content, never the existing team or owners.
+				// New ownership is established before another importer gets this lock.
+				if (!existing) await ownNewProject(services, locals, imported.projectId, 'project.import');
+				await services.scheduleBackSync(imported.projectId);
+				return imported;
+			};
+			return owningWorkspaceId
+				? runWithRequestContext({
 					token: currentRequestToken(),
 					workspaceId: owningWorkspaceId,
 					session: currentRequestSession() ?? { isAuthenticated: true }
-				},
-				importOwned
-			)
-		: await importOwned();
+				}, importOwned)
+				: importOwned();
+		}
+	}));
+	// A copy, or a restore of a project not held here, is one more project (EVO-001).
+	if ('refused' in imported) creationRefused(imported.refused);
+	const result = imported.created;
+	if (!result.ok) error(400, result.error);
 
 	services.audit.record({
 		action: 'project.import',

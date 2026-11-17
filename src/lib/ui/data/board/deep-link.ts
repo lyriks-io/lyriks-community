@@ -2,20 +2,19 @@ import type { ProjectDataDraft } from '$domain/data';
 import type { ProjectArchitectureDraft } from '$domain/architecture';
 import type { Selection } from './selection';
 
-/** The board's tabs. `graph` is the whole-project knowledge graph, folded in here;
- * `inventory` lists every data and whether the client experience surfaces it.
- * Behavior is NOT one of them: it lives on Features, next to the overview that
- * reflects it. */
-export type BoardView = 'map' | 'model' | 'inventory' | 'stack' | 'graph';
+/** The board's tabs. `map` is the Data map: the data model diagram drawn inside
+ * its databases and machines, carrying client visibility as a lens.
+ * `requirements` holds the technical requirements (where it must run, security,
+ * accessibility). `graph` is the whole-project knowledge graph, folded in here. Behavior is NOT one of
+ * them: it lives on Features, next to the overview that reflects it. */
+export type BoardView = 'map' | 'stack' | 'requirements' | 'graph';
 
-export function isBoardView(value: string | null): value is BoardView {
-	return (
-		value === 'map' ||
-		value === 'model' ||
-		value === 'inventory' ||
-		value === 'stack' ||
-		value === 'graph'
-	);
+/** The tab a `?tab=` value opens. The retired Data model and Data inventory
+ * tabs are now the Data map, so their old links still land on it. */
+export function toBoardView(value: string | null): BoardView | null {
+	if (value === 'map' || value === 'model' || value === 'inventory') return 'map';
+	if (value === 'stack' || value === 'requirements' || value === 'graph') return value;
+	return null;
 }
 
 /**

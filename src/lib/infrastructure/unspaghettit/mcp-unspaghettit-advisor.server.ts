@@ -1,4 +1,3 @@
-import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type {
 	AdvisorCallBudget,
 	BehaviorBatchResult,
@@ -16,13 +15,27 @@ import type {
 	QueueKind,
 	ScenarioReport,
 	ScenarioResult,
-	SimulateArgs,
-	SimulationResult,
+	EngineAnswer,
+	ProjectBehavior,
+	SimulateStepsArgs,
+	SimulateStepsResult,
+	WhatIfArgs,
+	WhatIfResult,
+	ProveProjectRulesArgs,
+	WhatIfProjectArgs,
 	SpecGap,
+	SpecProof,
+	SpecProofDeadlocks,
+	SpecProofFinding,
+	SpecProofStuckState,
+	SpecProofPath,
+	SpecProofReach,
 	UnreachedAction,
+	SolverStatus,
 	UnspaghettitAdvisorPort,
 	VerificationVerdict
 } from '$application/ports';
+import type { SpecLanguage } from '$domain/language';
 import type { UnspaFeatureSnapshot, UnspaProjectSnapshot } from '$lib/unspa-schema';
 import {
 	extractText,
@@ -32,6 +45,11 @@ import {
 	type UnspaEngineConfig
 } from './unspa-engine-client.server';
 import { parseCriteriaEvidence, parseProvenActions } from './parse-implementation-evidence';
+
+/** Proving a project's rules proves every feature that writes what they read. */
+const PROJECT_PROOF_TIMEOUT_MS = 600_000;
+/** The engine gives the rule checks 30 s; the call waits for that and a margin. */
+const RULES_PROOF_TIMEOUT_MS = 60_000;
 
 /**
  * What the advisor needs to reach the engine. Identical to the connection's own
@@ -114,6 +132,25 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 		return this.#engine.version();
 	}
 
+	/** Proof is an Enterprise capability: elsewhere no proof is asked and none is passed on. */
+	get #proofs(): boolean {
+		return this.#cfg.proofs === true;
+	}
+
+	async solverStatus(): Promise<SolverStatus | null> {
+		if (!this.#proofs) return null;
+		const parsed = (await this.#callJson('solver_status', {})) as Record<string, unknown> | null;
+		if (!parsed) return null;
+		const module = parsed.prover as { name?: unknown; version?: unknown } | undefined;
+		const prover =
+			module && typeof module.name === 'string'
+				? { prover: { name: module.name, version: typeof module.version === 'string' && module.version ? module.version : null } }
+				: {};
+		if (parsed.kind === 'native') return { kind: 'native', version: str(parsed.version), ...prover };
+		if (parsed.kind === 'wasm' || parsed.kind === 'none') return { kind: parsed.kind, reason: str(parsed.reason), ...prover };
+		return null;
+	}
+
 	async scoreFeature(featureId: string, budget?: AdvisorCallBudget): Promise<FeatureScore | null> {
 		const parsed = await this.#callJson('score_feature', { featureId }, budget);
 		if (!parsed) return null;
@@ -149,19 +186,7 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 	}
 
 	async getOperationsReference(): Promise<string | null> {
-		const client = await this.#getClient();
-		if (!client) return null;
-		try {
-			const resource = await client.readResource({ uri: 'unspa://operations' });
-			const text = resource.contents.find(
-				(content): content is Extract<(typeof resource.contents)[number], { text: string }> =>
-					'text' in content
-			)?.text;
-			return typeof text === 'string' ? text : null;
-		} catch (e) {
-			console.warn('[unspa-advisor] getOperationsReference failed:', this.#msg(e));
-			return null;
-		}
+		return this.#engine.readResourceText('unspa://operations');
 	}
 
 	async describeOperations(kind?: string): Promise<Readonly<Record<string, unknown>> | null> {
@@ -172,13 +197,8 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 	}
 
 	async findFeatureGaps(featureId: string): Promise<FeatureGap[]> {
-		const client = await this.#getClient();
-		if (!client) return [];
 		try {
-			const res = await client.callTool({
-				name: 'get_implementation_gaps',
-				arguments: { featureId }
-			});
+			const res = await this.#engine.callTool('get_implementation_gaps', { featureId });
 			const text = extractText(res);
 			if (!text) return [];
 			const parsed = safeJson(text);
@@ -260,13 +280,16 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 		};
 	}
 
-	async getDigest(featureId: string): Promise<FeatureDigest | null> {
-		const client = await this.#getClient();
-		if (!client) return null;
+	async getDigest(
+		featureId: string,
+		action?: { readonly surfaceId: string; readonly actionId: string }
+	): Promise<FeatureDigest | null> {
 		try {
-			const res = await client.callTool({
-				name: 'get_digest',
-				arguments: { featureId, detailLevel: 'full', format: 'markdown' }
+			const res = await this.#engine.callTool('get_digest', {
+				featureId,
+				...(action ? { surfaceId: action.surfaceId, actionId: action.actionId } : {}),
+				detailLevel: 'full',
+				format: 'markdown'
 			});
 			const text = extractText(res);
 			if (!text) return null;
@@ -347,10 +370,14 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 	async applyBehaviorBatch(
 		featureId: string,
 		operations: readonly Record<string, unknown>[],
-		opts?: { dryRun?: boolean; commit?: string; verbose?: boolean; expectedUpdatedAt?: string }
+		opts?: {
+			dryRun?: boolean;
+			commit?: string;
+			verbose?: boolean;
+			expectedUpdatedAt?: string;
+			mintedIds?: readonly string[];
+		}
 	): Promise<BehaviorBatchResult | null> {
-		const client = await this.#getClient();
-		if (!client) return null; // engine unreachable — distinct from a rejected batch
 		const commit = typeof opts?.commit === 'string' && opts.commit.length > 0 ? opts.commit : null;
 		// The commit path replays a cached, already-validated batch; the engine ignores
 		// dryRun there and reads the ops + feature from the token, so send neither.
@@ -364,12 +391,18 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 				? { expectedUpdatedAt: opts.expectedUpdatedAt }
 				: {};
 		try {
-			const res = await client.callTool({
-				name: 'apply_batch',
-				arguments: commit
+			const res = await this.#engine.callTool('apply_batch', commit
 					? { commit, ...version }
-					: { featureId, operations, dryRun, verbose, ...version }
-			});
+					: {
+							featureId,
+							operations,
+							dryRun,
+							verbose,
+							...version,
+							...(opts?.mintedIds && opts.mintedIds.length > 0 ? { mintedIds: opts.mintedIds } : {})
+						}
+			);
+			if (!res) return null; // transport failure has no known write outcome
 			const text = extractText(res);
 			const parsed = text ? safeJson(text) : null;
 			// A rejected batch comes back as an isError tool result (the engine's own
@@ -428,10 +461,7 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 	async #recycleIfPoisoned(featureId: string, commit: string | null): Promise<void> {
 		if (commit || !featureId) return; // commit replays a cached batch; nothing to probe
 		try {
-			const res = await this.#engine.connected?.callTool({
-				name: 'get_feature',
-				arguments: { featureId }
-			});
+			const res = await this.#engine.callTool('get_feature', { featureId });
 			const text = res ? extractText(res) : null;
 			const parsed = text ? safeJson(text) : null;
 			// EXACT id match only: the store resolves ids globally, so a fuzzy match to
@@ -451,13 +481,8 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 	}
 
 	async getFeatureSummary(featureId: string): Promise<FeatureSummary | null> {
-		const client = await this.#getClient();
-		if (!client) return null;
 		try {
-			const res = await client.callTool({
-				name: 'get_feature',
-				arguments: { featureId }
-			});
+			const res = await this.#engine.callTool('get_feature', { featureId });
 			const text = extractText(res);
 			if (!text) return null;
 			const parsed = safeJson(text);
@@ -502,13 +527,8 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 	}
 
 	async getFeatureBehavior(featureId: string): Promise<FeatureBehavior | null> {
-		const client = await this.#getClient();
-		if (!client) return null;
 		try {
-			const res = await client.callTool({
-				name: 'get_feature',
-				arguments: { featureId, verbose: true }
-			});
+			const res = await this.#engine.callTool('get_feature', { featureId, verbose: true });
 			const text = extractText(res);
 			if (!text) return null;
 			const parsed = safeJson(text);
@@ -550,13 +570,10 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 	}
 
 	async saveFeatureShell(snapshot: UnspaFeatureSnapshot): Promise<boolean> {
-		const client = await this.#getClient();
-		if (!client) return false;
 		try {
-			const res = await client.callTool({
-				name: 'save_feature',
-				arguments: { feature: snapshot.feature }
-			});
+			const res = await this.#engine.callTool('save_feature', { feature: snapshot.feature });
+			if (!res) return false;
+			if ((res as { isError?: boolean }).isError === true) return false;
 			const text = extractText(res);
 			if (text && /validation failed|error/i.test(text)) {
 				const parsed = safeJson(text) as { ok?: boolean } | null;
@@ -575,16 +592,13 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 	async replaceProject(
 		snapshot: UnspaProjectSnapshot
 	): Promise<'replaced' | 'not-found' | 'unavailable'> {
-		const client = await this.#getClient();
-		if (!client) return 'unavailable';
 		try {
-			const res = await client.callTool({
-				name: 'replace_project',
-				arguments: { project: snapshot.project }
-			});
+			const res = await this.#engine.callTool('replace_project', { project: snapshot.project });
+			if (!res) return 'unavailable';
 			const text = extractText(res);
+			if (text && /not found/i.test(text)) return 'not-found';
+			if ((res as { isError?: boolean }).isError === true) return 'unavailable';
 			if (!text) return 'replaced';
-			if (/not found/i.test(text)) return 'not-found';
 			const parsed = safeJson(text) as { ok?: boolean } | null;
 			if (parsed?.ok === true) return 'replaced';
 			console.warn(`[unspa-advisor] replace_project rejected: ${text.slice(0, 240)}`);
@@ -674,39 +688,176 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 			...(Array.isArray(r.unreachedActions)
 				? { unreachedActions: mapUnreachedActions(r.unreachedActions) }
 				: {}),
+			// Same rows, other meaning: never run at all, so never dead.
+			...(Array.isArray(r.skippedActions)
+				? { skippedActions: mapUnreachedActions(r.skippedActions) }
+				: {}),
 			deadlockStates: int(r.deadlockStates),
 			unreachableSurfaces: mapNamedSurfaces(reach.unreachableSurfaces),
 			terminalSurfaces: mapNamedSurfaces(reach.terminalSurfaces)
 		};
 	}
 
-	async simulateAction(args: SimulateArgs): Promise<SimulationResult | null> {
-		const parsed = await this.#callJson('dry_run_simulate', {
-			featureId: args.featureId,
-			surfaceId: args.surfaceId,
-			actionId: args.actionId,
-			...(args.snapshot ? { snapshot: args.snapshot } : {}),
-			...(args.parameters ? { parameters: args.parameters } : {})
-		});
-		if (!parsed) return null;
-		const r = parsed as Record<string, unknown>;
-		const status: 'success' | 'blocked' = r.status === 'blocked' ? 'blocked' : 'success';
-		const blockedReasons: string[] = [];
-		for (const e of asArray(r.parameterErrors)) {
-			const o = e as Record<string, unknown>;
-			const reason = [str(o.parameterName), str(o.reason)].filter(Boolean).join(': ');
-			if (reason) blockedReasons.push(reason);
-		}
-		for (const v of asArray(r.invariantViolations)) {
-			const name = str((v as Record<string, unknown>).invariantName);
-			if (name) blockedReasons.push(`invariant: ${name}`);
-		}
+	async applyProjectBatch(
+		projectId: string,
+		operations: readonly Record<string, unknown>[],
+		dryRun: boolean
+	): Promise<EngineAnswer | null> {
+		return this.#answer('apply_project_batch', { projectId, operations, dryRun }, { timeoutMs: 60_000 });
+	}
+
+	async readProjectBehavior(projectId: string): Promise<ProjectBehavior | null> {
+		const [project, states, library] = await Promise.all([
+			this.#answer('get_project', { projectId }),
+			this.#answer('list_state_variables', { projectId }),
+			this.#answer('list_project_library', { projectId })
+		]);
+		if (!project || project.kind === 'refused') return null;
+		const p = project.value as Record<string, unknown>;
+		const list = (v: unknown) =>
+			Array.isArray(v) ? (v as Readonly<Record<string, unknown>>[]) : [];
 		return {
-			status,
-			nextState: (r.nextState ?? {}) as Record<string, unknown>,
-			transition: typeof r.transition === 'string' ? r.transition : null,
-			blockedReasons
+			projectInvariants: list(p.projectInvariants),
+			coreFeatures: list(p.coreFeatures),
+			stateVariables: states?.kind === 'answer' ? states.value : {},
+			library: library?.kind === 'answer' ? library.value : {},
+			registeredStateIds: list(p.stateVariables).map((state) => String(state.id))
 		};
+	}
+
+	async findStateReferences(featureId: string, statePath: string): Promise<EngineAnswer | null> {
+		return this.#answer('find_state_references', { featureId, statePath });
+	}
+
+	async generateTypesSource(featureId: string): Promise<EngineAnswer | null> {
+		return this.#answer('generate_types', { featureId });
+	}
+
+	async promoteToProjectLibrary(input: {
+		expectedProjectId: string;
+		featureId: string;
+		definitionKind: 'entity' | 'resource' | 'persona';
+		id: string;
+		dedupe?: boolean;
+	}): Promise<EngineAnswer | null> {
+		return this.#answer('promote_to_project_library', {
+			expectedProjectId: input.expectedProjectId,
+			featureId: input.featureId,
+			kind: input.definitionKind,
+			id: input.id,
+			...(input.dedupe === false ? { dedupe: false } : {})
+		});
+	}
+
+	/** An engine tool's answer as it came, its refusal kept as a sentence; null when unreachable. */
+	async #answer(
+		name: string,
+		args: Record<string, unknown>,
+		budget?: AdvisorCallBudget
+	): Promise<EngineAnswer | null> {
+		const answer = await this.#engine.callJsonOrError(
+			name,
+			args,
+			budget ? { timeoutMs: budget.timeoutMs } : undefined
+		);
+		if (!answer) return null;
+		if (!answer.ok) return { kind: 'refused', error: answer.error };
+		return answer.value && typeof answer.value === 'object'
+			? { kind: 'answer', value: answer.value as Readonly<Record<string, unknown>> }
+			: { kind: 'refused', error: `${name} answered nothing readable` };
+	}
+
+	/**
+	 * A whole project's rules take the proofs of every feature that writes what
+	 * they read: minutes on a large project, hence a budget of its own.
+	 */
+	async proveProjectRules(
+		args: ProveProjectRulesArgs,
+		budget?: AdvisorCallBudget
+	): Promise<EngineAnswer | null> {
+		if (!this.#proofs) return null;
+		return this.#answer(
+			'prove_project_invariants',
+			{
+				projectId: args.projectId,
+				...(args.invariantIds && args.invariantIds.length > 0 ? { invariantIds: args.invariantIds } : {}),
+				...(args.maxSteps !== undefined ? { maxSteps: args.maxSteps } : {}),
+				...(args.language ? { language: args.language } : {}),
+				...(args.quick ? { quick: true } : {})
+			},
+			{ timeoutMs: budget?.timeoutMs ?? PROJECT_PROOF_TIMEOUT_MS }
+		);
+	}
+
+	async whatIfProject(args: WhatIfProjectArgs, budget?: AdvisorCallBudget): Promise<EngineAnswer | null> {
+		if (!this.#proofs) return null;
+		return this.#answer(
+			'what_if_project',
+			{
+				projectId: args.projectId,
+				operations: args.operations,
+				...(args.maxSteps !== undefined ? { maxSteps: args.maxSteps } : {}),
+				...(args.language ? { language: args.language } : {})
+			},
+			{ timeoutMs: budget?.timeoutMs ?? PROJECT_PROOF_TIMEOUT_MS }
+		);
+	}
+
+	async whatIf(args: WhatIfArgs, budget?: AdvisorCallBudget): Promise<WhatIfResult | null> {
+		if (!this.#proofs) return null;
+		const answer = await this.#engine.callJsonOrError(
+			'what_if',
+			{
+				featureId: args.featureId,
+				operations: args.operations,
+				...(args.mintedIds && args.mintedIds.length > 0 ? { mintedIds: args.mintedIds } : {}),
+				...(args.blank ? { blank: true } : {}),
+				...(args.projectId ? { projectId: args.projectId } : {}),
+				...(args.maxSteps !== undefined ? { maxSteps: args.maxSteps } : {})
+			},
+			budget ? { timeoutMs: budget.timeoutMs } : undefined
+		);
+		if (!answer) return null;
+		if (!answer.ok) return { kind: 'refused', error: answer.error };
+		const value = answer.value as Record<string, unknown> | null;
+		if (!value || typeof value !== 'object') return { kind: 'refused', error: 'what_if answered nothing readable' };
+		// A change that does not validate answers its errors, not a comparison.
+		if (value.ok === false) {
+			const errors = Array.isArray(value.errors) ? value.errors.map(String) : [];
+			return { kind: 'refused', error: errors.join('; ') || 'the change does not validate' };
+		}
+		return { kind: 'comparison', comparison: value };
+	}
+
+	async simulateSteps(
+		args: SimulateStepsArgs,
+		budget?: AdvisorCallBudget
+	): Promise<SimulateStepsResult | null> {
+		const answer = await this.#engine.callJsonOrError(
+			'simulate_steps',
+			{
+				...(args.featureId ? { featureId: args.featureId } : {}),
+				...(args.blank ? { blank: true } : {}),
+				...(args.operations && args.operations.length > 0 ? { operations: args.operations } : {}),
+				...(args.mintedIds && args.mintedIds.length > 0 ? { mintedIds: args.mintedIds } : {}),
+				...(args.newOperationsFrom !== undefined ? { newOperationsFrom: args.newOperationsFrom } : {}),
+				...(args.steps && args.steps.length > 0 ? { steps: args.steps } : {}),
+				...(args.snapshot ? { snapshot: args.snapshot } : {}),
+				...(args.personaId ? { personaId: args.personaId } : {}),
+				...(args.stopOnBlocked ? { stopOnBlocked: true } : {}),
+				...(args.runScenarios ? { runScenarios: true } : {}),
+				...(args.modelCheck ? { modelCheck: args.modelCheck } : {}),
+				...(args.includeFeature ? { includeFeature: true } : {}),
+				...(args.projectId ? { projectId: args.projectId } : {})
+			},
+			budget ? { timeoutMs: budget.timeoutMs } : undefined
+		);
+		if (!answer) return null;
+		if (!answer.ok) return { kind: 'refused', error: answer.error };
+		const walk = answer.value;
+		return walk && typeof walk === 'object'
+			? { kind: 'walk', walk: walk as Readonly<Record<string, unknown>> }
+			: { kind: 'refused', error: 'simulate_steps answered nothing readable' };
 	}
 
 	async verify(
@@ -727,10 +878,18 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 		const summary = (r.summary ?? {}) as Record<string, unknown>;
 		const features = asArray(r.features).map((f) => {
 			const o = (f ?? {}) as Record<string, unknown>;
+			const invariants = asArray(o.checks)
+				.map((c) => (c ?? {}) as Record<string, unknown>)
+				.find((c) => c.id === 'invariants');
 			return {
 				featureId: str(o.featureId),
 				featureName: str(o.featureName),
-				passed: o.passed === true
+				passed: o.passed === true,
+				...(invariants && Array.isArray(invariants.traces)
+					? { brokenStatements: mapBrokenStatements(invariants.traces) }
+					: invariants?.status === 'pass'
+						? { brokenStatements: [] }
+						: {})
 			};
 		});
 		return {
@@ -741,28 +900,44 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 			scenariosRun: int(summary.scenariosRun),
 			scenariosFailed: int(summary.scenariosFailed),
 			invariantViolations: int(summary.invariantViolations),
-			features
+			features,
+			...(this.#proofs && summary.proof && typeof summary.proof === 'object' ? { solverCounted: true } : {})
 		};
 	}
 
-	async getSpecGaps(featureId: string, budget?: AdvisorCallBudget): Promise<SpecGap[]> {
-		const parsed = await this.#callJson('get_spec_gaps', { featureId }, budget);
-		if (!parsed) return [];
-		const gaps = asArray((parsed as Record<string, unknown>).gaps);
-		return gaps.map((g) => {
-			const o = (g ?? {}) as Record<string, unknown>;
-			return {
-				severity: o.severity === 'critical' ? 'critical' : 'recommended',
-				entityType:
-					o.entityType === 'feature' || o.entityType === 'surface' || o.entityType === 'criterion'
-						? o.entityType
-						: 'action',
-				entityId: str(o.entityId),
-				entityName: str(o.entityName) || '<unnamed>',
-				reason: str(o.reason),
-				suggestedFix: str(o.suggestedFix)
-			};
+	async proveFeatureRules(
+		featureId: string,
+		budget?: AdvisorCallBudget,
+		language: SpecLanguage = 'en'
+	): Promise<SpecProof | null> {
+		if (!this.#proofs) return null;
+		const args = language === 'en' ? { featureId } : { featureId, language };
+		const parsed = await this.#callJson('prove_feature_rules', args, {
+			timeoutMs: budget?.timeoutMs ?? RULES_PROOF_TIMEOUT_MS
 		});
+		return parsed ? mapSpecProof(parsed) : null;
+	}
+
+	async getSpecGaps(featureId: string, budget?: AdvisorCallBudget): Promise<SpecGap[]> {
+		return (await this.getSpecGapsAndProof(featureId, budget)).gaps;
+	}
+
+	async getSpecGapsAndProof(
+		featureId: string,
+		budget?: AdvisorCallBudget,
+		language: SpecLanguage = 'en',
+		options?: { readonly complete?: boolean }
+	): Promise<{ gaps: SpecGap[]; proof: SpecProof | null }> {
+		// English is the engine's default: only another language is asked for.
+		const args = {
+			featureId,
+			...(language === 'en' ? {} : { language }),
+			...(options?.complete ? { complete: true } : {})
+		};
+		const parsed = await this.#callJson('get_spec_gaps', args, budget);
+		if (!parsed) return { gaps: [], proof: null };
+		const r = parsed as Record<string, unknown>;
+		return { gaps: mapSpecGaps(r.gaps), proof: this.#proofs ? mapSpecProof(r.proof) : null };
 	}
 
 	async getDrift(featureId?: string): Promise<DriftReport | null> {
@@ -826,10 +1001,6 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 		budget?: AdvisorCallBudget
 	): Promise<unknown | null> {
 		return this.#engine.callJson(name, args, budget ? { timeoutMs: budget.timeoutMs } : undefined);
-	}
-
-	async #getClient(): Promise<Client | null> {
-		return this.#engine.client();
 	}
 
 	#msg(e: unknown): string {
@@ -949,7 +1120,222 @@ function mapScenarioResult(raw: unknown): ScenarioResult {
 	};
 }
 
+/** The `traces` of verify's invariants check: one row per statement and breaking action. */
+function mapBrokenStatements(traces: unknown[]): { name: string; path: string[] }[] {
+	return traces
+		.map((t) => {
+			const o = (t ?? {}) as Record<string, unknown>;
+			return {
+				name: str(o.label),
+				path: Array.isArray(o.path) ? o.path.map((p) => str(p)).filter(Boolean) : []
+			};
+		})
+		.filter((t) => t.name.length > 0);
+}
+
 /** Rows the engine could not name are dropped: an anonymous "not reached" helps nobody. */
+function mapSpecGaps(v: unknown): SpecGap[] {
+	return asArray(v).map((g) => {
+		const o = (g ?? {}) as Record<string, unknown>;
+		return {
+			severity: o.severity === 'critical' ? 'critical' : 'recommended',
+			entityType:
+				o.entityType === 'feature' || o.entityType === 'surface' || o.entityType === 'criterion'
+					? o.entityType
+					: 'action',
+			entityId: str(o.entityId),
+			entityName: str(o.entityName) || '<unnamed>',
+			reason: str(o.reason),
+			suggestedFix: str(o.suggestedFix),
+			// An older engine sends no code: the platform then reads the English text.
+			code: str(o.code),
+			...(str(o.subjectId) ? { subjectId: str(o.subjectId) } : {})
+		};
+	});
+}
+
+const REACH_OUTCOMES: readonly SpecProofReach['outcome'][] = [
+	'reached',
+	'none-within-bound',
+	'unsettled',
+	'unsupported'
+];
+
+const PATH_OUTCOMES: readonly SpecProofPath['outcome'][] = [
+	'violated',
+	'none-within-bound',
+	'unsettled',
+	'unsupported'
+];
+
+/**
+ * The solver's answer as the engine sent it, or null when it sent none (an
+ * older engine). A missing proof stays null: an empty one would read as clean.
+ */
+function mapSpecProof(v: unknown): SpecProof | null {
+	if (!v || typeof v !== 'object') return null;
+	const o = v as Record<string, unknown>;
+	const paths = (o.paths ?? null) as Record<string, unknown> | null;
+	const actions = (o.actions ?? null) as Record<string, unknown> | null;
+	const goals = (o.goals ?? null) as Record<string, unknown> | null;
+	return {
+		solver: o.solver === 'ran' ? 'ran' : 'unavailable',
+		questions: int(o.questions),
+		unsettled: int(o.unsettled),
+		...(str(o.reason) ? { reason: str(o.reason) } : {}),
+		...(str(o.interrupted) ? { interrupted: str(o.interrupted) } : {}),
+		...(typeof o.moreToCome === 'boolean' ? { moreToCome: o.moreToCome } : {}),
+		...(Array.isArray(o.rulesSettled) ? { rulesSettled: o.rulesSettled.map(String) } : {}),
+		...(paths
+			? {
+					paths: {
+						maxSteps: int(paths.maxSteps),
+						results: asArray(paths.results).flatMap((row) => {
+							const p = (row ?? {}) as Record<string, unknown>;
+							const outcome = PATH_OUTCOMES.find((known) => known === p.outcome);
+							if (!outcome) return [];
+							return [
+								{
+									invariantId: str(p.invariantId),
+									invariantName: str(p.invariantName) || str(p.invariantId),
+									outcome,
+									...(typeof p.steps === 'number' ? { steps: p.steps } : {}),
+									...(str(p.reason) ? { reason: str(p.reason) } : {})
+								}
+							];
+						})
+					}
+				}
+			: {}),
+		...(actions
+			? {
+					actions: {
+						maxSteps: int(actions.maxSteps),
+						results: asArray(actions.results).flatMap((row) => {
+							const a = (row ?? {}) as Record<string, unknown>;
+							const outcome = REACH_OUTCOMES.find((known) => known === a.outcome);
+							if (!outcome) return [];
+							return [
+								{
+									actionId: str(a.actionId),
+									actionName: str(a.actionName) || str(a.actionId),
+									outcome,
+									...(typeof a.steps === 'number' ? { steps: a.steps } : {}),
+									...(str(a.reason) ? { reason: str(a.reason) } : {})
+								}
+							];
+						})
+					}
+				}
+			: {}),
+		...(goals
+			? {
+					goals: {
+						maxSteps: int(goals.maxSteps),
+						results: asArray(goals.results).flatMap((row) => {
+							const g = (row ?? {}) as Record<string, unknown>;
+							const outcome = REACH_OUTCOMES.find((known) => known === g.outcome);
+							if (!outcome) return [];
+							return [
+								{
+									goalId: str(g.goalId),
+									goalName: str(g.goalName) || str(g.goalId),
+									outcome,
+									...(typeof g.steps === 'number' ? { steps: g.steps } : {}),
+									...(str(g.reason) ? { reason: str(g.reason) } : {})
+								}
+							];
+						})
+					}
+				}
+			: {}),
+		...mapDeadlocks(o.deadlocks),
+		...mapFindings(o.findings),
+		leads: asArray(o.leads).map((row) => {
+			const l = (row ?? {}) as Record<string, unknown>;
+			return {
+				actionId: str(l.actionId),
+				actionName: str(l.actionName),
+				invariantId: str(l.invariantId),
+				invariantName: str(l.invariantName),
+				situation: str(l.situation),
+				pathSearch: str(l.pathSearch)
+			};
+		})
+	};
+}
+
+const DEADLOCK_OUTCOMES = ['found', 'none-within-bound', 'unsettled', 'unsupported'] as const;
+
+function mapFindings(v: unknown): { findings?: SpecProofFinding[] } {
+	if (!Array.isArray(v)) return {};
+	const optional = (o: Record<string, unknown>, key: string) => (str(o[key]) ? { [key]: str(o[key]) } : {});
+	return {
+		findings: v.flatMap((row) => {
+			const o = (row ?? {}) as Record<string, unknown>;
+			if (!str(o.kind)) return [];
+			const path = Array.isArray(o.path)
+				? o.path.map((step) => {
+						const s = (step ?? {}) as Record<string, unknown>;
+						return {
+							actionId: str(s.actionId),
+							actionName: str(s.actionName),
+							surfaceId: str(s.surfaceId),
+							...(str(s.featureName) ? { featureName: str(s.featureName) } : {}),
+							parameters: (s.parameters && typeof s.parameters === 'object' ? s.parameters : {}) as Record<string, unknown>
+						};
+					})
+				: undefined;
+			return [
+				{
+					kind: str(o.kind),
+					severity: o.severity === 'critical' ? ('critical' as const) : ('recommended' as const),
+					detail: str(o.detail),
+					...optional(o, 'surfaceName'),
+					...optional(o, 'actionId'),
+					...optional(o, 'actionName'),
+					...optional(o, 'ruleId'),
+					...optional(o, 'invariantId'),
+					...optional(o, 'invariantName'),
+					...optional(o, 'goalId'),
+					...optional(o, 'goalName'),
+					...(path ? { path } : {}),
+					...mapStuck(o.stuck)
+				}
+			];
+		})
+	};
+}
+
+/** The states that hold a target back, as the engine names them (criterion 39ea86c2). */
+function mapStuck(v: unknown): { stuck?: SpecProofStuckState[] } {
+	if (!Array.isArray(v)) return {};
+	const stuck = v.flatMap((row) => {
+		const s = (row ?? {}) as Record<string, unknown>;
+		if (!str(s.path)) return [];
+		const changedBy = Array.isArray(s.changedBy) ? s.changedBy.filter((name): name is string => typeof name === 'string') : [];
+		return [{ path: str(s.path), startsAt: s.startsAt ?? null, changedBy }];
+	});
+	return stuck.length > 0 ? { stuck } : {};
+}
+
+function mapDeadlocks(v: unknown): { deadlocks?: SpecProofDeadlocks } {
+	if (!v || typeof v !== 'object') return {};
+	const o = v as Record<string, unknown>;
+	const outcome = DEADLOCK_OUTCOMES.find((known) => known === o.outcome);
+	if (!outcome) return {};
+	const path = asArray(o.path).map((step) => str(((step ?? {}) as Record<string, unknown>).actionName));
+	return {
+		deadlocks: {
+			maxSteps: int(o.maxSteps),
+			outcome,
+			...(typeof o.steps === 'number' ? { steps: o.steps } : {}),
+			...(path.length > 0 ? { path } : {}),
+			...(str(o.reason) ? { reason: str(o.reason) } : {})
+		}
+	};
+}
+
 function mapUnreachedActions(rows: readonly unknown[]): UnreachedAction[] {
 	return rows.flatMap((row) => {
 		const o = (row ?? {}) as Record<string, unknown>;

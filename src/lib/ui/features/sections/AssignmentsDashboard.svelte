@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Icon } from '$ui/design-system';
-	import type { Collaborator } from '$domain/team/team';
-	import type { FeatureActionIndex } from '$application/index-feature-actions';
+	import type { Collaborator } from '$domain/team';
+	import type { FeatureActionIndex } from '$application/specification/index-feature-actions';
 	import { colorTokens, disciplineLabel, initials } from '$ui/team/team-style';
 	import { assignedItemsFor } from '../assigned-items';
 	import type { FeaturesStore } from '../draft-store.svelte';
@@ -47,11 +47,11 @@
 <div class="grid gap-4 @3xl:grid-cols-[16rem_1fr]">
 	<!-- ── Team roster: click a person to view their queue ─────────────── -->
 	<aside class="space-y-2">
-		<p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
+		<p class="text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-ink-400">
 			Team · {collaborators.length}
 		</p>
 		{#if collaborators.length === 0}
-			<p class="rounded-card border border-dashed border-line bg-surface px-3 py-4 text-[12px] text-ink-400">
+			<p class="rounded-card border border-dashed border-line bg-surface px-3 py-4 text-[0.75rem] text-ink-400">
 				No collaborator yet.
 			</p>
 		{:else}
@@ -66,20 +66,20 @@
 							: 'border-line bg-surface hover:bg-surface-sunken'}"
 					>
 						<span
-							class="grid size-8 shrink-0 place-items-center rounded-full text-[11px] font-bold text-white"
+							class="grid size-8 shrink-0 place-items-center text-[0.6875rem] font-bold text-white"
 							style="background:{colorTokens(c.color).solid}"
 						>
 							{initials(c.name || c.email)}
 						</span>
 						<span class="min-w-0 flex-1">
-							<span class="block truncate text-[13px] font-semibold text-ink-900">
+							<span class="block truncate text-[0.8125rem] font-semibold text-ink-900">
 								{c.name || c.email}
 							</span>
-							<span class="block text-[10px] font-medium uppercase tracking-wide text-ink-400">
+							<span class="block text-[0.625rem] font-medium uppercase tracking-wide text-ink-400">
 								{roleTitle(c)}
 							</span>
 						</span>
-						<span class="shrink-0 rounded-pill bg-surface-sunken px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-ink-600">
+						<span class="shrink-0 rounded-pill bg-surface-sunken px-1.5 py-0.5 text-[0.6875rem] font-semibold tabular-nums text-ink-600">
 							{countFor(c.id)}
 						</span>
 					</button>
@@ -95,14 +95,14 @@
 				<div class="flex items-center gap-3">
 					{#if selected}
 						<span
-							class="grid size-10 shrink-0 place-items-center rounded-full text-sm font-bold text-white"
+							class="grid size-10 shrink-0 place-items-center text-sm font-bold text-white"
 							style="background:{colorTokens(selected.color).solid}"
 						>
 							{initials(selected.name || selected.email)}
 						</span>
 						<div>
 							<p class="text-sm font-bold text-ink-900">{selected.name || selected.email}</p>
-							<p class="text-[11px] font-medium uppercase tracking-wide text-ink-400">
+							<p class="text-[0.6875rem] font-medium uppercase tracking-wide text-ink-400">
 								{roleTitle(selected)} · {myFeatures.length} feature{myFeatures.length === 1 ? '' : 's'} · {myActions.length}
 								action{myActions.length === 1 ? '' : 's'}
 							</p>
@@ -112,12 +112,12 @@
 					{/if}
 				</div>
 				<!-- Viewing-as selector (mirrors the roster, handy on narrow layouts) -->
-				<label class="flex items-center gap-1.5 text-[11px] text-ink-400">
+				<label class="flex items-center gap-1.5 text-[0.6875rem] text-ink-400">
 					Viewing as
 					<select
 						value={selectedId ?? ''}
 						onchange={(e) => (picked = e.currentTarget.value || null)}
-						class="rounded-field border border-line bg-surface px-2 py-1 text-[12px] font-medium text-ink-800 outline-none focus:border-brand-300"
+						class="rounded-field border border-line bg-surface px-2 py-1 text-[0.75rem] font-medium text-ink-800 outline-none focus:border-brand-300"
 					>
 						{#each collaborators as c (c.id)}
 							<option value={c.id}>{c.name || c.email} · {roleTitle(c)}</option>
@@ -136,7 +136,7 @@
 		{:else}
 			{#if myFeatures.length > 0}
 				<div>
-					<p class="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
+					<p class="mb-1.5 flex items-center gap-1.5 text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-ink-400">
 						<Icon name="grid" size={12} class="text-brand-500" /> Features · {myFeatures.length}
 					</p>
 					<div class="space-y-1">
@@ -150,9 +150,9 @@
 								class="flex w-full items-center gap-2 rounded-field border border-line bg-surface px-3 py-2 text-left hover:bg-surface-sunken"
 							>
 								<Icon name="grid" size={13} class="shrink-0 text-brand-500" />
-								<span class="min-w-0 flex-1 truncate text-[13px] font-medium text-ink-800">{a.name}</span>
+								<span class="min-w-0 flex-1 truncate text-[0.8125rem] font-medium text-ink-800">{a.name}</span>
 								<span
-									class="shrink-0 rounded-pill px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide {a.relation ===
+									class="shrink-0 rounded-pill px-1.5 py-0.5 text-[0.5625rem] font-semibold uppercase tracking-wide {a.relation ===
 									'Owner'
 										? 'bg-brand-50 text-brand-600'
 										: 'bg-surface-sunken text-ink-500'}"
@@ -160,7 +160,7 @@
 									{a.relation}
 								</span>
 								{#if a.core}
-									<span class="shrink-0 rounded-pill bg-surface-sunken px-1.5 py-0.5 text-[10px] font-medium text-ink-500">
+									<span class="shrink-0 rounded-pill bg-surface-sunken px-1.5 py-0.5 text-[0.625rem] font-medium text-ink-500">
 										{a.core}
 									</span>
 								{/if}
@@ -173,7 +173,7 @@
 
 			{#if myActions.length > 0}
 				<div>
-					<p class="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
+					<p class="mb-1.5 flex items-center gap-1.5 text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-ink-400">
 						<Icon name="cpu" size={12} class="text-brand-500" /> Actions · {myActions.length}
 					</p>
 					<div class="space-y-1">
@@ -187,12 +187,12 @@
 								class="flex w-full items-center gap-2 rounded-field border border-line bg-surface px-3 py-2 text-left hover:bg-surface-sunken"
 							>
 								<Icon name="cpu" size={12} class="shrink-0 text-ink-400" />
-								<span class="min-w-0 flex-1 truncate text-[13px] text-ink-700">
+								<span class="min-w-0 flex-1 truncate text-[0.8125rem] text-ink-700">
 									{a.name}
-									<span class="ml-1 text-[11px] text-ink-400">· {featureName(a.featureId)}</span>
+									<span class="ml-1 text-[0.6875rem] text-ink-400">· {featureName(a.featureId)}</span>
 								</span>
 								<span
-									class="shrink-0 rounded-pill px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide {a.relation ===
+									class="shrink-0 rounded-pill px-1.5 py-0.5 text-[0.5625rem] font-semibold uppercase tracking-wide {a.relation ===
 									'Owner'
 										? 'bg-brand-50 text-brand-600'
 										: 'bg-surface-sunken text-ink-500'}"

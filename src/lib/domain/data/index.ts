@@ -4,4 +4,5 @@ export * from './coherence';
 export * from './can-advance';
 export * from './schema-render';
 export * from './mermaid';
-export * from './events';
+export * from './data-rules';
+export * from './map-placements';

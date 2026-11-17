@@ -1,3 +1,4 @@
+import type { AppServices } from '$composition/container.server';
 import { fail, redirect, type Actions } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 // PUBLIC_-prefixed variables live ONLY in the public store; $env/dynamic/private
@@ -6,9 +7,9 @@ import { env } from '$env/dynamic/private';
 import { env as publicEnv } from '$env/dynamic/public';
 import { loginRateLimiter } from '$lib/server/rate-limit.server';
 import { setSessionCookie } from '$lib/server/session-cookie.server';
-import { getServices } from '$composition/container.server';
-import { postLoginRedirect } from '$domain/auth/post-login-redirect';
-import { licenseEmailMatches } from '$domain/licensing';
+import { postLoginRedirect } from '$domain/auth';
+import { communityRegistration, communitySignIn, licenseEmailMatches } from '$domain/licensing';
+import { installHolders } from '$lib/server/admin.server';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -23,13 +24,13 @@ const signupAllowed = () => env.LYRIKS_ALLOW_SIGNUP === '1';
  * exists: the one-time bootstrap lock). The identity source decides how to
  * answer when it cannot be reached (fail-open here, fail-closed below).
  */
-function registrationOpen(): Promise<boolean> {
-	return getServices().identity.registrationOpen();
+function registrationOpen(services: AppServices): Promise<boolean> {
+	return services.identity.registrationOpen();
 }
 
 /** Whether the identity source ANSWERS that no account exists yet (fail-closed). */
-function installUnclaimed(): Promise<boolean> {
-	return getServices().identity.installUnclaimed();
+function installUnclaimed(services: AppServices): Promise<boolean> {
+	return services.identity.installUnclaimed();
 }
 
 /**
@@ -46,9 +47,9 @@ function safeRedirect(url: URL): string {
  * "not an invitation" for every link.
  */
 async function invitationBehind(
-	redirectTo: string
+	services: AppServices, redirectTo: string
 ): Promise<{ token: string | null; invitation: { email: string; workspaceName: string | null } | null }> {
-	const hooks = getServices().enterpriseHooks;
+	const hooks = services.enterpriseHooks;
 	return hooks ? hooks.invitationBehind(redirectTo) : { token: null, invitation: null };
 }
 
@@ -62,19 +63,19 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	// invitee on a sign-in form they cannot pass. The back still enforces it
 	// (register-via-invite checks the pending invitation for that address).
 	const redirectTo = safeRedirect(url);
-	const { token: inviteToken, invitation } = await invitationBehind(redirectTo);
+	const { token: inviteToken, invitation } = await invitationBehind(locals.services, redirectTo);
 	const invitedToJoin = inviteToken !== null;
 	const viaInvite = invitation !== null;
-	const allowSignup = viaInvite || (signupAllowed() && (await registrationOpen()));
+	const allowSignup = viaInvite || (signupAllowed() && (await registrationOpen(locals.services)));
 	// First run: the appliance installs with NO account and NO credentials, so the
 	// very first visitor claims it here, with the licence key as the credential.
 	// All three conditions matter. Auth off is a dev boot with an implicit
 	// session; an existing account closes the window for good; and without
 	// enforcement there is no key to prove anything with, which would leave a
 	// bare "create the admin account" form on an open port.
-	const services = getServices();
+	const services = locals.services;
 	const firstRun =
-		locals.authRequired && services.licenseRequired() && (await installUnclaimed());
+		locals.authRequired && services.licenseRequired() && (await installUnclaimed(services));
 	return {
 		authConfigured: services.identity.configured,
 		authRequired: locals.authRequired,
@@ -96,18 +97,18 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 };
 
 /** Sign in against the identity source: the session token, or the refusal. */
-function signIn(email: string, password: string): Promise<{ token: string } | { error: string }> {
-	return getServices().identity.login(email, password);
+function signIn(services: AppServices, email: string, password: string): Promise<{ token: string } | { error: string }> {
+	return services.identity.login(email, password);
 }
 
 /** Create an account at the identity source: the session token, or the refusal. */
-function signUp(input: {
+function signUp(services: AppServices, input: {
 	email: string;
 	password: string;
 	firstName?: string;
 	lastName?: string;
 }): Promise<{ token: string } | { error: string }> {
-	return getServices().identity.register(input);
+	return services.identity.register(input);
 }
 
 /** Why a key was refused at first run, in the words of someone holding it. */
@@ -149,8 +150,8 @@ export const actions: Actions = {
 		// the password step needs.
 		const limited = rateLimited(getClientAddress, 'firstRun');
 		if (limited) return limited;
-		const services = getServices();
-		if (!locals.authRequired || !services.licenseRequired() || !(await installUnclaimed())) {
+		const services = locals.services;
+		if (!locals.authRequired || !services.licenseRequired() || !(await installUnclaimed(services))) {
 			return fail(403, { mode: 'firstRun', message: 'This installation is already claimed.' });
 		}
 		const form = await request.formData();
@@ -188,8 +189,8 @@ export const actions: Actions = {
 	firstRunCreate: async ({ request, cookies, getClientAddress, url, locals }) => {
 		const limited = rateLimited(getClientAddress, 'register');
 		if (limited) return limited;
-		const services = getServices();
-		if (!locals.authRequired || !services.licenseRequired() || !(await installUnclaimed())) {
+		const services = locals.services;
+		if (!locals.authRequired || !services.licenseRequired() || !(await installUnclaimed(services))) {
 			return fail(403, { mode: 'firstRun', message: 'This installation is already claimed.' });
 		}
 		const form = await request.formData();
@@ -221,12 +222,12 @@ export const actions: Actions = {
 		await services.seedActivationDefaults.execute(activation.view.entitlements);
 		await services.syncBackLicence.execute(true);
 
-		const result = await signUp({ email, password });
+		const result = await signUp(services, { email, password });
 		if ('error' in result) {
-			getServices().audit.record({ action: 'auth.register', actor: email, outcome: 'failure', detail: result.error });
+			locals.services.audit.record({ action: 'auth.register', actor: email, outcome: 'failure', detail: result.error });
 			return fail(400, { mode: 'firstRun', step: 'password' as const, email, key, message: result.error });
 		}
-		getServices().audit.record({ action: 'auth.register', actor: email, outcome: 'success', detail: 'first run' });
+		locals.services.audit.record({ action: 'auth.register', actor: email, outcome: 'success', detail: 'first run' });
 		setSessionCookie(cookies, result.token);
 		// What the identity source does for a freshly claimed install (Enterprise
 		// gives the account the workspace it owns, named after the licence
@@ -238,7 +239,7 @@ export const actions: Actions = {
 		redirect(303, safeRedirect(url));
 	},
 
-	login: async ({ request, cookies, getClientAddress, url }) => {
+	login: async ({ request, cookies, getClientAddress, url, locals }) => {
 		const limited = rateLimited(getClientAddress, 'login');
 		if (limited) return limited;
 		const form = await request.formData();
@@ -246,24 +247,36 @@ export const actions: Actions = {
 		const password = String(form.get('password') ?? '');
 		if (!email || !password) return fail(400, { mode: 'login', email, message: 'Email and password are required.' });
 
-		const result = await signIn(email, password);
+		const result = await signIn(locals.services, email, password);
 		if ('error' in result) {
-			getServices().audit.record({ action: 'auth.login', actor: email, outcome: 'failure', detail: result.error });
+			locals.services.audit.record({ action: 'auth.login', actor: email, outcome: 'failure', detail: result.error });
 			return fail(400, { mode: 'login', email, message: result.error });
 		}
+		// Community holds one user (EVO-001): a former member of a paid plan is refused after the move down.
+		const holder = communitySignIn(locals.services.installEdition(), { email, holders: installHolders({ locals }), severalAccounts: locals.services.identity.multiUser });
+		if (!holder.ok) {
+			locals.services.audit.record({ action: 'auth.login', actor: email, outcome: 'failure', detail: 'community: one user' });
+			return fail(403, { mode: 'login', email, message: `${holder.reason} ${holder.detail}` });
+		}
 
-		getServices().audit.record({ action: 'auth.login', actor: email, outcome: 'success' });
+		locals.services.audit.record({ action: 'auth.login', actor: email, outcome: 'success' });
 		setSessionCookie(cookies, result.token);
 		redirect(303, safeRedirect(url));
 	},
 
-	register: async ({ request, cookies, getClientAddress, url }) => {
+	register: async ({ request, cookies, getClientAddress, url, locals }) => {
 		const limited = rateLimited(getClientAddress, 'register');
 		if (limited) return limited;
 		// The one bypass of the instance-wide signup switch is a still-open
 		// invitation. It is re-read from the back here, so the bypass costs a real
 		// token and not a hand-written ?redirect= query.
-		const { invitation } = await invitationBehind(safeRedirect(url));
+		const { invitation } = await invitationBehind(locals.services, safeRedirect(url));
+		// Community holds one user (EVO-001): no second account, whether signed up or invited.
+		const second = communityRegistration(locals.services.installEdition(), {
+			accountExists: !(await registrationOpen(locals.services)),
+			viaInvitation: invitation !== null
+		});
+		if (!second.ok) return fail(403, { mode: 'register', message: `${second.reason} ${second.detail}` });
 		if (!signupAllowed() && !invitation) {
 			return fail(403, { mode: 'register', message: 'Self-service signup is disabled. Contact your administrator.' });
 		}
@@ -285,14 +298,14 @@ export const actions: Actions = {
 			});
 		}
 
-		const result = await signUp({
+		const result = await signUp(locals.services, {
 			email,
 			password,
 			...(firstName ? { firstName } : {}),
 			...(lastName ? { lastName } : {})
 		});
 		if ('error' in result) {
-			getServices().audit.record({ action: 'auth.register', actor: email, outcome: 'failure', detail: result.error });
+			locals.services.audit.record({ action: 'auth.register', actor: email, outcome: 'failure', detail: result.error });
 			// An invitee who already has an account (invited into a second workspace)
 			// lands on the sign-up form by default: send them to sign-in with the
 			// address kept, rather than leaving them on a form that cannot succeed.
@@ -306,7 +319,7 @@ export const actions: Actions = {
 			return fail(400, { mode: 'register', email, message: result.error });
 		}
 
-		getServices().audit.record({ action: 'auth.register', actor: email, outcome: 'success' });
+		locals.services.audit.record({ action: 'auth.register', actor: email, outcome: 'success' });
 		setSessionCookie(cookies, result.token);
 		redirect(303, safeRedirect(url));
 	}

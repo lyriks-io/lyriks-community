@@ -1,7 +1,7 @@
 /**
  * Settings bounded context. AI suggestions have exactly one source: the
  * operator's own LLM working through the Lyriks MCP tools, outside Lyriks.
- * The app never calls an LLM itself (no keys, no egress) — it only authorizes
+ * Lyriks never calls an LLM for them; it only authorizes
  * or blocks that LLM from generating suggestions into the project. One switch,
  * app-level, not per-project.
  */

@@ -18,7 +18,7 @@ export const BUNDLE_FORMAT = 'lyriks.project-bundle';
  * accepts any version ≤ this one; a newer bundle is refused rather than
  * half-understood.
  */
-export const BUNDLE_VERSION = 1;
+export const BUNDLE_VERSION = 2;
 
 export const MANIFEST_PATH = 'lyriks-bundle.json';
 export const LEGACY_DOCUMENTS_PATH = 'project/legacy-documents.json';
@@ -28,6 +28,7 @@ export const REVISIONS_PATH = 'project/revisions.json';
 export const META_PATH = 'project/meta.json';
 export const KERNEL_PROJECT_PATH = 'kernel/project.json';
 export const KERNEL_FEATURE_DIR = 'kernel/features/';
+export const KERNEL_ARTIFACTS_PATH = 'kernel/evidence.json';
 export const FILE_INDEX_PATH = 'files/index.json';
 export const FILE_DIR = 'files/';
 
@@ -47,6 +48,7 @@ export interface BundleManifest {
 		readonly features: number;
 		readonly files: number;
 		readonly sections: number;
+		readonly evidence?: number;
 	};
 }
 

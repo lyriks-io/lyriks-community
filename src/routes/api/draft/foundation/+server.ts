@@ -1,6 +1,5 @@
-import { parseFoundationDraft } from '$application/parse-foundation-draft';
-import { assertSectionDraftValid } from '$lib/server/section-authoring-validation.server';
 import { saveSectionDraft } from '$lib/server/section-save.server';
+import { FOUNDATION_WRITE } from '$lib/server/section-write-specs.server';
 import type { RequestHandler } from './$types';
 
 /**
@@ -12,10 +11,4 @@ import type { RequestHandler } from './$types';
  * the high-level page, and a feature rule authored into a business field is
  * rejected with the section that owns it.
  */
-export const PUT: RequestHandler = (event) =>
-	saveSectionDraft(event, {
-		section: 'foundation',
-		validate: (body) => assertSectionDraftValid('foundation', body),
-		parse: parseFoundationDraft,
-		persist: (draft, services) => services.saveFoundationDraft.execute(draft)
-	});
+export const PUT: RequestHandler = (event) => saveSectionDraft(event, FOUNDATION_WRITE);

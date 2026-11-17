@@ -1,140 +1,200 @@
 ---
 name: lyriks-behavior
-description: "Author FULL unspaghettit behavior depth on Lyriks features via mcp__lyriks__apply_behavior_batch: surfaces, typed state, actions with mandatory rules, effects, executable scenarios, invariants, reachability goals. MANDATORY whenever features are created: a feature is NEVER left at 0% (name+description only) unless the user explicitly asks for shells, or names a target TRL (\"stop at TRL 5\"), which caps the authored depth per the TRL ladder in this skill. Invoked by lyriks-build at the features step; usable standalone to deepen an existing project."
+description: "Author FULL behavior depth on Lyriks features with apply_behavior_batch: surfaces, typed state, actions with mandatory rules, effects, executable scenarios, invariants, reachability goals. MANDATORY whenever features are created: a feature is never left at 0% (name and description only) unless the user asks for shells, or names a target stage (\"stop at Specified\"), which caps the depth per the ladder in this skill. Invoked by lyriks-build at the features step; usable alone to deepen an existing project."
 ---
 
 # /lyriks-behavior
 
-Every leaf feature ships with a **complete, verified behavior model**, not a name and a description. A 0%-maturity feature is a defect, not a starting point; leave shells only when the user explicitly asks for them. Proven end-to-end on Zappier (2026-07-22): 21/21 features authored to 94–100% structural, all scenarios green, model-checked.
+Every leaf feature ships with a **complete, verified behavior model**. A
+feature at 0% is a defect; leave shells only when the user asks for them.
 
-**Exception the user can invoke: a target TRL.** When the request names a level ("stop at TRL 5", "au TRL 6 ça suffit", "TRL 4 partout pour l'instant"), ACCEPT it; full depth is the default, not a mandate that overrides the user. Author to that level per the ladder below, verify what exists, and report "authored to TRL x", never "complete".
+**A target stage is the user's to set.** "Stop at Specified", "Outlined
+everywhere for now": accept it, author to that stage (ladder below), verify
+what exists, and report "authored to <stage>", never "complete".
 
-**Maximize USEFUL information, not the score.** The target is "everything that is genuinely true about this feature is in the model": every real guard, state, event, failure path and promise. It is NOT 100% on every feature: some checks legitimately don't apply (a single-screen feature has no surface transitions; a pure read has no permissions story; ImplementationStatus is empty before code exists). Never invent a construct just to silence a recommended check: a fake invariant or a decorative transition makes the model LESS true. Chase correctness (verdict passed, scenarios green) to 100%; let structural % land where honesty puts it, and be able to say why each remaining issue is expected.
+**Maximize true information, not the score.** Model every real guard, state,
+event, failure path and promise. Some checks do not apply (a single screen has
+no transition, a pure read has no permission story): never invent a construct
+to silence one, a fake invariant makes the model less true. Chase correctness
+to 100% (verdict passed, scenarios green); let the structural score land where
+honesty puts it, and know why each open issue is expected.
 
-## The vocabulary language law (code-facing names are English, always)
+## Names and language
 
-A Lyriks spec captures BEHAVIOR. How its names relate to the code's
-identifiers depends on the direction, and the language rule below holds in
-both:
-
-- **Spec to code** (the code does not exist yet): the spec's name IS the
-  code's identifier by default. Same name, no translation, no "better idea";
-  departing from it is the exception and needs a reason. That is what makes
-  the spec-to-code map nearly mechanical.
-- **Code to spec** (the code exists, retro-spec / adoption): the spec is
-  written as agnostically as possible, in the product's words and never in the
-  code's jargon, while reflecting EXACTLY the variable or logic it maps to.
-  The exactness is carried by the span and the index entry (file, line,
-  signature), not by the name; lyriks-trace and the provenance gate audit it.
-
-In both directions, everything in the spec that names a thing the code will
-also name is authored in ENGLISH, whatever language the product, the user or
-the conversation is in:
-entity and field names, enum values, state paths (`cart.itemCount`, never
-`panier.nombreArticles`), event names (`order.paid`), action names and
-parameters, surface and component names, transition ids, role and permission
-ids, collection names, and the enum literals used in scenario `stateOverrides`
-/ `parameterOverrides`. State paths and event names go further: they become
-`.unspa.json` keys verbatim, so a French one is a French key in the checkout
-forever. Never code in French from a Lyriks spec: when a spec already carries a
-French code-facing name, rename it in the spec first, then code.
-
-Only what has NO effect on the simulation may follow the user's language:
-descriptions, intents, rationales, rule and invariant `description`, glossary
-definitions, briefs, persona stories, acceptance-criterion prose. Product copy
-the end user sees (screen labels, messages, empty states) is product data and
-stays in the product's own language. Answer in French when the user writes in
-French; name in English regardless.
+- **Names the code will carry are English**, whatever the product's language:
+  entities, fields, enum values, state paths (`cart.itemCount`, never
+  `panier.nombreArticles`), events (`order.paid`), actions, parameters,
+  surfaces, roles, collections, and the enum literals of scenario overrides.
+  State paths and event names become `.unspa.json` keys verbatim. A spec that
+  carries a non-English code name is renamed in the spec first, then coded.
+- **Spec to code**, the spec's name is the code's identifier by default.
+  **Code to spec**, the spec names things in the product's words and the span
+  carries the exactness.
+- **Prose is written in the ONE language the project declares** (Foundation,
+  Operations, i18n; English when none), never in the conversation's:
+  descriptions, rationales, criteria, glossary, scenario names, end-user copy.
+  Every read states it (`specLanguage`). When none is declared and the prose
+  reads otherwise, ask the person to declare it. Answer the person in their
+  language; write the model in the spec's.
 
 ## The feature card comes before the batch
 
-Before the batch below, write the feature in four to six lines of product
-words: who can do what, the states the thing goes through, the guards that
-block, what a blocked user sees. Announce the batch from that card, and record
-every product decision it embeds (who may do what, lifecycle states,
-thresholds, what a blocked user sees) in the register lyriks-build's protocol
-"Narrate, checkpoint, and never invent a product decision silently" defines.
-In accompanied mode the card is the checkpoint: the user answers on the card,
-never on the ops.
+Write the feature in four to six lines of product words: who can do what, the
+states it goes through, the guards that block, what a blocked user sees.
+Record each product decision it embeds in the register of lyriks-build
+(*Narrate, checkpoint, and never invent a product decision silently*). In
+accompanied mode the user answers on the card, never on the ops.
 
-## The per-feature template (~20–30 ops, one batch)
+## The per-feature template (one batch, 20 to 30 ops)
 
-One `apply_behavior_batch` per feature (`feature_id` = the features-section leaf id; `project_id` = the project slug). Dry-run the FIRST batch of a session to validate shapes, then apply the rest directly. Always pass `ref` on every add op.
+One `apply_behavior_batch` per feature (`feature_id` = the leaf id). Give
+every add op a `ref`. Dry-run the first batch of a session.
 
-**Read the op shapes from the RUNNING engine before the first batch, not after the first refusal.** `get_behavior_operations {query:"add_parameter add_scenario add_surface_invariant"}` takes one call and answers with the exact schema this engine accepts. The shapes below are stable in spirit and fussy in detail (a rule nests under `rule:`, an effect under `effect:`, an invariant under `invariant:`; nearly every op wants `surfaceRef` even when it already names an action; a state definition is updated by `stateDefinitionId`; a `switch` closes on `default`, never `otherwise`; a criterion takes `title`/`given`/`when`/`then`, never `text`), and each wrong guess is a round trip. One read up front costs less than the first two failures.
+**Read the op shapes from the running engine first**:
+`get_behavior_operations {query:"add_parameter add_scenario add_surface_invariant"}`
+answers with the exact schema in one call. Shapes are fussy (a rule nests
+under `rule:`, an effect under `effect:`, an invariant under `invariant:`;
+most ops want `surfaceRef`; a `switch` closes on `default`; a criterion takes
+`title`/`given`/`when`/`then`): one read costs less than two refusals.
 
-1. **`add_surface`** (1, ref `srf`): `{name, type, description}`; types: screen, canvas, terminal, board, workflow, dialog_area…
-2. **`add_state_definition`** ×3–6: `{surfaceRef, path, type, defaultValue, description}`; enums need `enumValues` inline. Model the feature's real lifecycle (`zap.status: draft|on|off`), not booleans-for-everything. Role gating: declare `session.role` (enum owner|builder|operator|viewer) per feature.
-3. **`add_event`** ×1–2: **lowercase, dot-separated, at least one dot** (`zap.published`, `invoice.payment_failed`). camelCase (`zapPublished`), a single word and any capital are REFUSED by the validator, here and in `emittedEvents` and `emit_event` alike. Declare BEFORE any action's `emittedEvents`/`triggeredByEvent` or `emit_event` effect references it, even if the event "belongs" to another feature (declare a mirror).
-4. **`add_action`** ×2–4 (each with `ref`): `{surfaceRef, name, intent, roles[], emittedEvents?}`. **`emittedEvents` really emits**: each name is wired to a default `emit_event` effect on save, so the event fires when the action succeeds and every `triggeredByEvent` handler cascades. Declare it for an event the action ALWAYS emits; for one that must fire only under a condition, put the `emit_event` effect on the rule that carries the condition and leave the declaration to the engine. The batch answer says, under `warnings`, which declarations it wired for you. **Every action needs ≥1 `add_action_rule` in the same batch or the batch is rejected.** Genuinely unconditional? Say it as a rule: no condition + `effect:{type:"allow_action"}`. **Say who fires it**: when `get_behavior_operations {query:"actor"}` lists the field (engines after 0.23), set `actor` to `system`, `schedule` or `event` on every action no person triggers (a sensor reading, a timer, a reaction to another feature); absent means `user`.
-5. **`add_parameter`** per action input: `{name, type, required, description, bindToStatePath?, validations[]}` (validation types: non_empty, email, min_length, positive, integer…).
-6. **`add_action_rule`**: the guards ARE the product's core reading. Categories: permissions/security/compliance (role gates), validation (preconditions), business (lifecycle), billing_quota (caps), error_handling, data. Block shape: `{category, condition, effect:{type:"block_action", reason, description}, description}`. Operators: equals, not_equals, greater_or_equal, lower_or_equal, greater_than, lower_than, contains, is_true, is_false, exists (NOT eq/neq/greater_than_or_equal). `condition.right` accepts `{kind:"state"|"param"|"literal"|"mul"|"add"|…}` expressions: compare against state (`right:{kind:"state",path:"zap.stepLimit"}`), thresholds (`{kind:"mul",…}` for "80% of quota"). Param-left works on action rules only: `left:{kind:"param",name:"stepIndex"}`.
-7. **`add_effect`** per action: set_state (value can be an Expression: `{kind:"add",left:{kind:"state",path},right:{kind:"literal",value:1}}` for counters, `min`/`max` to clamp), emit_event, show_message, append_to_list/remove_from_list. Add an **`onBlocked:true` show_message** on every action a PERSON fires that has a block rule; a blocked path must not fail silently for the person who tried. An action nobody fires by hand shows nothing when blocked, and the spec must say so instead of inventing a message: give it `actor` and, as its only onBlocked effect, `{type:"no_feedback", reason}` (same engine condition as `actor`). NEVER write a user message that does not exist in the product to satisfy a check: a reader, or a generator of acceptance tests, will take it for a toast to implement. On an engine that knows neither, leave the blocked path without a message and state in the action's description that nothing is shown.
-8. **`add_scenario`**: **one per non-trivial action minimum**, covering success AND blocked: `{surfaceRef, actionRef, name, description, stateOverrides[], parameterOverrides[], expectedStatus:"success"|"blocked", expectedAssertions:[{path, operator, value, description}], steps?}`. A multi-step flow goes in the SAME batch: `steps[]` takes `actionRef`/`surfaceRef` for actions minted by this batch, exactly like every other op. stateOverrides/parameterOverrides are ARRAYS of {path|parameterName, value}. **Scenario overrides must satisfy the feature's invariants**: seeding `status=on` while the invariant says "on implies tested" without also seeding tested=true makes the engine block the action and fail the scenario.
-9. **`add_surface_invariant`** ×1+: `{invariant:{name, condition, message, description}}`. Condition = the property that ALWAYS holds (TRUE = holds; FALSE = violation blocks the run). Implications A⇒B as `{kind:"any",conditions:[not-A, B]}`; ranges as `{kind:"all",…}`. Never condition-less, never tautologically false, and never tautologically TRUE: an invariant that cannot fail (`count >= 0` on a counter) proves nothing, inflates the score, and is worth less than its absence. If the real property is not establishable from evidence, write no invariant and say why.
-10. **`add_reachability_goal`** ×1: `{goal:{name, kind:"reachable"|"always_reachable", condition, description}}`, the liveness complement ("a Zap can go live"; use always_reachable for "a paused Zap can always recover").
-11. **`add_acceptance_criterion`** ×1–2: prose Given/When/Then for what scenarios can't check (UI qualities, cross-system promises).
-12. **`add_persona`** where roles matter: `{name, description, stateOverrides:[{path:"session.role",value:"viewer"}]}`.
+1. **`add_surface`** `{name, type, description}`: screen, canvas, terminal, board, workflow, dialog_area...
+2. **`add_state_definition`** x3 to 6 `{surfaceRef, path, type, defaultValue, description}`, enums with `enumValues` inline. Model the real lifecycle (`order.status: draft|placed|shipped`), not booleans for everything. Role gating: declare the role ONCE for the whole project, under the same path and the same values in every feature that reads it (`session.workspaceRole`, plus `session.projectRole` when the product holds a role per project), its values being the role ids of the access matrix; never a copy per feature. The plan a guard reads follows the same law (`workspace.plan`).
+3. **`add_event`**: lowercase, dot-separated, at least one dot (`order.placed`, `invoice.payment_failed`); camelCase and capitals are refused. Declare it before any action emits it or listens to it, even when another feature owns it (declare a mirror).
+4. **`add_action`** x2 to 4 `{surfaceRef, name, intent, roles[], emittedEvents?}`. `emittedEvents` really emits (the engine wires an `emit_event` effect): declare it for an event the action ALWAYS emits; a conditional emission is an `emit_event` effect on the rule that carries the condition. **Every action needs at least one `add_action_rule` in the same batch.** Unconditional? Say it as a rule: no condition, `effect:{type:"allow_action"}`. Set `actor` to `system`, `schedule` or `event` on every action no person fires (absent means `user`).
+5. **`add_parameter`** per input `{name, type, required, description, bindToStatePath?, validations[]}` (non_empty, email, min_length, positive, integer...).
+6. **`add_action_rule`**: the guards are the product's core reading. Categories: permissions, security, compliance, validation, business, billing_quota, error_handling, data. Block: `{category, condition, effect:{type:"block_action", reason, description}, description}`. Operators: equals, not_equals, greater_or_equal, lower_or_equal, greater_than, lower_than, contains, is_true, is_false, exists. `condition.right` takes expressions (`{kind:"state",path}`, `{kind:"mul",...}` for "80% of quota"); `left:{kind:"param",name}` works on action rules only.
 
-## Numbers: constants, measured values, floats, rates
+   **A rule's `description` says WHY, never WHAT.** Lyriks reads every rule, invariant and goal back as an EARS sentence built from its logic, and every scenario as Given/When/Then (`statements` on a `get_behavior_feature` read by `action_id` or `surface_id`). So the description carries what the logic cannot: the reason the rule exists. Write "Card networks forbid a refund above the captured amount", never "Blocks a refund whose amount exceeds the paid amount". Read the `statements` back after a batch: a sentence that reads wrong is a rule modelled wrong.
 
-- **A number used twice is a constant, never two literals.** `add_constant {ref?, name, description, value}` declares a feature-level constant (`value` is any scalar or array; `name` is the reference key, unique in the feature); expressions read it as `{kind:"const", name}` wherever a value goes (`condition.right`, a `set_state` value, an invariant threshold). Change it once with `update_constant {constantId, value}`. A threshold repeated in a rule, an effect and a description drifts the first time someone tunes it.
-- **Values only a measurement can settle are specified in two passes.** A spawn share, a hearing distance, a fade time, the size of a "special place" cannot be known before the generated world or the running product is measured. Spec first still holds, for the RULE: specify its shape, its inputs and its invariants, and declare the number as a constant whose description says it is provisional and what measurement will settle it. Then write the code, measure, and update the constant once, in the same turn. Never leave the measured number in the code alone, and never write a guessed number as if it were a decision.
-- **A number is a relation before it is a value.** A hearing distance can be implemented exactly as specified and still be wrong, because it exceeds what the screen shows: the missing fact was the other number it had to stay under. When a value is bounded by another (a hearing distance by the view, a cooldown by a session length), say so in the constant's description and guard it with an invariant over both.
-- **There is no approximate equality.** `equals` on a computed float fails on representation alone (0.1 + 0.2 is not 0.3). Bracket it with two assertions, `greater_or_equal` the low bound and `lower_or_equal` the high bound. Never move a product number (0.7 to 0.75) so that an equality passes: the scenario is wrong, not the product.
-- **A rate is tested as a distance.** A scenario takes `steps[]`, each `{actionId, surfaceId?, parameterOverrides?, expectedStatus?, expectedAssertions?, timeAdvance?, description?}`, replayed IN ORDER before the subject action, each a real simulation threading state forward. `timeAdvance` moves the simulation clock (`clock.now`) by that many logical units before the step runs (it is accepted on the scenario itself too). Repeat the action as steps and assert the accumulated value, instead of checking the arithmetic of a single tick.
+   **On an existing product, a refusal is the server's**: span a block rule on the server check that rejects the request, never on a control a page hides (lyriks-retrospec, *A refusal belongs to the server*).
+7. **`add_effect`**: set_state (an expression for counters, `min`/`max` to clamp), emit_event, show_message, append_to_list, remove_from_list, advance_time (`{type:"advance_time", by}`: makes time pass). Every action a PERSON fires that can be blocked gets an `onBlocked:true` show_message. An action nobody fires by hand gets `actor` and, as its only onBlocked effect, `{type:"no_feedback", reason}`. Never write a message the product does not show: a test generator will take it for a toast to build.
+8. **`add_scenario`**, one per non-trivial action at least, success AND blocked: `{surfaceRef, actionRef, name, description, stateOverrides[], parameterOverrides[], expectedStatus, expectedAssertions:[{path, operator, value, description}], steps?}`. Overrides are arrays of `{path|parameterName, value}` and must satisfy the feature's invariants. A multi-step flow goes in the same batch, its `steps[]` naming new actions by `actionRef`.
+9. **`add_surface_invariant`** `{invariant:{name, condition, message, description}}`: the property that ALWAYS holds. A => B is `{kind:"any",conditions:[not-A, B]}`. Never without a condition, never always false, never always true (`count >= 0` proves nothing). No evidence for one: write none and say why.
+10. **`add_reachability_goal`** `{goal:{name, kind:"reachable"|"always_reachable", condition, description}}`: what can happen, and what can always be recovered.
+11. **`add_acceptance_criterion`**: Given/When/Then for what scenarios cannot check (UI qualities, promises across systems).
+12. **`add_persona`**, one per role a guard of the feature reads: `{name, description, stateOverrides:[{path:"session.workspaceRole",value:"admin"}]}`, with the values of that role's row in the access matrix (`roles[].behaviorValues`, lyriks-build step 9). The engine searches from the defaults AND from each persona: an admin-only action without its persona reads never reached.
 
-## Keep the state machine ALIVE (the dead-enabler trap)
+## Numbers
 
-If an action's guard depends on state **no in-feature action can produce** (publish needs `lastTestPassed` but testing lives in another feature), the model checker reports every action dead and the feature deadlocked at init. Add a small **ingest action** that produces the enabling state ("Record Passing Test", "Credential Expiry Detected", "Record Failing Run"): `roles:["persistence"]`, unconditional allow rule, one set_state effect, `triggeredByEvent` naming the (locally declared) upstream event. This models the real cross-feature signal AND makes the state space explorable.
+- **A number used twice is a constant**: `add_constant {name, description, value}`, read as `{kind:"const", name}`, changed once with `update_constant`.
+- **A value only a measurement can settle is specified in two passes**: the rule first, the number declared as a constant whose description says it is provisional and what will settle it; then code, measure, update the constant once. Never leave the measured number in the code alone.
+- **A number bounded by another says so**: name the bound in the description and guard both with an invariant.
+- **No approximate equality**: bracket a computed float between `greater_or_equal` and `lower_or_equal`. Never move a product number so an equality passes.
+- **A rate is tested as a distance**: repeat the action as `steps[]` (each `{actionId, parameterOverrides?, expectedStatus?, expectedAssertions?, timeAdvance?}`, replayed in order) and assert the accumulated value.
 
-**An ingest action reads state; it never takes parameters.** A cascade passes no input, so a handler's parameters can only ever hold their defaults. The engine refuses a REQUIRED parameter on a handler and tells you to give it a default, which is the trap: every cascade then writes that default, and a `set_state` effect fed by it overwrites what the emitter just computed. The damage surfaces far away, as a scenario whose assertions look like a modelling error. Author handlers with zero parameters, reading the state they need. `apply_behavior_batch` now answers with a `warnings` entry when a handler carries parameters: read it, do not dismiss it.
+## Keep the state machine alive
 
-## Stopping at a target TRL (user-invoked depth cap)
+A guard on a state no action of the feature can produce leaves every action
+dead. Add an **ingest action** that produces it ("Record passing test"):
+`roles:["persistence"]`, an unconditional allow rule, one set_state effect,
+`triggeredByEvent` naming the upstream event (declared locally). **An ingest
+action reads state and takes no parameters**: a cascade passes no input, so a
+parameter only ever holds its default and overwrites what the emitter
+computed. Read the batch `warnings` that say so.
 
-The platform reads maturity % as a TRL via `TRL = round(% × 9 / 100)`, clamped to 1–9. So a target TRL x means: every in-scope leaf reaches AT LEAST the minimum % below, and you stop deepening once `score_behavior_feature` confirms it.
+**One fact, one producer.** Inventory who writes a shared path and who only
+observes it. An observer must not increment the owner's counter or replay its
+transition: cascades already share the post-state. Test a real success, its
+repeat, the next version, then a refusal after that success, with subscribers
+enabled. Assert status, exact values, final stage AND raw emitted events.
 
-| Target TRL | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
-|---|---|---|---|---|---|---|---|---|---|
-| Min maturity % | 0 | 17 | 28 | 39 | 50 | 62 | 73 | 84 | 95 |
+**A refusal can keep effects.** Read the real mutation order. `block_action`
+rolls state back; a rejection after consuming a code needs an outcome with that
+consumption retained. Put success-only emissions on the success outcome, not
+on a rule that can still run after a block. Read action, surface and feature
+invariants before changing a branch. Never weaken an assertion or remove a true
+invariant to accommodate an observer that writes the wrong value.
 
-How to run it:
-- **Scope**: the target applies to the features the request names, or to every included leaf when project-wide. A mixed request ("TRL 7 on payments, TRL 3 elsewhere") is per-group.
-- **Author in the template's order and stop when the score lands.** The template's step order IS the depth ladder: surface + states first, then actions with their rules, then effects, then scenarios, then invariants/goals/criteria. Batch a coherent prefix of it, `score_behavior_feature`, and stop as soon as `percentage >=` the target row; do not pad past the target, and do not trim an already-applied batch back down.
-- **Floors that never drop, at any TRL**: every action still carries >= 1 rule (the engine rejects the batch otherwise); everything written still obeys evidence-first and never-model-from-memory; whatever scenarios DO exist must pass. A depth cap caps how much is authored, never the honesty of what is authored.
-- **Verify proportionally.** Below TRL 6 run `score_behavior_feature` and require zero engine REJECTIONS but accept open critical issues (they are the unauthored depth, list them). From TRL 6 up (>= 62%, scenario territory) also run `assess_behavior_feature` and require scenarios failed:0 and no invariant violations on what exists. The full verdict bar (passed:true, deadActions:[]) applies only to full-depth work.
-- **Report it as a capped state, never completion**: "authored to TRL x (avg NN%), stopped at the user's target; remaining engine issues: ...". The project-level consequences stand: the readiness gate and `finish_project` may stay below their thresholds, and that is the expected outcome of the cap, not a failure to fix. Say so instead of chasing the score.
-- **Record the decision**: when the cap is project-wide, note it in the scope section (a `sectionAssessments` note or an approvals row), so the next agent reads a decision instead of rediscovering a "gap".
+## Who acts, what time does, what the system does
 
-## Verify: authoring isn't done until the engine agrees
+A guard waits on a state; something in the model must move that state, or the
+action behind it is never reached. Before writing a guard, name what moves it.
 
-After each batch (or at least per core): `score_behavior_feature`, and read the ISSUES, not just the number: fix every issue that names something real and missing; leave (and be able to justify) the ones that don't apply to this feature. At the end, `assess_behavior_feature` per feature and require: **verdict.passed:true, scenarios failed:0, invariantViolations:[], deadActions:[]** (deadActions on parameterized-only enablement is a known checker bound; the scenarios must prove those paths instead). Fix and re-assess; do not report done on a failing verdict.
+- **Who is acting is a given, not an action.** Role and plan are context states, set by a persona per role. Never default to the most powerful role to make the search pass: the refusal for everyone else then goes unproven.
+- **What time does is an action of a schedule.** A guard on an age, a delay or a retention needs an `actor:"schedule"` action that makes time pass ("A day passes" adds 1 to what it ages, or `advance_time` when guards read `clock.now`). The action that starts the clock sets the counter to 0.
+- **What the world does is an action of the system.** An outage, a lost connection, a failed payment: `actor:"system"`, or an ingest action on the event. A recovery action is never reached while nothing can break what it recovers.
+- **A state another feature owns is read under its own path**, never mirrored into a copy only the guarded action writes.
+- **A person's opt-in is an action of that person** ("Join the beta").
 
-**Not reached is not dead.** Only an exhaustive search (`truncated:false`) can call an action dead. When the exploration stopped at its bound (`truncated:true`, `statesExplored` at the cap), an action it never saw firing was not reached, which proves nothing, even though the report still lists it under `deadActions`: read `truncated` and `statesExplored` next to that list before believing it. Even an untruncated search says dead WITHIN `maxDepth` STEPS (6 by default): running out of depth does not truncate, so an action that needs a longer chain than the bound is listed dead although it can fire. Let a passing success scenario prove such an action, and say so in your report. NEVER reshape the model to fit the explorer's budget (splitting a wide action, shortening a chain, dropping a state): that serves the tool, not the product.
+**Read the cause the engine gives.** A batch warns when a rule reads a state
+no action changes and no persona sets; a target not reached names what holds
+it (`stuck`: the path, its starting value, the actions that would change it).
+Add what moves it; never force it with scenario overrides.
 
-## Gotchas that bite (all hit in practice)
-- **A feature id is global, so make it project-unique.** The engine resolves `featureId` across the WHOLE workspace while Lyriks reads per project, so a generic id (`feat-glossary`, `feat-licensing`) that two projects both declare gives one record two claimants: your batch lands in the other project, and yours keeps reading its own folder, shows nothing authored and blocks on `capability-behavior-missing`. Prefix every leaf id with something of the project (`feat-<proj>-glossary`). A write on a duplicated id is now refused with 409 naming the other claimant; if you hit it, rename the leaf rather than working around it.
-- `update_*` targeting an id that doesn't exist now FAILS LOUDLY (`<kind> <id> not found in feature`) instead of the old silent `ok, appliedCount>0` no-op, so `remove_*` + `add_*` is no longer the workaround it used to be; a rejected update means the id is wrong, so fix the id. Removes stay idempotent by design.
-- But `update_effect`/`update_*` merge their `patch` **raw**, without the normalisation `add_effect` runs on a full payload. So a patch must carry fully-formed values, in particular a complete Expression tree (`{kind:"sub",left,right}`), never a half-shape. Malformed expression kinds in a patch are rejected up front (see the expression-vocabulary note below).
-- **Expression kinds are a closed vocabulary**: `literal, state, param, const, add, sub, mul, div, mod, min, max, neg, not, sum, count, sum_pluck, count_where, switch`. It is `sub`, **not** `subtract`. An unknown kind used to be stored as a plain literal, which made `max(0, <garbage>)` evaluate to `0`, so decrement-to-zero scenarios PASSED over a completely inert effect. Unknown kinds are now rejected at write time with a did-you-mean.
-- Scenario/rule ids are minted at apply time: capture them from `refs` (via `ref`) or read them back. Take them from the COMMIT's `refs`, never from the dry run's: committing a dry run by token mints NEW ids, so the ones the dry run announced are provisional. An id recorded in evidence or in an index between the two calls points at nothing.
-- **Several writers on one feature: carry the version you read.** Pass `expected_updated_at` (the feature's `updatedAt`, from `get_behavior_feature`) on `apply_behavior_batch`, or `--expect <updatedAt>` with the shipped `apply-batch.mjs`, whenever anyone else may be editing the same feature (another agent session, a person in the product). A feature that moved in between refuses the batch, applies NOTHING, and names the elements that changed: re-read those, rebase your ops, resend. Without the argument the last write silently wins, which is how a scenario authored minutes earlier gets overwritten. A successful answer carries `updatedAt`, so a chain of batches never needs a read in between.
-- **Every op shape is one call away.** `get_behavior_operations {query:"update_surface"}` (or any op name or concept: `remove_action`, `constant`, `steps`) returns the exact schema from the RUNNING engine, plus modelling guidance for continuous input, spatial or sensor-driven observations, and runtime evidence. Read it before guessing a shape or copying one from an older session's notes; every `update_*` and `remove_*` op is listed there with its id field.
-- `emit_event` / `triggeredByEvent` require the event declared in the SAME feature first.
-- A declared emission is a real one: the engine wires the `emit_event` effect a bare `emittedEvents` entry needs, so a cascade cannot sit dead behind a declaration that looked wired. Author the effect yourself only where the emission is conditional.
-- The scenario's action lookup is scoped to the action you pass: a "scenario not found" usually means wrong `actionId`.
-- After batching on leaves, re-read `get_section features` once: every feature must still carry its `coreId`/`parentFamilyId` (tag-case projection gotcha; hardened in-repo, still verify).
-- More in the memories: [[unspa-kernel-authoring-vocabulary]], [[rules-mandatory-on-actions]], [[condition-less-invariant-poison]], [[unspa-bind-on-block-leak]].
+**One feature at a time, verified before the next.** Write, simulate,
+`assess_behavior_feature`, fix, then move on. After a compaction, read the
+feature back (`get_behavior_feature` summary, then `action_id`) before writing:
+ids and rules live on the server, not in your memory.
 
-## Scope discipline
-Model the feature's OWN slice: 1 surface, 2–4 actions, a handful of states. Don't re-model journeys (they live on `__experience`) or entities (`__data_model`). Cross-feature coupling = a mirrored event + an ingest action, never copied surfaces.
+## Stopping at a target stage
 
-## Never model from memory
+The stage is read from the maturity percentage. Minimum maturity per target:
 
-On an existing product, every guard, lifecycle state, quota and failure path you
-model must come from a source read in-session (the code span, a doc, a tool
-response), never from what you believe you know about the product. If you have
-not read it, do not model it: an honest gap beats a plausible invention.
+| Target stage | Idea | Outlined | Specified | Simulated | Complete |
+|---|---|---|---|---|---|
+| Min % | 0 | 28 | 50 | 73 | 95 |
 
-## Say where the behavior came from
-The kernel holds no citations, so the evidence lives Lyriks-side: when a guard, quota, lifecycle or legal constraint you just modelled comes from a real document (a regulation, a contract, an interview, an existing system's docs), register it in the `documents` section and cite its id on the leaf: `patch_section features` → `leafMeta.<featureId>.sourceIds`. A rule nobody can trace back is a rule nobody can defend in review. See the *Sources & citations* section of `/lyriks-build`.
+- The template's order IS the ladder: surface and states, actions and rules, effects, scenarios, then invariants, goals, criteria. Author a prefix, `score_behavior_feature`, stop once the row is reached.
+- Floors at any stage: every action has a rule, nothing comes from memory, every scenario that exists passes.
+- Below Simulated, zero engine rejections; open critical issues are the unauthored depth, list them. From Simulated, also `assess_behavior_feature` with no failing scenario or broken invariant.
+- Report "authored to <stage> (avg NN%), stopped at the user's target", and record a project-wide cap in the scope section so the next agent reads a decision, not a gap.
+
+## Verify
+
+After each batch, `score_behavior_feature` and read the issues: fix what names
+something real, justify what does not apply. At the end,
+`assess_behavior_feature` per feature: **verdict.passed, no failed scenario,
+no invariant violation, no dead action**.
+
+Read `specGaps` even when the verdict passes. Report scenarios, exploration,
+solver proof and code tests separately: `moreToCome:true`, positive `unsettled`
+or an interruption forbids a claim of complete proof. A contradictory advisory
+does not override the weaker detail; zero scenarios is not a journey test.
+When a presence link is accepted by the planner but rejected by another check,
+keep the faithful representation and report the contract mismatch.
+
+**Try it while you write it.** `simulate_behavior` walks a feature step by step
+and saves nothing: per step `status`, `refusedBecause`, `changes`, `messages`,
+`cascaded`. Pass the batch you are about to apply as `operations` to try it
+first. `run_scenarios:true` and `model_check:true` run everything in the same
+call. A walk reports, it never asserts: pin what it showed as a scenario. The
+same tools work on an Evolution draft (`feature_id: "draft:..."`).
+
+**What holds across features lives at the project level**:
+`apply_project_behavior_batch` (`add_project_invariant`; one canonical
+`add_state_variable`, `link_state_variable` to its data field;
+`promote_to_project_library` for what several features copy). Read it with
+`get_behavior_project`. Fence a feature with `set_non_goals` and
+`set_expected_actions`; run `find_state_references` before renaming a state;
+`generate_behavior_types` hands the code typed names.
+
+**Not reached is not dead.** Only an exhaustive search (`truncated:false`)
+proves an action dead, and only within `maxDepth` steps. Prove a long chain
+with a passing scenario, and say so. Never reshape the model to fit the
+explorer's budget.
+
+**A state holding a data field's value is linked to it in the same pass**:
+`link_data_fields` ({ table, field, state_path }, many at once). `get_data_links`
+shows what remains.
+
+## Gotchas
+
+- **A feature id is global across the workspace.** Prefix it with the project (`feat-<proj>-glossary`); a duplicated id is refused with 409 naming the other claimant: rename the leaf.
+- An `update_*` on an unknown id fails loudly: fix the id. Its `patch` is merged raw, so send complete values (a whole expression tree).
+- Expression kinds are closed: `literal, state, param, const, add, sub, mul, div, mod, min, max, neg, not, sum, count, sum_pluck, count_where, switch` (`sub`, not `subtract`).
+- Take ids from the COMMIT's `refs`, never the dry run's: a commit mints new ids.
+- Confirm `batch.ok` and the new `updatedAt` before assessing a saved change. A refused or expired commit changed nothing. After a transport failure with an unknown write result, re-read the version and touched elements before retrying; never blindly replay an increment.
+- Before a series of simulations, run one sentinel and inspect the state actually used. If dotted overrides are ignored, use the documented nested form and exclude the invalid runs from proof.
+- **Several writers on one feature**: pass `expected_updated_at` (or `--expect` to `apply-batch.mjs`). A feature that moved refuses the batch, writes nothing and names what changed: re-read, rebase, resend.
+- `get_behavior_operations {query:"<op or concept>"}` returns any op's exact schema, `update_*` and `remove_*` included.
+- `emit_event` and `triggeredByEvent` need the event declared in the same feature.
+- `find_state_references` is a starting inventory, not proof of an exhaustive rename: also inspect scenario/persona overrides, outcomes, goals, derivations and every level of invariant. Classify each occurrence before changing it; preserve unrelated literals.
+- **An `emit_event` effect names its event in `event`**: `{type:"emit_event", event:"order.placed"}`. Under `eventName` the engine reads no name and refuses the batch.
+- "Scenario not found" usually means a wrong `actionId`.
+- After batching, re-read `get_section features` once: every leaf keeps its `coreId` and `parentFamilyId`.
+
+## Scope, memory, sources
+
+- Model the feature's OWN slice: one surface, 2 to 4 actions, a handful of states. Journeys live on `__experience`, entities on `__data_model`. Coupling across features is a mirrored event and an ingest action, never a copied surface.
+- **Never model from memory.** On an existing product every guard, state, quota and failure path comes from a source read in this session. Not read, not modelled: an honest gap beats a plausible invention.
+- **Say where it came from.** A guard or quota taken from a document is cited: register it in `documents` and add its id to `leafMeta.<featureId>.sourceIds` (lyriks-build, *Sources & citations*).

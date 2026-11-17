@@ -6,7 +6,6 @@ export function updateWizardProjectHandler(
     name?: string
     description?: string
     domain_id?: string | null
-    stage?: string
   },
   lyriks: LyriksClient,
 ): Promise<unknown> {
@@ -14,7 +13,6 @@ export function updateWizardProjectHandler(
     name: args.name,
     description: args.description,
     domainId: args.domain_id,
-    stage: args.stage,
   })
 }
 
@@ -36,17 +34,6 @@ export function createDomainHandler(
   lyriks: LyriksClient,
 ): Promise<unknown> {
   return lyriks.post('/api/domains', args)
-}
-
-export function updateDomainHandler(
-  args: { domain_id: string; name?: string; description?: string; icon?: string },
-  lyriks: LyriksClient,
-): Promise<unknown> {
-  return lyriks.patch(`/api/domains/${encodeURIComponent(args.domain_id)}`, {
-    name: args.name,
-    description: args.description,
-    icon: args.icon,
-  })
 }
 
 export function deleteDomainHandler(

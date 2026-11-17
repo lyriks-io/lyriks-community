@@ -26,8 +26,19 @@ export interface SectionSuggestion {
 }
 
 /**
- * A proposed user persona for the Users step — pushed by the AI seam (today the
- * stub; tomorrow an MCP advisor) and accept-on-click in the UI.
+ * One piece of the project's own text a persona suggestion may be read from:
+ * the brief, the problem, a pain point, the expected outcome, or a persona the
+ * author once typed as free text. `where` is how the card names its origin.
+ */
+export interface PersonaContextPassage {
+	where: 'brief' | 'problem' | 'pain point' | 'outcome' | 'affected persona';
+	text: string;
+}
+
+/**
+ * A proposed user persona for the Users step. It is always read from the
+ * project's own context (spec criterion `98d98033`), never a generic default:
+ * `rationale` quotes the passage it came from.
  */
 export interface PersonaSuggestion {
 	name: string;
@@ -47,6 +58,6 @@ export interface AiSuggesterPort {
 		brief: string,
 		draft: FoundationIdentityDraft
 	): Promise<SectionSuggestion>;
-	/** Propose end-user and back-office personas from the brief + project context. */
-	suggestPersonas(brief: string, draft: FoundationIdentityDraft): Promise<PersonaSuggestion[]>;
+	/** Propose the personas the project's own text names; none when it names nobody. */
+	suggestPersonas(context: readonly PersonaContextPassage[]): Promise<PersonaSuggestion[]>;
 }

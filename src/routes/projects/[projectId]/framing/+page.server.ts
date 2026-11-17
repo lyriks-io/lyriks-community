@@ -1,13 +1,11 @@
 import { redirect } from '@sveltejs/kit';
+import { legacyPageTarget } from '$ui/spec360/legacy-addresses';
 import type { PageServerLoad } from './$types';
 
 /**
- * Framing no longer exists as a capability of its own: its Business / Market /
- * Technical / Security sections are tabs of Foundation (`/foundation`), and
- * the word is gone from every surface a user can read. This route survives only
- * so old bookmarks and stored "Fix now" targets keep resolving — the browser
- * re-applies the original `#anchor` to a redirect target that carries none.
+ * An old address kept so bookmarks and stored links still open something
+ * (criterion 84162c34). Framing became tabs of Foundation, which is the Overview of Knowledge now.
  */
-export const load: PageServerLoad = async ({ params }) => {
-	redirect(308, `/projects/${params.projectId}/foundation?tab=business`);
+export const load: PageServerLoad = ({ params, url }) => {
+	redirect(308, legacyPageTarget(params.projectId, 'framing', url.searchParams));
 };

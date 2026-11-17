@@ -1,4 +1,4 @@
-import type { Collaborator, Team } from '$domain/team/team';
+import type { Collaborator, Team } from '$domain/team';
 
 /** Fields accepted when adding a collaborator (server fills id + joinedAt). */
 export interface NewCollaboratorInput {

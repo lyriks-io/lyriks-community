@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Gauge from '$ui/design-system/Gauge.svelte';
 	import { Icon, SearchInput, confirmDialog, matchesQuery } from '$ui/design-system';
 	import {
 		activeSprints,
@@ -13,7 +14,7 @@
 		type WorkAssignment,
 		type WorkStatus
 	} from '$domain/features';
-	import type { FeatureActionIndex } from '$application/index-feature-actions';
+	import type { FeatureActionIndex } from '$application/specification/index-feature-actions';
 	import type { IconName } from '$ui/design-system/Icon.svelte';
 	import type { FeaturesStore } from '../draft-store.svelte';
 	import SearchPicker, { type PickerOption } from '../SearchPicker.svelte';
@@ -143,7 +144,7 @@
 	<div class="mb-3 flex items-center justify-between gap-3">
 		<div>
 			<p class="text-sm font-semibold text-ink-900">Sprints</p>
-			<p class="text-[11px] text-ink-500">
+			<p class="text-[0.6875rem] text-ink-500">
 				Delivery buckets for the work queue: put a core, a feature or an action in the sprint you
 				plan to ship it in. Anything added here joins the queue below.
 			</p>
@@ -193,11 +194,11 @@
 							class="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-semibold text-ink-900 outline-none placeholder:text-ink-300 focus:outline-none"
 						/>
 						{#if done}
-							<span class="shrink-0 rounded-pill bg-success-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-success-600">
+							<span class="shrink-0 rounded-pill bg-success-50 px-1.5 py-0.5 text-[0.5625rem] font-semibold uppercase tracking-wide text-success-600">
 								Done
 							</span>
 						{/if}
-						<span class="shrink-0 rounded-pill bg-surface px-1.5 py-0.5 text-[9px] font-semibold text-ink-500">
+						<span class="shrink-0 rounded-pill bg-surface px-1.5 py-0.5 text-[0.5625rem] font-semibold text-ink-500">
 							{count} task{count === 1 ? '' : 's'}
 						</span>
 						<button
@@ -212,14 +213,14 @@
 							<Icon name="x" size={12} />
 						</button>
 					</div>
-					<div class="mt-2 flex items-center gap-1.5 text-[10px] text-ink-500">
+					<div class="mt-2 flex items-center gap-1.5 text-[0.625rem] text-ink-500">
 						<span class="uppercase tracking-wide text-ink-400">From</span>
 						<input
 							type="date"
 							value={sprint.startDate ?? ''}
 							oninput={(e) => store.updateSprint(sprint.id, 'startDate', e.currentTarget.value)}
 							aria-label="Sprint start date"
-							class="rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] text-ink-700 outline-none focus:border-brand-300"
+							class="rounded border border-line bg-surface px-1.5 py-0.5 text-[0.625rem] text-ink-700 outline-none focus:border-brand-300"
 						/>
 						<span class="uppercase tracking-wide text-ink-400">to</span>
 						<input
@@ -227,23 +228,21 @@
 							value={sprint.endDate ?? ''}
 							oninput={(e) => store.updateSprint(sprint.id, 'endDate', e.currentTarget.value)}
 							aria-label="Sprint end date"
-							class="rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] text-ink-700 outline-none focus:border-brand-300"
+							class="rounded border border-line bg-surface px-1.5 py-0.5 text-[0.625rem] text-ink-700 outline-none focus:border-brand-300"
 						/>
 						{#if done}
 							<button
 								type="button"
 								onclick={() => store.archiveSprint(sprint.id)}
 								title="Freeze this finished sprint in history: it leaves the pickers and filters"
-								class="ml-auto rounded-field bg-brand-gradient px-2.5 py-1 text-[10px] font-semibold text-white hover:shadow-card"
+								class="ml-auto rounded-field bg-brand-gradient px-2.5 py-1 text-[0.625rem] font-semibold text-white hover:shadow-card"
 							>
 								Archive
 							</button>
 						{/if}
 					</div>
 					{#if count > 0 && !done}
-						<div class="mt-2 h-1 overflow-hidden rounded-full bg-surface" title="{pct}% of this sprint's tasks are done">
-							<div class="h-full rounded-full bg-info-500 transition-all" style="width: {pct}%"></div>
-						</div>
+						<Gauge parts={[{ value: pct, tone: 'bg-info-500' }]} total={100} height={4} track="bg-surface" class="mt-2" title="{pct}% of this sprint's tasks are done" />
 					{/if}
 
 					<!-- The sprint's tasks: what "N tasks" actually is, and the way out. -->
@@ -256,11 +255,11 @@
 									<span class="shrink-0 text-ink-400" title={KIND_LABEL[item.kind]}>
 										<Icon name={KIND_ICON[item.kind]} size={11} />
 									</span>
-									<span class="min-w-0 flex-1 truncate text-[11px] font-medium text-ink-800 {st === 'done' ? 'line-through opacity-60' : ''}">
+									<span class="min-w-0 flex-1 truncate text-[0.6875rem] font-medium text-ink-800 {st === 'done' ? 'line-through opacity-60' : ''}">
 										{workItemLabel(store.draft, item, resolveActionName)}
 										{#if parent}<span class="font-normal text-ink-400"> · {parent}</span>{/if}
 									</span>
-									<span class="shrink-0 rounded-pill px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wide {STATUS_META[st].cls}">
+									<span class="shrink-0 rounded-pill px-1.5 py-0.5 text-[0.5rem] font-semibold uppercase tracking-wide {STATUS_META[st].cls}">
 										{STATUS_META[st].label}
 									</span>
 									<button
@@ -296,7 +295,7 @@
 		<button
 			type="button"
 			onclick={() => (showArchived = !showArchived)}
-			class="mt-3 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-400 hover:text-ink-600"
+			class="mt-3 flex items-center gap-1.5 text-[0.625rem] font-semibold uppercase tracking-wide text-ink-400 hover:text-ink-600"
 		>
 			<Icon name="check" size={11} />
 			Archived sprints · {visibleArchived.length}
@@ -310,17 +309,17 @@
 						<Icon name="check" size={11} class="text-success-600" />
 						<span class="text-xs font-medium text-ink-600">{sprint.name || 'Untitled sprint'}</span>
 						{#if sprint.startDate || sprint.endDate}
-							<span class="text-[10px] text-ink-400">{sprint.startDate ?? '…'} → {sprint.endDate ?? '…'}</span>
+							<span class="text-[0.625rem] text-ink-400">{sprint.startDate ?? '…'} → {sprint.endDate ?? '…'}</span>
 						{/if}
-						<span class="text-[10px] text-ink-400">· {count} task{count === 1 ? '' : 's'}</span>
+						<span class="text-[0.625rem] text-ink-400">· {count} task{count === 1 ? '' : 's'}</span>
 						{#if sprint.archivedAt}
-							<span class="text-[10px] text-ink-400" title="Archived on">· {sprint.archivedAt.slice(0, 10)}</span>
+							<span class="text-[0.625rem] text-ink-400" title="Archived on">· {sprint.archivedAt.slice(0, 10)}</span>
 						{/if}
 						<button
 							type="button"
 							onclick={() => store.unarchiveSprint(sprint.id)}
 							title="Put this sprint back on the board"
-							class="ml-auto rounded-field border border-line px-2 py-0.5 text-[10px] font-semibold text-ink-500 hover:border-brand-300 hover:text-brand-500"
+							class="ml-auto rounded-field border border-line px-2 py-0.5 text-[0.625rem] font-semibold text-ink-500 hover:border-brand-300 hover:text-brand-500"
 						>
 							Reopen
 						</button>

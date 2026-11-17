@@ -1,0 +1,160 @@
+/* The rows at the top of Knowledge and of a change request (criteria 8e942b12, 595efead): the name, the tab bar and
+   the band, across the page, in view while it scrolls under them. Under `.kbar` so their short names stay here. */
+.kbar {
+	position: sticky;
+	top: 0;
+	z-index: 25;
+	margin: -22px -26px 22px;
+	background: var(--color-paper);
+}
+/* The Edit mode draws a blue line along the top of the rows (criterion 41514698). */
+.kbar.editing {
+	box-shadow: inset 0 3px 0 var(--color-blue);
+}
+.kbar .khead {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 14px;
+	padding: 18px 26px 12px;
+	background: var(--color-paper);
+}
+.kbar .kname {
+	min-width: 0;
+	margin: 0;
+	color: var(--color-ink);
+	font: 700 1.875rem/1 var(--font-evo);
+	letter-spacing: -0.025em;
+	overflow-wrap: anywhere;
+}
+.kbar .kup {
+	flex: none;
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--color-ink-3);
+	font: 600 0.78125rem/1.2 var(--font-evo);
+	cursor: pointer;
+}
+.kbar .kup:hover {
+	color: var(--color-ink);
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+.kbar .kkey {
+	flex: none;
+	color: var(--color-ink-3);
+	font: 500 0.75rem/1.2 var(--font-evo-mono);
+}
+/* Edit right after the DRAFT tag, never floating alone at the far right (owner 2026-11-07). */
+.kbar .ktools {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+}
+.kbar .ktools:empty {
+	display: none;
+}
+.kbar .ksb {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px;
+	padding: 10px 26px;
+	border-bottom: 1px solid var(--color-line);
+	background: var(--color-paper);
+	color: var(--color-ink);
+	font: 400 0.84375rem/1.4 var(--font-evo);
+}
+.kbar .ksb.draft {
+	border-bottom-color: color-mix(in srgb, var(--color-orange) 45%, var(--color-paper));
+	background: color-mix(in srgb, var(--color-orange-tint) 45%, var(--color-paper));
+}
+.kbar .pill {
+	flex: none;
+	padding: 3px 8px;
+	background: var(--color-green-ink);
+	color: var(--color-paper);
+	font: 700 0.65625rem/1.2 var(--font-evo-mono);
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+.kbar .draft .pill {
+	background: var(--color-orange-ink);
+}
+.kbar .txt {
+	flex: 1 1 220px;
+	min-width: 0;
+}
+.kbar .ktabs {
+	position: relative;
+	display: flex;
+	gap: 24px;
+	padding: 0 26px;
+	overflow-x: auto;
+	border-bottom: 1px solid var(--color-line);
+	background: var(--color-paper);
+}
+.kbar .ktabs .kt-hl {
+	box-shadow: inset 0 -3px 0 var(--color-ink);
+}
+.kbar .tab {
+	position: relative;
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	gap: 5px;
+	padding: 12px 2px;
+	border-bottom: 3px solid transparent;
+	color: var(--color-ink-3);
+	font: 600 0.78125rem/1.2 var(--font-evo);
+	text-decoration: none;
+	white-space: nowrap;
+}
+.kbar button.tab {
+	border-top: 0;
+	border-right: 0;
+	border-left: 0;
+	background: none;
+	cursor: pointer;
+}
+.kbar .tab:hover,
+.kbar .tab.on {
+	color: var(--color-ink);
+}
+/* A step not open yet: greyed, why in its tooltip (criterion 595efead). */
+.kbar .tab.waits,
+.kbar .tab.waits:hover {
+	color: var(--color-evo-faint);
+	cursor: not-allowed;
+}
+/* Until the highlight is placed (server render), the tab on screen draws its own line. */
+.kbar .tab.own {
+	border-bottom-color: var(--color-ink);
+}
+.kbar .chk {
+	display: inline-flex;
+	color: var(--color-green);
+}
+/* On a phone the three rows scroll with the page: its height is too short to give them (criterion 8e942b12). */
+@media (max-width: 760px) {
+	.kbar {
+		position: relative;
+		margin: -16px -16px 16px;
+	}
+	.kbar .khead,
+	.kbar .ksb,
+	.kbar .ktabs {
+		padding-inline: 16px;
+	}
+	.kbar .kname {
+		font-size: 1.5rem;
+	}
+}
+
+/* The page's own scrolling (a link to an element, the next element to validate) lands under the band at the top of
+   Knowledge and of a change request, never hidden behind it: the band publishes its height (--kb-head-h). */
+#app-scroll {
+	scroll-padding-top: calc(var(--kb-head-h, 0px) + 12px);
+}

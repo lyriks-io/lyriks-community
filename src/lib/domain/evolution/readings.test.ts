@@ -37,9 +37,8 @@ const inputs = (over: Partial<ReadingInputs> = {}): ReadingInputs => ({
 		}
 	},
 	grants: [
-		{ roleId: 'admin', capabilityId: 'feat-a', action: 'update' },
-		{ roleId: 'admin', capabilityId: 'feat-a', action: 'read' },
-		{ roleId: 'designer', capabilityId: 'feat-a', action: 'read' }
+		{ roleId: 'admin', capabilityId: 'feat-a' },
+		{ roleId: 'designer', capabilityId: 'feat-a' }
 	],
 	roles: [
 		{ id: 'admin', name: 'Admin' },
@@ -110,7 +109,7 @@ describe('the readings of a request', () => {
 		const all = capabilityReadings(request(), inputs());
 		const grants = reading(all, '04-permissions.grants');
 		expect(grants?.filled).toBe(true);
-		expect(grants?.names).toEqual(['Admin: update, read', 'Designer: read']);
+		expect(grants?.names).toEqual(['Admin', 'Designer']);
 		const roles = reading(all, '03-personas.roles');
 		expect(roles?.names).toEqual(['Admin', 'Designer']);
 		// Not read yet: no grant and no impact report is the one unread state.

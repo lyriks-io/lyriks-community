@@ -1,3 +1,4 @@
+import { needsRefresh, readSignature } from './engine-cache-staleness';
 import type { FeatureAdvice, ScoreFeaturesUseCase } from '$application/use-cases';
 import { FEATURE_ADVICE_SECTION } from '$lib/shared/section-sync';
 import { engineLane, type BackgroundLane } from './background-lane.server';
@@ -21,7 +22,6 @@ import { publishSectionChange, subscribeSectionChanges } from './sync-bus.server
  * the application use-case, keeping the dependency arrow inward.
  */
 
-const TTL_MS = 60_000;
 
 /** Lane priority: after implementation coverage (0), before verification (2). */
 const LANE_PRIORITY = 1;
@@ -37,11 +37,14 @@ interface Entry {
 	data: FeatureAdvice[];
 	at: number; // epoch ms of the last successful compute (0 = never)
 	computing: boolean;
+	signature?: string | null;
 }
 
 export interface CachedFeatureAdvisorOptions {
 	lane?: BackgroundLane;
 	store?: SnapshotStore<FeatureAdvice[]>;
+	/** The project's behaviour-model signature: a reading is recomputed when it moves (engine-cache-staleness). */
+	signature?: (projectId: string) => string;
 }
 
 export class CachedFeatureAdvisor {
@@ -50,6 +53,7 @@ export class CachedFeatureAdvisor {
 	readonly #seeding = new Map<string, Promise<Entry>>();
 	readonly #lane: BackgroundLane;
 	readonly #store: SnapshotStore<FeatureAdvice[]> | null;
+	readonly #signature: ((projectId: string) => string) | undefined;
 
 	constructor(
 		private readonly score: ScoreFeaturesUseCase,
@@ -57,6 +61,7 @@ export class CachedFeatureAdvisor {
 	) {
 		this.#lane = options.lane ?? engineLane;
 		this.#store = options.store ?? null;
+		this.#signature = options.signature;
 		// Mark a project's snapshot stale when its scored inputs change, so the next
 		// read refreshes instead of serving a stale score for a whole TTL. Keep the
 		// last data (no badge flicker) and only stale live entries — a cold entry
@@ -71,7 +76,7 @@ export class CachedFeatureAdvisor {
 
 	async get(projectId: string): Promise<FeatureAdvice[]> {
 		const entry = this.#cache.get(projectId) ?? (await this.#seed(projectId));
-		if (!entry.computing && Date.now() - entry.at > TTL_MS) this.#refresh(projectId);
+		if (!entry.computing && needsRefresh(entry, readSignature(this.#signature, projectId))) this.#refresh(projectId);
 		return entry.data;
 	}
 
@@ -100,23 +105,24 @@ export class CachedFeatureAdvisor {
 		if (entry.computing) return;
 		entry.computing = true;
 		this.#cache.set(projectId, entry);
+		const signature = readSignature(this.#signature, projectId);
 
 		void this.#lane
 			.run(`advice:${projectId}`, LANE_PRIORITY, () => this.score.execute(projectId))
 			.then((data) => {
 				const changed = JSON.stringify(data) !== JSON.stringify(entry.data);
-				this.#cache.set(projectId, { data, at: Date.now(), computing: false });
+				this.#cache.set(projectId, { data, at: Date.now(), computing: false, signature });
 				if (changed) {
 					void this.#store?.save(projectId, data).catch(() => {});
 					// Push over live-sync so the Features tab re-reads the now-fresh cache.
-					// Loop-safe: the reload hits a fresh entry (within TTL) and does not
+					// Loop-safe: the reload hits a fresh entry (computed on the current model) and does not
 					// re-refresh.
 					publishSectionChange({ projectId, section: FEATURE_ADVICE_SECTION, origin: null });
 				}
 			})
 			.catch(() => {
-				// Keep last-known data; back off a full TTL before retrying.
-				this.#cache.set(projectId, { ...entry, at: Date.now(), computing: false });
+				// Keep last-known data; retry once the model moves or past the safety age (engine-cache-staleness).
+				this.#cache.set(projectId, { ...entry, at: Date.now(), computing: false, signature });
 			});
 	}
 }

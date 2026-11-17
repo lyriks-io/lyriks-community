@@ -7,28 +7,22 @@
  *
  * One visit yields a LIST of items, not one essay: a user rarely has a single
  * thing to say, and a row that mixes a bug with two ideas cannot be triaged.
- * Each item carries its own type and travels as its own entry.
+ * Each item travels as its own entry; the person picks no kind for it, the
+ * team sorts the entries as it reads them (criterion 3dc73755).
  */
 
 /** Where the offline (mailto) channel delivers. */
 export const FEEDBACK_EMAIL = 'feedback@lyriks.io';
 
-export const FEEDBACK_CATEGORIES = [
-	{ id: 'bug', label: 'Bug' },
-	{ id: 'idea', label: 'Idea' },
-	{ id: 'other', label: 'Other' }
-] as const;
-
-export type FeedbackCategory = (typeof FEEDBACK_CATEGORIES)[number]['id'];
-
 /**
  * The one-click path: a rating alone is a complete, sendable feedback, so the
- * user who has nothing to write still gets counted.
+ * user who has nothing to write still gets counted. Read from left to right
+ * in this order (criterion c583b8d4).
  */
 export const FEEDBACK_RATINGS = [
-	{ id: 'good', label: 'Good', icon: 'smile' },
+	{ id: 'bad', label: 'Bad', icon: 'frown' },
 	{ id: 'okay', label: 'Okay', icon: 'meh' },
-	{ id: 'bad', label: 'Bad', icon: 'frown' }
+	{ id: 'good', label: 'Good', icon: 'smile' }
 ] as const;
 
 export type FeedbackRating = (typeof FEEDBACK_RATINGS)[number]['id'];
@@ -39,10 +33,25 @@ export const MAX_FEEDBACK_MESSAGE = 4000;
 /** One visit, at most this many items: a list, never a bulk import. */
 export const MAX_FEEDBACK_ITEMS = 20;
 
-/** One thing the user has to say, typed by itself so it can be triaged alone. */
+/** One thing the user has to say, on its own row so it can be triaged alone. */
 export interface FeedbackItem {
-	readonly category: FeedbackCategory;
 	readonly message: string;
+}
+
+/**
+ * The rows of the notes list once the row at `edited` was written in: the list
+ * always closes on one empty row to write the next note in, so nothing is
+ * clicked to add one (criterion c583b8d4). Writing in that empty row brings the
+ * next one under it, up to `max`; emptying the row just above it takes the
+ * extra empty row back. Only the edited row decides, so the row the caret is in
+ * is never the one removed. Returns `rows` itself when nothing changes.
+ */
+export function notesAfterEdit<T extends FeedbackItem>(rows: readonly T[], edited: number, newRow: () => T, max = MAX_FEEDBACK_ITEMS): readonly T[] {
+	const blank = (row: T | undefined) => !row || !row.message.trim();
+	const last = rows.length - 1;
+	if (edited === last && !blank(rows[edited]) && rows.length < max) return [...rows, newRow()];
+	if (edited === last - 1 && blank(rows[edited]) && blank(rows[last])) return rows.slice(0, last);
+	return rows;
 }
 
 export interface FeedbackDraft {
@@ -61,7 +70,7 @@ export interface FeedbackDraft {
  */
 export function feedbackItems(draft: FeedbackDraft): FeedbackItem[] {
 	return draft.items
-		.map((item) => ({ category: item.category, message: item.message.trim() }))
+		.map((item) => ({ message: item.message.trim() }))
 		.filter((item) => item.message.length > 0)
 		.slice(0, MAX_FEEDBACK_ITEMS);
 }
@@ -87,25 +96,19 @@ export interface FeedbackContext {
 	readonly install: string;
 }
 
-function categoryLabel(category: FeedbackCategory): string {
-	return FEEDBACK_CATEGORIES.find((c) => c.id === category)?.label ?? 'Other';
-}
-
 function ratingLabel(rating: FeedbackRating): string {
 	return FEEDBACK_RATINGS.find((r) => r.id === rating)?.label ?? rating;
 }
 
-/** A single item names its type in the heading; a list numbers them instead. */
+/** A list says how many items it carries in the heading, and numbers them below. */
 function reportHeading(items: readonly FeedbackItem[]): string {
-	if (items.length === 0) return 'Lyriks feedback';
-	if (items.length === 1) return `Lyriks feedback · ${categoryLabel(items[0].category)}`;
-	return `Lyriks feedback · ${items.length} items`;
+	return items.length > 1 ? `Lyriks feedback · ${items.length} items` : 'Lyriks feedback';
 }
 
 /** One item as the team reads it; continuation lines stay under their number. */
 function itemBlock(item: FeedbackItem, index: number): string {
 	const [first = '', ...rest] = item.message.split('\n');
-	return [`${index + 1}. [${categoryLabel(item.category)}] ${first}`, ...rest.map((line) => `   ${line}`)].join('\n');
+	return [`${index + 1}. ${first}`, ...rest.map((line) => `   ${line}`)].join('\n');
 }
 
 /**
@@ -131,13 +134,12 @@ export function feedbackReport(draft: FeedbackDraft, context: FeedbackContext | 
 export function feedbackSubject(draft: FeedbackDraft): string {
 	const items = feedbackItems(draft);
 	if (items.length > 1) return `[Lyriks feedback] ${items.length} items`;
-	const tag = items.length === 1 ? categoryLabel(items[0].category) : 'feedback';
 	const first = (items[0]?.message.split('\n', 1)[0] ?? '').trim();
 	const head =
 		first.length > 60
 			? `${first.slice(0, 59)}…`
 			: first || (draft.rating ? `Rated ${ratingLabel(draft.rating).toLowerCase()}` : '');
-	return head ? `[Lyriks ${tag}] ${head}` : `[Lyriks ${tag}]`;
+	return head ? `[Lyriks feedback] ${head}` : '[Lyriks feedback]';
 }
 
 /** The offline channel: a pre-filled mail to the team, nothing transmitted by Lyriks. */

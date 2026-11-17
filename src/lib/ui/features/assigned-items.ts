@@ -1,4 +1,4 @@
-import type { FeatureActionIndex } from '$application/index-feature-actions';
+import type { FeatureActionIndex } from '$application/specification/index-feature-actions';
 import type { ProjectFeaturesDraft } from '$domain/features';
 
 /** One feature/action a person is on, with HOW they are on it. */

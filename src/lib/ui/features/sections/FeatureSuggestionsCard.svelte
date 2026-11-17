@@ -74,7 +74,7 @@
 			<div class="flex items-center gap-2">
 				<Icon name="sparkles" size={15} class="text-brand-500" />
 				<span class="text-sm font-semibold text-ink-900">Suggested features</span>
-				<span class="rounded-pill bg-brand-100 px-1.5 py-0.5 text-[10px] font-semibold text-brand-600">
+				<span class="rounded-pill bg-brand-100 px-1.5 py-0.5 text-[0.625rem] font-semibold text-brand-600">
 					{visible.length}
 				</span>
 			</div>
@@ -82,20 +82,20 @@
 				<button
 					type="button"
 					onclick={dismissAll}
-					class="rounded-field bg-surface-sunken px-2 py-1 text-[10px] font-medium text-ink-500 hover:text-ink-700"
+					class="rounded-field bg-surface-sunken px-2 py-1 text-[0.625rem] font-medium text-ink-500 hover:text-ink-700"
 				>
 					Dismiss all
 				</button>
 				<button
 					type="button"
 					onclick={acceptAll}
-					class="rounded-field bg-brand-500 px-2 py-1 text-[10px] font-semibold text-white hover:bg-brand-600"
+					class="rounded-field bg-brand-500 px-2 py-1 text-[0.625rem] font-semibold text-white hover:bg-brand-600"
 				>
 					Accept all
 				</button>
 			</div>
 		</div>
-		<p class="mb-3 text-[11px] text-ink-500">
+		<p class="mb-3 text-[0.6875rem] text-ink-500">
 			Proposed by Lyriks from your project context. Nothing is created until you click Accept.
 		</p>
 		<div class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
@@ -104,14 +104,14 @@
 				<div class="flex items-stretch gap-2 rounded-field border border-line bg-surface p-3">
 					<div class="flex min-w-0 flex-1 flex-col justify-center">
 						<p class="truncate text-xs font-semibold text-ink-900">{s.title}</p>
-						<p class="mt-0.5 text-[10px] leading-snug text-ink-500">{s.rationale}</p>
+						<p class="mt-0.5 text-[0.625rem] leading-snug text-ink-500">{s.rationale}</p>
 						{#if hint}
 							<div class="mt-1.5 flex flex-wrap items-center gap-1">
-								<span class="text-[9px] font-bold uppercase tracking-widest text-ink-400">
+								<span class="text-[0.5625rem] font-bold uppercase tracking-widest text-ink-400">
 									{hint.isNew ? '+ Will create core' : 'Goes into core'}
 								</span>
 								<span
-									class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-ink-700 {hint.isNew
+									class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[0.625rem] font-semibold text-ink-700 {hint.isNew
 										? 'border border-dashed border-line bg-surface'
 										: 'bg-surface-sunken'}"
 								>
@@ -125,14 +125,14 @@
 						<button
 							type="button"
 							onclick={() => accept(s)}
-							class="rounded-field bg-brand-500 px-3 py-1 text-[10px] font-semibold text-white hover:bg-brand-600"
+							class="rounded-field bg-brand-500 px-3 py-1 text-[0.625rem] font-semibold text-white hover:bg-brand-600"
 						>
 							Accept
 						</button>
 						<button
 							type="button"
 							onclick={() => dismiss(s.id)}
-							class="rounded-field px-3 py-1 text-[10px] text-ink-400 hover:bg-surface-sunken hover:text-ink-700"
+							class="rounded-field px-3 py-1 text-[0.625rem] text-ink-400 hover:bg-surface-sunken hover:text-ink-700"
 						>
 							Dismiss
 						</button>

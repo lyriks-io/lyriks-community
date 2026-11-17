@@ -13,14 +13,22 @@ import { dirname, resolve } from 'node:path';
 import type { SettingsRepositoryPort } from '$application/ports';
 import {
 	normalizeAiSettings,
+	normalizeDisplaySettings,
 	normalizeFeedbackSettings,
+	normalizeInstallConfiguration,
+	normalizeProofSettings,
+	normalizeStoredAssistant,
 	type AiSettings,
-	type FeedbackSettings
+	type DisplaySettings,
+	type FeedbackSettings,
+	type InstallConfiguration,
+	type ProofSettings,
+	type StoredAssistant
 } from '$domain/settings';
 
 /**
  * Filesystem adapter for `SettingsRepositoryPort`: one JSON document at
- * `data/settings.json`, one key per concern (`ai`, `feedback`). Single concern:
+ * `data/settings.json`, one key per concern (`ai`, `feedback`, `assistant`). Single concern:
  * read/write the settings file; values are normalized through the domain so a
  * malformed/old file degrades to defaults. Writes merge over the current
  * document, so saving one concern never drops another.
@@ -46,6 +54,38 @@ export class LocalFsSettingsRepository implements SettingsRepositoryPort {
 
 	async saveFeedback(settings: FeedbackSettings): Promise<void> {
 		this.#write({ ...this.#read(), feedback: normalizeFeedbackSettings(settings) });
+	}
+
+	async loadInstallConfiguration(): Promise<InstallConfiguration> {
+		return normalizeInstallConfiguration(this.#read().installConfiguration);
+	}
+
+	async saveInstallConfiguration(configuration: InstallConfiguration): Promise<void> {
+		this.#write({ ...this.#read(), installConfiguration: normalizeInstallConfiguration(configuration) });
+	}
+
+	async loadAssistant(): Promise<StoredAssistant> {
+		return normalizeStoredAssistant(this.#read().assistant);
+	}
+
+	async saveAssistant(settings: StoredAssistant): Promise<void> {
+		this.#write({ ...this.#read(), assistant: normalizeStoredAssistant(settings) });
+	}
+
+	async loadProofs(): Promise<ProofSettings> {
+		return normalizeProofSettings(this.#read().proofs);
+	}
+
+	async saveProofs(settings: ProofSettings): Promise<void> {
+		this.#write({ ...this.#read(), proofs: normalizeProofSettings(settings) });
+	}
+
+	async loadDisplay(): Promise<DisplaySettings> {
+		return normalizeDisplaySettings(this.#read().display);
+	}
+
+	async saveDisplay(settings: DisplaySettings): Promise<void> {
+		this.#write({ ...this.#read(), display: normalizeDisplaySettings(settings) });
 	}
 
 	#read(): Record<string, unknown> {

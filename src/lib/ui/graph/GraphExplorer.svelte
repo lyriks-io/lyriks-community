@@ -1,6 +1,13 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { DiagramEnlarger, EnlargedBackdrop, Icon, portalWhile } from '$ui/design-system';
+	import { CanvasCamera } from '$ui/design-system/canvas-camera';
+	import { CanvasGesture } from '$ui/design-system/canvas-gesture';
+	import { MAX_ZOOM, MIN_ZOOM } from '$ui/design-system/pan-zoom.svelte';
+	import WheelHint from '$ui/design-system/WheelHint.svelte';
+	import { listenWheelZoom } from '$ui/design-system/wheel-zoom';
+	import { prefersReducedMotion } from '$ui/design-system/reduced-motion';
 	import type { Simulation } from 'd3-force';
 	import type { GraphContext, GraphEdgeKind, GraphNode, KnowledgeGraph } from '$domain/graph';
 	import { nodeSourceHref } from '$domain/graph/node-link';
@@ -22,7 +29,7 @@
 		formalDpoEnabled: boolean;
 		/**
 		 * Where the Combined/Local/Engine switch points. The explorer is embedded in
-		 * a host page (the Data & Architecture "Knowledge graph" tab), so it cannot
+		 * a host page (the Tech & Data "Knowledge graph" tab), so it cannot
 		 * know its own URL — the host supplies one that preserves its tab.
 		 */
 		sourceHref: (source: 'local' | 'engine' | 'merged') => string;
@@ -88,53 +95,39 @@
 	let hoverId = $state<string | null>(null);
 	let hidden = $state(new Set<string>());
 	let hiddenEdgeKinds = $state(new Set<GraphEdgeKind>());
-	let reduceMotion = false;
 	const edgeKinds = untrack(() => summarizeEdgeKinds(graph.edges));
 
-	// ── Camera (eased): `cam` is what renders, `target` is where it is heading ──
+	// ── Camera: `cam` is what renders; `camera` (below) moves it ──
 	let cam = $state({ s: 1, x: 0, y: 0 });
-	const target = { s: 1, x: 0, y: 0 };
 	let vw = $state(800);
 	let vh = $state(600);
-	let camRaf = 0;
 	let canvasEl: HTMLCanvasElement | null = null;
 	let canvasContext: CanvasRenderingContext2D | null = null;
 	let canvasDpr = 1;
 	let drawRaf = 0;
 	let simulation: Simulation<ForceNode, ForceLink> | null = null;
 
-	function startCam() {
-		cancelAnimationFrame(camRaf);
-		const step = () => {
-			const ease = reduceMotion ? 1 : 0.16;
-			cam.s += (target.s - cam.s) * ease;
-			cam.x += (target.x - cam.x) * ease;
-			cam.y += (target.y - cam.y) * ease;
+	/* The camera moves as every diagram's does (ac-diag-throw, ac-diag-glide): it glides on a spring
+	   from where it stands, the same on every screen whatever its refresh rate, a drag throws it on,
+	   and a strip of the graph always stays in view. Between 20% and 400% (ac-diag-fs-3). */
+	const camera = new CanvasCamera({
+		read: () => cam,
+		write: (v) => {
+			cam.s = v.s;
+			cam.x = v.x;
+			cam.y = v.y;
 			requestDraw();
-			if (
-				Math.abs(target.s - cam.s) < 0.001 &&
-				Math.abs(target.x - cam.x) < 0.5 &&
-				Math.abs(target.y - cam.y) < 0.5
-			) {
-				cam.s = target.s;
-				cam.x = target.x;
-				cam.y = target.y;
-				return;
-			}
-			camRaf = requestAnimationFrame(step);
-		};
-		camRaf = requestAnimationFrame(step);
-	}
-	/** Move camera instantly (panning, dragging) — no easing lag under the pointer. */
+		},
+		min: MIN_ZOOM,
+		max: MAX_ZOOM,
+		bounds: () => {
+			const b = bounds();
+			return { view: { w: vw, h: vh }, content: { x: b.minX, y: b.minY, w: b.maxX - b.minX || 1, h: b.maxY - b.minY || 1 } };
+		}
+	});
+	/** Move camera instantly (the first frame, a resize). */
 	function jumpCam(s: number, x: number, y: number) {
-		cancelAnimationFrame(camRaf);
-		target.s = s;
-		target.x = x;
-		target.y = y;
-		cam.s = s;
-		cam.x = x;
-		cam.y = y;
-		requestDraw();
+		camera.jump({ s, x, y });
 	}
 
 	const isVisible = (node: GraphNode) => !hidden.has(node.context);
@@ -242,32 +235,31 @@
 		const pad = 120;
 		const w = b.maxX - b.minX || 1;
 		const h = b.maxY - b.minY || 1;
-		target.s = Math.min(2, Math.max(0.15, Math.min((vw - pad) / w, (vh - pad) / h)));
-		target.x = vw / 2 - ((b.minX + b.maxX) / 2) * target.s;
-		target.y = vh / 2 - ((b.minY + b.maxY) / 2) * target.s;
-		startCam();
+		const s = Math.min(2, Math.max(MIN_ZOOM, Math.min((vw - pad) / w, (vh - pad) / h)));
+		camera.glideTo({ s, x: vw / 2 - ((b.minX + b.maxX) / 2) * s, y: vh / 2 - ((b.minY + b.maxY) / 2) * s });
 	}
 
 	/** Glide the camera to a node (search hit, connection click). */
 	function flyTo(id: string) {
 		const p = pos[idIndex.get(id) ?? 0];
 		if (!p) return;
-		target.s = Math.min(2.2, Math.max(target.s, 1.35));
-		target.x = vw / 2 - (p.x ?? 0) * target.s;
-		target.y = vh / 2 - (p.y ?? 0) * target.s;
-		startCam();
+		const s = Math.min(2.2, Math.max(camera.target.s, 1.35));
+		camera.glideTo({ s, x: vw / 2 - (p.x ?? 0) * s, y: vh / 2 - (p.y ?? 0) * s });
 	}
 
+	/** One step of the panel's or the keyboard's zoom, counted from where a glide is going. */
 	function zoomBy(factor: number, cx = vw / 2, cy = vh / 2) {
-		const next = Math.min(4, Math.max(0.1, target.s * factor));
-		target.x = cx - ((cx - target.x) * next) / target.s;
-		target.y = cy - ((cy - target.y) * next) / target.s;
-		target.s = next;
-		startCam();
+		const from = camera.target;
+		const s = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, from.s * factor));
+		camera.glideTo({ s, x: cx - ((cx - from.x) * s) / from.s, y: cy - ((cy - from.y) * s) / from.s });
 	}
+
+	// Enlarge the graph in a dialog over the page (feat-fb747-diagram-fullscreen);
+	// its own panel already zooms, pans and fits.
+	const enlarger = new DiagramEnlarger();
+	$effect(() => enlarger.attach());
 
 	onMount(() => {
-		reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 		canvasContext = canvasEl?.getContext('2d') ?? null;
 		jumpCam(1, vw / 2, vh / 2);
 		resizeCanvas();
@@ -281,31 +273,33 @@
 					fitAfterSettle = false;
 					fitToView();
 				}
-			}
+			},
+			prefersReducedMotion()
 		);
 		fitAfterSettle = true;
 		return () => {
 			simulation?.stop();
-			cancelAnimationFrame(camRaf);
+			camera.stop();
 			cancelAnimationFrame(drawRaf);
 		};
 	});
 
-	// ── Pointer interaction: pan background, drag nodes, wheel zoom ──────────────
+	// ── Pointer interaction: pan or pinch the background, drag nodes, wheel zoom ──
 	let dragNode = -1;
+	let dragPointer = -1;
 	let dragged = false;
-	let panning = false;
 	let lastX = 0;
 	let lastY = 0;
-	// Where the background press started — used to tell a click (deselect) from a
-	// pan (keep selection), tolerating the sub-pixel jitter a real click emits.
-	let panStartX = 0;
-	let panStartY = 0;
+	// The background is held by one pointer or pinched by two (canvas-gesture.ts); its threshold
+	// tells a click (deselect) from a pan (keep selection), tolerating the jitter a real click emits.
+	const gesture = new CanvasGesture();
 
 	function onPointerDownNode(e: PointerEvent, i: number) {
 		e.stopPropagation();
 		(e.target as Element).setPointerCapture(e.pointerId);
+		camera.stop();
 		dragNode = i;
+		dragPointer = e.pointerId;
 		dragged = false;
 		pos[i].fx = pos[i].x;
 		pos[i].fy = pos[i].y;
@@ -315,54 +309,65 @@
 		selectedId = graph.nodes[i].id;
 	}
 	function onPointerDownBg(e: PointerEvent) {
-		panning = true;
-		panStartX = e.clientX;
-		panStartY = e.clientY;
-		lastX = e.clientX;
-		lastY = e.clientY;
+		gesture.press(e.pointerId, e.clientX, e.clientY, e.timeStamp);
+		camera.hold();
 	}
 	function onPointerMove(e: PointerEvent) {
 		if (dragNode >= 0) {
+			if (e.pointerId !== dragPointer) return;
 			pos[dragNode].fx = (pos[dragNode].fx ?? pos[dragNode].x ?? 0) + (e.clientX - lastX) / cam.s;
 			pos[dragNode].fy = (pos[dragNode].fy ?? pos[dragNode].y ?? 0) + (e.clientY - lastY) / cam.s;
 			lastX = e.clientX;
 			lastY = e.clientY;
 			dragged = true;
 			requestDraw();
-		} else if (panning) {
-			jumpCam(cam.s, cam.x + (e.clientX - lastX), cam.y + (e.clientY - lastY));
-			lastX = e.clientX;
-			lastY = e.clientY;
+		} else if (gesture.pressed) {
+			const step = gesture.move(e.pointerId, e.clientX, e.clientY, e.timeStamp);
+			if (!step) return;
+			camera.panBy(step.dx, step.dy);
+			if (step.factor !== 1) {
+				const rect = (e.currentTarget as Element).getBoundingClientRect();
+				camera.zoomAt(step.factor, step.cx - rect.left, step.cy - rect.top);
+			}
 		} else {
 			const i = hitNode(e.clientX, e.clientY);
 			hoverId = i >= 0 ? graph.nodes[i].id : null;
 			if (canvasEl) canvasEl.style.cursor = i >= 0 ? 'pointer' : 'grab';
 		}
 	}
-	function onPointerUp() {
-		if (dragNode >= 0 && !dragged && cam.s < 1) {
+	function onPointerUp(e: PointerEvent) {
+		if (dragNode >= 0) {
+			if (e.pointerId !== dragPointer) return;
 			// A plain click while zoomed out dives into the node so its
 			// neighbourhood labels have room to breathe.
-			flyTo(graph.nodes[dragNode].id);
-		} else if (panning && Math.hypot(lastX - panStartX, lastY - panStartY) < 5) {
-			// A plain click on empty canvas clears the selection; a real pan
-			// (moved past the jitter threshold) keeps it.
-			selectedId = null;
-		}
-		if (dragNode >= 0) {
+			if (!dragged && cam.s < 1) flyTo(graph.nodes[dragNode].id);
 			pos[dragNode].fx = null;
 			pos[dragNode].fy = null;
 			simulation?.alphaTarget(0);
+			dragNode = -1;
+			dragPointer = -1;
+			requestDraw();
+			return;
 		}
-		dragNode = -1;
-		panning = false;
+		const released = gesture.release(e.pointerId, e.timeStamp);
+		if (!released) return;
+		// A plain click on empty canvas clears the selection; a real pan keeps it.
+		if (!released.moved) selectedId = null;
+		camera.release(released.vx, released.vy);
 		requestDraw();
 	}
-	function onWheel(e: WheelEvent) {
-		e.preventDefault();
-		const rect = (e.currentTarget as Element).getBoundingClientRect();
-		zoomBy(e.deltaY < 0 ? 1.16 : 1 / 1.16, e.clientX - rect.left, e.clientY - rect.top);
-	}
+	// In a page the wheel scrolls it; Ctrl or ⌘ with the wheel, or a pinch, zooms the graph;
+	// enlarged, the graph has the room and the wheel zooms it (ac-diag-wheel).
+	let hint = $state<WheelHint | null>(null);
+	$effect(() => {
+		const el = canvasEl;
+		if (!el) return;
+		return listenWheelZoom(el, {
+			ownsRoom: () => enlarger.enlarged,
+			zoomAt: (factor, cx, cy) => camera.zoomAt(factor, cx, cy),
+			hint: () => hint?.poke()
+		});
+	});
 	function onDblClickNode(node: GraphNode) {
 		const href = editorHref(node);
 		if (href) goto(href);
@@ -580,7 +585,7 @@
 	}
 
 	function onPointerDownCanvas(e: PointerEvent) {
-		const i = hitNode(e.clientX, e.clientY);
+		const i = gesture.pressed ? -1 : hitNode(e.clientX, e.clientY);
 		if (i >= 0) onPointerDownNode(e, i);
 		else {
 			(e.currentTarget as Element).setPointerCapture(e.pointerId);
@@ -597,7 +602,16 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<div class="page" bind:clientWidth={vw} bind:clientHeight={vh}>
+<EnlargedBackdrop {enlarger} />
+<div
+	use:portalWhile={enlarger.enlarged}
+	class="page"
+	class:enlarged={enlarger.enlarged}
+	role={enlarger.enlarged ? 'dialog' : undefined}
+	aria-modal={enlarger.enlarged ? 'true' : undefined}
+	bind:clientWidth={vw}
+	bind:clientHeight={vh}
+>
 	<!-- Slow-drifting aurora glows give the canvas depth (pure CSS, GPU-cheap). -->
 	<div class="aurora a1" aria-hidden="true"></div>
 	<div class="aurora a2" aria-hidden="true"></div>
@@ -609,10 +623,10 @@
 		onpointerdown={onPointerDownCanvas}
 		onpointermove={onPointerMove}
 		onpointerup={onPointerUp}
-		onpointerleave={onPointerUp}
-		onwheel={onWheel}
+		onpointercancel={onPointerUp}
 		ondblclick={onDblClickCanvas}
 	></canvas>
+	{#if !enlarger.enlarged}<WheelHint bind:this={hint} />{/if}
 
 	<div class="vignette" aria-hidden="true"></div>
 
@@ -672,6 +686,14 @@
 					>
 				{/if}
 			</div>
+			<button
+				class="enlarge"
+				onclick={() => enlarger.toggle()}
+				title={enlarger.enlarged ? 'Close (Esc)' : 'Enlarge'}
+				aria-label={enlarger.enlarged ? 'Close (Esc)' : 'Enlarge'}
+			>
+				<Icon name={enlarger.enlarged ? 'x' : 'expand'} size={15} />
+			</button>
 		</div>
 	</header>
 
@@ -739,19 +761,9 @@
 
 	<div class="hud zoomer">
 		<button onclick={() => zoomBy(1.25)} aria-label="Zoom in">+</button>
-		<span class="pct">{Math.round(cam.s * 100)}%</span>
+		<!-- The zoom shown is also the fit control: one icon only, the enlarge one at the top. -->
+		<button class="pct" onclick={fitToView} title="Fit to view (F)" aria-label="Fit to view">{Math.round(cam.s * 100)}%</button>
 		<button onclick={() => zoomBy(1 / 1.25)} aria-label="Zoom out">−</button>
-		<button class="fit" onclick={fitToView} title="Fit to view (F)" aria-label="Fit to view">
-			<svg viewBox="0 0 24 24" aria-hidden="true">
-				<path
-					d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-				/>
-			</svg>
-		</button>
 	</div>
 
 	{#if selected}
@@ -821,7 +833,7 @@
 </div>
 
 <style>
-	/* Fills whatever box the host page gives it (the Data & Architecture
+	/* Fills whatever box the host page gives it (the Tech & Data
 	   "Knowledge graph" tab sizes it), rather than owning the viewport. */
 	.page {
 		position: relative;
@@ -1246,13 +1258,30 @@
 		cursor: pointer;
 		transition: background 0.15s ease;
 	}
-	.zoomer button:hover {
+	.page.enlarged {
+		position: fixed;
+		inset: 1.5rem;
+		z-index: 60;
+		height: auto;
+		border-radius: 0.8rem;
+		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+	}
+	.controls .enlarge {
+		width: 30px;
+		height: 30px;
+		display: grid;
+		place-items: center;
+		border: none;
+		border-radius: 0.45rem;
+		background: none;
+		color: #cbd5e1;
+		cursor: pointer;
+	}
+	.controls .enlarge:hover {
 		background: rgba(125, 211, 252, 0.14);
 	}
-	.zoomer .fit svg {
-		width: 15px;
-		height: 15px;
-		position: static;
+	.zoomer button:hover {
+		background: rgba(125, 211, 252, 0.14);
 	}
 	.pct {
 		font-size: 0.62rem;

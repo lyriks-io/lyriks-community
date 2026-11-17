@@ -1,282 +1,182 @@
 ---
 name: lyriks-evolution
-description: "Carry a change to an existing Lyriks product through a dossier (an evolution, a change request) WHEN THE PERSON ASKS FOR ONE, entirely through the Lyriks MCP: open the request, carry what the change proposes as a DRAFT feature the dossier holds and no section sees, read the impact and the coherence the platform computes with that draft laid over the specification, propose the values a person signs, cross the gates (the crossing into Verify freezes the spec AND writes the drafts into the features section), judge the derived implementation report, fold the acceptance remarks back. Evolution is OPTIONAL: an ordinary change is made directly (spec through the section tools, then code, then index sync). Use this skill when the person asks for a dossier or wants a change QUALIFIED before it is decided: \"prepare the dossier for Z\", \"what would it take to add X\", \"how big is changing Y\", \"open an evolution request\", or when a change is already carried by an open request. Who signs follows the roster: alone you carry the request through yourself, from two members up a person signs each proposal. Pairs with lyriks-behavior (authoring what a reading is missing) and lyriks-delivery (the code, then the index sync the report is derived from)."
+description: "Take a person by the hand through a change to an existing Lyriks product, as an Evolution request, entirely through the Lyriks MCP: one question at a time, the dossier's `next` block saying what to ask and what to do, the person deciding. The change lives as a DRAFT nothing else sees until the freeze writes it into the spec as a numbered version; a frozen version can be reopened and frozen again. Evolution is OPTIONAL: an ordinary change is made directly (spec, code, index). Use this skill when the person asks for a dossier, or wants a change QUALIFIED before it is decided: \"prepare the evolution for X\", \"what would it take to add Y\", \"how big is changing Z\", \"open an evolution request\", or when a change is already carried by an open request. Pairs with lyriks-behavior (the draft's runnable behaviour) and lyriks-delivery (the code, then the index the report is derived from)."
 ---
 
 # /lyriks-evolution
 
-An evolution is a change to a product that already has a spec. The dossier that
-carries it holds no specification value of its own: every field it gathers is
-written into the section that owns it, and every report it shows is computed by
-the platform. You drive the dossier; a person decides; the tools refuse anything
-else with the sentence the specification wrote.
+An Evolution request carries a change to a product that has a spec, from its
+reason to the day it is live. The person knows the need and decides; you ask
+the right question at the right moment, write what they said, and hand back
+what is theirs. The platform computes every reading and refuses what the rules
+refuse, in the spec's words.
 
-## When this skill applies: when the person asks for a dossier
+## When
 
-Evolution is optional. The same rule stands in the binding block, the
-per-prompt hook and the MCP server instructions:
+- **An ordinary change is made directly**: spec (`apply_behavior_batch`, `patch_section`), code, `sync_implementation_index`. Never open a request on your own.
+- **Open one when the person asks**, or wants a change qualified before anyone decides it (what it involves, its impact, an estimate, a decision that belongs to someone else).
+- **A change already carried by an open request continues in it.**
 
-- **An ordinary change is made directly.** Spec first through the section tools
-  (`apply_behavior_batch`, `patch_section`, `build_screen`, `wire_element`),
-  then the code, then `sync_implementation_index`. No dossier is needed, and
-  none is opened on your own initiative.
-- **A dossier is opened when the person asks for one**, or asks for a change to
-  be QUALIFIED before anyone decides it: what it would involve, an estimate, an
-  impact report, a decision that belongs to someone else, several people to
-  sign. That is what this skill is for.
-- **A change already carried by an open request continues in it**, rather than
-  being written a second time around it.
+## Follow `next`
 
-## The one law: the freeze is what writes
+Every dossier read (`get_evolution {project_id, request_id}`) and every batch
+answer carries `next`:
 
-While a request is being specified, **nothing is created in the spec sections**.
+- `say`: where the request stands; tell the person, in their language.
+- `ask`: the questions to put NOW, ONE at a time; never guess what they did not say. Optional ones are offered, not pressed.
+- `then`: the operations that follow from the answers.
+- `personDecides`: what only they decide; say it, give the link, wait.
 
-- What the change proposes lives on the dossier as a **draft**
-  (`add_draft_leaf`): a feature that does not exist yet, an existing one in its
-  amended form, or one marked for removal. It carries what a leaf carries, and
-  it is counted among the touched features straight away.
-- The impact report, the coherence check and the prototype read the
-  specification **with the drafts laid over it**, so the change is measured and
-  walked while it is written nowhere. Exactly one request's drafts at a time.
-- A specification value (objective, problem, value, effect, acceptance criteria)
-  is a **proposal** the person signs. Acceptance writes it into the owning
-  section, stamped with its origin.
-- **Crossing into Verify freezes the spec AND writes the drafts** into the
-  features section: an addition is created, an amendment patched, a removal
-  removed, each stamped with the request. That crossing is the only moment a
-  dossier writes the tree.
-- A new thing the change would need that is not a feature (an entity, a term, a
-  rule) is still an **impact finding** the report predicts, not a row you write.
+Ask, write, read `next`, ask again. Never a list of ten questions, never a
+dossier filled in silence.
 
-If the person says "just add it" and no dossier is open for it, add it
-directly: spec, code, index. A dossier is for a change they want weighed first.
+## Work live on the pages: one session per project
 
-## Who signs: the roster answers, not the size of the change
+A person holds ONE session per project. They stay on their pages (the
+Specification 360°, the Retrospecification, the Evolution board, a request)
+and you answer their clicks; the AI chip in the app bar shows it.
 
-- **One member in the workspace**: there is nobody to counter-sign. You carry the
-  request through yourself, proposals included, and the timeline records that
-  the act arrived through a client.
-- **Two members or more**: every proposal is signed by a person before its value
-  is written, and you relay decisions with `as_person: true` exactly as before.
-- **Either way**, a waiver stays a person's act: it says "the gate is unmet and I
-  am going anyway", and that sentence needs somebody's name on it.
-- A gate holds a request only on a blocking finding it can name. A score, a
-  maturity tier or an empty field nobody declared critical never holds anything.
+1. **Open it when the work calls for it, never merely because you use the MCP**: at the latest in the turn you hand the person a link to the app (an `href` a Lyriks answer carries), before that link, so their click there reaches you; when they ask to work with you on the pages; whenever you ask them something they answer on a page; when the prompt Ask my AI or "Prepare it with my AI" copies says a Lyriks session begins. In a bound repository open it yourself, in the background, silently unless it fails, and never again once the person ended it in that conversation. `start_evolution_session {project_id}` (with `request_id` when the prompt names one). Say in one sentence that you are listening, unless it opened by itself.
+2. **Wait without taking the chat away**: in Claude Code run the `wait.command` the opening answered, as given, with Bash `run_in_background`; it signs in by itself (nothing to set, no token to ask for), prints the event and wakes you. Other clients call `await_evolution_event` with a short hold and answer the chat between waits. Events:
+   - `click`. Each comes with the field, its question and value, the thread, `known` (what the page holds: title, origin, requester, every answer; never ask for it) and `answerWith` (the one operation that answers it). Kinds:
+     - *Prefill with my AI* on a section: fill EVERY question of `section` you can, in one batch, a step's description first (`update_step_description`), then the questions written from it. With several members, ONE suggestion instead (see the guideline). Never call back with nothing written: ask the missing fact. *Prefill the whole step* carries `stepPrefill`: fill that section, ask its missing fact in your suggestion, and wait for the page to hand you the next.
+     - `ask`: a message they wrote in a field's thread. A click whose `answer` is set is the answer to your suggestion's question: rewrite the suggestion, then fill what the answer allows.
+     - *Draw with my AI*: a step's diagram.
+     - `ticket`, on a closed request: post `ticket`'s message through YOUR tracker connector, move it to done, report with `report_ticket_post` (`note` says what could not be done). Lyriks calls no tracker.
+     - `build`: `build.brief` is the frozen version to build and prove (lyriks-delivery).
+     - `close`: `close.step` (merge, sync, branch) and `close.brief`: run them in the person's checkout, never push, never force, say what git refused.
+     - `ask_block` (a question on a block of the Specification 360°) and `reread`: answer with `answer_click {clickId, text}`.
+     Announce each major step on the page (`update_evolution_session {say}`: "Reading the dossier", "Writing the new version"), not one per tool call; answer with `answerWith`; wait again at once.
+   - `progress`: the person moved the request themselves. Say in one sentence what they did and what comes next, do what `next` asks, hand them the `href` of what waits. Your own writes never come back; a waiting click comes first.
+   - `nothing`: wait again, silently.
+   - `ended`: they ended it, half an hour passed, or the call dropped. Say so in one sentence and stop.
+   - `cancelled`, on any event: they pressed Cancel during your click; what you wrote for it went back. Do not redo it unless asked.
+3. **Between clicks**, point at what waits with the `href` of that place, as a link in the chat ("1.2 waits for your validation"). One thing at a time.
 
-## The tools
+**Asking on the page opens the session.** A question they answer on a page (a
+`propose` with `question`, a `post_on_field` with `asks: true`, a link to
+answer there) needs your session open first, in the same turn; otherwise
+their answer never reaches you.
 
-| Tool | What it is |
+**Ask in the suggestion, one question at a time.** One fact missing: `propose
+{..., question, choices}`, ONE question (two question marks are refused), at
+most three short answers. Their answer comes back as a click: register their
+words as a source, then `propose` again with it folded in; the new suggestion
+replaces yours in place. Few possible answers are always `choices` (buttons;
+`multiple: true` for boxes, six at most). A new topic of yours on a field
+where your suggestion waits is refused.
+
+**One thread, one question.**
+- Reply under the message you were asked about (`replyTo`); a reply that asks something goes with `asks: true`.
+- Read `click.scope`: when its `note` says the message opened a new topic while your question waits, ask which question it answers. Never act on a guess.
+- A message about another question than its field's: say so, and carry it on that question (`post_on_field` there, `private: true`).
+
+**Settling a text with the person.** A thread ends in the text written at its
+place, never in words they copy.
+1. Read `known`, the thread and the page before asking.
+2. One question per message, the one that changes the text most.
+3. Never paste a text to copy. Offer it in `writes`: `post_on_field {..., body, writes: [{ fieldPath, value }]}`, each place a step text (`step.<step>.description` or `step.<step>.<question>`, listed in `answerWith`), each value the whole text, one statement per line. The page shows Accept and Refuse. The Need's verbatim and a diagram are never suggested; a field of a block takes `propose`.
+4. Once settled, offer every decided place in ONE message with a one-sentence body. Never send them to a button to get it written.
+5. With several members you write no version on a step (`answer_step`, `update_step_description` refused): every text is such a suggestion. Alone, a Prefill writes the version they validate.
+6. Read the verdict back (`suggestion {places, state}` on your message): accepted is written; refused is dropped unless they say why.
+
+**What reaches you**: what they send with 'Ask your AI', and every reply under
+your messages. A comment is for people: never answer or act on one. A private
+exchange becomes public when they make it a comment or when your answer
+changes the spec.
+
+**While you are on a click, everything you write can be undone**; you cannot
+cross a gate, close or delete the request until you wait again. A session
+changes where you talk, never what you may do. End it
+(`update_evolution_session {end: true}`) only when they say so.
+
+## Description first, then what only this request needs
+
+Every prose step opens on ONE description in the person's words: the Need
+(`update_need {description}`), the Solution, the Functional spec, the
+Technical spec (`update_step_description {step, description}`). Write it
+verbatim, then read it: `propose` a value on each empty field, citing it, and
+ask what it leaves unsaid with `ask_question {step, question, why, fieldPath?,
+leafId?}`, a question only THIS request needs, five open per step at most. The
+answer (`resolve_question {questionId, resolution: "answered", text}`, verbatim,
+or `"set_aside"` with a reason) is a fact: turn it into a `propose`.
+
+Everything typed is read against the glossary: a word it keeps for another
+sense comes back in the summary; tell the person, keep their text.
+
+## The eight steps
+
+Need, Solution, Functional spec, Technical spec and Approval are VALIDATED by
+people; the Impact analysis is read by the platform; Build and Deployment are
+judged and declared.
+
+1. **Need**: why the change exists. `update_need {description}` verbatim, `register_source {title, note}` with their words, then `propose` each answer on `00-need.<question>` (`leafId: null`) citing it. Situation and objectives are essential.
+2. **Solution**, in prose: the description says what changes, then `answer_step {step: "solution", question: "examples" | "out_of_scope", answer}`. Draft no feature yet. The page shows Solution, Functional spec and Technical spec as ONE tab (2.1 functional, 2.2 technical). Hand over the link to validate only when `next` says every required text is written: the Solution's description and examples, the Functional spec's description and rules (`refusals`). A change that refuses nothing new still writes one Rule line saying so, or `skip_question` with a reason. Until those four steps are validated (or marked not applicable), every draft op is refused ("The Solution waits for its validation"). A Solution rewritten after validation goes back to it, its drafts locked.
+3. **Functional spec**, in prose, in their words: the description walks it as the user does (Journey), then `answer_step {step: "functional_spec", question, answer}`: `refusals` (required, Rule), and optionally `interactions`, `screens`, `experience`, `failures`. Cite a product element as `@[name](kind:id)`. Translating it into behaviour (`apply_behavior_batch` on `draft:...`, `simulate_behavior`) is optional; never ask the person to read a schema.
+   **The use case diagram** (UML: use cases, one flow per use case in swimlanes with its ways out, the states each thing goes through) never says something other than the texts. When a text moves, `functionalDiagram.behind` turns true and `next` puts the redraw first: `redraw_diagram {step: "functional_spec", diagram}`, then tell the person it is your drawing of their words. `answer_step {question: "diagram"}` edits the drawing itself and rewrites the texts: only when they change the drawing. Notation, one line per element:
+   ```
+   actor Customer
+   system Payment provider
+   use case Pay an order: Customer, Payment provider
+   flow Pay an order
+   Customer: confirms the basket
+   refused when <condition>: <what then happens>
+   goes wrong when <condition>: <what then happens>
+   states Order
+   placed -> paid: <what causes it>
+   ```
+   Link what the change reuses: an existing feature ends with `@[name](feature:<featureId>)`, an existing action with `@[name](action:<featureId>/<actionId>)` (ids from `get_knowledge_graph`). A linked feature no draft touches is read at the Impact as used. While the diagram is behind, nothing can be validated.
+   **The technical diagram** pairs with its description: components (`: new` after what the change adds, `link a -> b: what goes through`, `note part: constraint`) and sequences (`sequence <name>`, `a -> b: message`, `-->` for an answer, each with its `goes wrong when`). Link existing features and tables (`@[name](entity:<tableId>)`). Redraw with `redraw_diagram {step: "technical_spec", diagram}` when `technicalDiagram.behind`. Draw what helps a decision, not every class.
+4. **Technical spec**: the description (known constraints and risks), then optionally `answer_step {step: "technical_spec", question: "data", answer}`; declare the tables from it (`add_data_draft`, field by field).
+   **Every other page of the spec changes from the request too**: `add_section_draft {page, summary, edits}`, `page` as the person reads it (glance, users, experience, requirements, architecture, glossary), `edits` in patch_section vocabulary, limited to what that page shows. Read the section first. Never write such a change directly while a request carries it.
+   **The rules the whole product keeps**: `add_rule_draft {summary, operations}` with `add_project_invariant`, `update_project_invariant` or `remove_project_invariant`; never through `apply_project_behavior_batch` inside a request, which writes at once. Draft the feature change before a rule that reads its states.
+5. **Impact analysis**, entered once the four steps are validated; nobody validates it. Name what the change touches yourself: `get_knowledge_graph {kinds:["feature"], q:"<their words>"}`, then `add_draft_leaf` per subject (`add`; `amend` as a delta: `acceptanceCriteria`, `retireCriteria`, `changeCriteria`, `descriptionPatch`, `changeSummary`; `remove`), `add_data_draft`, `add_section_draft`, `add_rule_draft`. `propose` a value on each empty question of a named feature. Then `run_impact` and `run_coherence` in one batch. Read the impact's two plain lines, then what does not fit: **collides** (red) blocks, **rubs** (amber) is to settle, **nothing to attach to** (blue) asks a core or family; inherited (grey) never blocks. A collision is fixed in its section, accepted as a risk (`decide_finding {findingId, decision: "accept_risk", reason}`) or waived. Then `cross_stage` **freezes version N**; nothing is written into the spec yet.
+6. **Build**: the code is written against version N (lyriks-delivery; on the branch Lyriks names when the card carries `code`), the index synced as usual: entries naming what the request adds are held on the request. Then `build_implementation_report`. The tests come ready (`GET /api/evolution/tests?projectId=&requestId=&runner=vitest|node`, or `export_behavior_scenarios` on each draft id); only the adapter is to write. Every screen, action and criterion of the touched features is a line, "to build" until the code proves it; a conform line needs no decision, the others `decide_line validated | invalidated | adopted | removed`. Inherited lines are counted, never ruled. Accepting the Build (`cross_stage`) fixes the commit it validates.
+7. **Approval**: the person walks the change. Each remark is logged as said (`log_observation {body, type}`, `as_person`), ruled (`rule_observation validated | deferred | requalified | invalidated`), and if validated folded back as a criterion (`fold_back {observationId, leafId, text}`). Then `cross_stage` approves.
+8. **Deployment, the ONE moment the change becomes official**: every draft is written into the spec under the ids the code was indexed against. With a deployment branch, its merge does it (`report-merge.mjs`; `declare_deployment` and `close_request` are refused there). Otherwise `declare_deployment {releaseId?, note?}` once live.
+
+**Nothing is official before it is live.** A value accepted on an existing
+feature waits on the request's amendment. Deleting or reopening the request
+leaves the spec as it was. **`rebrief`** reopens a frozen version: edits
+again, validations asked again for what changed, the next freeze is N+1, the
+next landing writes only what changed. A step a small change does not need is
+`mark_step_not_applicable {step, reason}`; the Need never is, its unanswered
+questions are skipped (`skip_question`).
+
+## Who decides
+
+- **Anyone with access validates, a viewer excepted.** Each answer needs `validationsPerAnswer` different people (one by default); change it only when the person says so.
+- **Named validators**: `name_validators {fieldPath, leafId?}` or `{step}` with `people[]` (emails; `[]` clears). Once named, only they count. Suggest from `members[].jobs`: Product for Need and Solution, Product and Design for the Functional spec, Tech and Security & compliance for the Technical spec, Product and Business for Approval. Name only whom the person chose.
+- **Every field is versioned.** `validate_field` stands behind the version held now; a later write outdates it. `refuse_field {fieldPath, leafId?, reason}`; `withdraw_field_verdict` takes either back. Accepting a proposal validates nothing. `skip_question` (undone by `unskip_question`) makes a question no longer owed: never ask it again.
+- **Alone in the workspace** you may carry every step; the history says it came through the assistant.
+- **Two members or more**: every decision is a person's. Relay one with `as_person: true` only as they said it in the conversation. `tag_reviewers` asks for a look.
+- **Under delegation** (`aiDelegation`, on the request or the project) you validate in their name what they validate (`validate_field`, `validate_step`) and accept your own suggestions. Never refuse, cross a stage, freeze, accept a risk, approve or close; never give or take a delegation.
+- **Always a person's**: a waiver, lifting one, deleting, cancelling or reopening a request, logging or ruling a remark. `cancel_request {requestId, reason}` with their reason only; `reopen_request`; `close_request` ends a delivered one.
+
+## Tools
+
+| Tool | Use |
 |---|---|
-| `get_evolution {project_id}` | The board: one card per live request, first. Leaves and sources are only counted there; read them with `part: "leaves"` or `part: "sources"`. |
-| `get_evolution {project_id, request_id, part: "drafts"}` | What the request proposes, in full. |
-| `get_evolution {project_id, request_id}` | One dossier in full: fields with their values, readings, maturity per block, coherence and impact findings, the next gate and why it refuses, the report lines, the timeline, `fieldsAvailable` (the field paths you may propose on) and `originsAvailable` (the codes `open_request` takes). |
-| `apply_evolution_batch {project_id, operations[], as_person?}` | Typed operations, atomic, guarded server-side. |
+| `get_evolution {project_id}` | The board. |
+| `get_evolution {project_id, request_id}` | One dossier with `next`, `gate`, `stepDescriptions`, `customQuestions`; lists one `part` at a time (drafts, fields, proposals, impact, report, readings, history, graph). |
+| `apply_evolution_batch {project_id, operations[], as_person?}` | Typed operations, atomic. |
+| `apply_behavior_batch` / `get_behavior_feature` / `simulate_behavior` on `draft:...` | The draft's behaviour. |
+| `start_evolution_session` / `await_evolution_event` / `update_evolution_session` | The person's session. |
 
-Read `get_evolution` before every batch. Never `set_section` or `patch_section`
-on `evolution`: it is refused.
+Ids are accepted in full or by a unique prefix of four characters or more.
+Never `set_section` or `patch_section` on `evolution`.
 
-A request is named by its full id or by any unique prefix of four characters or
-more, the eight-character ids the board and every report quote included. A list
-part that would not fit the result cap comes back shorter, in the same shape,
-with `nextOffset`: read on from there.
+## Proposals
 
-## Who does what
+`propose {fieldPath, leafId, value, whatWasRead, whatWasInferred,
+citedSourceIds[]}`: what you READ and what you INFERRED, in the project's
+language, citing at least one source (`register_source` first). The person
+accepts, rewords or refuses; `withdraw_proposal` takes back an undecided wrong
+one. Use the glossary's words.
 
-**You, as the AI client** (no `as_person`):
+## Links and refusals
 
-- `open_request {title, origin, leafIds[]?}`: a title so it can be found on
-  Thursday, and one of the six origins. The origins are `internal_idea`,
-  `customer_feedback`, `support_ticket`, `market_watch`, `regulatory`,
-  `technical_debt`, and `get_evolution` lists them as `originsAvailable` for
-  the day the list grows. The door asks for nothing else: the features the
-  change touches are a SET with no main one among them, named with `set_leaves`
-  once the impact report has been read, because naming them at the door only
-  buys a guess the report then has to contradict. What requires them is the
-  gate to Verify, through the maturity of the dossier.
-- `add_draft_leaf {kind, baseLeafId?, name, description, objective, problem,
-  expectedEffect, value, acceptanceCriteria[], dependsOn[], behaviour[]}`: what
-  the change IS. `add` for a capability the product does not have, `amend` for an
-  existing one in the form the change would leave it, `remove` for one it takes
-  away. Do this before the readings: a request with no draft measures the hole
-  where the change would sit, not the change.
-  - **An amendment is a delta.** On `amend`, `acceptanceCriteria[]` are the
-    criteria it ADDS; the feature's other criteria stay. `retireCriteria[]`
-    names by id the ones it retires, `changeCriteria[]` (`{id, text}`) rewords
-    one under its own id, `descriptionPatch` (`{find, replace}`, `find`
-    occurring exactly once) and `descriptionAppend` edit the description
-    without resending it. Every id and passage is checked when the draft is
-    made. Never resend a fifty-criterion feature to change two lines.
-  - Values typed on an amend draft (objective, problem, value, criteria) count
-    as filled for the feature it amends: do not propose them again.
-  - `behaviour[]` rows say what the change does in the kernel's words, so the
-    readings see it: `[{"kind":"action","name":"Walk To Clicked Spot","detail":"a
-    left click on the play field"}, {"kind":"rule","name":"Right click on bare
-    ground opens the grass menu"}, {"kind":"state","name":"exploration.gait"}]`
-    (kinds: surface, state, action, rule, scenario). The freeze keeps them on
-    the leaf; the depth itself is authored with `apply_behavior_batch` after
-    the freeze.
-  - To find the feature that owns a behaviour, `get_knowledge_graph
-    {kinds:["feature"], q:"<word>"}` also matches the feature's criteria,
-    actions and rules, and `matchedVia` names the one that matched. Search the
-    triggers the change redefines too (a key, a click): an existing action on
-    the same trigger is the collision to settle before the freeze.
-- `update_draft_leaf`, `remove_draft_leaf`. Dropping a draft drops what was
-  proposed on it, and the specification is exactly as it was.
-- `set_leaves`, `update_request`.
-- `run_impact {hypothesis, depth}`: computed, on two planes. The spec plane
-  walks the knowledge graph from the touched features (never through a role or
-  a core); the code plane lists the files the implementation index anchors on
-  the touched and reached features, so sync the index from the checkout first.
-  Run the hypotheses the request ASKS for, one per kind of draft it carries
-  (add for an addition, change for an amendment, remove for a removal), in
-  one batch: the report reads each row with the verb of the draft behind the
-  feature it was reached from. What taking the change back out would cost is
-  a reading of its own: run `remove` on a request that removes nothing only
-  when the person asks that question. Each run keeps its own findings:
-  `impact.byHypothesis` counts them and `get_evolution {part:"impact",
-  hypothesis}` reads any of them in full. A report that ran and reached
-  nothing says why in `impact.emptyBecause`: read it, because "nothing was
-  declared" (an addition with no `dependsOn`) is not "nothing follows". The dossier opens on one plain line per plane: read
-  those to the person before any list.
-- `run_coherence`: computed by the coherence engine over the whole project.
-  The findings that name a touched feature are published with the other node
-  at fault and a Fix now target.
-- `propose {fieldPath, leafId, value, whatWasRead, whatWasInferred,
-  citedSourceIds[]}`: one proposal per empty field, targeting the **open
-  questions first** (amber fields the author declared), then the empty
-  **critical** fields the maturity names. Say what you **read** in
-  `whatWasRead` and what you **inferred** in `whatWasInferred`: two fields, in
-  the project's own language, and a proposal that fills only the older free-text
-  `reasoning` cannot be accepted. Nothing is looked for in your wording, so
-  French, Spanish or any other language passes exactly as English does. Every
-  proposal cites at least one row of the documents register; register the source
-  first when it is not there, in the same batch: `register_source {title, url?,
-  note?, id?}` (a web address anyone can open, or the person's words verbatim in
-  the note) answers the id to cite. A proposal missing either half is REFUSED
-  when it is proposed, and an atomic batch stops there: send proposals in a
-  batch of their own, before the decisions.
-- `post_on_field {fieldPath, leafId, body}`: ask the person a question where
-  the field stands.
-- `build_implementation_report`: in Verify, after `sync_implementation_index`
-  from the checkout. It is derived from the index against the frozen version.
-  Never write a line yourself. Each line carries `scope`: `request` for an
-  element this request brought, `inherited` for one the touched features
-  already held at the first freeze (their backlog). Only request lines hold the
-  report open; read them with `part:"report", scope:"request"`, and tell the
-  person how many inherited lines exist without asking them to rule on them.
-
-**The person** decides, and you relay the decision **only when they told you
-to**, with `as_person: true` on the batch. The act lands as theirs, with the
-channel stamped on the timeline:
-
-- `decide_proposal {proposalId, decision: accept|refuse|reword, sense?}`:
-  accept writes the value into its section. On a value the glossary flagged,
-  `sense` carries the person's own words when they keep the wording in
-  another sense than the one the glossary guards; it is recorded beside the
-  value. On a proposal handed to tagged
-  reviewers, accept is that reviewer's validation and the value is written
-  once every reviewer validated; refuse is an invalidation that refuses it.
-- `tag_reviewers {proposalId, reviewerIds[]}`: hand a proposal to named
-  members (ids = emails from `members` in `get_evolution`), only where the
-  roster holds more than one member (Enterprise).
-- `mark_open_question`, `answer_open_question`.
-- `cross_stage {waiverReason?}`: one gate at a time. Specify to Challenge is
-  open. Challenge to Verify needs no empty critical field, a coherence check
-  run, and no blocking finding undecided; it **freezes the spec as a numbered
-  version**. Verify to Accept needs every report line decided. Accept to
-  Delivered needs every validated observation folded back. A waiver crosses an
-  unmet gate at the cost of a stated reason that stays visible.
-- `decide_line {lineId | verdict, decision}`, `rule_observation`, `fold_back`,
-  `rebrief`, `lift_waiver` (admin), `close_request`, `delete_request`.
-- `rule_observation` and `fold_back` act on observations the walkthrough
-  logged. An observation is a person's: it is anchored on the screen and the
-  element they were looking at, with their annotated capture, so nothing logs
-  one from here. An id the dossier does not list is refused for that reason.
-
-Never pass `as_person` for something the person did not say in the
-conversation. If they said "accept the first three", relay exactly those three.
-
-## The walk, stage by stage
-
-1. **Bind.** `list_wizard_projects` gives the project. `get_evolution` gives
-   the board. If the request exists, open its dossier; else `open_request`.
-2. **Specify.** `add_draft_leaf` for what the change proposes, and
-   `set_leaves` for the existing features it also touches. `run_impact` (add,
-   then change or remove). `run_coherence`. If both come back with nothing, the
-   request has already crossed its gates and closed: say so and stop. Read the dossier:
-   the maturity names the critical holes, the readings say what the touched
-   features already hold. Propose on the open questions, then on the empty
-   critical fields, one value each, sourced. Tell the person what is waiting
-   for their signature and what the impact says would move. Relay their
-   decisions. Post a question on a field you cannot answer.
-   The person reads the request in three steps: the idea (title, need, touched
-   features), the proposals to sign, and the impact report on the spec and on
-   the code. Everything else is behind the report; do not recite it unasked.
-   The maturity percentage next to the dossier is INHERITED from the features
-   the change touches, so a change to a complete product reads high before
-   anything of its own has been decided. It never proves the change is
-   specified, and Specify does not close while a proposal is still waiting for
-   a signature: the gate says how many, and the waiver stays the named way
-   through when a person decides to cross anyway.
-3. **Challenge.** The person crosses. Re-run `run_coherence` after every
-   accepted proposal that changed the spec. A blocking finding is fixed in the
-   owning section (by a person, or by you once they ask), accepted as a risk on
-   the Control Center, or waived with a reason.
-4. **Verify.** The crossing froze the spec as version N and wrote every draft
-   into the features section, each stamped with the request. The code is written
-   against version N (lyriks-delivery), the index is synced
-   (`sync_implementation_index`), then `build_implementation_report`. The
-   person decides every request line; an invalidated line yields a rebrief; an
-   adopted out-of-scope line amends the spec and Challenge runs again.
-   - Write index entries with `node .lyriks/tools/index-file.mjs upsert
-     <entries.json> [--sync --feature <featureId>]`, never by rewriting
-     `.unspa.json` with another tool: it keeps the file's formatting. A
-     `criterion:` key syncs alone; any other key syncs with its whole feature
-     (`--feature`), because a report replaces an action or surface with all of
-     its children. The ids to index come back in the `created` rows of
-     `apply_behavior_batch` (each with its `.unspa.json` key), and a state the
-     batch renamed comes back in `renamed`: move its entry with `index-file.mjs
-     remove` and `upsert`.
-   - A criterion reads verified only when its entry records what proved it.
-     Run the tests, then `node .lyriks/tools/ingest-results.mjs <report.json>`
-     with a `[criterion:<id>]` token in each test title (or `--criteria
-     <map.json>`): it writes `verification.lastResult` on the criterion entries.
-     A browser check or a measurement goes in the same block by hand
-     (`verification: {kind: "visual" | "measurement", command, artifacts,
-     lastResult: {passed, at, summary}}`). Then sync.
-   - The helper scripts refuse to sync when `.unspa.json` names another project
-     than the binding block, and print the command to run instead.
-5. **Accept.** The walkthrough happens on the page (captures, anchored
-   observations). You relay rulings and fold validated observations back as
-   acceptance criteria on the touched feature.
-6. **Delivered, then closed.** `close_request` once nothing is owed.
-
-## Hand the person a link, every time
-
-Whenever you tell the person something waits on them (a proposal to sign, an
-open question, a gate to cross or waive, a report line, a remark to rule), give
-them the `href` the answer carries for that exact place, as a clickable
-markdown link, one per thing. The request card, the dossier, `proposals.href`,
-`gate.href`, each proposal, each field row, each report line, each observation
-and each refused result a person resolves carry one. The link opens the page ON
-that place, unfolded and highlighted, and survives the way through sign-in.
-Never describe where to click instead, and never build a page address yourself:
-only the server knows which installation the person uses.
-
-## Reading a refusal
-
-A refused batch applies nothing. Each result names the operation, the reason
-(the sentence the spec wrote) and why the rule exists. Read it back to the
-person as it is; do not work around it with `set_section`.
-
-## Language
-
-Proposals are written in the vocabulary of the project glossary. A value using
-a banned synonym is flagged before it is offered, and the flag names the agreed
-term it stands in for (`flaggedWords`). A flag WARNS and never blocks: the
-person rewords it, or accepts it as it stands when they meant another sense.
-A word between quotation marks is a citation of what the product or a source
-says and is never flagged. If you made a proposal nobody has decided yet and it
-is wrong, take it back with `withdraw_proposal {proposalId}` instead of leaving
-the field held by a value nobody will sign.
-Names that face the code stay in English (data, states, events, actions).
+Whatever waits on the person, give the `href` of that exact place as a
+clickable link; never describe where to click. A refused batch applies
+nothing: read the reason as it is and do what it names, never work around it.
+Names that face the code stay in English.

@@ -1,5 +1,4 @@
 import { error, json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireBehaviorFeatureAccess } from '$lib/server/behavior-feature-access.server';
 import type { BehaviorMaturityReport } from '$application/ports';
 import type { RequestHandler } from './$types';
@@ -38,7 +37,7 @@ export const GET: RequestHandler = async (event) => {
 		error(400, 'severity must be critical or recommended');
 	}
 	await requireBehaviorFeatureAccess(event, projectId, featureId, 'read');
-	const report = await getServices().scoreBehaviorFeature.execute({
+	const report = await event.locals.services.scoreBehaviorFeature.execute({
 		featureId,
 		includeIssues: params.get('includeIssues') !== 'false',
 		surfaceId: params.get('surfaceId') ?? undefined,

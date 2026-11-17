@@ -1,4 +1,4 @@
-import { parseApprovalsDraft } from '$application/parse-approvals-draft';
+import { parseApprovalsDraft } from '$application/specification/parse-approvals-draft';
 import { saveSectionDraft } from '$lib/server/section-save.server';
 import type { RequestHandler } from './$types';
 

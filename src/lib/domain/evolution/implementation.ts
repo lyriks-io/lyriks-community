@@ -1,6 +1,7 @@
 import type { Actor, EvolutionRequest, ImplementationFinding } from './draft';
 import type { DerivationSource, ImplementationVerdict } from './enums';
 import { firstRefusal, guard, type Guarded } from './guard';
+import { NBSP, type SpecLanguage } from '$domain/language';
 
 /**
  * The five-verdict implementation report, and the decisions that dispose of it.
@@ -31,7 +32,9 @@ export function canBuildReport(source: DerivationSource): Guarded {
  *   demanded-versus-realised matrix.
  * - Otherwise the line sits in the crossing: conform when a passing acceptance
  *   test proves the code does what the spec says, missing when nothing was
- *   located, non-conform when something was located but does not match.
+ *   located, non-conform when something was located that nothing proves: its
+ *   signature no longer matches, or no passing result stands behind it. The
+ *   line's code statement says which (ac-evo-impl-unproven).
  */
 export function deriveVerdict(input: {
 	hasRequirementAnchor: boolean;
@@ -96,7 +99,25 @@ export const isRequestLine = (line: ImplementationFinding): boolean => line.scop
  * backlog of the feature it amends.
  */
 export function undecidedCount(request: EvolutionRequest): number {
-	return currentLines(request).filter((l) => isRequestLine(l) && l.decision === 'undecided').length;
+	return currentLines(request).filter(holdsReportOpen).length;
+}
+
+/**
+ * A line a person still owes a decision on. A conform line is proved by a
+ * passing result on a located span: it is shown, and a person may still send
+ * it back, but nobody is asked to sign what the code already proves.
+ */
+export function holdsReportOpen(line: ImplementationFinding): boolean {
+	return isRequestLine(line) && line.decision === 'undecided' && line.verdict !== 'conform';
+}
+
+/**
+ * Lines the request brought that only wait on the code: still to build, with
+ * nothing for a person to decide yet. The board reads them as waiting on the
+ * code, not on someone (ac-evo-board-overview).
+ */
+export function toBuildCount(request: EvolutionRequest): number {
+	return currentLines(request).filter((l) => holdsReportOpen(l) && l.verdict === 'missing').length;
 }
 
 /** Inherited lines still undecided: context, never a gate. */
@@ -203,6 +224,11 @@ export function canCloseReport(request: EvolutionRequest): Guarded {
 			'An undecided line is drift left in the open: the spec would stop describing the product without anyone having said so.'
 		),
 		guard(
+			currentLines(request).some((l) => isRequestLine(l) && l.decision === 'invalidated'),
+			'Lines were sent back to the build. Rebuild the report once the code changed.',
+			'A line sent back is work announced, not work done: the report closes on what the code does now.'
+		),
+		guard(
 			rechallengePending(request),
 			'An adoption amended the spec. Run the Challenge check again, coherence and docking, before closing this report.',
 			'A report that changed the spec is not settled until the changed spec was challenged again.'
@@ -217,8 +243,13 @@ export function canCloseReport(request: EvolutionRequest): Guarded {
  * agent. The conform lines are named as untouchable, because the second
  * attempt otherwise tends to break what the first one got right.
  */
-export function lineBrief(request: EvolutionRequest, line: ImplementationFinding): string {
+export function lineBrief(
+	request: EvolutionRequest,
+	line: ImplementationFinding,
+	lang: SpecLanguage = 'en'
+): string {
 	const untouched = protectedLineIds(request);
+	if (lang === 'fr') return lineBriefFr(request, line, untouched);
 	const what =
 		line.verdict === 'missing'
 			? 'Implement it: nothing was located for this requirement.'
@@ -237,6 +268,39 @@ export function lineBrief(request: EvolutionRequest, line: ImplementationFinding
 		untouched.length > 0
 			? `Leave untouched (conform): ${untouched.join(', ')}`
 			: 'Leave untouched: nothing is conform yet.'
+	].join('\n');
+}
+
+/** A verdict as the French brief names it. */
+const VERDICT_FR: Readonly<Record<ImplementationFinding['verdict'], string>> = {
+	conform: 'conforme',
+	non_conform: 'non conforme',
+	missing: 'manquant',
+	out_of_scope: 'hors périmètre',
+	regression: 'régression'
+};
+
+/** The same brief for a spec written in French: the typography keeps its spaces before colons. */
+function lineBriefFr(request: EvolutionRequest, line: ImplementationFinding, untouched: readonly string[]): string {
+	const colon = `${NBSP}:`;
+	const what =
+		line.verdict === 'missing'
+			? `L'implémenter${colon} rien n'a été localisé pour cette exigence.`
+			: line.verdict === 'regression'
+				? `Annuler la modification de cet emplacement${colon} il appartient à une autre fonctionnalité et n'était pas demandé.`
+				: line.verdict === 'out_of_scope'
+					? `Le retirer${colon} rien dans la spec ne le demandait.`
+					: "Faire faire au code ce que dit la spec, puis joindre le test d'acceptation qui passe.";
+	return [
+		`Demande${colon} ${request.title} (itération ${request.iteration}, version de spec ${request.specVersion || 'sans version'})`,
+		`Ligne${colon} ${line.id} [${VERDICT_FR[line.verdict]}]`,
+		`Où${colon} ${line.filePath}${line.lineRange ? `:${line.lineRange}` : ''}`,
+		`La spec attend${colon} ${line.specStatement || line.requirement}`,
+		`Le code fait${colon} ${line.codeStatement || "rien n'a été localisé"}`,
+		`À faire${colon} ${what}`,
+		untouched.length > 0
+			? `Laisser intact (conforme)${colon} ${untouched.join(', ')}`
+			: `Laisser intact${colon} rien n'est encore conforme.`
 	].join('\n');
 }
 

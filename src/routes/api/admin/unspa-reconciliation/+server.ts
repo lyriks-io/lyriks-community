@@ -1,5 +1,4 @@
 import { error, json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireAdmin } from '$lib/server/admin.server';
 import type { RequestHandler } from './$types';
 
@@ -44,13 +43,13 @@ export const POST: RequestHandler = async (event) => {
 		error(400, 'canonicalKernelId must be one of sourceFolderKeys');
 	}
 
-	const result = await getServices().reconcileProject.execute({
+	const result = await event.locals.services.reconcileProject.execute({
 		projectId,
 		canonicalKernelId,
 		sourceFolderKeys,
 		apply: body.apply === true
 	});
-	getServices().audit.record({
+	event.locals.services.audit.record({
 		action: 'unspa.reconcile',
 		actor: event.locals.session?.email ?? 'admin',
 		target: projectId,

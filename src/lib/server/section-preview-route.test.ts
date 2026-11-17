@@ -5,8 +5,9 @@ import { createEmptyUsersDraft, createRole } from '$domain/users';
 
 const mocks = vi.hoisted(() => ({ access: vi.fn(), exists: vi.fn(), derived: vi.fn(), save: vi.fn() }));
 vi.mock('$lib/server/project-access.server', () => ({ requireProjectAccess: mocks.access }));
-vi.mock('$composition/container.server', () => ({ getServices: () => ({ projectExists: mocks.exists, refreshDerivedCapabilities: { execute: mocks.derived }, saveUsersDraft: { execute: mocks.save } }) }));
-const event = (body: unknown) => ({ request: new Request('http://localhost/api/sections/validate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }) }) as Parameters<typeof POST>[0];
+vi.mock('$composition/container.server', () => ({ getServices: () => ({ projectExists: mocks.exists, loadSpecLanguage: { generated: async () => 'en' }, refreshDerivedCapabilities: { execute: mocks.derived }, saveUsersDraft: { execute: mocks.save } }) }));
+import { getServices } from '$composition/container.server';
+const event = (body: unknown) => ({ locals: { services: getServices() }, request: new Request('http://localhost/api/sections/validate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }) }) as Parameters<typeof POST>[0];
 
 describe('section preview validation boundary', () => {
 	beforeEach(() => {

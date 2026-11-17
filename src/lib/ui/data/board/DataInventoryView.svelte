@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { Icon, SearchInput, matchesQuery } from '$ui/design-system';
 	import type { DataVisibilityChoice, DataEntity, EntityField } from '$domain/data';
-	import type { DerivedDataVisibility } from '$application/data-visibility';
+	import type { DerivedDataVisibility } from '$application/specification/data-visibility';
 	import type { DataStore } from '../draft-store.svelte';
 
 	interface Props {
@@ -178,7 +178,7 @@
 	<div class="rounded-card border border-line bg-surface p-4">
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<div>
-				<p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-brand-500">
+				<p class="text-[0.6875rem] font-semibold uppercase tracking-[0.14em] text-brand-500">
 					Data inventory
 				</p>
 				<p class="mt-0.5 max-w-xl text-sm text-ink-500">
@@ -191,15 +191,15 @@
 			<div class="flex items-center gap-2 text-center">
 				<div class="rounded-field bg-success-50 px-3 py-1.5">
 					<p class="text-lg font-bold leading-none text-success-600">{counts.visible}</p>
-					<p class="text-[9px] font-semibold uppercase tracking-wider text-success-600/70">Visible</p>
+					<p class="text-[0.5625rem] font-semibold uppercase tracking-wider text-success-600/70">Visible</p>
 				</div>
 				<div class="rounded-field bg-surface-sunken px-3 py-1.5">
 					<p class="text-lg font-bold leading-none text-ink-600">{counts.hidden + counts.anomaly}</p>
-					<p class="text-[9px] font-semibold uppercase tracking-wider text-ink-400">Hidden</p>
+					<p class="text-[0.5625rem] font-semibold uppercase tracking-wider text-ink-400">Hidden</p>
 				</div>
 				<div class="rounded-field bg-warning-50 px-3 py-1.5">
 					<p class="text-lg font-bold leading-none text-warning-600">{counts.anomaly}</p>
-					<p class="text-[9px] font-semibold uppercase tracking-wider text-warning-600/70">
+					<p class="text-[0.5625rem] font-semibold uppercase tracking-wider text-warning-600/70">
 						Flagged
 					</p>
 				</div>
@@ -210,25 +210,25 @@
 	<!-- ── Flagged: data hidden because it left the experience without a human action ── -->
 	{#if anomalyList.length > 0}
 		<div class="rounded-card border border-warning-200 bg-warning-50/50 p-3">
-			<p class="flex items-center gap-1.5 text-[12px] font-semibold text-warning-700">
+			<p class="flex items-center gap-1.5 text-[0.75rem] font-semibold text-warning-700">
 				<Icon name="flag" size={14} />
 				{anomalyList.length} data left the client experience without a deliberate action, now marked Hidden.
 			</p>
-			<p class="mt-1 text-[11px] text-warning-700/80">
+			<p class="mt-1 text-[0.6875rem] text-warning-700/80">
 				Data is never deleted. Bring it back with “Always visible”, or confirm the removal by hiding
 				it explicitly.
 			</p>
 			<div class="mt-2 flex flex-wrap gap-1.5">
 				{#each anomalyList.slice(0, 12) as a (a.id)}
 					<span
-						class="inline-flex items-center gap-1 rounded-pill bg-surface px-2 py-0.5 text-[10px] font-medium text-warning-700 ring-1 ring-inset ring-warning-200"
+						class="inline-flex items-center gap-1 rounded-pill bg-surface px-2 py-0.5 text-[0.625rem] font-medium text-warning-700 ring-1 ring-inset ring-warning-200"
 					>
 						<Icon name={a.kind === 'table' ? 'table' : 'key'} size={9} />
 						{a.label}
 					</span>
 				{/each}
 				{#if anomalyList.length > 12}
-					<span class="text-[10px] text-warning-700/70">+{anomalyList.length - 12} more</span>
+					<span class="text-[0.625rem] text-warning-700/70">+{anomalyList.length - 12} more</span>
 				{/if}
 			</div>
 		</div>
@@ -248,7 +248,7 @@
 					type="button"
 					onclick={() => (filter = opt.v as typeof filter)}
 					aria-pressed={filter === opt.v}
-					class="px-3 py-1.5 text-[12px] font-semibold transition {filter === opt.v
+					class="px-3 py-1.5 text-[0.75rem] font-semibold transition {filter === opt.v
 						? 'bg-brand-500 text-white'
 						: 'bg-surface text-ink-500 hover:bg-surface-sunken'}"
 				>
@@ -269,7 +269,7 @@
 		<div class="space-y-4">
 			{#each groups as group (group.id)}
 				<div>
-					<p class="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
+					<p class="mb-1.5 flex items-center gap-1.5 text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-ink-400">
 						<Icon name="database" size={12} class="text-ink-300" />
 						{group.name}
 						<span class="text-ink-300">· {group.entities.length}</span>
@@ -295,11 +295,11 @@
 										<span class="truncate text-sm font-semibold text-ink-900">
 											{row.entity.name || 'Untitled table'}
 										</span>
-										<span class="shrink-0 text-[10px] tabular-nums text-ink-300">
+										<span class="shrink-0 text-[0.625rem] tabular-nums text-ink-300">
 											{row.fields.length} field{row.fields.length === 1 ? '' : 's'}
 										</span>
 										{#if row.anomalies > 0}
-											<span class="inline-flex items-center gap-0.5 rounded-pill bg-warning-50 px-1.5 py-px text-[9px] font-semibold text-warning-600">
+											<span class="inline-flex items-center gap-0.5 rounded-pill bg-warning-50 px-1.5 py-px text-[0.5625rem] font-semibold text-warning-600">
 												<Icon name="flag" size={9} /> {row.anomalies}
 											</span>
 										{/if}
@@ -316,9 +316,9 @@
 													size={11}
 													class="shrink-0 text-ink-300"
 												/>
-												<span class="min-w-0 flex-1 truncate text-[12px] text-ink-700">
+												<span class="min-w-0 flex-1 truncate text-[0.75rem] text-ink-700">
 													{fr.field.name || 'field'}
-													<span class="ml-1 text-[10px] text-ink-300">{fr.field.type}</span>
+													<span class="ml-1 text-[0.625rem] text-ink-300">{fr.field.type}</span>
 												</span>
 												{@render visControl(fr.field.id, fr.status)}
 											</div>
@@ -340,7 +340,7 @@
 	{@const override = store.getVisibilityChoice(id)}
 	<span class="relative inline-flex shrink-0 items-center" title="Set client visibility">
 		<span
-			class="inline-flex h-6 items-center gap-1 rounded-pill px-2 text-[10px] font-semibold {meta.tone}"
+			class="inline-flex h-6 items-center gap-1 rounded-pill px-2 text-[0.625rem] font-semibold {meta.tone}"
 		>
 			<Icon name={meta.icon} size={11} />
 			{meta.label}{override ? ' ✎' : ''} ▾

@@ -17,3 +17,4 @@ export * from './can-advance';
 export * from './events';
 export * from './validation';
 export type { ProjectFoundationDraft } from './draft';
+export * from './project-name';

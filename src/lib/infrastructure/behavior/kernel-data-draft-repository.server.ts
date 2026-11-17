@@ -13,7 +13,8 @@ import {
 	dataResidueFromDraft,
 	type DataResidue
 } from '$application/projection/data-projection';
-import type { ProjectDataDraft } from '$domain/data';
+import type { DataRulesSetup, ProjectDataDraft } from '$domain/data';
+import type { SpecLanguage } from '$domain/language';
 
 const SECTION = 'data';
 
@@ -37,7 +38,12 @@ export class KernelDataDraftRepository implements DataDraftRepositoryPort {
 		private readonly residue: ProjectResidueRepositoryPort,
 		private readonly definitionDrafts: FoundationDefinitionRepositoryPort,
 		private readonly experienceDrafts: ExperienceDraftRepositoryPort,
-		private readonly featuresDrafts: FeaturesDraftRepositoryPort
+		private readonly featuresDrafts: FeaturesDraftRepositoryPort,
+		/**
+		 * The language the project's spec is written in, read on each save: the
+		 * prose the projection writes into the model follows it. Absent, English.
+		 */
+		private readonly languageOf?: (projectId: string) => Promise<SpecLanguage>
 	) {}
 
 	async load(projectId: string): Promise<ProjectDataDraft | null> {
@@ -57,9 +63,58 @@ export class KernelDataDraftRepository implements DataDraftRepositoryPort {
 			projectId: draft.projectId,
 			definition,
 			experience,
-			features
+			features,
+			lang: (await this.languageOf?.(draft.projectId)) ?? 'en'
 		});
 		await this.behavior.apply(draft.projectId, ops);
-		await this.residue.save(draft.projectId, SECTION, dataResidueFromDraft(draft));
+		// The map of the rules Lyriks generated is server-owned: a save keeps the
+		// stored one, and only the sync of the rules with the engine rewrites it
+		// (saveGeneratedRules), so an engine down at save time never orphans them.
+		const previous = (await this.residue.load(draft.projectId, SECTION)) as DataResidue | null;
+		const residue = dataResidueFromDraft(draft);
+		await this.residue.save(draft.projectId, SECTION, {
+			...residue,
+			rules: {
+				existence: residue.rules?.existence ?? {},
+				generated: previous?.rules?.generated ?? {},
+				...linkRecordOf(previous)
+			}
+		});
 	}
+
+	/** Record the project invariants the rules sync generated (invariant id to its origin). */
+	async saveGeneratedRules(projectId: string, generated: DataRulesSetup['generated']): Promise<void> {
+		const previous = (await this.residue.load(projectId, SECTION)) as DataResidue | null;
+		if (!previous) return;
+		await this.residue.save(projectId, SECTION, {
+			...previous,
+			rules: { existence: previous.rules?.existence ?? {}, generated, ...linkRecordOf(previous) }
+		});
+	}
+
+	/** Record who linked each field, the fields a person unlinked, and the further states that carry a field. */
+	async saveLinkRecord(projectId: string, record: Pick<DataRulesSetup, 'linkedBy' | 'declined' | 'alsoCarriedBy'>): Promise<void> {
+		const previous = (await this.residue.load(projectId, SECTION)) as DataResidue | null;
+		if (!previous) return;
+		await this.residue.save(projectId, SECTION, {
+			...previous,
+			rules: {
+				existence: previous.rules?.existence ?? {},
+				generated: previous.rules?.generated ?? {},
+				...(record.linkedBy && Object.keys(record.linkedBy).length > 0 ? { linkedBy: record.linkedBy } : {}),
+				...(record.declined && record.declined.length > 0 ? { declined: record.declined } : {}),
+				...(record.alsoCarriedBy && Object.keys(record.alsoCarriedBy).length > 0 ? { alsoCarriedBy: record.alsoCarriedBy } : {})
+			}
+		});
+	}
+}
+
+/** The server-owned record of the links, kept as it is by a save of the model. */
+function linkRecordOf(residue: DataResidue | null): Pick<DataRulesSetup, 'linkedBy' | 'declined' | 'alsoCarriedBy'> {
+	const rules = residue?.rules;
+	return {
+		...(rules?.linkedBy && Object.keys(rules.linkedBy).length > 0 ? { linkedBy: rules.linkedBy } : {}),
+		...(rules?.declined && rules.declined.length > 0 ? { declined: rules.declined } : {}),
+		...(rules?.alsoCarriedBy && Object.keys(rules.alsoCarriedBy).length > 0 ? { alsoCarriedBy: rules.alsoCarriedBy } : {})
+	};
 }

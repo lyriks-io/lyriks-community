@@ -19,28 +19,23 @@
 {/if}
 
 <style>
+	/* Along the very top of the window, above everything, on every page (criterion 7a62a610). */
 	.nav-progress {
-		position: absolute;
+		position: fixed;
 		inset: 0 0 auto 0;
 		height: 3px;
 		overflow: hidden;
-		z-index: 30;
+		z-index: 1000;
 		pointer-events: none;
-		background: color-mix(in oklab, var(--color-brand-500) 16%, transparent);
+		/* The design's gauge: blue on toner-2, no gradient. */
+		background: var(--color-toner-2);
 	}
 	.nav-progress__bar {
 		position: absolute;
 		inset: 0;
 		display: block;
 		width: 45%;
-		border-radius: 999px;
-		background: linear-gradient(
-			90deg,
-			transparent,
-			var(--color-brand-400),
-			var(--color-brand-500),
-			transparent
-		);
+		background: var(--color-blue);
 		animation: nav-progress-slide 1.05s cubic-bezier(0.65, 0, 0.35, 1) infinite;
 	}
 	@keyframes nav-progress-slide {

@@ -37,12 +37,31 @@
 		value = next;
 		oninput?.(next);
 	}
+
+	/* The bar is as wide as its words: the placeholder, or what is typed once it
+	   is longer, measured in the input's own type, plus the room the magnifier
+	   and the clear button take. It never exceeds its container, and the width
+	   it is given wins over any fixed cap a page set, so no placeholder is cut
+	   where the row has the room to show it. */
+	let textWidth = $state(0);
+	const shownText = $derived(value.length > placeholder.length ? value : placeholder);
+	const sidePadding = $derived(size === 'md' ? 70 : 62);
+	const fitStyle = $derived(
+		textWidth > 0 ? `width:${Math.ceil(textWidth) + sidePadding}px;max-width:100%` : ''
+	);
 </script>
 
-<div class="min-w-0 {klass}">
+<div class="min-w-0 {klass}" style={fitStyle}>
 	<div class="relative">
 		<span
-			class="pointer-events-none absolute inset-y-0 left-2.5 grid place-items-center text-ink-400"
+			bind:offsetWidth={textWidth}
+			aria-hidden="true"
+			class="pointer-events-none invisible absolute left-0 top-0 whitespace-pre {size === 'md'
+				? 'text-sm'
+				: 'text-[0.78125rem]'}">{shownText}</span
+		>
+		<span
+			class="pointer-events-none absolute inset-y-0 left-2.5 grid place-items-center text-ink-3"
 		>
 			<Icon name="search" size={size === 'md' ? 15 : 13} />
 		</span>
@@ -59,10 +78,10 @@
 					set('');
 				}
 			}}
-			class="w-full rounded-pill border border-line bg-surface text-ink-900 outline-none transition-colors placeholder:text-ink-400 hover:border-line-strong focus:border-brand-400 disabled:cursor-not-allowed disabled:opacity-60 {size ===
+			class="w-full border-[1.5px] border-ink-3 bg-surface-sunken text-ink outline-none transition-colors placeholder:text-ink-3 hover:border-ink focus:border-blue disabled:cursor-not-allowed disabled:opacity-60 {size ===
 			'md'
 				? 'py-2 pl-8 pr-8 text-sm'
-				: 'py-1.5 pl-7 pr-7 text-[12.5px]'}"
+				: 'py-1.5 pl-7 pr-7 text-[0.78125rem]'}"
 		/>
 		{#if value}
 			<button
@@ -70,14 +89,14 @@
 				onclick={() => set('')}
 				aria-label="Clear search"
 				title="Clear search"
-				class="absolute right-2 top-1/2 grid -translate-y-1/2 place-items-center rounded p-0.5 text-ink-400 transition-colors hover:text-ink-700"
+				class="absolute right-2 top-1/2 grid -translate-y-1/2 place-items-center p-0.5 text-ink-3 transition-colors hover:text-ink"
 			>
 				<Icon name="x" size={size === 'md' ? 13 : 12} />
 			</button>
 		{/if}
 	</div>
 	{#if value && resultLabel}
-		<p class="mt-1 pl-1 text-[10px] font-medium uppercase tracking-[0.1em] text-ink-400" aria-live="polite">
+		<p class="mt-1 pl-1 font-evo-mono text-[0.6875rem] tracking-[0.08em] text-ink-3 uppercase" aria-live="polite">
 			{resultLabel}
 		</p>
 	{/if}

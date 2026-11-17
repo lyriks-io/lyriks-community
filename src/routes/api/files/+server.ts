@@ -1,5 +1,4 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { listBrandFiles, findBrandFile, parseDataUrl, fileKind } from '$domain/experience';
 import type { RequestHandler } from './$types';
@@ -41,7 +40,7 @@ export const GET: RequestHandler = async (event) => {
 	if (section !== 'experience') error(400, `section "${section}" has no uploaded files`);
 	await requireProjectAccess(event, projectId, 'read');
 
-	const { brand } = await getServices().loadExperienceDraft.execute(projectId);
+	const { brand } = await event.locals.services.loadExperienceDraft.execute(projectId);
 
 	// No ref → metadata-only manifest (bytes stay out of the listing).
 	if (!ref) {

@@ -5,11 +5,12 @@ const services = vi.hoisted(() => ({
 	skillCatalog: { syncSkills: vi.fn((..._args: unknown[]) => ({ skills: [], unknown: [] })) }
 }));
 vi.mock('$composition/container.server', () => ({ getServices: () => services }));
+import { getServices } from '$composition/container.server';
 
 import { POST } from './+server';
 
 type Event = Parameters<typeof POST>[0];
-const post = (body: unknown) => POST({ request: new Request('http://x/api/skills/sync', { method: 'POST', body: JSON.stringify(body) }) } as unknown as Event);
+const post = (body: unknown) => POST({ locals: { services: getServices() }, request: new Request('http://x/api/skills/sync', { method: 'POST', body: JSON.stringify(body) }) } as unknown as Event);
 
 async function status(body: unknown): Promise<number> {
 	try {

@@ -6,7 +6,6 @@ import {
 	canCloseReport,
 	canFreeze,
 	canReceiveReport,
-	completionTargets,
 	createEvolutionRequest,
 	fieldKey,
 	freeze,
@@ -58,7 +57,7 @@ describe('freezing the spec', () => {
 		const frozen = freeze(r, noa, '2026-09-03T10:00:00Z');
 		expect(frozen.specVersion).toBe(1);
 		expect(frozen.frozen).toBe(true);
-		expect(frozen.frozenVersions).toEqual([{ version: 1, at: '2026-09-03T10:00:00Z', by: 'noa' }]);
+		expect(frozen.frozenVersions).toMatchObject([{ version: 1, at: '2026-09-03T10:00:00Z', by: 'noa' }]);
 	});
 
 	// 13441ff4: a freeze after an amendment produces the next version.
@@ -193,18 +192,5 @@ describe('the brief under an invalidated line', () => {
 		expect(brief).toContain('Make the code do what the spec says');
 		expect(brief).toContain('Leave untouched (conform): ok1');
 		expect(brief).toContain('spec version 1');
-	});
-});
-
-describe('the completion targets the open questions first', () => {
-	it('lists the amber fields before the empty ones', () => {
-		const filled = new Set(
-			ALL_BLOCK_FIELDS.slice(0, 3).map((f) => fieldKey(f.path, isLeafScoped(f) ? LEAF : null))
-		);
-		const open = [fieldKey('09-technical.constraints')];
-		const targets = completionTargets(filled, open, [LEAF]);
-		expect(targets[0].key).toBe('09-technical.constraints');
-		expect(targets[0].openQuestion).toBe(true);
-		expect(targets.slice(1).every((t) => !t.openQuestion)).toBe(true);
 	});
 });

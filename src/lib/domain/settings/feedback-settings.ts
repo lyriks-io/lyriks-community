@@ -1,20 +1,18 @@
 /**
  * Whether the feedback dialog may OFFER its online channel: a browser-side,
  * user-initiated POST to the Lyriks feedback relay. App-level and
- * admin-owned, like the AI switch.
+ * admin-owned, answered in the configuration of the installation.
  *
- * The zero-egress posture holds in every position of this switch: the
- * appliance server never calls out, and even with the channel offered nothing
- * leaves the user's browser until that user first picks "online" (asked once,
- * stored per browser) and then presses Send. Defaulting to offered is
- * therefore safe: the switch governs an offer, not an emission.
+ * Off until an administrator ticks it: the post leaves from the browser and
+ * only on Send, but it still leaves, and what leaves an installation is that
+ * administrator's decision.
  */
 export interface FeedbackSettings {
 	readonly onlineEnabled: boolean;
 }
 
 export function defaultFeedbackSettings(): FeedbackSettings {
-	return { onlineEnabled: true };
+	return { onlineEnabled: false };
 }
 
 /** Coerce an unknown (parsed JSON / request body) into a valid FeedbackSettings. */

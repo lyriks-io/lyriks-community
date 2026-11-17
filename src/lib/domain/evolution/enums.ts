@@ -28,12 +28,13 @@ export const isRequestOrigin = (v: unknown): v is RequestOrigin =>
  */
 export const REQUEST_STAGES = [
 	{ code: 'draft', label: 'Draft' },
-	// The four stages are verbs: what a person does there, not what the stage is about.
+	// Named as the steps of the path they hold (ac-evo-req-6): Specify holds
+	// Need, Solution, Functional spec and Technical spec; the others are one step each.
 	{ code: 'specification', label: 'Specify' },
-	{ code: 'coherence', label: 'Challenge' },
-	{ code: 'implementation', label: 'Verify' },
-	{ code: 'acceptance', label: 'Accept' },
-	{ code: 'delivered', label: 'Delivered' }
+	{ code: 'coherence', label: 'Impact analysis' },
+	{ code: 'implementation', label: 'Build' },
+	{ code: 'acceptance', label: 'Approval' },
+	{ code: 'delivered', label: 'Deployment' }
 ] as const satisfies readonly Option[];
 export type RequestStage = (typeof REQUEST_STAGES)[number]['code'];
 export const isRequestStage = (v: unknown): v is RequestStage =>
@@ -61,6 +62,7 @@ export const STAGE_ORDER: readonly RequestStage[] = [
 export const REQUEST_STATUSES = [
 	{ code: 'open', label: 'Open' },
 	{ code: 'closed', label: 'Closed' },
+	{ code: 'cancelled', label: 'Cancelled' },
 	{ code: 'deleted', label: 'Deleted' }
 ] as const satisfies readonly Option[];
 export type RequestStatus = (typeof REQUEST_STATUSES)[number]['code'];
@@ -387,10 +389,12 @@ export const HISTORY_ENTRY_TYPES = [
 	{ code: 'acceptance_ruling', label: 'Acceptance ruling' },
 	{ code: 'field_signature', label: 'Signature' },
 	{ code: 'field_thread', label: 'Field thread' },
-	{ code: 'readiness_exclusion', label: 'Readiness exclusion' },
 	{ code: 'spec_frozen', label: 'Spec frozen' },
 	{ code: 'spec_amended', label: 'Spec amended' },
-	{ code: 'draft_change', label: 'Draft change' }
+	{ code: 'draft_change', label: 'Draft change' },
+	{ code: 'risk_decision', label: 'Risk decision' },
+	{ code: 'code_read', label: 'Code read' },
+	{ code: 'code_commit', label: 'Code commit' }
 ] as const satisfies readonly Option[];
 export type HistoryEntryType = (typeof HISTORY_ENTRY_TYPES)[number]['code'];
 export const isHistoryEntryType = (v: unknown): v is HistoryEntryType =>

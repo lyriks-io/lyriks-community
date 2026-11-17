@@ -1,7 +1,6 @@
 import { error, json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
-import { BEHAVIOR_AUTHORING_PATTERNS, BEHAVIOR_NAMING_RULES } from '$application/behavior-authoring-patterns';
+import { BEHAVIOR_AUTHORING_PATTERNS, BEHAVIOR_NAMING_RULES } from '$application/specification/behavior-authoring-patterns';
 import type { RequestHandler } from './$types';
 
 /**
@@ -18,7 +17,7 @@ export const GET: RequestHandler = async (event) => {
 	else if (event.locals.authRequired && !event.locals.session?.email) error(401, 'unauthenticated');
 
 	const kind = event.url.searchParams.get('kind')?.trim() || undefined;
-	const result = await getServices().readBehaviorOperations.execute(kind);
+	const result = await event.locals.services.readBehaviorOperations.execute(kind);
 	if (!result) error(503, 'Behavior engine unavailable');
 	return kind
 		? json({ available: true, kind, description: result })

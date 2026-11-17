@@ -265,3 +265,48 @@ describe('a happy path fills the form it submits', () => {
 		expect(run.finalScreenId).toBe(go.surfaceId);
 	});
 });
+
+describe('acceptance spec in French (spec language)', () => {
+	const NB = ' ';
+	it('writes the Gherkin with French keywords under a language header, names quoted as they are', () => {
+		const { draft } = loginToHomeDraft();
+		draft.steps.push(createStep(draft.journeys[0].id, 2, { name: 'Back', linkedScreenId: draft.screens[0].id }));
+		const gherkin = buildAcceptanceSpec(draft, 'fr').gherkin;
+		expect(gherkin.split('\n')[0]).toBe('# language: fr');
+		expect(gherkin).toContain('Fonctionnalité: Sign in');
+		expect(gherkin).toContain(`Scénario: réaliser le parcours «${NB}Sign in${NB}»`);
+		expect(gherkin).toContain(`Étant donné que l'utilisateur démarre sur «${NB}Login${NB}»`);
+		expect(gherkin).toContain(`Quand l'utilisateur passe à «${NB}Home${NB}»`);
+		expect(gherkin).toContain(`Et l'utilisateur passe à «${NB}Login${NB}»`);
+		expect(gherkin).toContain(`Alors «${NB}arrived${NB}» a une valeur`);
+		expect(gherkin).toContain(`Quand l'utilisateur déclenche «${NB}click${NB}»`);
+		expect(gherkin).not.toMatch(/\b(Given|When|Then|Feature|Scenario)\b/);
+	});
+
+	it('writes flow gaps in French', () => {
+		const { draft, go, j } = loginToHomeDraft();
+		go.wiring.transitions[0].effect.target = 'nope';
+		expect(deriveJourneyFlow(draft, j, 'fr').flowGaps).toEqual([
+			`Aucune navigation de «${NB}Login${NB}» vers «${NB}Home${NB}».`
+		]);
+	});
+
+	it('keeps English byte-identical when no language is given', () => {
+		const { draft } = loginToHomeDraft();
+		expect(buildAcceptanceSpec(draft).gherkin).toBe(buildAcceptanceSpec(draft, 'en').gherkin);
+		expect(buildAcceptanceSpec(draft).gherkin.startsWith('Feature: Sign in')).toBe(true);
+	});
+
+	it('writes the generated test titles and scaffold prose in French', () => {
+		const { draft } = loginToHomeDraft();
+		const tests = generateAcceptanceTests(draft, {}, 'fr');
+		expect(tests.playwright).toContain(`test("réalise le parcours «${NB}Sign in${NB}»"`);
+		expect(tests.playwright).toContain("// Tests d'acceptation E2E");
+		expect(tests.playwright).toContain(`// acceptation (à relier à la main)${NB}: «${NB}arrived${NB}» a une valeur`);
+		const scaffold = generateRepoScaffold(draft, {}, 'fr');
+		const map = JSON.parse(scaffold.files.find((f) => f.path === 'lyriks.map.json')!.content);
+		expect(map.$comment).toContain('Reciblez les tests');
+		expect(scaffold.files.find((f) => f.path === 'ACCEPTANCE.md')!.content).toContain("# Tests d'acceptation");
+		expect(scaffold.files.find((f) => f.path === 'tests/acceptance/acceptance.feature')!.content).toContain('# language: fr');
+	});
+});

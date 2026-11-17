@@ -32,8 +32,14 @@
 		subject?: string;
 		/** Start with the picker expanded (a panel that is all about evidence). */
 		open?: boolean;
+		/**
+		 * One quiet line at the foot of the card it backs (a Requirements question),
+		 * instead of a block of its own: the label, the cited chips and the picker
+		 * toggle share a line, and only an open picker takes the full width.
+		 */
+		inline?: boolean;
 	}
-	let { selected, onToggle, subject = 'this item', open = false }: Props = $props();
+	let { selected, onToggle, subject = 'this item', open = false, inline = false }: Props = $props();
 
 	const registry = getDocumentRegistry();
 	const sources = $derived(registry?.sources ?? []);
@@ -115,19 +121,21 @@
 	}
 </script>
 
-<div class="rounded-field border border-line bg-surface p-3">
+<div class={inline ? 'mt-5 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-line pt-3' : 'rounded-field border border-line bg-surface p-3'}>
+	{#if inline}
+		<span class="inline-flex shrink-0 items-center gap-1 text-[0.6875rem] font-medium text-ink-400">
+			<Icon name="file" size={12} class="text-ink-300" /> Sources
+		</span>
+	{:else}
 	<!-- The caption ellipsizes rather than wrapping: this control also sits inside
 	     narrow cards (a persona tile, a definition sub-section). -->
 	<p
-		class="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400"
+		class="flex items-center gap-1.5 text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-ink-400"
 	>
 		<Icon name="file" size={12} class="shrink-0 text-brand-500" />
-		<span class="shrink-0">Sources</span>
-		<span class="min-w-0 flex-1 truncate text-[9px] font-medium normal-case tracking-normal text-ink-300">
-			· evidence behind {subject}
-		</span>
+		<span class="min-w-0 flex-1">Sources</span>
 		<span
-			class="shrink-0 rounded-pill px-1.5 py-0.5 text-[9px] font-semibold tabular-nums normal-case tracking-normal {count >
+			class="shrink-0 rounded-pill px-1.5 py-0.5 text-[0.5625rem] font-semibold tabular-nums normal-case tracking-normal {count >
 			0
 				? 'bg-success-50 text-success-600'
 				: 'bg-surface-sunken text-ink-400'}"
@@ -135,21 +143,22 @@
 			{count}
 		</span>
 	</p>
+	{/if}
 
 	{#if cited.length > 0 || broken.length > 0}
-		<div class="mt-2">
+		<div class={inline ? '' : 'mt-2'}>
 			<CitedSources ids={selected} onRemove={onToggle} />
 		</div>
 	{/if}
 
 	<!-- Only CHOOSING sources folds away: the picker is a long list plus a form,
 	     and it is not what you come to this widget to read. -->
-	<details class="mt-2" {open}>
+	<details class={inline ? '[&[open]]:basis-full' : 'mt-2'} {open}>
 		<summary
-			class="inline-flex cursor-pointer list-none items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-brand-600 hover:underline"
+			class="inline-flex cursor-pointer list-none items-center gap-1 text-[0.625rem] font-semibold uppercase tracking-[0.06em] text-brand-600 hover:underline"
 		>
 			<Icon name="plus" size={11} />
-			{cited.length > 0 ? 'Change sources' : 'Cite a source'}
+			{inline ? (cited.length > 0 ? 'Change' : 'Cite a source') : cited.length > 0 ? 'Change sources' : 'Cite a source'}
 		</summary>
 
 		<div class="mt-2.5 space-y-2">
@@ -165,7 +174,7 @@
 						type="search"
 						bind:value={query}
 						placeholder="Search sources…"
-						class="w-full rounded-field border border-line bg-surface py-1.5 pl-7 pr-2 text-[12px] text-ink-700 outline-none placeholder:text-ink-300 focus:border-brand-300"
+						class="w-full rounded-field border border-line bg-surface py-1.5 pl-7 pr-2 text-[0.75rem] text-ink-700 outline-none placeholder:text-ink-300 focus:border-brand-300"
 					/>
 				</label>
 
@@ -173,7 +182,7 @@
 					{#each visible as source (source.id)}
 						<label
 							bind:this={rowEls[source.id]}
-							class="flex cursor-pointer items-start gap-2 rounded-field px-2 py-1.5 text-[13px] text-ink-700 transition-colors hover:bg-surface-sunken {source.id ===
+							class="flex cursor-pointer items-start gap-2 rounded-field px-2 py-1.5 text-[0.8125rem] text-ink-700 transition-colors hover:bg-surface-sunken {source.id ===
 							justAdded
 								? 'bg-success-50'
 								: ''}"
@@ -188,20 +197,20 @@
 								<span class="block truncate font-medium">
 									{source.title || source.url || 'Untitled source'}
 								</span>
-								<span class="block truncate text-[10px] text-ink-400">
+								<span class="block truncate text-[0.625rem] text-ink-400">
 									{source.kind}{source.url ? ` · ${source.url}` : ''}
 								</span>
 							</span>
 						</label>
 					{/each}
 					{#if visible.length === 0}
-						<p class="px-2 py-1.5 text-[11px] italic text-ink-400">
+						<p class="px-2 py-1.5 text-[0.6875rem] italic text-ink-400">
 							No source matches “{query.trim()}”.
 						</p>
 					{/if}
 				</div>
 			{:else if !adding}
-				<p class="text-[11px] text-ink-400">
+				<p class="text-[0.6875rem] text-ink-400">
 					No registered sources yet. Add the evidence {subject} rests on.
 				</p>
 			{/if}
@@ -215,18 +224,18 @@
 							bind:this={titleEl}
 							bind:value={title}
 							placeholder="Title, e.g. GDPR Art. 17, Ops lead interview"
-							class="w-full rounded-field border border-line bg-surface px-2 py-1.5 text-[12px] text-ink-900 outline-none placeholder:text-ink-300 focus:border-brand-300"
+							class="w-full rounded-field border border-line bg-surface px-2 py-1.5 text-[0.75rem] text-ink-900 outline-none placeholder:text-ink-300 focus:border-brand-300"
 						/>
 						<div class="flex gap-1.5">
 							<input
 								bind:value={url}
 								placeholder="https://…  or a reference"
-								class="min-w-0 flex-1 rounded-field border border-line bg-surface px-2 py-1.5 font-mono text-[11px] text-ink-700 outline-none placeholder:font-sans placeholder:text-ink-300 focus:border-brand-300"
+								class="min-w-0 flex-1 rounded-field border border-line bg-surface px-2 py-1.5 font-mono text-[0.6875rem] text-ink-700 outline-none placeholder:font-sans placeholder:text-ink-300 focus:border-brand-300"
 							/>
 							<select
 								bind:value={kind}
 								aria-label="Source kind"
-								class="shrink-0 rounded-field border border-line bg-surface px-1.5 py-1.5 text-[11px] font-medium text-ink-600 outline-none"
+								class="shrink-0 rounded-field border border-line bg-surface px-1.5 py-1.5 text-[0.6875rem] font-medium text-ink-600 outline-none"
 							>
 								{#each DOCUMENT_KINDS as option (option.code)}
 									<option value={option.code}>{option.label}</option>
@@ -237,20 +246,20 @@
 							<button
 								type="submit"
 								disabled={saving || !title.trim()}
-								class="rounded-field bg-brand-500 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-brand-600 disabled:opacity-40"
+								class="rounded-field bg-brand-500 px-2.5 py-1 text-[0.6875rem] font-semibold text-white transition hover:bg-brand-600 disabled:opacity-40"
 							>
 								{saving ? 'Registering…' : 'Register & cite'}
 							</button>
 							<button
 								type="button"
 								onclick={closeForm}
-								class="text-[11px] font-medium text-ink-400 hover:text-ink-700"
+								class="text-[0.6875rem] font-medium text-ink-400 hover:text-ink-700"
 							>
 								Cancel
 							</button>
 							<a
 								href={registry.documentsHref}
-								class="ml-auto text-[10px] font-medium text-ink-400 hover:text-brand-600 hover:underline"
+								class="ml-auto text-[0.625rem] font-medium text-ink-400 hover:text-brand-600 hover:underline"
 							>
 								Full register ↗
 							</a>
@@ -261,13 +270,13 @@
 						<button
 							type="button"
 							onclick={openForm}
-							class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.06em] text-brand-600 hover:underline"
+							class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[0.625rem] font-semibold uppercase tracking-[0.06em] text-brand-600 hover:underline"
 						>
 							<Icon name="plus" size={11} /> New source
 						</button>
 						<a
 							href={registry.documentsHref}
-							class="shrink-0 whitespace-nowrap text-[10px] font-medium text-ink-400 hover:text-brand-600 hover:underline"
+							class="shrink-0 whitespace-nowrap text-[0.625rem] font-medium text-ink-400 hover:text-brand-600 hover:underline"
 						>
 							Full register ↗
 						</a>

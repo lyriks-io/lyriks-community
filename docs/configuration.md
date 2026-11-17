@@ -56,7 +56,8 @@ so one session cookie covers everything and no extra ingress rule is needed.
 |---|---|
 | `LYRIKS_VERSION`, `LYRIKS_TAG` | The release this process runs as, shown in Settings > Versions. |
 | `LYRIKS_BUILD_SHA`, `LYRIKS_BUILD_DATE` | Build provenance, set by the image build. |
-| `LYRIKS_UPDATE_CHECK` | `1` lets an administrator be told when a newer release exists. Off by default: no network call. |
+| `LYRIKS_UPDATE_CHECK` | `1` ticks the update check in advance. An administrator still allows it, right after the first password or in Settings, Configuration; until then there is no network call. |
+| `LYRIKS_UPDATE_IMAGE` | The image whose tags the check reads. |
 | `LYRIKS_REGISTRY` | The registry the check asks, the same one the install pulls from. |
 | `LYRIKS_REGISTRY_USERNAME`, `LYRIKS_REGISTRY_PASSWORD` | Read-only pull credentials, only for a private mirror with the check on. |
 | `LYRIKS_HOST_FACTS_FILE` | The host record the appliance kit writes at install and update, read for Settings > Versions. |

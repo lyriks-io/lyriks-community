@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { leafFeatures, type ProjectFeaturesDraft } from '$domain/features';
-import { featureIdCollisionMessage } from '$application/feature-id-collision';
+import { featureIdCollisionMessage } from '$application/specification/feature-id-collision';
 
 /** The slice of the container this guard needs, so a test can hand it two stubs. */
 export interface LeafIdGuardServices {

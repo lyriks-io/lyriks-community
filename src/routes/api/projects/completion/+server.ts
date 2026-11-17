@@ -1,5 +1,4 @@
 import { json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { callerAllowedDomains } from '$lib/server/domain-scope.server';
 import { callerWorkspaceScope } from '$lib/server/workspace-scope.server';
 import { mapLimit } from '$lib/shared/map-limit';
@@ -12,7 +11,7 @@ import type { RequestHandler } from './$types';
  * request timeout without opening an unbounded fan-out against PostgreSQL.
  */
 export const GET: RequestHandler = async (event) => {
-	const services = getServices();
+	const services = event.locals.services;
 	const [workspaceScope, domainScope] = await Promise.all([
 		callerWorkspaceScope(event),
 		callerAllowedDomains(event)

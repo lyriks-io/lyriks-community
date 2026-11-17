@@ -482,3 +482,119 @@ describe('buildExperienceProjection (kernel overlay / two-way binding)', () => {
 		expect(out.builder.nodes.checkout).toBeUndefined();
 	});
 });
+
+describe('experienceDraftToBehaviorOps in the spec language', () => {
+	const NB = ' ';
+	function builderDraft(): ProjectExperienceDraft {
+		const draft = sampleDraft();
+		draft.stepOperations = [
+			...draft.stepOperations,
+			createOperation('S1', 1, { id: 'O2', kind: 'api', label: 'loadCart' })
+		];
+		draft.stepDataReads = [
+			createDataRead('S1', 0, { id: 'D1', entityName: 'Cart', mode: 'read', fields: ['id', 'total'] })
+		];
+		draft.builder = {
+			...draft.builder,
+			screenRoots: { scr1: 'root-scr1' },
+			nodes: {
+				btn1: {
+					id: 'btn1',
+					surfaceId: 'scr1',
+					parentId: 'root-scr1',
+					kind: 'element',
+					elementKind: 'button',
+					label: 'Add to cart',
+					wiring: {
+						binding: { targetKind: 'state', targetRef: 'cart.open' },
+						gate: null,
+						validations: [],
+						scenarios: [],
+						transitions: [
+							{
+								id: 't1',
+								trigger: 'click',
+								effect: { kind: 'setState', target: 'cart.open', value: 'true' },
+								when: { path: 'cart.count', op: 'neq', expected: '0' }
+							}
+						]
+					}
+				}
+			}
+		} as ProjectExperienceDraft['builder'];
+		return draft;
+	}
+	type Surface = {
+		id: string;
+		name: string;
+		description: string;
+		actions: { id: string; name: string; intent: string; effects: { description?: string }[] }[];
+	};
+	const upsertOf = (lang?: 'en' | 'fr') => {
+		const ops = experienceDraftToBehaviorOps(builderDraft(), {
+			features: null,
+			users: usersWith(),
+			...(lang ? { lang } : {})
+		});
+		const upsert = ops.find((o) => o.kind === 'upsertExperienceFeature');
+		if (upsert?.kind !== 'upsertExperienceFeature') throw new Error('unreachable');
+		return upsert;
+	};
+
+	it('writes descriptions and intents in French, names from the model quoted as they are', () => {
+		const upsert = upsertOf('fr');
+		expect(upsert.name).toBe('Experience');
+		expect(upsert.description).toContain(`section Expérience${NB}:`);
+		const surfaces = upsert.surfaces as Surface[];
+		const workflow = surfaces.find((s) => s.id === 'srf-J1')!;
+		expect(workflow.description).toBe(`Parcours «${NB}Checkout${NB}». Réalisé par${NB}: «${NB}Shopper${NB}».`);
+		expect(workflow.actions[0].intent).toBe(
+			`Open cart Sur l'écran «${NB}Home${NB}». Appels${NB}: «${NB}loadCart${NB}». Données${NB}: «${NB}Cart${NB}» en lecture {id, total}.`
+		);
+		const screen = surfaces.find((s) => s.id === 'srf-screen-scr1')!;
+		expect(screen.description).toBe("Surface conçue dans le constructeur d'expérience.");
+		const button = screen.actions.find((a) => a.id === 'act-btn1')!;
+		expect(button.name).toBe('Add to cart');
+		expect(button.intent).toBe(`Add to cart Sur l'écran «${NB}Home${NB}». Lié à l'état${NB}: cart.open.`);
+		expect(button.effects[0].description).toBe(
+			`Déduit du câblage «${NB}click${NB}» de «${NB}Add to cart${NB}» dans le constructeur d'expérience. Le constructeur ne l'applique que si cart.count ne vaut pas «${NB}0${NB}».`
+		);
+		const personas = upsert.personas as { description: string }[];
+		expect(personas[0].description).toBe(
+			"Rôle d'acteur défini dans Utilisateurs et permissions, qui réalise un ou plusieurs parcours."
+		);
+	});
+
+	it('keeps the English texts byte for byte when no language is given', () => {
+		const upsert = upsertOf();
+		expect(upsertOf('en')).toEqual(upsert);
+		const workflow = (upsert.surfaces as Surface[]).find((s) => s.id === 'srf-J1')!;
+		expect(workflow.description).toBe('Journey: Checkout. Performed by: Shopper.');
+		expect(workflow.actions[0].intent).toBe(
+			'Open cart On screen: Home. Calls: loadCart. Data: read Cart {id, total}.'
+		);
+	});
+
+	it('keeps every id and name when the language changes, so switching rewrites the same elements', () => {
+		const shape = (upsert: ReturnType<typeof upsertOf>) =>
+			(upsert.surfaces as Surface[]).map((s) => ({
+				id: s.id,
+				name: s.name,
+				actions: s.actions.map((a) => [a.id, a.name])
+			}));
+		expect(shape(upsertOf('fr'))).toEqual(shape(upsertOf('en')));
+	});
+
+	it('names a field action in English (code-facing) while its intent follows the language', () => {
+		const draft = createEmptyExperienceDraft('p1');
+		const root = ensureScreenRoot(draft.builder, 'scr1');
+		const input = { ...createElementNode('scr1', root, 'input'), id: 'email', label: 'Email' };
+		addNode(draft.builder, input);
+		const ops = experienceDraftToBehaviorOps(draft, { features: null, users: null, lang: 'fr' });
+		const upsert = ops.find((o) => o.kind === 'upsertExperienceFeature');
+		if (upsert?.kind !== 'upsertExperienceFeature') throw new Error('unreachable');
+		const action = (upsert.surfaces as Surface[])[0].actions[0];
+		expect(action.name).toBe('Set Email');
+		expect(action.intent).toMatch(new RegExp(`^Écrit la saisie du champ «${NB}Email${NB}» dans l'état \\S+\\.$`));
+	});
+});

@@ -167,7 +167,7 @@
 						placeholder="Screen name"
 						class="min-w-40 flex-1 border-none bg-transparent text-sm font-semibold text-ink-900 outline-none placeholder:font-normal placeholder:text-ink-300"
 					/>
-					<label class="flex items-center gap-1.5 text-[11px] text-ink-400">
+					<label class="flex items-center gap-1.5 text-[0.6875rem] text-ink-400">
 						Template
 						<select
 							value={selected.templateId ?? ''}
@@ -185,7 +185,7 @@
 						<button
 							type="button"
 							onclick={() => applyTemplateNow(selected.id, selected.templateId)}
-							class="rounded-field border border-line px-2 py-1 text-[11px] font-semibold text-ink-500 hover:border-brand-300 hover:text-brand-600"
+							class="rounded-field border border-line px-2 py-1 text-[0.6875rem] font-semibold text-ink-500 hover:border-brand-300 hover:text-brand-600"
 							title="Replace this screen's layout with a fresh copy of the template"
 						>
 							Apply layout
@@ -194,12 +194,12 @@
 					<button
 						type="button"
 						onclick={() => saveAsTemplate(selected.id, selected.name)}
-						class="rounded-field border border-line px-2 py-1 text-[11px] font-semibold text-ink-500 hover:border-brand-300 hover:text-brand-600"
+						class="rounded-field border border-line px-2 py-1 text-[0.6875rem] font-semibold text-ink-500 hover:border-brand-300 hover:text-brand-600"
 						title="Save this screen's current layout as a reusable template"
 					>
 						Save as template
 					</button>
-					<label class="flex items-center gap-1.5 text-[11px] text-ink-400">
+					<label class="flex items-center gap-1.5 text-[0.6875rem] text-ink-400">
 						Path
 						<input
 							value={selected.path}
@@ -209,7 +209,7 @@
 							class="w-32 rounded-field border border-line bg-surface px-2 py-1 font-mono text-xs text-ink-700 outline-none focus:border-brand-300 placeholder:text-ink-300"
 						/>
 					</label>
-					<label class="flex items-center gap-1.5 text-[11px] text-ink-400">
+					<label class="flex items-center gap-1.5 text-[0.6875rem] text-ink-400">
 						Device
 						<select
 							value={selected.device}
@@ -221,7 +221,7 @@
 						</select>
 					</label>
 					{#if selected.device === 'custom'}
-						<label class="flex items-center gap-1 text-[11px] text-ink-400">
+						<label class="flex items-center gap-1 text-[0.6875rem] text-ink-400">
 							<input
 								type="number"
 								value={selected.deviceW}
@@ -239,7 +239,7 @@
 							/>
 						</label>
 					{/if}
-					<label class="flex items-center gap-1.5 text-[11px] text-ink-400">
+					<label class="flex items-center gap-1.5 text-[0.6875rem] text-ink-400">
 						Category
 						<input
 							value={selected.category ?? ''}
@@ -265,7 +265,7 @@
 							onchange={(e) => store.setShellEnabled(selectedShell.part, e.currentTarget.checked)}
 						/>
 						{selectedShell.label}
-						<span class="text-[10px] font-normal text-ink-400">
+						<span class="text-[0.625rem] font-normal text-ink-400">
 							{shellOn ? 'shown on every screen in Run mode' : 'off - enable to design it'}
 						</span>
 					</label>

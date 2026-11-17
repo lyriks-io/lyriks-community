@@ -12,6 +12,7 @@ import {
 	BUNDLE_VERSION,
 	FILE_INDEX_PATH,
 	KERNEL_FEATURE_DIR,
+	KERNEL_ARTIFACTS_PATH,
 	KERNEL_PROJECT_PATH,
 	LEGACY_DOCUMENTS_PATH,
 	MANIFEST_PATH,
@@ -24,9 +25,11 @@ import {
 } from './bundle';
 import { inlineFiles, type FileIndex } from './externalize-files';
 import { parseJsonBytes } from './stable-json';
+import { isSafeKernelId, parseKernelArtifact } from './kernel-artifacts';
 import type {
 	DomainRef,
 	KernelFeature,
+	KernelArtifact,
 	ProjectMetaRow,
 	ProjectSnapshot,
 	SectionDocumentRow
@@ -47,6 +50,10 @@ export function readBundle(files: BundleFiles): ReadBundleResult {
 	if (typeof manifest === 'string') return { ok: false, error: manifest };
 
 	const warnings: string[] = [];
+	const artifacts = readArtifacts(files, manifest.bundleVersion);
+	if (typeof artifacts === 'string') return { ok: false, error: artifacts };
+	if (manifest.bundleVersion >= 2 && artifacts.length !== manifest.counts.evidence) return { ok: false, error: 'The archive evidence count does not match its manifest' };
+	if (manifest.bundleVersion === 1) warnings.push('This older archive contains no attached sources, provenance or implementation reports. Only its specification can be recovered.');
 	const index = readFileIndex(files, warnings);
 	const restore = <T>(value: T): T => inlineFiles(value, index, (path) => files.get(path));
 
@@ -71,8 +78,13 @@ export function readBundle(files: BundleFiles): ReadBundleResult {
 		// The id inside the document wins over the filename: the kernel addresses
 		// features by content id, and a renamed file must not fork a second record.
 		const id = typeof feature.id === 'string' && feature.id ? feature.id : path.slice(KERNEL_FEATURE_DIR.length, -'.json'.length);
+		if (!isSafeKernelId(id)) return { ok: false, error: 'Invalid feature identity in archive' };
+		if (featureEntries.some(entry => entry.id === id)) return { ok: false, error: `Duplicate feature identity in archive: ${id}` };
 		featureEntries.push({ id, feature });
 	}
+	if (manifest.bundleVersion >= 2 && featureEntries.length !== manifest.counts.features) return { ok: false, error: 'The archive feature count does not match its manifest' };
+	const featureIds = new Set(featureEntries.map(feature => feature.id));
+	if (artifacts.some(artifact => artifact.kind !== 'source' && !featureIds.has(artifact.id))) return { ok: false, error: 'An evidence record refers to a feature absent from the archive' };
 
 	const snapshot: ProjectSnapshot = {
 		projectId: manifest.project.id,
@@ -81,7 +93,8 @@ export function readBundle(files: BundleFiles): ReadBundleResult {
 		rows: { legacyDocuments, sectionDocuments, residue, revisions, meta },
 		kernel: {
 			project: restore(kernelProject),
-			features: restore(featureEntries)
+			features: restore(featureEntries),
+			...(manifest.bundleVersion >= 2 ? { artifacts } : {})
 		},
 		domain
 	};
@@ -117,9 +130,30 @@ function parseManifest(value: unknown): BundleManifest | string {
 		counts: {
 			features: countOf(raw.counts, 'features'),
 			files: countOf(raw.counts, 'files'),
-			sections: countOf(raw.counts, 'sections')
+			sections: countOf(raw.counts, 'sections'),
+			...(version >= 2 ? { evidence: countOf(raw.counts, 'evidence') } : {})
 		}
 	};
+}
+
+/** A declared evidence-capable archive cannot quietly drop a malformed record. */
+function readArtifacts(files: BundleFiles, version: number): KernelArtifact[] | string {
+	if (version < 2) return [];
+	const bytes = files.get(KERNEL_ARTIFACTS_PATH);
+	if (!bytes) return `${KERNEL_ARTIFACTS_PATH} is missing`;
+	const raw = parseJsonBytes(bytes);
+	if (!Array.isArray(raw)) return `${KERNEL_ARTIFACTS_PATH} is not a JSON array`;
+	const artifacts: KernelArtifact[] = [];
+	const seen = new Set<string>();
+	for (const entry of raw) {
+		const artifact = parseKernelArtifact(entry);
+		if (!artifact) return 'Invalid project evidence record';
+		const key = `${artifact.kind}:${artifact.id}`;
+		if (seen.has(key)) return `Duplicate project evidence record: ${key}`;
+		seen.add(key);
+		artifacts.push(artifact);
+	}
+	return artifacts;
 }
 
 function readFileIndex(files: BundleFiles, warnings: string[]): FileIndex {

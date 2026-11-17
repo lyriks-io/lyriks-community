@@ -1,0 +1,99 @@
+// Lyriks helper (installed by `sync_skills` under .lyriks/tools/). Reports what
+// git says of the checkout to the Evolution request built on its branch
+// (`report_code_state`, feat-evo-code-branch), for sync-index.mjs: repository,
+// branch, start commit, head, last commit of code, uncommitted code, proofs of
+// the whole index taken on another commit, commits since the start. A branch no
+// open request is built on is not a refusal: the answer says so as a note
+// (`noRequest`), and nothing is sent at all when the board shows no open
+// request; a refusal for a request that exists stays a refusal. Never throws.
+// No dependencies, Node 18+, no network except the endpoint.
+import { branchHistory, gitState, proofsAgainst, repositoryOf } from './git-state.mjs';
+import { callToolJson } from './mcp-client.mjs';
+
+/** The Evolution board's cards, and whether the list is whole; null when the board cannot be read. */
+async function boardOf(session, projectId) {
+	try {
+		const board = await callToolJson(session, 'get_evolution', { project_id: projectId });
+		if (!Array.isArray(board.requests)) return null;
+		// A capped answer may have cut the list: a request missing from it may still be open.
+		return { cards: board.requests, whole: board.capped !== true };
+	} catch {
+		// An older gateway or a project with no Evolution section: nothing to say.
+		return null;
+	}
+}
+
+/** The deployment branch the project names on Lyriks, read off the board's cards; null when none is named or the board cannot tell. */
+function deploymentBranchOf(board) {
+	for (const card of board?.cards ?? []) {
+		const branch = card?.code?.deploymentBranch;
+		if (typeof branch === 'string' && branch) return branch;
+	}
+	return null;
+}
+
+/** True only when the whole board is read and no request on it is open (a card that names no status may be). */
+function noOpenRequest(board) {
+	return Boolean(board?.whole) && !board.cards.some((card) => card?.status === undefined || card?.status === 'open');
+}
+
+const NO_REQUEST = 'no open Evolution request: code state not attached';
+
+/**
+ * True when the platform found no request to attach the report to: it names
+ * the request of every refusal it resolved, so a refusal of this report with
+ * `requestId: null` means no open request holds the branch or is named for it.
+ * An older gateway that does not know the operation is refused the same way,
+ * and that one stays a refusal.
+ */
+function attachedToNoRequest(answer) {
+	const result = Array.isArray(answer?.results) ? answer.results[0] : null;
+	if (!result || result.ok !== false || !('requestId' in result) || result.requestId !== null) return false;
+	return !/^Unknown operation/.test(String(result.reason ?? result.summary ?? ''));
+}
+
+/** The first sentence an apply_evolution_batch answer gives about its one operation. */
+function verdictOf(answer) {
+	const result = Array.isArray(answer?.results) ? answer.results[0] : null;
+	const ok = answer?.ok !== false && result?.ok !== false;
+	const said = result?.reason ?? result?.summary ?? answer?.error ?? answer?.reason ?? '';
+	return { ok, said: typeof said === 'string' ? said : JSON.stringify(said) };
+}
+
+/**
+ * Reports the checkout's git state to the request built on this branch, and
+ * what the platform answered. Null outside a git repository; never throws, so
+ * a refusal or a gateway without the operation leaves the sync standing.
+ */
+export async function reportCodeState(session, projectId, dir, slice, { baseBranch = null } = {}) {
+	if (!gitState(dir)) return null;
+	const board = await boardOf(session, projectId);
+	const deploymentBranch = baseBranch || deploymentBranchOf(board);
+	const git = gitState(dir, { deploymentBranch });
+	if (!git.branch) return { reported: false, answer: 'not reported: the checkout is on a detached head, on no branch' };
+	if (deploymentBranch && git.branch === deploymentBranch) {
+		return { reported: false, branch: git.branch, answer: `not reported: ${git.branch} is the deployment branch, and code is never written on it` };
+	}
+	const op = {
+		op: 'report_code_state',
+		repository: repositoryOf(git.top),
+		history: branchHistory(git.top, git.baseCommit),
+		branch: git.branch,
+		baseCommit: git.baseCommit,
+		head: git.head,
+		codeHead: git.codeHead,
+		clean: git.clean === true,
+		...proofsAgainst(slice, git.codeHead)
+	};
+	const { op: _name, history, ...rest } = op; // the commits travel to Lyriks, the summary only counts them
+	const facts = { ...rest, commitCount: history?.count ?? null };
+	if (noOpenRequest(board)) return { reported: false, noRequest: true, ...facts, answer: NO_REQUEST };
+	try {
+		const answer = await callToolJson(session, 'apply_evolution_batch', { project_id: projectId, operations: [op] });
+		const { ok, said } = verdictOf(answer);
+		if (!ok && attachedToNoRequest(answer)) return { reported: false, noRequest: true, ...facts, answer: `${NO_REQUEST} (none is built on ${git.branch})` };
+		return { reported: ok, ...facts, answer: ok ? `accepted${said ? `: ${said}` : ''}` : `refused: ${said || 'no reason given'}` };
+	} catch (error) {
+		return { reported: false, ...facts, answer: `refused: ${error instanceof Error ? error.message : String(error)}` };
+	}
+}

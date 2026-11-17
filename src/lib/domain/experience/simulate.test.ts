@@ -613,3 +613,27 @@ describe('simulate: tab switching', () => {
 		expect(r.actions[0]).toMatchObject({ resolvedNodeId: tabs.id, action: 'tab' });
 	});
 });
+
+describe('simulate: messages in French (spec language)', () => {
+	const NB = ' ';
+	it('writes an unresolved action in French, quoting the label as it is', () => {
+		const { b } = buildLoginScreen();
+		const r = simulate(b, { language: 'fr', actions: [{ label: 'Nope', trigger: 'click' }] });
+		expect(r.errors[0].message).toBe(`Action 0${NB}: aucun élément ne correspond au libellé «${NB}Nope${NB}».`);
+	});
+
+	it('writes an access refusal and the proofless-persona warning in French', () => {
+		const { b, ids } = buildLoginScreen();
+		const denied = simulate(b, { language: 'fr', personaId: 'role-viewer', actions: [{ nodeId: ids.submit }] });
+		expect(denied.errors[0].message).toContain(`«${NB}Sign in${NB}»`);
+		expect(denied.errors[0].message).toContain(`pour le persona «${NB}role-viewer${NB}»${NB}: interaction bloquée`);
+		const proofless = simulate(b, { language: 'fr', personaId: 'role-viewer', actions: [{ nodeId: ids.email, type: 'x' }] });
+		expect(proofless.warnings.at(-1)!.message).toContain(`Cette exécution a agi en tant que «${NB}role-viewer${NB}»`);
+	});
+
+	it('keeps English byte-identical when no language is given', () => {
+		const { b } = buildLoginScreen();
+		const r = simulate(b, { actions: [{ label: 'Nope', trigger: 'click' }] });
+		expect(r.errors[0].message).toBe('Action 0: no element matched label "Nope".');
+	});
+});

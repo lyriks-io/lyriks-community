@@ -7,6 +7,7 @@
 import {
 	FILE_INDEX_PATH,
 	KERNEL_PROJECT_PATH,
+	KERNEL_ARTIFACTS_PATH,
 	LEGACY_DOCUMENTS_PATH,
 	MANIFEST_PATH,
 	META_PATH,
@@ -62,7 +63,8 @@ export function buildBundle(input: BuildBundleInput): readonly BundleEntry[] {
 		counts: {
 			features: snapshot.kernel.features.length,
 			files: files.length,
-			sections: Object.keys(snapshot.rows.sectionDocuments).length
+			sections: Object.keys(snapshot.rows.sectionDocuments).length,
+			evidence: snapshot.kernel.artifacts?.length ?? 0
 		}
 	};
 
@@ -77,6 +79,7 @@ export function buildBundle(input: BuildBundleInput): readonly BundleEntry[] {
 			bytes: stableJsonBytes({ meta: snapshot.rows.meta, domain: snapshot.domain })
 		}
 	];
+	entries.push({ path: KERNEL_ARTIFACTS_PATH, bytes: stableJsonBytes(snapshot.kernel.artifacts ?? []) });
 
 	if (documents.kernelProject) {
 		entries.push({ path: KERNEL_PROJECT_PATH, bytes: stableJsonBytes(documents.kernelProject) });

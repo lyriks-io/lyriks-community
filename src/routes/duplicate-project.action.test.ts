@@ -52,13 +52,14 @@ vi.mock('$composition/container.server', () => ({
 		}
 	})
 }));
+import { getServices } from '$composition/container.server';
 
 vi.mock('$lib/server/project-access.server', () => ({
 	requireProjectAccess: vi.fn(async () => {})
 }));
 
 vi.mock('$lib/server/new-project-ownership.server', () => ({
-	ownNewProject: vi.fn(async (_locals: unknown, projectId: string) => {
+	ownNewProject: vi.fn(async (_services: unknown, _locals: unknown, projectId: string) => {
 		owned.push(projectId);
 	})
 }));
@@ -71,7 +72,7 @@ function event(fields: Record<string, string>): RequestEvent {
 	for (const [k, v] of Object.entries(fields)) body.set(k, v);
 	return {
 		request: new Request('http://localhost/?/duplicateProject', { method: 'POST', body }),
-		locals: { session: { email: 'ada@example.com' }, authRequired: true }
+		locals: { services: getServices(), session: { email: 'ada@example.com' }, authRequired: true }
 	} as unknown as RequestEvent;
 }
 

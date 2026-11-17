@@ -85,9 +85,9 @@
 						<Icon name={r.kind === 'project' ? 'cpu' : 'sparkles'} size={13} class="shrink-0 text-ink-400" />
 						<span class="min-w-0 flex-1">
 							<span class="block truncate font-medium leading-tight">{r.label}</span>
-							{#if r.context}<span class="block truncate text-[10px] leading-tight text-ink-400">in {r.context}</span>{/if}
+							{#if r.context}<span class="block truncate text-[0.625rem] leading-tight text-ink-400">in {r.context}</span>{/if}
 						</span>
-						<span class="shrink-0 text-[10px] uppercase tracking-wide text-ink-400">
+						<span class="shrink-0 text-[0.625rem] uppercase tracking-wide text-ink-400">
 							{r.kind === 'project' ? 'project' : r.projectName}
 						</span>
 					</a>

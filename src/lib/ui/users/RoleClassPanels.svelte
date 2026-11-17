@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { EditableText, Icon } from '$ui/design-system';
+	import { EditableText, Icon, confirmDialog } from '$ui/design-system';
 	import SectionNav, { type SectionNavGroup } from '$ui/shell/SectionNav.svelte';
 	import GlossaryText from '$ui/glossary/GlossaryText.svelte';
-	import type { Role, RoleTone } from '$domain/users';
+	import { isSuggestionDismissed, type Role, type RoleTone } from '$domain/users';
 	import type { DocumentSource } from '$domain/documents';
 	import type { PersonaSuggestion } from '$application/ports';
 	import SourceCitations from '$ui/documents/SourceCitations.svelte';
@@ -21,6 +21,17 @@
 		focusId?: string | null;
 	}
 	let { store, suggestions = [], focusId = null }: Props = $props();
+
+	// The product's own dialog, never the browser's (spec: criterion dcd118cf).
+	async function removeRole(role: Role) {
+		const ok = await confirmDialog({
+			title: `Remove the persona “${role.name || 'Unnamed persona'}”?`,
+			message: 'Its grants in the access matrix are cleared with it.',
+			confirmLabel: 'Remove',
+			danger: true
+		});
+		if (ok) store.removeRole(role.id);
+	}
 
 	type UserClass = 'end-user' | 'back-office';
 
@@ -53,12 +64,6 @@
 		partner: 'bg-accent-50 text-accent-500'
 	};
 
-	// One class at a time, end-users first (outside-in before inside-out).
-	const CLASS_LABEL: Record<UserClass, string> = {
-		'end-user': 'End-Users',
-		'back-office': 'Admins'
-	};
-
 	function classOf(role: Role): UserClass {
 		return TONE_CLASS[role.tone];
 	}
@@ -80,17 +85,13 @@
 			items: [
 				{
 					id: 'end-user',
-					icon: 'users',
 					label: 'End-Users',
 					hint: 'Customers · personas · access',
-					count: rolesOf('end-user').length
 				},
 				{
 					id: 'back-office',
-					icon: 'shield',
 					label: 'Admins',
 					hint: 'Internal operators',
-					count: rolesOf('back-office').length
 				}
 			]
 		}
@@ -121,16 +122,20 @@
 	}
 
 	/**
-	 * Accept Suggested Persona (spec action `3faf965a`). Suggestions are pushed by
+	 * Accept a suggested persona (spec action `7ec5afdf`). Suggestions are pushed by
 	 * the AI seam (MCP advisor via the stub); filtered per class panel and deduped
-	 * against roles already on the board.
+	 * against roles already on the board and against the ones the author
+	 * dismissed (spec action `6f8ad21b`). Each one renders in the class grid as a
+	 * pre-filled card awaiting validation, so it reads like the persona it would
+	 * become rather than as a separate strip.
 	 */
 	function suggestionsOf(uc: UserClass): PersonaSuggestion[] {
 		return suggestions
 			.filter((s) => s.userClass === uc)
 			.filter(
 				(s) => !store.draft.roles.some((r) => r.name.trim().toLowerCase() === s.name.toLowerCase())
-			);
+			)
+			.filter((s) => !isSuggestionDismissed(store.draft.dismissedSuggestions, s.name));
 	}
 	function acceptSuggestion(s: PersonaSuggestion) {
 		store.addRole({
@@ -143,42 +148,14 @@
 	const classSuggestions = $derived(suggestionsOf(active));
 </script>
 
-<!-- Suggestions card: personas proposed for the active class. Rendered ABOVE the
-     sidebar + cards layout so it reads as part of the tab header, full width. -->
-{#if classSuggestions.length > 0}
-	<div class="mb-4 rounded-card border border-line bg-brand-50/30 p-4">
-		<div class="mb-3 flex items-center gap-2">
-			<Icon name="sparkles" size={14} />
-			<p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-brand-500">
-				{active === 'end-user'
-					? 'Suggested end-user personas'
-					: 'Suggested back-office / internal users'}
-			</p>
-		</div>
-		<div class="flex flex-wrap gap-2">
-			{#each classSuggestions as s (s.name)}
-				<button
-					type="button"
-					onclick={() => acceptSuggestion(s)}
-					class="group flex items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-ink-700 transition-colors hover:border-brand-300 hover:bg-brand-50"
-					title={s.rationale}
-				>
-					<Icon name="plus" size={12} />
-					<GlossaryText class="font-medium" text={s.name} />
-				</button>
-			{/each}
-		</div>
-	</div>
-{/if}
-
 <SectionNav groups={navGroups} {active} onSelect={(id) => (active = id as UserClass)}>
 	{#snippet footer()}
 		<button
 			type="button"
 			onclick={() => store.addRole({ tone: DEFAULT_TONE[active] })}
-			class="flex w-full items-center gap-2 rounded-field px-3 py-2 text-left text-[11px] font-medium text-brand-500 transition hover:bg-brand-50"
+			class="flex w-full items-center gap-2 rounded-field px-3 py-2 text-left text-[0.6875rem] font-medium text-brand-500 transition hover:bg-brand-50"
 		>
-			<Icon name="plus" size={14} /> New {CLASS_LABEL[active].slice(0, -1)}
+			<Icon name="plus" size={14} /> New persona
 		</button>
 	{/snippet}
 
@@ -191,7 +168,7 @@
 				{#each roles as role (role.id)}
 					<div
 						data-anchor={role.id}
-						class="group relative flex h-full flex-col rounded-card border border-line bg-surface p-4 transition-all hover:border-line-strong hover:shadow-card"
+						class="group relative flex h-full flex-col rounded-card border border-line bg-surface p-4 transition-[border-color,box-shadow] hover:border-line-strong hover:shadow-card"
 					>
 						<!-- hover affordance: delete -->
 						<div
@@ -199,14 +176,7 @@
 						>
 							<button
 								type="button"
-								onclick={() => {
-									if (
-										confirm(
-											`Remove role "${role.name || 'unnamed'}"? Its grants will also be cleared.`
-										)
-									)
-										store.removeRole(role.id);
-								}}
+								onclick={() => void removeRole(role)}
 								aria-label="Delete role"
 								class="inline-flex size-6 items-center justify-center rounded-md bg-danger-50 text-danger-500 hover:bg-danger-100"
 							>
@@ -226,7 +196,16 @@
 							ariaLabel="Role name"
 							class="mt-3 block truncate text-sm font-semibold text-ink-900"
 						/>
-						<div class="mt-0.5 flex items-baseline gap-1 text-[11px] text-ink-400">
+						{#if role.behaviorValues?.length}
+							<!-- How the behaviour reads the role (criterion 8763ca70 of feat-access-matrix). -->
+							<p
+								class="mt-0.5 truncate font-mono text-[0.6875rem] text-ink-400"
+								title="How the behaviour reads this role: the state values a person in it starts with"
+							>
+								{role.behaviorValues.map((v) => `${v.path} = ${JSON.stringify(v.value)}`).join(' · ')}
+							</p>
+						{/if}
+						<div class="mt-0.5 flex items-baseline gap-1 text-[0.6875rem] text-ink-400">
 							<div class="w-16 shrink-0">
 								<EditableText
 									value={formatCount(role)}
@@ -254,25 +233,68 @@
 						</div>
 					</div>
 				{/each}
+				{#each classSuggestions as s (s.name)}
+					<!-- Pending suggestion: same card shape as a persona, dashed and
+					     tagged until validated. -->
+					<div
+						class="relative flex h-full flex-col rounded-card border border-dashed border-brand-300 bg-surface-sunken p-4"
+					>
+						<span
+							class="absolute right-2 top-2 inline-flex items-center gap-1 bg-brand-50 px-2 py-0.5 text-[0.625rem] font-semibold uppercase tracking-[0.08em] text-brand-500"
+						>
+							<Icon name="sparkles" size={10} /> Suggested
+						</span>
 
-				{#if roles.length === 0}
+						<span
+							class="grid size-9 place-items-center rounded-lg opacity-70 {TONE_BG[DEFAULT_TONE[s.userClass]]}"
+						>
+							<Icon name="users" size={18} />
+						</span>
+
+						<GlossaryText class="mt-3 block truncate text-sm font-semibold text-ink-900" text={s.name} />
+						<p class="mt-0.5 text-[0.6875rem] text-ink-400">Awaiting validation</p>
+						<p class="mt-2 whitespace-pre-wrap text-xs text-ink-500">{s.rationale}</p>
+
+						<div class="mt-auto pt-3">
+							<div class="flex gap-2">
+								<button
+									type="button"
+									onclick={() => acceptSuggestion(s)}
+									class="inline-flex flex-1 items-center justify-center gap-1.5 rounded-field bg-brand-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-brand-600"
+								>
+									<Icon name="check" size={12} /> Validate
+								</button>
+								<button
+									type="button"
+									onclick={() => store.dismissSuggestion(s)}
+									aria-label="Remove suggestion"
+									title="Remove suggestion"
+									class="inline-flex items-center justify-center rounded-field border border-line bg-surface px-2.5 py-1.5 text-ink-500 transition-colors hover:border-danger-100 hover:bg-danger-50 hover:text-danger-500"
+								>
+									<Icon name="x" size={12} />
+								</button>
+							</div>
+						</div>
+					</div>
+				{/each}
+
+				{#if roles.length === 0 && classSuggestions.length === 0}
 					<!-- Empty state IS the add tile: one full-width card instead of a
-					     message strip plus a stranded button. -->
+					     message strip plus a stranded button. Pending suggestions count as
+					     content, so they keep the regular add tile beside them. -->
 					<button
 						type="button"
 						onclick={() => store.addRole({ tone: DEFAULT_TONE[active] })}
 						class="col-span-full flex min-h-40 flex-col items-center justify-center gap-2 rounded-card border-2 border-dashed border-line bg-surface p-8 text-ink-400 transition-colors hover:border-brand-300 hover:bg-brand-50/30 hover:text-brand-500"
 					>
-						<span class="grid size-10 place-items-center rounded-full bg-surface-sunken">
+						<span class="grid size-10 place-items-center bg-surface-sunken">
 							<Icon name={active === 'end-user' ? 'users' : 'shield'} size={18} />
 						</span>
 						<span class="text-sm font-semibold text-ink-700">
 							No {active === 'end-user' ? 'end-users' : 'admins'} yet
 						</span>
 						<span class="text-xs">
-							{classSuggestions.length > 0
-								? 'Accept a suggestion above, or click here to create the first one.'
-								: `Click here to create the first ${active === 'end-user' ? 'end-user' : 'admin'}.`}
+							Click here to create the first {active === 'end-user' ? 'end-user' : 'admin'}.
 						</span>
 					</button>
 				{:else}

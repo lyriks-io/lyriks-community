@@ -1,11 +1,20 @@
 // See https://svelte.dev/docs/kit/types#app.d.ts
 import type { Session } from '$application/ports';
 import type { LicenseView } from '$domain/licensing';
+import type { AppServices } from '$composition/container.server';
 
 declare global {
 	namespace App {
-		// interface Error {}
+		interface Error {
+			message: string;
+			/** What opens the refused capability, under the message (EVO-001). */
+			detail?: string;
+			/** A project Community holds inactive: the error page offers to make it the active one. */
+			inactiveProjectId?: string;
+		}
 		interface Locals {
+			/** The application's services for this request, handed over at the edge (hooks.server.ts). */
+			services: AppServices;
 			/** Per-request session, resolved in hooks.server.ts from the cookie
 			    (real auth) or the dev fallback. Never carries the bearer token. */
 			session: Session;
@@ -17,7 +26,11 @@ declare global {
 			license: LicenseView | null;
 		}
 		// interface PageData {}
-		// interface PageState {}
+		interface PageState {
+			/** The behavior editor opened from the Features page, as one step of the
+			    browser history (shallow routing), with where the tree was scrolled. */
+			behaviorEditor?: { path: string | null; scrollTop: number; historyLength: number };
+		}
 		// interface Platform {}
 	}
 }

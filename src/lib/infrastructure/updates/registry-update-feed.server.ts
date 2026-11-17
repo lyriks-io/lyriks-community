@@ -48,7 +48,6 @@ function parseBearerChallenge(header: string): Record<string, string> | null {
 }
 
 export class RegistryUpdateFeed implements UpdateFeedPort {
-	readonly enabled = true;
 	readonly #host: string;
 	readonly #repository: string;
 	readonly #basic?: string;
@@ -61,6 +60,10 @@ export class RegistryUpdateFeed implements UpdateFeedPort {
 			options.username && options.password
 				? Buffer.from(`${options.username}:${options.password}`).toString('base64')
 				: undefined;
+	}
+
+	get destination(): string {
+		return this.#host;
 	}
 
 	/** Bounded so a hanging mirror can never hold a request open. */
@@ -83,7 +86,8 @@ export class RegistryUpdateFeed implements UpdateFeedPort {
 	}
 
 	async listVersions(): Promise<readonly string[] | null> {
-		const url = `https://${this.#host}/v2/${this.#repository}/tags/list?n=100`;
+		// Registries list tags in text order, so a short page would drop the newest releases.
+		const url = `https://${this.#host}/v2/${this.#repository}/tags/list?n=1000`;
 		try {
 			// Anonymous first: public repos and most mirrors answer straight away.
 			let res = await this.#fetch(url, this.#basic ? { authorization: `Basic ${this.#basic}` } : {});

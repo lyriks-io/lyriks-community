@@ -1,5 +1,4 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { IdentityError } from '$application/ports';
 import { SESSION_COOKIE, setSessionCookie } from '$lib/server/session-cookie.server';
 import type { RequestHandler } from './$types';
@@ -16,7 +15,7 @@ import type { RequestHandler } from './$types';
  * gives could not be carried out.
  */
 export const POST: RequestHandler = async (event) => {
-	const services = getServices();
+	const services = event.locals.services;
 	if (!event.locals.authRequired) {
 		error(404, 'Password sign-in is not enabled on this install.');
 	}

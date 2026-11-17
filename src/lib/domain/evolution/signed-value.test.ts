@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { addDraftLeafAct, openRequestAct, type ActContext, type ActOutcome } from './acts';
 import type { Actor, EvolutionRequest } from './draft';
 import { materialiseDrafts, pruneDraftMeta, type Tree } from './materialise';
+import { withSolutionValidated } from './solution-validated.fixture';
 
 /**
  * What somebody signs on a draft has to reach the specification.
@@ -31,7 +32,8 @@ const ok = (outcome: ActOutcome): EvolutionRequest => {
 	return outcome.request;
 };
 
-const opened = (): EvolutionRequest =>
+const opened = (): EvolutionRequest => withSolutionValidated(openedRaw());
+const openedRaw = (): EvolutionRequest =>
 	ok(
 		openRequestAct(ctx(), {
 			title: 'Fold the machine away',

@@ -141,4 +141,25 @@ describe('a page that does not fit is read again, smaller, in its own shape', ()
     expect(calls[0].path).toContain('scope=request')
     expect(calls[0].path).toContain('requestId=b8456fd3')
   })
+
+  // ac-evo-llm-summary-bound: what the dossier in short cuts is read whole through its part, paged like any list.
+  it('reads the texts, the coherence findings and the docking points whole, paged in their own shape', async () => {
+    const calls: Array<{ method: string; path: string }> = []
+    for (const part of ['texts', 'coherence', 'points', 'data', 'versions'] as const) {
+      await getEvolutionHandler({ project_id: 'p1', request_id: 'r1', part }, fakeClient(calls))
+      expect(calls.at(-1)?.path).toContain(`part=${part}`)
+    }
+    const findings = (limit: number) => ({
+      projectId: 'p1',
+      request: { id: 'r1', coherence: { total: 200, offset: 0, limit, findings: Array.from({ length: Math.min(limit, 200) }, (_, i) => ({ id: `f${i}`, title: 'y'.repeat(300) })) } },
+    })
+    const client = {
+      get: async (path: string) => findings(Number(new URLSearchParams(path.split('?')[1]).get('limit') ?? 150)),
+    } as unknown as LyriksClient
+    const answer = (await getEvolutionHandler({ project_id: 'p1', request_id: 'r1', part: 'coherence' }, client, 10_000)) as {
+      request: { coherence: { findings: unknown[]; nextOffset?: number } }
+    }
+    expect(JSON.stringify(answer).length).toBeLessThanOrEqual(10_000)
+    expect(answer.request.coherence.nextOffset).toBe(answer.request.coherence.findings.length)
+  })
 })

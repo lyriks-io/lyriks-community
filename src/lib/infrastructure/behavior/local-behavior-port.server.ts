@@ -1,3 +1,4 @@
+import { stampElementVersions } from '$application/projection/element-versions';
 import { sameProjectedFeature } from '$application/projection/projected-feature-content';
 import type {
 	BehaviorApplyReport,
@@ -26,25 +27,6 @@ import {
 	type UnspaProjectSnapshot,
 	type UnspaTag
 } from '$lib/unspa-schema';
-
-/**
- * Behavior features carry per-element spec stamps (`elementVersions`), written
- * by the engine so drift can name the exact element that moved. Lyriks projects
- * INTO those features from its own sections, and it cannot recompute the stamps:
- * the digest that decides which element changed lives in the engine, which runs
- * as an optional subprocess and is not importable here.
- *
- * So a projection that rewrites element collections drops the map instead of
- * leaving it to describe content it no longer matches. Readers then fall back to
- * the feature-wide `updatedAt`, which is the coarse, noisy, SAFE answer, and the
- * next engine write recalibrates every element. Silently keeping stale stamps
- * would be the one unacceptable outcome: a changed element reading as clean.
- */
-const withoutElementStamps = (feature: Record<string, unknown>): Record<string, unknown> => {
-	if (!('elementVersions' in feature)) return feature;
-	const { elementVersions: _dropped, ...rest } = feature;
-	return rest;
-};
 
 /**
  * Platform-native `BehaviorPort` — the MAP write path. Reads and writes the
@@ -154,13 +136,13 @@ export class LocalBehaviorPort implements BehaviorPort {
 					if (unchanged) break; // a save must not touch every leaf file for nothing
 					await this.#saveFeature(projectId, {
 						...existing,
-						feature: withoutElementStamps({
+						feature: {
 							...feat,
 							id: op.featureId,
 							entities,
 							resources,
 							updatedAt: now
-						})
+						}
 					});
 					break;
 				}
@@ -179,7 +161,7 @@ export class LocalBehaviorPort implements BehaviorPort {
 					const mirroredSurfaces = mergeMirroredSurfaces(op.surfaces, feat.surfaces);
 					await this.#saveFeature(projectId, {
 						...existing,
-						feature: withoutElementStamps({
+						feature: {
 							...feat,
 							id: op.featureId,
 							surfaces: mirroredSurfaces,
@@ -196,7 +178,7 @@ export class LocalBehaviorPort implements BehaviorPort {
 									}
 								: {}),
 							updatedAt: now
-						})
+						}
 					});
 					break;
 				}
@@ -217,6 +199,20 @@ export class LocalBehaviorPort implements BehaviorPort {
 							updatedAt: now
 						}
 					});
+					break;
+				}
+				case 'setProjectCores': {
+					// The engine's own key normalisation, so a leaf tagged `core:Billing`
+					// resolves to the declared pillar `billing`.
+					const cores = op.cores.map((c) => ({
+						value: c.value.trim().toLowerCase(),
+						description: c.description
+					}));
+					const current = (project as { coreFeatures?: unknown }).coreFeatures ?? [];
+					if (JSON.stringify(current) !== JSON.stringify(cores)) {
+						project = { ...project, coreFeatures: cores } as UnspaProject;
+						projectTouched = true;
+					}
 					break;
 				}
 				case 'setProjectTags': {
@@ -248,15 +244,19 @@ export class LocalBehaviorPort implements BehaviorPort {
 	}
 
 	/**
-	 * An identical projection must not age every mapped element or discard its
-	 * engine stamps. Actual content changes keep the conservative invalidation
-	 * performed by the projection; we never manufacture engine version hashes.
+	 * The one write of a feature. An identical projection writes nothing, so it
+	 * ages no element. Any other write dates only the elements it changes: their
+	 * stamps are recomputed against the stored feature the way the engine does
+	 * it, so laying a section onto the features never turns every element of
+	 * every leaf into drift (ac-trace-drift-own-change).
 	 */
 	async #saveFeature(projectId: string, next: UnspaFeatureSnapshot): Promise<void> {
 		const candidate = next.feature as Record<string, unknown>;
-		const previous = await this.repo.loadFeature(projectId, String(candidate.id));
-		if (previous && sameProjectedFeature(previous.feature as Record<string, unknown>, candidate)) return;
-		await this.repo.saveFeature(projectId, next);
+		const stored = await this.repo.loadFeature(projectId, String(candidate.id));
+		const previous = stored ? (stored.feature as Record<string, unknown>) : null;
+		if (previous && sameProjectedFeature(previous, candidate)) return;
+		const now = typeof candidate.updatedAt === 'string' ? candidate.updatedAt : this.clock.nowIso();
+		await this.repo.saveFeature(projectId, { ...next, feature: stampElementVersions(previous, candidate, now) as UnspaFeatureSnapshot['feature'] });
 	}
 
 	/** Merge a partial patch onto an existing feature; no-op if it doesn't exist. */
@@ -296,7 +296,7 @@ export class LocalBehaviorPort implements BehaviorPort {
 		return {
 			format: UNSPA_FEATURE_FORMAT,
 			version: UNSPA_VERSION,
-			feature: withoutElementStamps({
+			feature: {
 				surfaces: [],
 				personas: [],
 				events: [],
@@ -310,7 +310,7 @@ export class LocalBehaviorPort implements BehaviorPort {
 				tags: op.tags,
 				createdAt: (prev.createdAt as string | undefined) ?? now,
 				updatedAt: now
-			})
+			}
 		};
 	}
 
@@ -341,7 +341,7 @@ export class LocalBehaviorPort implements BehaviorPort {
 		return {
 			format: UNSPA_FEATURE_FORMAT,
 			version: UNSPA_VERSION,
-			feature: withoutElementStamps({
+			feature: {
 				resources: [],
 				entities: [],
 				...prev,
@@ -366,7 +366,7 @@ export class LocalBehaviorPort implements BehaviorPort {
 				tags: op.tags,
 				createdAt: (prev.createdAt as string | undefined) ?? now,
 				updatedAt: now
-			})
+			}
 		};
 	}
 

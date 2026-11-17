@@ -2,6 +2,8 @@ import { EventEmitter } from 'node:events';
 import pg from 'pg';
 import { env } from '$env/dynamic/private';
 import type { SectionChangeEvent, SectionChangePublisher } from '$application/ports';
+import type { AiActivity } from '$lib/shared/ai-activity';
+import type { LiveSessionSignal } from '$lib/shared/live-session';
 import { getPgPool } from '$infrastructure/persistence/postgres/pg-database.server';
 
 /**
@@ -16,6 +18,10 @@ import { getPgPool } from '$infrastructure/persistence/postgres/pg-database.serv
  *    Postgres `LISTEN/NOTIFY` channel, so N stateless platform nodes all see every
  *    change. Publish = `pg_notify`; a dedicated listener connection feeds remote
  *    (and own) events back into the local emitter that SSE connections subscribe to.
+ *
+ * The same two backends carry the AI's activity on an Evolution request (see
+ * `$lib/shared/ai-activity`), on a channel of its own: it saves nothing and
+ * re-runs no load, it only shows open dossier pages that the AI is at work.
  */
 
 /** The bus broadcasts the port's event type — one definition, no drift
@@ -24,6 +30,16 @@ export type SectionChange = SectionChangeEvent;
 
 const EVENT = 'section-change';
 const CHANNEL = 'lyriks_section_change';
+const ACTIVITY_EVENT = 'ai-activity';
+const ACTIVITY_CHANNEL = 'lyriks_ai_activity';
+const LIVE_EVENT = 'live-session';
+const LIVE_CHANNEL = 'lyriks_live_session';
+
+/** The AI's activity on one request of one project, as the bus carries it. */
+export type ProjectAiActivity = AiActivity & { readonly projectId: string };
+
+/** What a person's AI does in a live session on one request of one project, as the bus carries it. */
+export type ProjectLiveSignal = LiveSessionSignal & { readonly projectId: string };
 
 // Local fan-out to THIS node's SSE connections. Always used; in postgres mode it
 // is fed by the LISTEN connection rather than directly by publish.
@@ -64,7 +80,8 @@ function startPgListener(): void {
 	client.on('notification', (msg) => {
 		if (!msg.payload) return;
 		try {
-			emitter.emit(EVENT, JSON.parse(msg.payload) as SectionChange);
+			const event = msg.channel === ACTIVITY_CHANNEL ? ACTIVITY_EVENT : msg.channel === LIVE_CHANNEL ? LIVE_EVENT : EVENT;
+			emitter.emit(event, JSON.parse(msg.payload));
 		} catch {
 			/* ignore a malformed payload */
 		}
@@ -79,7 +96,7 @@ function startPgListener(): void {
 	client.on('end', reconnect);
 	client
 		.connect()
-		.then(() => client.query(`LISTEN ${CHANNEL}`))
+		.then(() => client.query(`LISTEN ${CHANNEL}; LISTEN ${ACTIVITY_CHANNEL}; LISTEN ${LIVE_CHANNEL}`))
 		.then(() => {
 			pgListener = client;
 			starting = false;
@@ -132,4 +149,49 @@ export function subscribeSectionChanges(listener: (change: SectionChange) => voi
 	if (busBackend() === 'postgres') startPgListener();
 	emitter.on(EVENT, listener);
 	return () => emitter.off(EVENT, listener);
+}
+
+/** Tell every node's open pages that the AI is at work on a request; fire and forget, like a change. */
+export function publishAiActivity(activity: ProjectAiActivity): void {
+	if (busBackend() === 'postgres') {
+		startPgListener();
+		void getPgPool()
+			.query('SELECT pg_notify($1, $2)', [ACTIVITY_CHANNEL, JSON.stringify(activity)])
+			.catch((e) =>
+				console.warn('[sync-bus] pg_notify failed:', e instanceof Error ? e.message : e)
+			);
+		return;
+	}
+	emitter.emit(ACTIVITY_EVENT, activity);
+}
+
+/** Subscribe to the AI's activity on every request. Returns an unsubscribe function. */
+export function subscribeAiActivity(listener: (activity: ProjectAiActivity) => void): () => void {
+	if (busBackend() === 'postgres') startPgListener();
+	emitter.on(ACTIVITY_EVENT, listener);
+	return () => emitter.off(ACTIVITY_EVENT, listener);
+}
+
+/**
+ * Tell every node what a person's AI does in a live session: the node holding
+ * its call, the nodes serving that person's pages. Fire and forget, like an activity.
+ */
+export function publishLiveSignal(signal: ProjectLiveSignal): void {
+	if (busBackend() === 'postgres') {
+		startPgListener();
+		void getPgPool()
+			.query('SELECT pg_notify($1, $2)', [LIVE_CHANNEL, JSON.stringify(signal)])
+			.catch((e) =>
+				console.warn('[sync-bus] pg_notify failed:', e instanceof Error ? e.message : e)
+			);
+		return;
+	}
+	emitter.emit(LIVE_EVENT, signal);
+}
+
+/** Subscribe to every live session signal. Returns an unsubscribe function. */
+export function subscribeLiveSignals(listener: (signal: ProjectLiveSignal) => void): () => void {
+	if (busBackend() === 'postgres') startPgListener();
+	emitter.on(LIVE_EVENT, listener);
+	return () => emitter.off(LIVE_EVENT, listener);
 }

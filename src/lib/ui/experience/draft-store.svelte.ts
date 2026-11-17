@@ -91,6 +91,7 @@ import type { CoherenceResult } from '$domain/shared';
 import type { DataEntity, EntityField } from '$domain/data';
 import type { Session, ToastNotifierPort } from '$application/ports';
 import { SectionAutosave, type SaveStatus } from '$ui/shell/section-autosave.svelte';
+import { specLanguageAccessor } from '$ui/language/spec-language-context';
 
 export type { SaveStatus };
 export type DesignMode = 'brand' | 'experience';
@@ -120,7 +121,8 @@ export interface CapabilityAccess {
  */
 export class ExperienceStore {
 	draft = $state<ProjectExperienceDraft>(null as unknown as ProjectExperienceDraft);
-	activeDesignMode = $state<DesignMode>('experience');
+	// The page opens on Design (the design.md); deep links switch to the tab they name.
+	activeDesignMode = $state<DesignMode>('brand');
 	activeTab = $state<ExperienceTab>('screens');
 	selectedJourneyId = $state<string | null>(null);
 	selectedBuilderNodeId = $state<string | null>(null);
@@ -134,7 +136,9 @@ export class ExperienceStore {
 	/** Visible/Invisible toggle on the User Scenario tab — local UI only. */
 	showInvisible = $state(false);
 
-	coherence = $derived.by<CoherenceResult>(() => computeExperienceCoherence(this.draft));
+	/** The spec's language, from the project it is opened in: its checks read in it. */
+	readonly #lang = specLanguageAccessor();
+	coherence = $derived.by<CoherenceResult>(() => computeExperienceCoherence(this.draft, this.#lang()));
 	canAdvance = $derived.by<boolean>(() => experienceCanAdvance(this.draft));
 	missing = $derived.by<string[]>(() => missingExperienceRequirements(this.draft));
 
@@ -199,7 +203,7 @@ export class ExperienceStore {
 	flushNow = () => this.#autosave.flushNow();
 
 	/* ─────────────────────────── NAVIGATION ────────────────────────────── */
-	/** Top-level page mode — Brand & Design vs the Experience workspace. */
+	/** Top-level page mode: Design vs the Experience workspace. */
 	switchDesignMode = (mode: DesignMode) => {
 		this.activeDesignMode = mode;
 	};
@@ -526,7 +530,7 @@ export class ExperienceStore {
 	 * Immutable deep-set into `draft.brand` along a dotted path (e.g.
 	 * `identity.name`, `colors.tokens`). Clones every object/array on the way
 	 * down so Svelte's `$state` proxy sees a fresh reference — the single setter
-	 * that powers every field/array edit in the Brand & Design tab.
+	 * that powers every field/array edit in the Design tab.
 	 */
 	setBrand = (path: string, value: unknown) => {
 		const keys = path.split('.');

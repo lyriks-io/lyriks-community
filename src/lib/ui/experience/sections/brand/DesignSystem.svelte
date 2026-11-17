@@ -24,12 +24,12 @@
 	/>
 
 	<div class="space-y-2">
-		<p class="text-[10px] font-semibold uppercase tracking-widest text-ink-400">Traits</p>
+		<p class="text-[0.625rem] font-semibold uppercase tracking-widest text-ink-400">Traits</p>
 		<Markers {store} />
 	</div>
 
 	<div class="space-y-2 border-t border-line pt-4">
-		<p class="text-[10px] font-semibold uppercase tracking-widest text-ink-400">
+		<p class="text-[0.625rem] font-semibold uppercase tracking-widest text-ink-400">
 			Tokens <span class="font-normal normal-case tracking-normal text-ink-300">· simulator rendering</span>
 		</p>
 		<div class="rounded-card border border-line">

@@ -1,6 +1,6 @@
 import { createEmptyIdentityDraft, type FoundationIdentityDraft } from '$domain/foundation';
 import { type FoundationDefinitionDraft } from '$domain/foundation';
-import { parseDefinitionDraft } from '$application/parse-foundation-definition';
+import { parseDefinitionDraft } from '$application/specification/parse-foundation-definition';
 import { createEmptyUsersDraft, type ProjectUsersDraft } from '$domain/users';
 import { createEmptyFeaturesDraft, isCoreTone, type ProjectFeaturesDraft } from '$domain/features';
 import { createEmptyExperienceDraft, type ProjectExperienceDraft } from '$domain/experience';

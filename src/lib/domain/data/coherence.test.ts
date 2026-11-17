@@ -132,3 +132,25 @@ describe('computeDataCoherence relational connectivity', () => {
 		expect(result.score).toBe(100);
 	});
 });
+
+// Criterion 7d63b0a6 of feat-data-model (lyriks-feb747).
+describe('a table that stands alone on purpose', () => {
+	const two = (lone: Partial<import('./draft').DataEntity>) => ({
+		...createEmptyDataDraft('p'),
+		entities: [
+			{ id: 'e-a', name: 'A', databaseId: null, description: 'Owned by B', derivedFrom: 'manual' as const, sourceRefId: null },
+			{ id: 'e-b', name: 'B', databaseId: null, description: '', derivedFrom: 'manual' as const, sourceRefId: null },
+			{ id: 'e-lone', name: 'Lone', databaseId: null, description: '', derivedFrom: 'manual' as const, sourceRefId: null, ...lone }
+		],
+		fields: [{ id: 'f-a-b', entityId: 'e-a', name: 'b', type: 'relation' as const, isId: false, isUnique: false, isRequired: true, isList: false, defaultValue: '', relationTargetEntityId: 'e-b' }]
+	});
+
+	it('is no orphan once marked standalone and described', () => {
+		expect(unrelatedEntities(two({ standalone: true, description: 'No part of the product reads it any more.' }))).toEqual([]);
+	});
+
+	it('is still an orphan when only described, or only marked', () => {
+		expect(unrelatedEntities(two({ description: 'Stands alone.' })).map((e) => e.id)).toEqual(['e-lone']);
+		expect(unrelatedEntities(two({ standalone: true, description: '  ' })).map((e) => e.id)).toEqual(['e-lone']);
+	});
+});

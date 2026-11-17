@@ -21,6 +21,7 @@ import { clientId } from '$ui/shell/live-sync.client';
 import { REVISION_HEADER } from '$lib/shared/draft-revision';
 import { invalidate } from '$app/navigation';
 import { projectSyncKey } from '$lib/shared/section-sync';
+import { specLanguageAccessor } from '$ui/language/spec-language-context';
 
 export type { SaveStatus };
 
@@ -38,7 +39,9 @@ export class CoherenceStore {
 
 	coherence = $derived.by<CoherenceResult>(() => computeCoherenceLocal(this.draft, this.analysis));
 	canAdvance = $derived.by<boolean>(() => coherenceCanAdvance(this.draft, this.analysis));
-	missing = $derived.by<string[]>(() => missingCoherenceRequirements(this.draft, this.analysis));
+	/** The spec's language, from the project it is opened in: its checks read in it. */
+	readonly #lang = specLanguageAccessor();
+	missing = $derived.by<string[]>(() => missingCoherenceRequirements(this.draft, this.analysis, this.#lang()));
 
 	readiness = $derived.by<number>(() => this.analysis.readinessScore);
 	/** Product correctness (0–100) — same formula as the Control Center's Coherence ring. */

@@ -1,4 +1,5 @@
 import type { CoreTone, MvpTier } from './enums';
+import type { ActionJourneys } from './action-journeys';
 
 /* ── Entities — mirror of Unspaghettit feature 1e95b087 ─────────────── */
 
@@ -163,11 +164,9 @@ export function assignmentTargetKey(a: WorkAssignment): string {
  */
 export interface LeafMeta {
 	status?: 'backlog' | 'in-progress' | 'done';
-	/** Manual readiness override, stored on the legacy 1-9 TRL scale (the UI
-	    reads and writes it as a spec-maturity stage, `$ui/design-system`
-	    stageFromTrl/trlOfStage). When unset, readiness derives from the engine
-	    maturity score. */
-	trl?: number;
+	/** Manual maturity stage override, 1 Idea to 5 Complete. When unset, the
+	    stage derives from the engine maturity score. */
+	stage?: number;
 	objective?: string;
 	expectedEffect?: string;
 	problem?: string;
@@ -214,10 +213,6 @@ export interface ProjectFeaturesDraft {
 	 * same backward-compatibility reason as `leafMeta`.
 	 */
 	actionAssignments?: Record<string, string>;
-	/** Per-action manual TRL readiness (1-9), keyed by `actionAssignmentKey`.
-	 * Actions carry no engine score, so this hand-set level is their only
-	 * readiness source. Optional for back-compat, in the features residue. */
-	actionTrl?: Record<string, number>;
 	/** Per-action release assignment, keyed by `actionAssignmentKey` → release id.
 	 * Lets a single action ship in a different release than its parent feature.
 	 * Optional for back-compat, in the features residue. */
@@ -236,6 +231,10 @@ export interface ProjectFeaturesDraft {
 	/** Who is doing what (core / feature / action), in which sprint, in what
 	 * queue order. Lyriks-owned, in the features residue. Optional for back-compat. */
 	assignments?: WorkAssignment[];
+	/** When each core feature and feature first entered the spec (criterion 2a6bff42). Kept by the save, never by an edit. */
+	firstSeenAt?: Record<string, string>;
+	/** The journeys each feature's actions are arranged in, keyed by feature id. Lyriks-owned residue: a person's are kept by every save. */
+	actionJourneys?: ActionJourneys;
 	lastSavedAt: string | null;
 }
 
@@ -250,12 +249,12 @@ export function createEmptyFeaturesDraft(projectId: string): ProjectFeaturesDraf
 		roadmapAssignments: [],
 		leafMeta: {},
 		actionAssignments: {},
-		actionTrl: {},
 		actionRelease: {},
 		featureRoles: {},
 		actionRoles: {},
 		sprints: [],
 		assignments: [],
+		actionJourneys: {},
 		lastSavedAt: null
 	};
 }

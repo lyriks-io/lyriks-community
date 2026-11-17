@@ -36,6 +36,71 @@ import {
 } from './builder-runtime';
 import { hostedSurfacesResolver } from './surface-hosting';
 import { isNodeRendered } from './rendered-node';
+import { NBSP, quoteName, type SpecLanguage } from '$domain/language';
+
+/**
+ * The messages a run writes, in the spec's language. Ids, labels and state
+ * paths are the model's own names: quoted as they are, never translated.
+ */
+const TEXTS = {
+	en: {
+		action: (index: number, text: string) => `Action ${index}: ${text}`,
+		noErrorRaised: 'expectError was set but the step raised no error.',
+		byId: (id: string) => `id "${id}"`,
+		byLabel: (label: string) => `label "${label}"`,
+		noTabsGroup: (target: string) => `no tabs/sidebar group matched ${target}`,
+		groupNotRendered: (group: string) =>
+			`"${group}" is not rendered on the current screen (hidden ancestor or inactive panel)`,
+		noSuchTab: (group: string, panels: number, tab: number) =>
+			`"${group}" has ${panels} panel(s); tab ${tab} does not exist`,
+		noElement: (target: string, screenId: string | undefined) =>
+			`no element matched ${target}${screenId ? ` on screen ${screenId}` : ''}.`,
+		notInRow: (label: string, rowIndex: number) =>
+			`"${label}" is not inside a list row template, so it has no row ${rowIndex} to act on.`,
+		noSuchRow: (list: string, rows: number, rowIndex: number) =>
+			`"${list}" is showing ${rows} row(s); row ${rowIndex} does not exist.`,
+		notRendered: (label: string) =>
+			`"${label}" is not rendered on the current screen (hidden ancestor, inactive panel, or unmounted component). Perform the enabling interaction first.`,
+		deniedByPersona: (label: string, hidden: boolean, persona: string) =>
+			`"${label}" ${hidden ? 'is hidden from' : 'is disabled for'} persona "${persona}": interaction blocked by its access gate.`,
+		hiddenByCondition: (label: string, condition: string) =>
+			`"${label}" is hidden because visibleWhen (${condition}) is not satisfied. Perform the enabling interaction first; this is not a permission failure.`,
+		notOffered: (value: string, label: string, choices: readonly string[]) =>
+			`"${value}" is not offered by "${label || 'select'}": ` + `its choices are [${choices.join(' · ') || 'none'}].`,
+		proofless: (persona: string) =>
+			`This run acted as "${persona}" but no element it touched carries an access gate, so it proves nothing about permissions. ` +
+			'Wire the gate on the element (wire_element gate {personaIds, mode, allow}), then a refusal is simulable: the step raises a `permission` error and expectError:true turns it green.'
+	},
+	fr: {
+		action: (index: number, text: string) => `Action ${index}${NBSP}: ${text}`,
+		noErrorRaised: "expectError était demandé, mais l'étape n'a levé aucune erreur.",
+		byId: (id: string) => `à l'id ${quoteName('fr', id)}`,
+		byLabel: (label: string) => `au libellé ${quoteName('fr', label)}`,
+		noTabsGroup: (target: string) => `aucun groupe tabs ou sidebar ne correspond ${target}`,
+		groupNotRendered: (group: string) =>
+			`le groupe ${quoteName('fr', group)} n'est pas affiché sur l'écran courant (ancêtre masqué ou panneau inactif)`,
+		noSuchTab: (group: string, panels: number, tab: number) =>
+			`le groupe ${quoteName('fr', group)} a ${panels} panneau${panels > 1 ? 'x' : ''}${NBSP}; l'onglet ${tab} n'existe pas`,
+		noElement: (target: string, screenId: string | undefined) =>
+			`aucun élément ne correspond ${target}${screenId ? ` sur l'écran ${quoteName('fr', screenId)}` : ''}.`,
+		notInRow: (label: string, rowIndex: number) =>
+			`l'élément ${quoteName('fr', label)} n'est dans aucun modèle de ligne de liste${NBSP}: il n'a donc pas de ligne ${rowIndex} sur laquelle agir.`,
+		noSuchRow: (list: string, rows: number, rowIndex: number) =>
+			`la liste ${quoteName('fr', list)} affiche ${rows} ligne${rows > 1 ? 's' : ''}${NBSP}; la ligne ${rowIndex} n'existe pas.`,
+		notRendered: (label: string) =>
+			`l'élément ${quoteName('fr', label)} n'est pas affiché sur l'écran courant (ancêtre masqué, panneau inactif ou composant non monté). Effectuez d'abord l'interaction qui l'active.`,
+		deniedByPersona: (label: string, hidden: boolean, persona: string) =>
+			`l'élément ${quoteName('fr', label)} est ${hidden ? 'masqué' : 'désactivé'} pour le persona ${quoteName('fr', persona)}${NBSP}: interaction bloquée par sa règle d'accès.`,
+		hiddenByCondition: (label: string, condition: string) =>
+			`l'élément ${quoteName('fr', label)} est masqué, car sa condition visibleWhen (${condition}) n'est pas remplie. Effectuez d'abord l'interaction qui l'active${NBSP}; ce n'est pas un refus d'accès.`,
+		notOffered: (value: string, label: string, choices: readonly string[]) =>
+			`${quoteName('fr', value)} n'est pas proposé par l'élément ${quoteName('fr', label || 'select')}${NBSP}: ` +
+			`ses choix sont [${choices.join(' · ') || 'aucun'}].`,
+		proofless: (persona: string) =>
+			`Cette exécution a agi en tant que ${quoteName('fr', persona)}, mais aucun élément qu'elle a touché ne porte de règle d'accès${NBSP}: elle ne prouve donc rien sur les permissions. ` +
+			`Posez la règle sur l'élément (wire_element gate {personaIds, mode, allow})${NBSP}; un refus devient alors simulable${NBSP}: l'étape lève une erreur \`permission\` et expectError:true la fait passer au vert.`
+	}
+} as const;
 
 /**
  * One scripted action. Reference the target element by `nodeId` (preferred —
@@ -92,6 +157,8 @@ export interface SimActionResult {
 }
 
 export interface SimRequest {
+	/** The spec's language: every message of the run is written in it (English when absent). */
+	language?: SpecLanguage;
 	personaId?: string | null;
 	startScreenId?: string | null;
 	actions?: SimAction[];
@@ -184,19 +251,14 @@ function resolveRowContext(
 	b: ExperienceBuilder,
 	rs: RunState,
 	node: BuilderElementNode,
-	rowIndex: number
+	rowIndex: number,
+	lang: SpecLanguage = 'en'
 ): { ctx: RowContext } | { error: string } {
 	const owner = rowTemplateOwner(b, node.surfaceId);
-	if (!owner)
-		return {
-			error: `"${node.label}" is not inside a list row template, so it has no row ${rowIndex} to act on.`
-		};
+	if (!owner) return { error: TEXTS[lang].notInRow(node.label, rowIndex) };
 	const rows = listRowsFor(owner, rs.state, rs.collections);
 	const row = rows[rowIndex];
-	if (!row)
-		return {
-			error: `"${owner.label}" is showing ${rows.length} row(s); row ${rowIndex} does not exist.`
-		};
+	if (!row) return { error: TEXTS[lang].noSuchRow(owner.label, rows.length, rowIndex) };
 	return { ctx: rowContext(row, rowIndex) };
 }
 
@@ -206,6 +268,7 @@ function resolveRowContext(
  * browser Runner relies on), so the result is deterministic for a given draft.
  */
 export function simulate(b: ExperienceBuilder, req: SimRequest): SimResult {
+	const t = TEXTS[req.language ?? 'en'];
 	let rs = initRunState(b, req.personaId ?? null, req.startScreenId ?? undefined);
 	const startScreenId = rs.currentScreenId;
 	const visited: string[] = startScreenId ? [startScreenId] : [];
@@ -233,7 +296,7 @@ export function simulate(b: ExperienceBuilder, req: SimRequest): SimResult {
 							{
 								nodeId: r.resolvedNodeId,
 								kind: 'scenario',
-								message: `Action ${index}: expectError was set but the step raised no error.`,
+								message: t.action(index, t.noErrorRaised),
 								at: rs.seq
 							}
 						]
@@ -255,11 +318,11 @@ export function simulate(b: ExperienceBuilder, req: SimRequest): SimResult {
 						.filter((n): n is BuilderGroupNode => !!n && n.kind === 'group')
 				: [];
 			const problem = !group
-				? `no tabs/sidebar group matched ${a.nodeId ? `id "${a.nodeId}"` : `label "${a.label ?? ''}"`}`
+				? t.noTabsGroup(a.nodeId ? t.byId(a.nodeId) : t.byLabel(a.label ?? ''))
 				: !isNodeRendered(b, rs, group.id)
-					? `"${group.label}" is not rendered on the current screen (hidden ancestor or inactive panel)`
+					? t.groupNotRendered(group.label)
 				: !Number.isSafeInteger(a.tab) || a.tab < 0 || a.tab >= panels.length
-					? `"${group.label}" has ${panels.length} panel(s); tab ${a.tab} does not exist`
+					? t.noSuchTab(group.label, panels.length, a.tab)
 					: null;
 			if (!group || problem) {
 				rs = {
@@ -269,7 +332,7 @@ export function simulate(b: ExperienceBuilder, req: SimRequest): SimResult {
 						{
 							nodeId: group?.id ?? a.nodeId ?? null,
 							kind: 'binding',
-							message: `Action ${index}: ${problem}.`,
+							message: t.action(index, `${problem}.`),
 							at: rs.seq
 						}
 					]
@@ -310,9 +373,7 @@ export function simulate(b: ExperienceBuilder, req: SimRequest): SimResult {
 					{
 						nodeId: a.nodeId ?? null,
 						kind: 'binding',
-						message: `Action ${index}: no element matched ${
-							a.nodeId ? `id "${a.nodeId}"` : `label "${a.label ?? ''}"`
-						}${a.screenId ? ` on screen ${a.screenId}` : ''}.`,
+						message: t.action(index, t.noElement(a.nodeId ? t.byId(a.nodeId) : t.byLabel(a.label ?? ''), a.screenId)),
 						at: rs.seq
 					}
 				]
@@ -334,13 +395,13 @@ export function simulate(b: ExperienceBuilder, req: SimRequest): SimResult {
 		// Per-row targeting: bind the action to the record row N is showing.
 		let ctx: RowContext | null = null;
 		if (a.rowIndex !== undefined) {
-			const resolved = resolveRowContext(b, rs, node, a.rowIndex);
+			const resolved = resolveRowContext(b, rs, node, a.rowIndex, req.language);
 			if ('error' in resolved) {
 				rs = {
 					...rs,
 					errors: [
 						...rs.errors,
-						{ nodeId: node.id, kind: 'binding', message: `Action ${index}: ${resolved.error}`, at: rs.seq }
+						{ nodeId: node.id, kind: 'binding', message: t.action(index, resolved.error), at: rs.seq }
 					]
 				};
 				finish({
@@ -369,7 +430,6 @@ export function simulate(b: ExperienceBuilder, req: SimRequest): SimResult {
 		if (!rendered || !gate.visible || !gate.enabled) {
 			const personaGate = isGatePassing(node.wiring.gate, rs.activePersonaId);
 			const deniedByPersona = rendered && (!personaGate.visible || !personaGate.enabled);
-			const reason = !personaGate.visible ? 'is hidden from' : 'is disabled for';
 			const condition = node.wiring.visibleWhen;
 			rs = {
 				...rs,
@@ -378,11 +438,17 @@ export function simulate(b: ExperienceBuilder, req: SimRequest): SimResult {
 					{
 						nodeId: node.id,
 						kind: deniedByPersona ? 'permission' : 'visibility',
-						message: !rendered
-							? `Action ${index}: "${node.label}" is not rendered on the current screen (hidden ancestor, inactive panel, or unmounted component). Perform the enabling interaction first.`
-							: deniedByPersona
-							? `Action ${index}: "${node.label}" ${reason} persona "${rs.activePersonaId}": interaction blocked by its access gate.`
-							: `Action ${index}: "${node.label}" is hidden because visibleWhen (${condition?.path} ${condition?.op} ${condition?.expected ?? ''}) is not satisfied. Perform the enabling interaction first; this is not a permission failure.`,
+						message: t.action(
+							index,
+							!rendered
+								? t.notRendered(node.label)
+								: deniedByPersona
+									? t.deniedByPersona(node.label, !personaGate.visible, String(rs.activePersonaId))
+									: t.hiddenByCondition(
+											node.label,
+											`${condition?.path} ${condition?.op} ${condition?.expected ?? ''}`
+										)
+						),
 						at: rs.seq
 					}
 				]
@@ -418,9 +484,7 @@ export function simulate(b: ExperienceBuilder, req: SimRequest): SimResult {
 							{
 								nodeId: node.id,
 								kind: 'validation',
-								message:
-									`Action ${index}: "${a.type}" is not offered by "${node.label || 'select'}": ` +
-									`its choices are [${offered.join(' · ') || 'none'}].`,
+								message: t.action(index, t.notOffered(a.type, node.label, offered)),
 								at: rs.seq
 							}
 						]
@@ -482,9 +546,7 @@ export function simulate(b: ExperienceBuilder, req: SimRequest): SimResult {
 					...rs.warnings,
 					{
 						nodeId: null,
-						message:
-							`This run acted as "${rs.activePersonaId}" but no element it touched carries an access gate, so it proves nothing about permissions. ` +
-							'Wire the gate on the element (wire_element gate {personaIds, mode, allow}), then a refusal is simulable: the step raises a `permission` error and expectError:true turns it green.',
+						message: t.proofless(String(rs.activePersonaId)),
 						at: rs.seq
 					}
 				]

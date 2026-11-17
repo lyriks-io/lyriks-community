@@ -3,8 +3,9 @@ const deps = vi.hoisted(() => ({ access: vi.fn(), shared: vi.fn(), features: vi.
 vi.mock('./project-access.server', () => ({ requireProjectAccess: deps.access }));
 vi.mock('./shared-editor-access.server', () => ({ canUseSharedEditor: deps.shared }));
 vi.mock('$composition/container.server', () => ({ getServices: () => ({ loadFeaturesDraft: { execute: deps.features } }) }));
+import { getServices } from '$composition/container.server';
 import { authorizeSocket } from './socket-access.server';
-const event = {} as never;
+const event = { locals: { services: getServices() } } as never;
 beforeEach(() => {
 	vi.resetAllMocks();
 	deps.access.mockResolvedValue(undefined);

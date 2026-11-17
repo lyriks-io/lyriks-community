@@ -1,6 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
-import { parseDataDraft } from '$application/parse-data-draft';
+import { parseDataDraft } from '$application/specification/parse-data-draft';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { assertSectionDraftValid } from '$lib/server/section-authoring-validation.server';
 import { saveSectionDraft } from '$lib/server/section-save.server';
@@ -16,7 +15,7 @@ export const GET: RequestHandler = async (event) => {
 	const projectId = url.searchParams.get('projectId') ?? '';
 	if (!projectId) error(400, 'projectId is required');
 	await requireProjectAccess(event, projectId, 'read');
-	const services = getServices();
+	const services = event.locals.services;
 	const draft = await services.loadDataDraft.execute(projectId);
 	return json({ derivedEntities: draft.derivedEntities });
 };

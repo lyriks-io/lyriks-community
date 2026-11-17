@@ -3,9 +3,11 @@ import {
 	answerOpenQuestionAct,
 	buildReportAct,
 	closeRequestAct,
+	codeReadSummary,
 	crossStageAct,
 	decideLineAct,
 	decideProposalAct,
+	decideProposalLineAct,
 	deleteRequestAct,
 	foldBackAct,
 	gateReading,
@@ -22,13 +24,21 @@ import {
 	setLeavesAct,
 	tagReviewersAct,
 	updateRequestAct,
+	validateFieldAct,
+	withdrawFieldVerdictAct,
+	validateStepAct,
+	delegateToAiAct,
 	usesBannedWord,
 	type ActContext,
 	type ActOutcome
 } from './acts';
 import { createEvolutionRequest, createObservation, type Actor, type EvolutionRequest } from './draft';
 import { REQUEST_ORIGINS } from './enums';
+import { SPEC_STEPS } from './path';
 import { ALLOW } from './guard';
+import { fieldValidationOf } from './field-versions';
+import { ORIGIN_ANSWER_KEYS } from './blocks';
+import { canDelegateToAi, delegatedTo } from './ai-delegation';
 
 /**
  * The server's copy of the lifecycle guards, the one an AI client goes
@@ -68,6 +78,16 @@ const opened = (actor: Actor = client): EvolutionRequest =>
 			knownLeafIds: known
 		})
 	);
+
+/** Every step of specification validated by one person, as the freeze asks (ac-evo-gate-steps). */
+const specValidated = (request: EvolutionRequest): EvolutionRequest => ({
+	...request,
+	stepValidations: SPEC_STEPS.map((step) => ({
+		step,
+		validatorIds: [],
+		validations: [{ by: 'ana', kind: 'person' as const, at: '2026-09-10T12:00:00.000Z' }]
+	}))
+});
 
 describe('opening and describing a request', () => {
 	it('a client opens a request on existing features and the timeline says so', () => {
@@ -177,6 +197,23 @@ describe('proposals: a client proposes, a person decides', () => {
 		);
 	});
 
+	it('the requester and the source of 1.1 are suggested and, accepted, land on the request (ac-evo-live-prefill)', () => {
+		const origin = { leafId: null, fieldPath: 'request.origin', value: 'Support ticket' };
+		expect(reasonOf(propose(opened(), client, { ...origin, value: 'a phone call' }))).toContain('The source is one of internal_idea');
+		const suggested = ok(propose(ok(propose(opened(), client, origin)), client, { leafId: null, fieldPath: 'request.requester', value: 'Carmen Martin' }));
+		const [source, requester] = suggested.proposals;
+		expect(source).toMatchObject({ targetField: 'request.origin', value: 'support_ticket', canonicalSection: 'request' });
+		let written = 0;
+		const write = () => {
+			written += 1;
+			return ALLOW;
+		};
+		const accepted = ok(decideProposalAct(ctxFor(person), ok(decideProposalAct(ctxFor(person), suggested, source.id, { decision: 'accept' }, write)), requester.id, { decision: 'accept' }, write));
+		expect(written).toBe(0);
+		expect(accepted).toMatchObject({ origin: 'support_ticket', requester: 'Carmen Martin' });
+		expect(accepted.fieldVersions.filter((v) => v.key === 'request.requester' || v.key === 'request.origin').map((v) => v.value)).toEqual(['support_ticket', 'Carmen Martin']);
+	});
+
 	it('a client cannot accept, refuse or reword; a person can; a relayed person can', () => {
 		const request = ok(propose(opened()));
 		const id = request.proposals[0].id;
@@ -268,7 +305,7 @@ describe('proposals handed to tagged reviewers', () => {
 		expect(tagged.proposals[0].reviewerIds).toEqual(['bo', 'cy']);
 	});
 
-	it('writes the value once every reviewer validated, and refuses a person who is not tagged', () => {
+	it('asks for an eye but requires no verdict: anyone with access decides (ac-evo-llm-11)', () => {
 		let request = proposed();
 		const id = request.proposals[0].id;
 		request = ok(tagReviewersAct(ctxFor(person), request, id, ['bo', 'cy'], roster));
@@ -277,25 +314,22 @@ describe('proposals handed to tagged reviewers', () => {
 			written += 1;
 			return ALLOW;
 		};
-		expect(reasonOf(decideProposalAct(ctxFor(person), request, id, { decision: 'accept' }, write))).toBe(
-			'This proposal waits for its tagged reviewers: bo, cy.'
+		const viewer: Actor = { ...bo, id: 'vi', role: 'viewer' };
+		expect(reasonOf(decideProposalAct(ctxFor(viewer), request, id, { decision: 'accept' }, write))).toBe(
+			'A viewer reads and comments, but does not decide a proposal.'
 		);
-		request = ok(decideProposalAct(ctxFor(bo), request, id, { decision: 'accept' }, write));
-		expect(written).toBe(0);
-		expect(request.proposals[0].decision).toBe('pending');
-		expect(request.proposals[0].verdicts).toEqual([{ by: 'bo', verdict: 'validated', comment: '', at: '2026-09-10T12:00:00.000Z' }]);
-		expect(request.history.at(-1)).toMatchObject({ type: 'proposal_verdict', authorId: 'bo' });
-		request = ok(decideProposalAct(ctxFor(cy), request, id, { decision: 'accept' }, write));
+		const byOther = ok(decideProposalAct(ctxFor(person), request, id, { decision: 'accept' }, write));
 		expect(written).toBe(1);
-		expect(request.proposals[0]).toMatchObject({ decision: 'accepted', acceptedBy: 'cy' });
-		expect(request.proposals[0].verdicts).toHaveLength(2);
+		expect(byOther.proposals[0]).toMatchObject({ decision: 'accepted', verdicts: [] });
+		const byTagged = ok(decideProposalAct(ctxFor(bo), request, id, { decision: 'accept' }, write));
+		expect(byTagged.proposals[0]).toMatchObject({ decision: 'accepted', acceptedBy: 'bo' });
+		expect(byTagged.proposals[0].verdicts).toEqual([{ by: 'bo', verdict: 'validated', comment: '', at: '2026-09-10T12:00:00.000Z' }]);
 	});
 
-	it('one invalidation refuses it, and a rewording clears the verdicts', () => {
+	it('a tagged member refusing leaves a verdict, and a rewording clears the verdicts', () => {
 		let request = proposed();
 		const id = request.proposals[0].id;
 		request = ok(tagReviewersAct(ctxFor(person), request, id, ['bo', 'cy'], roster));
-		request = ok(decideProposalAct(ctxFor(bo), request, id, { decision: 'accept' }, () => ALLOW));
 		const reworded = ok(decideProposalAct(ctxFor(person), request, id, { decision: 'reword', value: 'A coupon, before paying.' }, () => ALLOW));
 		expect(reworded.proposals[0].verdicts).toEqual([]);
 		const refused = ok(decideProposalAct(ctxFor(cy), request, id, { decision: 'refuse', comment: 'Not this wording.' }, () => ALLOW));
@@ -380,7 +414,7 @@ describe('the reports are computed, and the gates decide', () => {
 	});
 
 	it('a client cannot cross; a relayed person crosses gate by gate, and Verify freezes the spec', () => {
-		let request = opened();
+		let request = specValidated(opened());
 		expect(reasonOf(crossStageAct(ctxFor(client), request, { criticalEmptyCount: 0 }))).toBe(
 			'An AI client cannot move a request between stages.'
 		);
@@ -400,7 +434,7 @@ describe('the reports are computed, and the gates decide', () => {
 			})
 		);
 		expect(reasonOf(crossStageAct(ctxFor(relay), request, { criticalEmptyCount: 0 }))).toBe(
-			'A blocking finding is still undecided. Fix it, accept it as a risk, or waive the gate with a stated reason.'
+			'A blocking finding this change brings is still undecided. Fix it, accept it as a risk, or waive the gate with a stated reason.'
 		);
 		expect(gateReading(request, 0).next).toBe('implementation');
 		expect(gateReading(request, 0).verdict.ok).toBe(false);
@@ -414,7 +448,7 @@ describe('the reports are computed, and the gates decide', () => {
 		expect(request.stage).toBe('implementation');
 		expect(request.frozen).toBe(true);
 		expect(request.specVersion).toBe(1);
-		expect(request.frozenVersions).toEqual([{ version: 1, at: '2026-09-10T12:00:00.000Z', by: 'ana' }]);
+		expect(request.frozenVersions).toMatchObject([{ version: 1, at: '2026-09-10T12:00:00.000Z', by: 'ana' }]);
 		expect(request.history.map((h) => h.type)).toEqual(['stage_crossing', 'stage_crossing', 'stage_crossing', 'spec_frozen']);
 		expect(reasonOf(setLeavesAct(ctxFor(client), request, ['feat-b'], known))).toBe(
 			'The specification is frozen as version 1. Rebrief the request before changing what it touches.'
@@ -422,7 +456,7 @@ describe('the reports are computed, and the gates decide', () => {
 	});
 
 	it('a waiver crosses an unmet gate with a reason, freezes too, and only an admin lifts it', () => {
-		let request = ok(crossStageAct(ctxFor(relay), opened(), { criticalEmptyCount: 0 }));
+		let request = ok(crossStageAct(ctxFor(relay), specValidated(opened()), { criticalEmptyCount: 0 }));
 		expect(reasonOf(crossStageAct(ctxFor(client), request, { criticalEmptyCount: 1, waiverReason: 'demo' }))).toBe(
 			'An AI client cannot move a request between stages.'
 		);
@@ -439,7 +473,7 @@ describe('the reports are computed, and the gates decide', () => {
 	});
 
 	it('the report is built in Verify against the frozen version, then decided line by line by a person', () => {
-		let request = ok(crossStageAct(ctxFor(relay), opened(), { criticalEmptyCount: 0 }));
+		let request = ok(crossStageAct(ctxFor(relay), specValidated(opened()), { criticalEmptyCount: 0 }));
 		const line = {
 			id: 'l1',
 			iteration: 1,
@@ -464,6 +498,10 @@ describe('the reports are computed, and the gates decide', () => {
 		request = ok(crossStageAct(ctxFor(relay), request, { criticalEmptyCount: 0 }));
 		request = ok(buildReportAct(ctxFor(client), request, [line, { ...line, id: 'l2', verdict: 'out_of_scope', hasRequirementAnchor: false }]));
 		expect(request.iterations[0].reportStatus).toBe('ready');
+		// The Build step's log keeps the reading that moved a line, never a rebuild that moved nothing.
+		expect(request.history.filter((h) => h.type === 'code_read').map((h) => h.summary)).toEqual(['Code read: 0 tested · 0 found, not tested yet · 1 not found']);
+		const again = ok(buildReportAct(ctxFor(client), request, [line, { ...line, id: 'l2', verdict: 'out_of_scope', hasRequirementAnchor: false }]));
+		expect(again.history.filter((h) => h.type === 'code_read')).toHaveLength(1);
 		expect(reasonOf(crossStageAct(ctxFor(relay), request, { criticalEmptyCount: 0 }))).toBe('Lines of this report are still undecided.');
 		expect(reasonOf(decideLineAct(ctxFor(client), request, { lineId: 'l1', decision: 'validated' }))).toBe('An AI client cannot decide a report line.');
 		expect(reasonOf(decideLineAct(ctxFor(relay), request, { lineId: 'l1', decision: 'adopted' }))).toBe('Only an out-of-scope line can be adopted into the spec.');
@@ -471,13 +509,19 @@ describe('the reports are computed, and the gates decide', () => {
 		request = ok(decideLineAct(ctxFor(relay), request, { lineId: 'l1', decision: 'invalidated' }));
 		request = ok(decideLineAct(ctxFor(relay), request, { verdict: 'out_of_scope', decision: 'removed' }));
 		expect(request.implementationFindings.map((l) => l.decision)).toEqual(['invalidated', 'removed']);
+		// A line sent back holds the report until the build is read again.
+		expect(reasonOf(crossStageAct(ctxFor(relay), request, { criticalEmptyCount: 0 }))).toBe(
+			'Lines were sent back to the build. Rebuild the report once the code changed.'
+		);
+		request = ok(buildReportAct(ctxFor(client), request, [{ ...line, verdict: 'conform', acceptanceTestPassing: true }, { ...line, id: 'l2', verdict: 'out_of_scope', hasRequirementAnchor: false }]));
+		expect(request.implementationFindings.map((l) => l.decision)).toEqual(['undecided', 'removed']);
 		request = ok(crossStageAct(ctxFor(relay), request, { criticalEmptyCount: 0 }));
 		expect(request.stage).toBe('acceptance');
 		expect(request.iterations[0].reportStatus).toBe('closed');
 	});
 
 	it('a rebrief goes back to Specify and amends a frozen spec', () => {
-		let request = ok(crossStageAct(ctxFor(relay), opened(), { criticalEmptyCount: 0 }));
+		let request = ok(crossStageAct(ctxFor(relay), specValidated(opened()), { criticalEmptyCount: 0 }));
 		request = ok(runCoherenceAct(ctxFor(client), request, { report: { status: 'ready', projectScore: 80, requestDelta: 0, ranAt: 'now' }, findings: [] }));
 		request = ok(crossStageAct(ctxFor(relay), request, { criticalEmptyCount: 0 }));
 		expect(reasonOf(rebriefAct(ctxFor(client), request))).toBe('An AI client cannot rebrief a request.');
@@ -530,5 +574,167 @@ describe('acceptance and closing', () => {
 		const gone = ok(deleteRequestAct(ctxFor(relay), request));
 		expect(gone.status).toBe('deleted');
 		expect(reasonOf(deleteRequestAct(ctxFor(relay), gone))).toBe('This request is already deleted.');
+	});
+});
+
+describe('a list suggestion is decided line by line [criterion:ac-leaf-ac-evo-llm-line-decision]', () => {
+	const ONE = 'Tous les jours, la file deborde sur le trottoir.';
+	const TWO = 'Les clients repartent sans pain.';
+	const suggest = (request: EvolutionRequest, value = `${ONE}\n${TWO}`) =>
+		ok(
+			proposeAct(
+				ctxFor(client),
+				request,
+				{
+					fieldPath: '00-need.symptoms',
+					leafId: null,
+					value,
+					reasoning: 'Read from the baker; inferred the queue.',
+					whatWasRead: 'The baker says customers wait every day.',
+					whatWasInferred: 'The queue forms every morning.',
+					citedSourceIds: ['src-1']
+				},
+				checks
+			)
+		);
+	const line = (request: EvolutionRequest, actor: Actor, text: string, decision: 'accept' | 'refuse') =>
+		decideProposalLineAct(ctxFor(actor), request, request.proposals[0].id, { line: text, decision, current: request.need.symptoms }, () => ALLOW);
+
+	it('accepting one line writes it as a new version, the other line still waits', () => {
+		const request = suggest(opened());
+		const after = ok(line(request, person, ONE, 'accept'));
+		expect(after.need.symptoms).toBe(ONE);
+		expect(after.fieldVersions.at(-1)).toMatchObject({ key: '00-need.symptoms', value: ONE, proposalId: request.proposals[0].id });
+		expect(after.proposals[0].decision).toBe('pending');
+		const settled = ok(line(after, person, TWO, 'refuse'));
+		expect(settled.proposals[0]).toMatchObject({ decision: 'accepted', acceptedBy: 'ana' });
+		expect(settled.need.symptoms).toBe(ONE);
+		expect(settled.proposals[0].lineDecisions?.map((d) => d.decision)).toEqual(['accepted', 'refused']);
+	});
+
+	it('every line rejected settles the suggestion as refused and writes nothing', () => {
+		const request = suggest(opened());
+		const settled = ok(line(ok(line(request, person, TWO, 'refuse')), person, ONE, 'refuse'));
+		expect(settled.proposals[0].decision).toBe('refused');
+		expect(settled.need.symptoms).toBe('');
+	});
+
+	it('a line it would take away is taken out on Accept and kept on Reject', () => {
+		const held = { ...opened(), need: { ...opened().need, symptoms: `${ONE}\nOld line` } };
+		const request = suggest(held, `${ONE}\n${TWO}`);
+		expect(ok(line(request, person, 'Old line', 'accept')).need.symptoms).toBe(ONE);
+		const kept = ok(line(request, person, 'Old line', 'refuse'));
+		expect(kept.need.symptoms).toBe(`${ONE}\nOld line`);
+		expect(kept.proposals[0].value).toContain('Old line');
+	});
+
+	it('only a person decides a line, while the suggestion waits, on a line it still changes', () => {
+		const request = suggest(opened());
+		expect(reasonOf(line(request, client, ONE, 'accept'))).toBe('An AI client may create proposals but never accept one.');
+		expect(reasonOf(line(request, person, 'A line nobody suggested', 'accept'))).toBe('This line is not one the suggestion changes any more: read it again.');
+		const decided = ok(decideProposalAct(ctxFor(person), request, request.proposals[0].id, { decision: 'refuse', comment: '' }, () => ALLOW));
+		expect(reasonOf(line(decided, person, ONE, 'accept'))).toBe('This proposal has already been decided.');
+	});
+});
+
+describe('who asked and where it comes from are answers of 1.1, validated like the need [criterion:ac-leaf-ac-evo-form-origin-validated]', () => {
+	it('a new requester or source is a new version, which a person validates and a later change outdates', () => {
+		const request = ok(updateRequestAct(ctxFor(person), opened(), { requester: 'La boulangère', origin: 'internal_idea' }));
+		expect(request.fieldVersions.map((v) => [v.key, v.value])).toEqual([
+			[ORIGIN_ANSWER_KEYS.origin, 'internal_idea'],
+			[ORIGIN_ANSWER_KEYS.requester, 'La boulangère']
+		]);
+		const validated = ok(validateFieldAct(ctxFor(person), request, { key: ORIGIN_ANSWER_KEYS.requester, liveValue: 'La boulangère' }));
+		expect(fieldValidationOf(validated, ORIGIN_ANSWER_KEYS.requester, 'La boulangère').status).toBe('validated');
+		const changed = ok(updateRequestAct(ctxFor(person), validated, { requester: 'Le boulanger' }));
+		expect(fieldValidationOf(changed, ORIGIN_ANSWER_KEYS.requester, 'Le boulanger').status).not.toBe('validated');
+		expect(fieldValidationOf(changed, ORIGIN_ANSWER_KEYS.origin, 'internal_idea').status).toBe('unvalidated');
+	});
+
+	it('an unchanged requester or source writes no version', () => {
+		const request = ok(updateRequestAct(ctxFor(person), opened(), { title: 'Coupons at checkout, again' }));
+		expect(request.fieldVersions).toEqual([]);
+	});
+});
+
+describe('a person may let their own AI validate in their name [criterion:ac-leaf-ac-evo-llm-delegation-powers]', () => {
+	const team = (actor: Actor, aiDelegated = false): ActContext => ({ ...ctxFor(actor), soloWorkspace: false, aiDelegated });
+	const withSituation = () => ok(updateRequestAct(ctxFor(person), opened(), { requester: 'Ana' }));
+	const key = ORIGIN_ANSWER_KEYS.requester;
+
+	it('validates in the person\'s name only under delegation, and says so on the validation', () => {
+		const request = withSituation();
+		expect(reasonOf(validateFieldAct(team(client), request, { key, liveValue: 'Ana' }))).not.toBe('');
+		const validated = ok(validateFieldAct(team(client, true), request, { key, liveValue: 'Ana' }));
+		expect(validated.fieldValidations.at(-1)).toMatchObject({ by: 'ana', byKind: 'ai_client', delegated: true });
+	});
+
+	it('takes back what it validated, never what the person validated themselves', () => {
+		const byPerson = ok(validateFieldAct(team(person), withSituation(), { key, liveValue: 'Ana' }));
+		expect(reasonOf(withdrawFieldVerdictAct(team(client, true), byPerson, { key }))).toBe('Only the person takes back a verdict they gave themselves.');
+		const byAi = ok(validateFieldAct(team(client, true), withSituation(), { key, liveValue: 'Ana' }));
+		expect(withdrawFieldVerdictAct(team(client, true), byAi, { key }).ok).toBe(true);
+	});
+
+	it('accepts its own suggestion under delegation, but refusing one stays the person\'s', () => {
+		const suggested = ok(
+			proposeAct(
+				ctxFor(client),
+				opened(),
+				{ fieldPath: '01-origin.objective', leafId: 'feat-a', value: 'Let a shopper apply a coupon.', reasoning: 'Read and inferred.', whatWasRead: 'The tickets ask it.', whatWasInferred: 'The wording.', citedSourceIds: ['src-1'] },
+				checks
+			)
+		);
+		const id = suggested.proposals[0].id;
+		expect(reasonOf(decideProposalAct(team(client), suggested, id, { decision: 'accept' }, () => ALLOW))).toBe('An AI client may create proposals but never accept one.');
+		expect(ok(decideProposalAct(team(client, true), suggested, id, { decision: 'accept' }, () => ALLOW)).proposals[0].decision).toBe('accepted');
+		expect(reasonOf(decideProposalAct(team(client, true), suggested, id, { decision: 'refuse', comment: '' }, () => ALLOW))).toBe('An AI client may create proposals but never decide on one.');
+	});
+
+	it('accepts a line of its own suggestion under delegation, but rejecting a line stays the person\'s', () => {
+		const suggested = ok(
+			proposeAct(
+				ctxFor(client),
+				opened(),
+				{ fieldPath: '00-need.symptoms', leafId: null, value: 'Customers leave.\nThe queue is long.', reasoning: 'Read and inferred.', whatWasRead: 'The baker says it.', whatWasInferred: 'The queue.', citedSourceIds: ['src-1'] },
+				checks
+			)
+		);
+		const decide = (text: string, decision: 'accept' | 'refuse') =>
+			decideProposalLineAct(team(client, true), suggested, suggested.proposals[0].id, { line: text, decision, current: suggested.need.symptoms }, () => ALLOW);
+		expect(decide('Customers leave.', 'accept').ok).toBe(true);
+		expect(reasonOf(decide('The queue is long.', 'refuse'))).toBe('An AI client may create proposals but never decide on one.');
+	});
+
+	it('never crosses a gate: approving the delivery stays a person\'s', () => {
+		expect(reasonOf(validateStepAct(team(client, true), opened(), 'approval'))).toBe('Approving the delivery stays a person\'s decision.');
+		expect(reasonOf(crossStageAct(team(client, true), opened(), { criticalEmptyCount: 0 }))).not.toBe('');
+	});
+});
+
+describe('the delegation is the person\'s, given on the page [criterion:ac-leaf-ac-evo-llm-delegation]', () => {
+	it('is given and taken back by the person, never by an AI, even relaying them', () => {
+		const given = ok(delegateToAiAct(ctxFor(person), opened(), true));
+		expect(delegatedTo('ana', given, {})).toBe(true);
+		expect(delegatedTo('ana', ok(delegateToAiAct(ctxFor(person), given, false)), {})).toBe(false);
+		expect(reasonOf(delegateToAiAct(ctxFor(client), opened(), true))).toBe('An AI never delegates to itself: the person delegates on the page.');
+		expect(reasonOf(delegateToAiAct(ctxFor(relay), opened(), true))).toBe('An AI never delegates to itself: the person delegates on the page.');
+	});
+
+	it('reaches every evolution only from a project admin', () => {
+		expect(canDelegateToAi(person, 'project').ok).toBe(false);
+		expect(canDelegateToAi(admin, 'project').ok).toBe(true);
+		expect(delegatedTo('ana', opened(), { aiDelegations: [{ personId: 'ana', at: '2026-10-26' }] })).toBe(true);
+	});
+});
+
+describe('each reading of the code at Build, as its log says it', () => {
+	const finding = (id: string, verdict: 'conform' | 'non_conform' | 'missing', scope: 'request' | 'inherited' = 'request') =>
+		({ id, iteration: 1, verdict, requirement: 'r', filePath: '', lineRange: '', specStatement: '', codeStatement: '', hasRequirementAnchor: true, anchorForeignLeaf: false, acceptanceTestPassing: false, specVersion: 1, scope, decision: 'undecided', decidedBy: null, decidedAt: null }) as const;
+	it('counts the lines of the request with how each count moved, and says nothing when none did', () => {
+		const before = [finding('a', 'missing'), finding('b', 'missing'), finding('i', 'missing', 'inherited')];
+		const after = [finding('a', 'conform'), finding('b', 'non_conform'), finding('i', 'conform', 'inherited')];
+		expect(codeReadSummary(before, after)).toBe('Code read: 1 tested (+1) · 1 found, not tested yet (+1) · 0 not found (−2)');
+		expect(codeReadSummary(after, after)).toBeNull();
 	});
 });

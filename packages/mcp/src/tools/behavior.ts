@@ -6,6 +6,8 @@
 // store — so depth authored here survives a later wizard re-save.
 
 import type { LyriksClient } from '../lyriks-client.js'
+import { codePlacesForRead } from './code-places.js'
+import { withPageLinks } from './evolution.js'
 import { RESULT_CAP, selectPaths, summarize } from '../util/shape.js'
 
 export interface ApplyBehaviorBatchArgs {
@@ -95,7 +97,26 @@ export function surfaceBatchFields(answer: unknown): unknown {
   if (!isRow(raw)) return answer
   const lifted = RAW_FIELDS.filter(([key, holds]) => batch[key] === undefined && holds(raw[key]))
   if (!lifted.length) return answer
-  return { ...answer, batch: { ...batch, ...Object.fromEntries(lifted.map(([key]) => [key, raw[key]])), raw } }
+  return { ...answer, batch: { ...batch, ...Object.fromEntries(lifted.map(([key]) => [key, raw[key]])), raw: withoutLongTwins(raw, batch, lifted.map(([key]) => key)) } }
+}
+
+/**
+ * The lists that grow with the batch (one row per element minted or moved, one
+ * ref per op) are MOVED out of `raw` rather than copied: carried twice, a
+ * 128-op commit answered 25 KB and the gateway capped it, which the shipped
+ * apply-batch helper then read as a failure. `refs` stays where the platform
+ * put it and leaves `raw` when it says the same.
+ */
+const LONG_LISTS = new Set(['created', 'renamed'])
+
+function withoutLongTwins(raw: Record<string, unknown>, batch: Record<string, unknown>, lifted: readonly string[]): Record<string, unknown> {
+  const moved = lifted.filter((key) => LONG_LISTS.has(key))
+  const sameRefs = 'refs' in raw && JSON.stringify(raw.refs) === JSON.stringify(batch.refs)
+  if (!moved.length && !sameRefs) return raw
+  const out = { ...raw }
+  for (const key of moved) delete out[key]
+  if (sameRefs) delete out.refs
+  return out
 }
 
 export interface BehaviorContextArgs {
@@ -214,21 +235,50 @@ export const availableIds = (feature: Row, withActions: boolean) =>
   }))
 
 /**
+ * The requirement sentences of the elements read (their rules and statements in
+ * EARS, their scenarios in Given/When/Then), picked from the `statements` the
+ * platform derives for the whole feature. Absent when the platform sends none.
+ */
+function statementsOf(elements: Row[], statements: unknown): { statements?: Record<string, string> } {
+  if (!statements || typeof statements !== 'object') return {}
+  const all = statements as Record<string, unknown>
+  const picked: Record<string, string> = {}
+  const take = (kind: string, list: unknown) => {
+    for (const item of rows(list)) {
+      const key = `${kind}:${String(item.id)}`
+      if (typeof all[key] === 'string') picked[key] = all[key] as string
+    }
+  }
+  for (const element of elements) {
+    take('rule', element.rules)
+    take('invariant', element.invariants)
+    take('scenario', element.scenarios)
+  }
+  return Object.keys(picked).length > 0 ? { statements: picked } : {}
+}
+
+/**
  * One surface or one action, whole, selected by its stable id. A positional
  * path (`snapshot.feature.surfaces.5`) points at another element as soon as a
  * concurrent writer adds a surface; an id does not.
  */
-export function selectFeatureElement(feature: Row, args: { surface_id?: string; action_id?: string }): Row {
+export function selectFeatureElement(
+  feature: Row,
+  args: { surface_id?: string; action_id?: string },
+  statements?: unknown,
+): Row {
   const featureId = feature.id
   if (args.action_id) {
     for (const surface of rows(feature.surfaces)) {
       const action = rows(surface.actions).find((a) => a.id === args.action_id)
-      if (action) return { found: true, featureId, surfaceId: surface.id, surfaceName: surface.name, action }
+      if (action) return { found: true, featureId, surfaceId: surface.id, surfaceName: surface.name, action, ...statementsOf([action], statements) }
     }
     return { found: false, featureId, action_id: args.action_id, reason: 'No action of this feature has this id.', available: availableIds(feature, true) }
   }
   const surface = rows(feature.surfaces).find((s) => s.id === args.surface_id)
-  if (surface) return { found: true, featureId, surfaceId: surface.id, surfaceName: surface.name, surface }
+  if (surface) {
+    return { found: true, featureId, surfaceId: surface.id, surfaceName: surface.name, surface, ...statementsOf([surface, ...rows(surface.actions)], statements) }
+  }
   return { found: false, featureId, surface_id: args.surface_id, reason: 'No surface of this feature has this id.', available: availableIds(feature, false) }
 }
 
@@ -301,19 +351,35 @@ export async function readBehaviorFeatureHandler(
 ): Promise<unknown> {
   const q = new URLSearchParams({ projectId: args.project_id, featureId: args.feature_id })
   const result = await lyriks.get(`/api/behavior/feature?${q.toString()}`) as Record<string, unknown>
+  // Every form of the read says which language the spec is written in.
+  const language = result.specLanguage !== undefined ? { specLanguage: result.specLanguage } : {}
   if (args.paths?.length) {
     return {
       feature_id: args.feature_id,
       ...selectPaths(result, args.paths),
+      ...language,
     }
   }
   const feature = featureOf(result)
-  if (args.index_keys || args.surface_id || args.action_id) {
+  if (args.index_keys) {
     if (!feature) return { found: false, featureId: args.feature_id, reason: 'The platform answer carries no snapshot.feature.', answer: summarize(result) }
-    return args.index_keys ? featureIndexKeysAnswer(feature, args) : selectFeatureElement(feature, args)
+    return { ...featureIndexKeysAnswer(feature, args), ...language }
   }
-  if (!args.summary) return result
-  return feature ? featureToc(feature) : summarize(result)
+  if (args.surface_id || args.action_id) {
+    if (!feature) return { found: false, featureId: args.feature_id, reason: 'The platform answer carries no snapshot.feature.', answer: summarize(result) }
+    const selected = selectFeatureElement(feature, args, result.statements)
+    // The read ends where the client's code tools start (criterion 97ef2d0d).
+    const code = await codePlacesForRead(lyriks, args, selected)
+    return { ...selected, ...(code ? { code } : {}), ...language }
+  }
+  if (!args.summary) {
+    // Shortened by the cap, the snapshot would cost a whole answer and still have
+    // to be read again by id (criterion 250ecf3d).
+    const fullReadChars = JSON.stringify(result).length
+    if (!feature || fullReadChars <= RESULT_CAP) return result
+    return { ...featureToc(feature), fullReadChars, ...language }
+  }
+  return feature ? { ...featureToc(feature), ...language } : summarize(result)
 }
 
 export interface ScoreBehaviorFeatureArgs {
@@ -347,6 +413,168 @@ export async function assessBehaviorFeatureHandler(
 ): Promise<unknown> {
   const q = new URLSearchParams({ projectId: args.project_id, featureId: args.feature_id })
   return lyriks.get(`/api/features/behavior?${q.toString()}`)
+}
+
+export interface SimulateBehaviorArgs {
+  project_id: string
+  feature_id: string
+  steps?: Record<string, unknown>[]
+  operations?: Record<string, unknown>[]
+  run_scenarios?: boolean
+  model_check?: boolean | { max_depth?: number; max_states?: number }
+  snapshot?: Record<string, unknown>
+  persona_id?: string
+  stop_on_blocked?: boolean
+}
+
+/**
+ * Walk a feature step by step through the platform's engine, saving nothing.
+ * The platform resolves a draft id (`draft:…`) to what the change would leave:
+ * the feature it amends, or an empty feature for an addition.
+ */
+export async function simulateBehaviorHandler(
+  args: SimulateBehaviorArgs,
+  lyriks: LyriksClient,
+): Promise<unknown> {
+  return lyriks.post('/api/behavior/simulate', {
+    projectId: args.project_id,
+    featureId: args.feature_id,
+    ...(args.steps && args.steps.length > 0 ? { steps: args.steps } : {}),
+    ...(args.run_scenarios === true ? { runScenarios: true } : {}),
+    ...(args.model_check
+      ? {
+          modelCheck:
+            typeof args.model_check === 'object'
+              ? {
+                  ...(args.model_check.max_depth !== undefined ? { maxDepth: args.model_check.max_depth } : {}),
+                  ...(args.model_check.max_states !== undefined ? { maxStates: args.model_check.max_states } : {}),
+                }
+              : true,
+        }
+      : {}),
+    ...(args.operations && args.operations.length > 0 ? { operations: args.operations } : {}),
+    ...(args.snapshot ? { snapshot: args.snapshot } : {}),
+    ...(args.persona_id ? { personaId: args.persona_id } : {}),
+    ...(args.stop_on_blocked === true ? { stopOnBlocked: true } : {}),
+  })
+}
+
+/**
+ * What a change would do to a feature, saving nothing and without a language
+ * model: the platform's solver proves the feature before and after, runs its
+ * scenarios on both, and answers the difference. A draft id (`draft:…`) is
+ * compared as its behaviour model would leave the feature.
+ */
+export async function whatIfHandler(
+  args: { project_id: string; feature_id: string; operations?: Record<string, unknown>[]; max_steps?: number },
+  lyriks: LyriksClient,
+): Promise<unknown> {
+  return lyriks.post('/api/behavior/what-if', {
+    projectId: args.project_id,
+    featureId: args.feature_id,
+    ...(args.operations && args.operations.length > 0 ? { operations: args.operations } : {}),
+    ...(args.max_steps !== undefined ? { maxSteps: args.max_steps } : {}),
+  })
+}
+
+/**
+ * The oracle's verdict on every rule that spans the project (its project
+ * invariants, the data model's among them). Each rule's `href` becomes the
+ * absolute link a person opens on it.
+ */
+export async function proveProjectRulesHandler(
+  args: { project_id: string; invariant_ids?: string[]; max_steps?: number },
+  lyriks: LyriksClient,
+): Promise<unknown> {
+  const query = new URLSearchParams({ projectId: args.project_id })
+  for (const id of args.invariant_ids ?? []) query.append('invariantId', id)
+  if (args.max_steps !== undefined) query.set('maxSteps', String(args.max_steps))
+  return withPageLinks(await lyriks.get(`/api/behavior/project/rules?${query}`))
+}
+
+/** What a change to the project's rules would do, nothing saved; links made whole. */
+export async function whatIfProjectHandler(
+  args: { project_id: string; operations: Record<string, unknown>[]; max_steps?: number },
+  lyriks: LyriksClient,
+): Promise<unknown> {
+  return withPageLinks(
+    await lyriks.post('/api/behavior/project/what-if', {
+      projectId: args.project_id,
+      operations: args.operations,
+      ...(args.max_steps !== undefined ? { maxSteps: args.max_steps } : {}),
+    }),
+  )
+}
+
+/** The data model's fields with the behaviour states that carry them, or could. */
+export async function getDataLinksHandler(
+  args: { project_id: string; table?: string; unlinked_only?: boolean; offset?: number; limit?: number },
+  lyriks: LyriksClient,
+): Promise<unknown> {
+  const query = new URLSearchParams({ projectId: args.project_id })
+  if (args.table) query.set('table', args.table)
+  if (args.unlinked_only) query.set('unlinked', '1')
+  if (args.offset !== undefined) query.set('offset', String(args.offset))
+  if (args.limit !== undefined) query.set('limit', String(args.limit))
+  return lyriks.get(`/api/draft/data/links?${query}`)
+}
+
+/** Link many data fields to their states (and name existence states), by table and field names. */
+export async function linkDataFieldsHandler(
+  args: {
+    project_id: string
+    links?: { table: string; field: string; state_path: string | null; also?: boolean }[]
+    existence?: { table: string; state_path: string | null }[]
+  },
+  lyriks: LyriksClient,
+): Promise<unknown> {
+  return lyriks.post('/api/draft/data/links', {
+    projectId: args.project_id,
+    links: (args.links ?? []).map((l) => ({ table: l.table, field: l.field, statePath: l.state_path, ...(l.also ? { also: true } : {}) })),
+    existence: (args.existence ?? []).map((e) => ({ table: e.table, statePath: e.state_path })),
+  })
+}
+
+/** Author what holds across a project's features, in one atomic engine batch. */
+export async function applyProjectBehaviorBatchHandler(
+  args: { project_id: string; operations: Record<string, unknown>[]; dry_run?: boolean },
+  lyriks: LyriksClient,
+): Promise<unknown> {
+  return lyriks.post('/api/behavior/project', {
+    projectId: args.project_id,
+    operations: args.operations,
+    ...(args.dry_run === true ? { dryRun: true } : {}),
+  })
+}
+
+/** What the engine holds for a project beyond its features. */
+export async function readProjectBehaviorHandler(
+  args: { project_id: string },
+  lyriks: LyriksClient,
+): Promise<unknown> {
+  return lyriks.get(`/api/behavior/project?${new URLSearchParams({ projectId: args.project_id })}`)
+}
+
+/** Every place a feature reads or writes a state path. */
+export async function findStateReferencesHandler(
+  args: { project_id: string; feature_id: string; state_path: string },
+  lyriks: LyriksClient,
+): Promise<unknown> {
+  const q = new URLSearchParams({
+    projectId: args.project_id,
+    featureId: args.feature_id,
+    statePath: args.state_path,
+  })
+  return lyriks.get(`/api/behavior/references?${q}`)
+}
+
+/** The TypeScript module mirroring a feature, as source. */
+export async function generateBehaviorTypesHandler(
+  args: { project_id: string; feature_id: string },
+  lyriks: LyriksClient,
+): Promise<unknown> {
+  const q = new URLSearchParams({ projectId: args.project_id, featureId: args.feature_id })
+  return lyriks.get(`/api/behavior/types?${q}`)
 }
 
 /**

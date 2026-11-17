@@ -23,11 +23,11 @@
 
 	// Hex swatches for the accent dot (component colors aren't in the token set).
 	const COLOR_HEX: Record<ComponentColor, string> = {
-		violet: '#8b5cf6',
-		blue: '#3b82f6',
-		pink: '#ec4899',
-		amber: '#f59e0b',
-		mint: '#10b981'
+		violet: '#bb46f5',
+		blue: '#0066ff',
+		pink: '#fa5fb2',
+		amber: '#ffa101',
+		mint: '#1fa98a'
 	};
 
 	// The reuse library splits into three sub-views on one SectionNav rail (the
@@ -54,22 +54,16 @@
 					id: 'components',
 					label: 'Components',
 					hint: 'UI blocks, shown as they render',
-					icon: 'layers',
-					count: components.length
 				},
 				{
 					id: 'templates',
 					label: 'Templates',
 					hint: 'Reusable screen layouts',
-					icon: 'grid',
-					count: store.draft.templates.length
 				},
 				{
 					id: 'elements',
 					label: 'Elements',
 					hint: 'Atomic named bricks',
-					icon: 'tag',
-					count: store.draft.elements.length
 				}
 			]
 		}
@@ -177,7 +171,7 @@
 						>
 							<!-- header -->
 							<div class="flex items-center gap-2 px-3 py-2">
-								<span class="size-2.5 shrink-0 rounded-full" style="background:{COLOR_HEX[c.color]}"></span>
+								<span class="size-2.5 shrink-0 " style="background:{COLOR_HEX[c.color]}"></span>
 								<input
 									value={c.name}
 									oninput={(e) => store.updateComponent(c.id, 'name', e.currentTarget.value)}

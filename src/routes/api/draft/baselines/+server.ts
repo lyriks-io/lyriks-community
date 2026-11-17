@@ -1,4 +1,4 @@
-import { parseBaselinesDraft } from '$application/parse-baselines-draft';
+import { parseBaselinesDraft } from '$application/specification/parse-baselines-draft';
 import { saveSectionDraft } from '$lib/server/section-save.server';
 import type { RequestHandler } from './$types';
 

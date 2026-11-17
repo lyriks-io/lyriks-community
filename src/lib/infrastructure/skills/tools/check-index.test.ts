@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -208,11 +208,60 @@ describe('check-index.mjs (the index checker shipped with the skills)', () => {
 		expect(readFileSync(join(root, 'app', '.unspa.json'), 'utf8')).not.toContain('\n');
 	});
 
+	it('warns of a rule located in a server-rendered template, without changing the exit code or ok [criterion:5b1170b7]', () => {
+		const files = {
+			'login.html': '{% if not disable_login %}\n<form method="post">\n',
+			'app/templates/nav.tsx': 'export function Nav() {\n  return user.isStaff ? <AdminLink /> : null;\n',
+			'src/routes/+page.svelte': '{#if canDelete}\n<button>Delete</button>\n',
+			'web/templates/Panel.vue': '<button v-if="canArchive">Archive</button>\n',
+			'views/account.erb': '<% if current_user.admin? %>\n',
+			'server/views.py': 'if settings.DISABLE_LOGIN:\n    return HttpResponseForbidden()\n'
+		};
+		const dir = repo(files, {
+			'rule:login-off': { file: 'login.html', line: 1, signature: '{% if not disable_login %}' },
+			'rule:admin-only': { file: 'views/account.erb', line: 1, signature: '<% if current_user.admin? %>' },
+			'rule:in-a-folder': { file: 'templates/partials/menu.txt' },
+			// Components are not templates, even under templates/: their rules are often the
+			// real client logic, and Next.js writes server actions in .tsx.
+			'rule:hidden-delete': { file: 'src/routes/+page.svelte', line: 1, signature: '{#if canDelete}' },
+			'rule:archive': { file: 'web/templates/Panel.vue', line: 1, signature: '<button v-if="canArchive">Archive</button>' },
+			'rule:admin-link': { file: 'app/templates/nav.tsx', line: 2, signature: 'return user.isStaff ? <AdminLink /> : null;' },
+			'rule:server-side': { file: 'server/views.py', line: 1, signature: 'if settings.DISABLE_LOGIN:' },
+			// Only an action rule is a refusal, and a missing entry locates nothing.
+			'surface_rule:shown': { file: 'login.html', line: 2, signature: '<form method="post">' },
+			'rule:never-written': { status: 'missing', file: 'login.html' }
+		});
+		const { status, report } = json(dir);
+		expect(status).toBe(0);
+		expect(report.ok).toBe(true);
+		const warnings = (report as Report & { ruleWarnings?: { key: string; file: string; line: number | null; reason: string }[] }).ruleWarnings;
+		expect(warnings?.map(({ key, file, line }) => [key, file, line])).toEqual([
+			['rule:login-off', 'login.html', 1],
+			['rule:admin-only', 'views/account.erb', 1],
+			['rule:in-a-folder', 'templates/partials/menu.txt', null]
+		]);
+		expect(warnings?.[0].reason).toContain('a refusal is enforced on the server');
+		expect(warnings?.[0].reason).toContain('model a surface visibility instead and record the missing server check as a finding');
+
+		// The text report says it on stderr and keeps stdout and the exit code as they were.
+		const text = spawnSync('node', [script], { cwd: dir, encoding: 'utf8' });
+		expect(text.status).toBe(0);
+		expect(text.stderr).toContain('WARNING (refusal in a template): rule:login-off at login.html:1: a refusal is enforced on the server');
+		expect(text.stderr).toContain('rule:in-a-folder at templates/partials/menu.txt:');
+		for (const component of ['rule:hidden-delete', 'rule:archive', 'rule:admin-link']) expect(text.stderr).not.toContain(component);
+		expect(text.stdout).toContain('0 problems');
+
+		// An index without such a rule carries no ruleWarnings at all.
+		const clean = repo(files, { 'rule:server-side': { file: 'server/views.py', line: 1, signature: 'if settings.DISABLE_LOGIN:' } });
+		expect(json(clean).report).not.toHaveProperty('ruleWarnings');
+	});
+
 	it('fails with one line when there is no index to check', () => {
 		const dir = mkdtempSync(join(tmpdir(), 'lyriks-check-index-'));
 		dirs.push(dir);
 		const result = run(dir);
 		expect(result.status).toBe(1);
 		expect(result.stderr).toContain('No .unspa.json found');
+		expect(result.stderr).toContain('node .lyriks/tools/index-file.mjs init --project <id>');
 	});
 });

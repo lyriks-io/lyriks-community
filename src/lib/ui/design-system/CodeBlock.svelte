@@ -22,58 +22,56 @@
 </script>
 
 <div
-	class="lyr-codewrap overflow-hidden rounded-xl border border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_10px_30px_-15px_rgba(0,0,0,0.8)]"
+	class="lyr-codewrap overflow-hidden rounded-xl border border-night"
 >
 	{#if filename}
 		<div class="flex items-center gap-2 border-b border-white/10 bg-white/[0.03] px-3.5 py-2">
 			<span class="flex items-center gap-1.5" aria-hidden="true">
-				<span class="size-[11px] rounded-full bg-[#ff5f57]"></span>
-				<span class="size-[11px] rounded-full bg-[#febc2e]"></span>
-				<span class="size-[11px] rounded-full bg-[#28c840]"></span>
+				<span class="size-[11px] bg-red"></span>
+				<span class="size-[11px] bg-orange"></span>
+				<span class="size-[11px] bg-green"></span>
 			</span>
-			<span class="ml-1.5 truncate font-mono text-[11px] text-ink-400">{filename}</span>
+			<span class="ml-1.5 truncate font-mono text-[0.6875rem] text-ink-4">{filename}</span>
 			<span
-				class="ml-auto rounded bg-white/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-ink-300"
+				class="ml-auto rounded bg-white/10 px-1.5 py-0.5 text-[0.5625rem] font-semibold uppercase tracking-[0.1em] text-ink-300"
 				>{language}</span
 			>
 		</div>
 	{/if}
-	<pre class="lyr-code overflow-x-auto p-4 font-mono text-[11.5px] leading-[1.7] text-slate-200"><code
+	<pre class="lyr-code overflow-x-auto p-4 font-mono text-[0.71875rem] leading-[1.7] text-paper"><code
 			>{@html html}</code
 		></pre>
 </div>
 
 <style>
-	/* Deep editor surface with a faint vertical sheen. */
+	/* The design's dark block: code reads on ink, flat. */
 	.lyr-codewrap {
-		background:
-			radial-gradient(120% 100% at 0% 0%, rgba(124, 58, 237, 0.08), transparent 60%),
-			linear-gradient(180deg, #0c1222 0%, #090d18 100%);
+		background: var(--color-ink);
 	}
 
 	/* Custom token palette — tuned to the mockup's colored contract. */
 	.lyr-code :global(.hljs-attr),
 	.lyr-code :global(.hljs-attribute) {
-		color: #c4b5fd; /* keys — violet */
+		color: var(--color-blue-on-ink); /* keys: blue */
 		font-weight: 500;
 	}
 	.lyr-code :global(.hljs-string) {
-		color: #6ee7b7; /* strings — emerald */
+		color: var(--color-green); /* strings: green */
 	}
 	.lyr-code :global(.hljs-number) {
-		color: #fcd34d; /* numbers — amber */
+		color: var(--color-orange); /* numbers: orange */
 	}
 	.lyr-code :global(.hljs-bullet),
 	.lyr-code :global(.hljs-literal),
 	.lyr-code :global(.hljs-type) {
-		color: #67e8f9; /* lists / literals — cyan */
+		color: var(--color-blue-tint); /* lists, literals: pale blue */
 	}
 	.lyr-code :global(.hljs-keyword),
 	.lyr-code :global(.hljs-meta) {
-		color: #f0abfc; /* keywords — fuchsia */
+		color: var(--color-magenta); /* keywords: magenta */
 	}
 	.lyr-code :global(.hljs-comment) {
-		color: #64748b; /* comments — slate */
+		color: var(--color-ink-4); /* comments: muted ink */
 		font-style: italic;
 	}
 </style>

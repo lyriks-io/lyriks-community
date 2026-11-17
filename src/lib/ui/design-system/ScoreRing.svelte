@@ -21,7 +21,7 @@
 
 <span class="relative inline-grid place-items-center {toneText[resolvedTone]}" style="width:{size}px;height:{size}px">
 	<svg width={size} height={size} viewBox="0 0 {size} {size}" class="-rotate-90">
-		<circle cx={size / 2} cy={size / 2} {r} fill="none" stroke="var(--color-line)" stroke-width={strokeWidth} />
+		<circle cx={size / 2} cy={size / 2} {r} fill="none" stroke="var(--color-toner-2)" stroke-width={strokeWidth} />
 		<circle
 			cx={size / 2}
 			cy={size / 2}
@@ -29,11 +29,11 @@
 			fill="none"
 			stroke="currentColor"
 			stroke-width={strokeWidth}
-			stroke-linecap="round"
+			stroke-linecap="butt"
 			stroke-dasharray={circumference}
 			stroke-dashoffset={offset}
 			style="transition: stroke-dashoffset 400ms ease"
 		/>
 	</svg>
-	<span class="absolute font-semibold tabular-nums" style="font-size:{fontSize}px">{clamped}</span>
+	<span class="absolute font-bold tracking-[-0.03em] text-ink tabular-nums" style="font-size:{fontSize}px">{clamped}</span>
 </span>

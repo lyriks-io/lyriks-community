@@ -16,6 +16,7 @@ import {
 } from '$domain/foundation';
 import type { Session, ToastNotifierPort } from '$application/ports';
 import { SectionAutosave, type SaveStatus } from '$ui/shell/section-autosave.svelte';
+import { specLanguageAccessor } from '$ui/language/spec-language-context';
 
 export type { SaveStatus };
 
@@ -27,9 +28,11 @@ export type { SaveStatus };
 export class IdentityStore {
 	draft = $state<FoundationIdentityDraft>(null as unknown as FoundationIdentityDraft);
 
-	coherence = $derived.by<CoherenceResult>(() => computeIdentityCoherence(this.draft));
+	/** The spec's language, from the project it is opened in: its checks read in it. */
+	readonly #lang = specLanguageAccessor();
+	coherence = $derived.by<CoherenceResult>(() => computeIdentityCoherence(this.draft, this.#lang()));
 	canAdvance = $derived.by<boolean>(() => identityCanAdvance(this.draft));
-	missing = $derived.by<string[]>(() => missingIdentityRequirements(this.draft));
+	missing = $derived.by<string[]>(() => missingIdentityRequirements(this.draft, this.#lang()));
 
 	readonly session: Session;
 	readonly notifier: ToastNotifierPort;

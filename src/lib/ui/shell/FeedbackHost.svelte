@@ -4,7 +4,6 @@
 	import { Icon } from '$ui/design-system';
 	import { pendingDialog } from '$ui/design-system/dialog.svelte';
 	import {
-		FEEDBACK_CATEGORIES,
 		FEEDBACK_EMAIL,
 		FEEDBACK_RATINGS,
 		MAX_FEEDBACK_ITEMS,
@@ -14,7 +13,7 @@
 		feedbackMailto,
 		feedbackReport,
 		feedbackSendable,
-		type FeedbackCategory,
+		notesAfterEdit,
 		type FeedbackContext,
 		type FeedbackRating
 	} from '$domain/feedback';
@@ -22,11 +21,12 @@
 
 	/**
 	 * The feedback dialog. One visit, as many entries as the user has in mind:
-	 * each row is one typed point (bug, idea, other) and travels as its own
-	 * entry, so the team triages a line at a time instead of splitting an essay.
+	 * each row is one point and travels as its own entry, so the team triages a
+	 * line at a time instead of splitting an essay; the user picks no kind for
+	 * it, the team sorts the entries (criterion c583b8d4).
 	 *
 	 * Channel policy, in order:
-	 *  - The operator switch (Settings → Feedback) decides whether the online
+	 *  - The configuration of the installation decides whether the online
 	 *    channel may even be offered; /api/feedback resolves it into `endpoint`.
 	 *  - The user's own choice, asked once and stored per browser
 	 *    (`lyriks.feedback.mode`), decides whether THIS browser uses it. Nothing
@@ -54,7 +54,6 @@
 	/** One editable row. `id` keys the list and its input; it never leaves the dialog. */
 	interface EntryRow {
 		id: string;
-		category: FeedbackCategory;
 		message: string;
 	}
 
@@ -91,9 +90,9 @@
 	const accountEmail = $derived((page.data.session?.email as string | undefined) ?? '');
 
 	let nextRowId = 0;
-	function newRow(category: FeedbackCategory = 'idea'): EntryRow {
+	function newRow(): EntryRow {
 		nextRowId += 1;
-		return { id: `entry-${nextRowId}`, category, message: '' };
+		return { id: `entry-${nextRowId}`, message: '' };
 	}
 
 	let rows = $state<EntryRow[]>([newRow()]);
@@ -316,37 +315,39 @@
 		(input ?? panel)?.focus();
 	}
 
-	function addRow() {
-		if (rows.length >= MAX_FEEDBACK_ITEMS) return;
-		// The next point is usually of the same kind as the last one.
-		const row = newRow(rows[rows.length - 1]?.category ?? 'idea');
-		rows = [...rows, row];
-		void tick().then(() => focusRow(row.id));
+	/**
+	 * A row was written in: the list keeps one empty row under the last note, so
+	 * the next one is already there and nothing is clicked to add it (criterion
+	 * c583b8d4). The caret stays where it is.
+	 */
+	function writeRow(index: number, message: string) {
+		rows[index].message = message;
+		const next = notesAfterEdit(rows, index, newRow);
+		if (next !== rows) rows = [...next];
 	}
 
+	/** The empty row at the foot of the list is where the next note goes: it has nothing to remove. */
+	const isNextSlot = (index: number) => index === rows.length - 1 && !rows[index].message;
+
 	function removeRow(index: number) {
-		// The form always keeps one row to type in; removing the last one clears it.
-		if (rows.length === 1) {
-			rows = [newRow(rows[0].category)];
-			void tick().then(() => focusRow(rows[0].id));
-			return;
-		}
-		rows = rows.filter((_, i) => i !== index);
+		const kept = rows.filter((_, i) => i !== index);
+		// The list still closes on an empty row to write in, under the twenty-note cap.
+		const last = kept[kept.length - 1];
+		rows = !last || (last.message.trim() && kept.length < MAX_FEEDBACK_ITEMS) ? [...kept, newRow()] : kept;
 		void tick().then(() => focusRow(rows[Math.min(index, rows.length - 1)]?.id));
 	}
 
-	/** Enter starts the next entry (this is a list); Shift+Enter stays a newline. */
+	/** Enter moves to the row under it (this is a list); Shift+Enter stays a newline. */
 	function onEntryKey(event: KeyboardEvent, index: number) {
 		if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
 		event.preventDefault();
 		const next = rows[index + 1];
 		if (next) focusRow(next.id);
-		else if (rows[index].message.trim()) addRow();
 	}
 
 	const online = $derived(Boolean(endpoint) && mode === 'online');
 	const draft = $derived({
-		items: rows.map((row) => ({ category: row.category, message: row.message })),
+		items: rows.map((row) => ({ message: row.message })),
 		rating,
 		contactEmail
 	});
@@ -391,13 +392,13 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({
 					items,
-					// The list is the payload; these two are the shape a relay that
+					// The list is the payload; `message` is the shape a relay that
 					// predates it understands. Such a relay would otherwise keep the
 					// rating, find no `message`, and file "Rated good" while the notes
 					// vanish without a word, so it gets the whole list as one report
-					// instead. A relay that speaks `items` never reads them.
+					// instead. A relay that speaks `items` never reads it. No entry
+					// carries a kind: the relay files each one as `other`, to be sorted.
 					message: feedbackReport({ ...draft, items }, null),
-					category: items.length === 1 ? items[0].category : 'other',
 					rating,
 					contactEmail: shareEmail ? contactEmail.trim() : '',
 					edition: attachedContext?.edition ?? '',
@@ -422,9 +423,9 @@
 
 	// Selected-state tones per rating: the color says what the face says.
 	const RATING_SELECTED: Record<FeedbackRating, string> = {
-		good: 'border-success-300 bg-success-50 text-success-700',
-		okay: 'border-warning-300 bg-warning-50 text-warning-700',
-		bad: 'border-danger-300 bg-danger-50 text-danger-600'
+		good: 'border-green-ink bg-green-tint text-green-ink',
+		okay: 'border-orange-ink bg-orange-tint text-orange-ink',
+		bad: 'border-red-ink bg-red-tint text-red-ink'
 	};
 
 	async function copyReport() {
@@ -446,7 +447,7 @@
 		aria-modal="true"
 		aria-label="Share feedback"
 		tabindex="-1"
-		class="fixed inset-0 z-50 grid place-items-center bg-ink-900/40 p-4"
+		class="fixed inset-0 z-50 grid place-items-center bg-ink/45 p-4"
 		onclick={(e) => {
 			if (e.target === e.currentTarget) closeFeedback();
 		}}
@@ -454,13 +455,13 @@
 			if (e.key === 'Escape') closeFeedback();
 		}}
 	>
-		<div class="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-card border border-line bg-surface p-4 shadow-pop outline-none">
+		<div class="relative max-h-[90vh] w-full max-w-md overflow-y-auto border-2 border-ink bg-paper p-4 shadow-pop outline-none">
 			<!-- One quiet way out, so no step needs a Cancel button of its own. -->
 			<button
 				type="button"
 				onclick={closeFeedback}
 				aria-label="Close"
-				class="absolute right-3 top-3 grid size-6 place-items-center rounded-field text-ink-400 transition hover:bg-surface-sunken hover:text-ink-700"
+				class="absolute right-3 top-3 grid size-6 place-items-center text-ink-3 transition hover:bg-surface-sunken hover:text-ink"
 			>
 				<Icon name="x" size={14} />
 			</button>
@@ -471,7 +472,7 @@
 				<div class="mb-3 flex gap-1 pr-7" aria-hidden="true">
 					{#each WALK as s, i (s)}
 						<span
-							class="h-1 flex-1 rounded-pill transition-colors {i <= walkIndex ? 'bg-brand-500' : 'bg-line'}"
+							class="h-1 flex-1 transition-colors {i <= walkIndex ? 'bg-orange' : 'bg-toner-2'}"
 						></span>
 					{/each}
 				</div>
@@ -482,14 +483,14 @@
 				<!-- First-ever open only: a quiet skeleton while we learn which channels
 				     exist, so the real step appears in place instead of replacing a form. -->
 				<div class="animate-pulse space-y-3" aria-hidden="true">
-					<div class="h-4 w-1/3 rounded bg-surface-sunken"></div>
-					<div class="h-3 w-2/3 rounded bg-surface-sunken"></div>
-					<div class="h-20 w-full rounded bg-surface-sunken"></div>
+					<div class="h-4 w-1/3 bg-toner-2"></div>
+					<div class="h-3 w-2/3 bg-toner-2"></div>
+					<div class="h-20 w-full bg-toner-2"></div>
 				</div>
 				<p class="sr-only">Loading feedback options…</p>
 			{:else if step === 'choose'}
-				<p class="pr-6 text-sm font-semibold text-ink-900">How should your feedback reach us?</p>
-				<p class="mt-1 text-xs leading-snug text-ink-500">
+				<p class="pr-6 text-sm font-semibold text-ink">How should your feedback reach us?</p>
+				<p class="mt-1 text-xs leading-snug text-ink-3">
 					Asked once; your choice is remembered in this browser and can be changed any time in
 					Settings. Nothing is ever sent until you press Send.
 				</p>
@@ -497,12 +498,12 @@
 					<button
 						type="button"
 						onclick={() => chooseMode('online')}
-						class="flex w-full items-start gap-3 rounded-field border border-line p-3 text-left transition hover:border-brand-400 hover:bg-brand-500/5"
+						class="flex w-full items-start gap-3 border-[1.5px] border-transparent bg-surface p-3 text-left transition hover:border-ink hover:bg-paper"
 					>
-						<span class="mt-0.5 text-brand-500"><Icon name="send" size={16} /></span>
+						<span class="mt-0.5 text-blue-ink"><Icon name="send" size={16} /></span>
 						<span class="min-w-0">
-							<span class="block text-sm font-semibold text-ink-900">Send online</span>
-							<span class="mt-0.5 block text-xs leading-snug text-ink-500">
+							<span class="block text-sm font-semibold text-ink">Send online</span>
+							<span class="mt-0.5 block text-xs leading-snug text-ink-3">
 								Delivered straight to the Lyriks team. Only this browser talks to the internet,
 								and only when you press Send.
 							</span>
@@ -511,12 +512,12 @@
 					<button
 						type="button"
 						onclick={() => chooseMode('offline')}
-						class="flex w-full items-start gap-3 rounded-field border border-line p-3 text-left transition hover:border-brand-400 hover:bg-brand-500/5"
+						class="flex w-full items-start gap-3 border-[1.5px] border-transparent bg-surface p-3 text-left transition hover:border-ink hover:bg-paper"
 					>
-						<span class="mt-0.5 text-brand-500"><Icon name="mail" size={16} /></span>
+						<span class="mt-0.5 text-blue-ink"><Icon name="mail" size={16} /></span>
 						<span class="min-w-0">
-							<span class="block text-sm font-semibold text-ink-900">Use my email app</span>
-							<span class="mt-0.5 block text-xs leading-snug text-ink-500">
+							<span class="block text-sm font-semibold text-ink">Use my email app</span>
+							<span class="mt-0.5 block text-xs leading-snug text-ink-3">
 								Opens a pre-filled message to {FEEDBACK_EMAIL}. Lyriks itself never goes online.
 							</span>
 						</span>
@@ -524,10 +525,10 @@
 				</div>
 			{:else if step === 'sent'}
 				<div class="flex items-start gap-3">
-					<span class="mt-0.5 text-success-600"><Icon name="check" size={18} /></span>
+					<span class="mt-0.5 text-green-ink"><Icon name="check" size={18} /></span>
 					<div>
-						<p class="text-sm font-semibold text-ink-900">Thank you!</p>
-						<p class="mt-1 text-xs leading-snug text-ink-500">
+						<p class="text-sm font-semibold text-ink">Thank you!</p>
+						<p class="mt-1 text-xs leading-snug text-ink-3">
 							{items.length > 1 ? `Your ${items.length} entries` : 'Your message'} just landed on the
 							team's desk. It is read by the people who build Lyriks, not by a bot.
 						</p>
@@ -537,7 +538,7 @@
 					<button
 						type="button"
 						onclick={closeFeedback}
-						class="rounded-field bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600"
+						class="pressable border-[1.5px] border-ink bg-brand-500 px-4 py-2 text-xs font-bold tracking-[0.07em] text-paper uppercase"
 					>
 						Close
 					</button>
@@ -545,8 +546,8 @@
 			{:else if step === 'rate'}
 				<!-- Step one is one click, and one click is already a complete piece
 				     of feedback: whoever stops here has still told us something. -->
-				<p class="pr-6 text-sm font-semibold text-ink-900">How is your journey with Lyriks going?</p>
-				<p class="mt-0.5 pr-6 text-xs leading-snug text-ink-500">
+				<p class="pr-6 text-sm font-semibold text-ink">How is your journey with Lyriks going?</p>
+				<p class="mt-0.5 pr-6 text-xs leading-snug text-ink-3">
 					{#if invited}
 						You have been using Lyriks for a while. One tap answers it; the next step is where you
 						say more, if you feel like it.
@@ -564,9 +565,9 @@
 							type="button"
 							aria-pressed={rating === r.id}
 							onclick={() => pickRating(r.id)}
-							class="flex flex-col items-center gap-1 rounded-field border py-2.5 text-xs font-medium transition {rating === r.id
+							class="flex flex-col items-center gap-1 border-[1.5px] py-2.5 text-xs font-medium transition {rating === r.id
 								? RATING_SELECTED[r.id]
-								: 'border-line text-ink-500 hover:border-line-strong hover:text-ink-700'}"
+								: 'border-line text-ink-2 hover:border-ink hover:text-ink'}"
 						>
 							<Icon name={r.icon} size={20} />
 							{r.label}
@@ -578,7 +579,7 @@
 						<button
 							type="button"
 							onclick={muteInvites}
-							class="rounded-field px-2 py-1.5 text-xs font-medium text-ink-400 transition hover:text-ink-700 hover:underline"
+							class="px-2 py-1.5 text-xs font-medium text-ink-3 transition hover:text-ink hover:underline"
 						>
 							Don't ask again
 						</button>
@@ -587,7 +588,7 @@
 					<button
 						type="button"
 						onclick={() => goTo('notes')}
-						class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-semibold text-brand-600 transition hover:bg-brand-50"
+						class="inline-flex items-center gap-1 px-3 py-2 text-sm font-semibold text-blue-ink transition hover:bg-blue-tint"
 					>
 						{rating ? 'Next' : 'Skip'}
 						<Icon name="chevron-right" size={15} />
@@ -596,44 +597,36 @@
 			{:else if step === 'notes'}
 				<!-- One row per point to make: each is filed on its own, so a bug and
 				     two ideas never arrive as a single blob to untangle. -->
-				<!-- No sentence explaining the list: the typed rows and the empty slot
+				<!-- No sentence explaining the list: the rows and the empty slot
 				     under them say it, and a paragraph about not writing paragraphs
 				     would be the one thing the panel does not need. -->
 				<div class="flex items-baseline justify-between gap-2 pr-6">
-					<p class="text-sm font-semibold text-ink-900">What would you like to tell us?</p>
+					<p class="text-sm font-semibold text-ink">What would you like to tell us?</p>
 					{#if items.length > 1}
-						<span class="shrink-0 text-[11px] text-ink-400">{items.length} entries</span>
+						<span class="shrink-0 text-[0.6875rem] text-ink-3">{items.length} entries</span>
 					{/if}
 				</div>
 				<ul class="mt-3 space-y-1.5">
 					{#each rows as row, index (row.id)}
 						<li class="flex items-start gap-1.5">
-							<select
-								bind:value={row.category}
-								aria-label="Type of entry {index + 1}"
-								class="h-8 shrink-0 rounded-field border border-line/60 bg-transparent px-1.5 text-xs font-medium text-ink-600 outline-none transition hover:border-line focus:border-brand-400"
-							>
-								{#each FEEDBACK_CATEGORIES as c (c.id)}
-									<option value={c.id}>{c.label}</option>
-								{/each}
-							</select>
 							<textarea
 								use:entryInput={row.id}
-								bind:value={row.message}
+								value={row.message}
+								oninput={(e) => writeRow(index, e.currentTarget.value)}
 								rows="1"
 								maxlength={MAX_FEEDBACK_MESSAGE}
 								placeholder={index === 0 ? firstPlaceholder : 'One more thing…'}
 								aria-label="Entry {index + 1}"
 								onkeydown={(e) => onEntryKey(e, index)}
-								class="min-h-8 flex-1 resize-none overflow-hidden rounded-field border border-line bg-surface px-2.5 py-1.5 text-sm leading-snug text-ink-900 outline-none placeholder:text-ink-400 focus:border-brand-400"
+								class="min-h-8 flex-1 resize-none overflow-hidden border-[1.5px] border-ink-3 bg-surface-sunken px-2.5 py-1.5 text-sm leading-snug text-ink outline-none placeholder:text-ink-3 focus:border-blue"
 							></textarea>
-							<!-- Nothing to remove while the form is one empty row. -->
-							{#if rows.length > 1 || row.message}
+							<!-- Nothing to remove on the empty row waiting for the next note. -->
+							{#if !isNextSlot(index)}
 								<button
 									type="button"
 									onclick={() => removeRow(index)}
 									aria-label="Remove entry {index + 1}"
-									class="mt-0.5 grid size-7 shrink-0 place-items-center rounded-field text-ink-400 transition hover:bg-surface-sunken hover:text-ink-700"
+									class="mt-0.5 grid size-7 shrink-0 place-items-center text-ink-3 transition hover:bg-surface-sunken hover:text-ink"
 								>
 									<Icon name="x" size={13} />
 								</button>
@@ -643,20 +636,10 @@
 						</li>
 					{/each}
 				</ul>
-				<!-- The next line, drawn as the empty slot it is: a full-width dashed
-				     row under the list has visible bounds and a target you cannot
-				     miss, where the bare text link read as a footnote. -->
-				{#if rows.length < MAX_FEEDBACK_ITEMS}
-					<button
-						type="button"
-						onclick={addRow}
-						class="mt-2 flex w-full items-center justify-center gap-1.5 rounded-field border border-dashed border-line-strong py-2 text-xs font-semibold text-ink-500 outline-none transition hover:border-brand-400 hover:bg-brand-500/5 hover:text-brand-600 focus-visible:border-brand-400 focus-visible:ring-2 focus-visible:ring-brand-400"
-					>
-						<Icon name="plus" size={14} />
-						Add another
-					</button>
-				{:else}
-					<p class="mt-2 text-center text-[11px] text-ink-400">
+				<!-- The next row is always already there, empty, under the last note
+				     (criterion c583b8d4): no button to add one. -->
+				{#if rows.length >= MAX_FEEDBACK_ITEMS && !isNextSlot(rows.length - 1)}
+					<p class="mt-2 text-center text-[0.6875rem] text-ink-3">
 						That is the most one message can carry.
 					</p>
 				{/if}
@@ -664,7 +647,7 @@
 					<button
 						type="button"
 						onclick={() => goTo('rate')}
-						class="inline-flex items-center gap-1 rounded-field px-2 py-2 text-xs font-medium text-ink-500 transition hover:bg-surface-sunken hover:text-ink-700"
+						class="inline-flex items-center gap-1 px-2 py-2 text-xs font-medium text-ink-3 transition hover:bg-surface-sunken hover:text-ink"
 					>
 						<Icon name="chevron-left" size={15} />
 						Back
@@ -673,23 +656,23 @@
 					<button
 						type="button"
 						onclick={() => goTo('send')}
-						class="inline-flex items-center gap-1 rounded-field bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600"
+						class="inline-flex items-center gap-1 pressable border-[1.5px] border-ink bg-brand-500 px-4 py-2 text-xs font-bold tracking-[0.07em] text-paper uppercase"
 					>
 						Next
 						<Icon name="chevron-right" size={15} />
 					</button>
 				</div>
 			{:else}
-				<p class="pr-6 text-sm font-semibold text-ink-900">Ready to send</p>
-				<p class="mt-0.5 pr-6 text-xs leading-snug text-ink-500">
+				<p class="pr-6 text-sm font-semibold text-ink">Ready to send</p>
+				<p class="mt-0.5 pr-6 text-xs leading-snug text-ink-3">
 					{recap}. It goes to the people who build Lyriks, not to a bot.
 				</p>
 				{#if online}
 					{#if accountEmail}
 						<!-- Opt-out, not opt-in: the address is there, on one line, and
 						     unchecking it is what makes the report anonymous. -->
-						<label class="mt-3 flex items-center gap-2 text-xs text-ink-600">
-							<input type="checkbox" bind:checked={shareEmail} />
+						<label class="mt-3 flex items-center gap-2 text-xs text-ink-2">
+							<input type="checkbox" bind:checked={shareEmail} class="accent-ink" />
 							{#if shareEmail}
 								<span class="shrink-0">Reply to</span>
 								<input
@@ -697,10 +680,10 @@
 									bind:value={contactEmail}
 									type="email"
 									aria-label="Reply-to email"
-									class="min-w-0 flex-1 border-b border-transparent bg-transparent py-0.5 text-xs text-ink-900 outline-none transition hover:border-line focus:border-brand-400"
+									class="min-w-0 flex-1 border-b border-transparent bg-transparent py-0.5 text-xs text-ink outline-none transition hover:border-line focus:border-blue"
 								/>
 							{:else}
-								<span class="text-ink-400">Sending anonymously, no reply possible</span>
+								<span class="text-ink-3">Sending anonymously, no reply possible</span>
 							{/if}
 						</label>
 					{:else}
@@ -710,21 +693,21 @@
 							type="email"
 							placeholder="Your email, if you'd like an answer (optional)"
 							aria-label="Contact email (optional)"
-							class="mt-3 h-8 w-full rounded-field border border-line bg-surface px-2.5 text-xs text-ink-900 outline-none placeholder:text-ink-400 focus:border-brand-400"
+							class="mt-3 h-8 w-full border-[1.5px] border-ink-3 bg-surface-sunken px-2.5 text-xs text-ink outline-none placeholder:text-ink-3 focus:border-blue"
 						/>
 					{/if}
 				{/if}
 				{#if context}
 					<label
-						class="mt-2 flex items-start gap-2 text-xs leading-snug text-ink-600"
+						class="mt-2 flex items-start gap-2 text-xs leading-snug text-ink-2"
 						title="Attached: the {context.edition} edition, the full component versions report with its build details, and the licence summary. The licence key itself is never sent."
 					>
-						<input type="checkbox" bind:checked={includeContext} class="mt-0.5" />
+						<input type="checkbox" bind:checked={includeContext} class="mt-0.5 accent-ink" />
 						<span>Attach install info: {context.edition} edition, versions, licence summary (never the key).</span>
 					</label>
 				{/if}
 				{#if sendFailed}
-					<p class="mt-2 text-xs font-medium text-danger-500">
+					<p class="mt-2 text-xs font-medium text-red-ink">
 						The feedback service could not be reached. Your notes are not lost: send them through
 						your email app, or copy them.
 					</p>
@@ -733,7 +716,7 @@
 					<button
 						type="button"
 						onclick={() => goTo('notes')}
-						class="inline-flex items-center gap-1 rounded-field px-2 py-2 text-xs font-medium text-ink-500 transition hover:bg-surface-sunken hover:text-ink-700"
+						class="inline-flex items-center gap-1 px-2 py-2 text-xs font-medium text-ink-3 transition hover:bg-surface-sunken hover:text-ink"
 					>
 						<Icon name="chevron-left" size={15} />
 						Back
@@ -743,7 +726,7 @@
 						onclick={copyReport}
 						disabled={!feedbackSendable(draft)}
 						title="Copy the whole report to the clipboard"
-						class="inline-flex items-center gap-1.5 rounded-field px-2 py-1.5 text-xs font-semibold text-ink-500 transition hover:bg-surface-sunken hover:text-ink-700 disabled:opacity-40 disabled:hover:bg-transparent"
+						class="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs font-semibold text-ink-3 transition hover:bg-surface-sunken hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent"
 					>
 						<Icon name="copy" size={13} />
 						{copied ? 'Copied' : 'Copy'}
@@ -754,7 +737,7 @@
 							type="button"
 							onclick={sendOnline}
 							disabled={!canSend}
-							class="rounded-field bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
+							class="pressable border-[1.5px] border-ink bg-brand-500 px-4 py-2 text-xs font-bold tracking-[0.07em] text-paper uppercase disabled:opacity-60"
 						>
 							{sending ? 'Sending…' : items.length > 1 ? `Send ${items.length} entries` : 'Send'}
 						</button>
@@ -762,7 +745,7 @@
 						<a
 							href={mailto}
 							onclick={markSent}
-							class="rounded-field bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 {feedbackSendable(draft)
+							class="pressable border-[1.5px] border-ink bg-brand-500 px-4 py-2 text-xs font-bold tracking-[0.07em] text-paper uppercase no-underline hover:text-paper {feedbackSendable(draft)
 								? ''
 								: 'pointer-events-none opacity-60'}"
 						>
@@ -771,11 +754,11 @@
 					{/if}
 				</div>
 				{#if endpoint}
-					<p class="mt-3 border-t border-line pt-2 text-[11px] text-ink-400">
+					<p class="mt-3 border-t border-line pt-2 text-[0.6875rem] text-ink-3">
 						Channel: {mode === 'online' ? 'online, direct to the team' : `email app (${FEEDBACK_EMAIL})`}
 						<button
 							type="button"
-							class="ml-1 font-medium text-brand-600 hover:underline"
+							class="ml-1 font-semibold text-blue-ink hover:underline"
 							onclick={() => {
 								resumeStep = 'send';
 								goTo('choose');

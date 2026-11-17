@@ -54,3 +54,12 @@ export function resolveUpdateStatus(
 export function isComparableVersion(tag: string): boolean {
 	return parseVersion(tag) !== null;
 }
+
+/**
+ * The release this install really runs. A pinned tag says so itself; on a moving
+ * alias (`stable`, the default) the tag says nothing, so the release the kit
+ * recorded at the last install or update answers instead.
+ */
+export function runningRelease(imageTag: string, recordedRelease: string | null | undefined): string {
+	return isComparableVersion(imageTag) ? imageTag : (recordedRelease ?? imageTag);
+}

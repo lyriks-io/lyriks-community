@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+	GUIDE_MAX_SERIALIZED_CHARS,
+	PLAYBOOK_MAX_CHARS,
 	PUBLISHED_SKILL_IDS,
 	buildInstallTargets,
 	buildSkillCatalog,
@@ -16,6 +18,7 @@ import {
 	pointerMarkers,
 	portableInstallPath,
 	BINDING_HOOK_PATH,
+	BINDING_TOOLS_HOOK_PATH,
 	BINDING_MARKERS,
 	BINDING_TOOLS,
 	BINDING_TOOLS_DIR,
@@ -209,6 +212,16 @@ describe('diffSkillCatalog', () => {
 		expect(build.installContent).toBeUndefined();
 	});
 
+	it('answers a guide the client holds with its id, status and hash alone [criterion:526377e2]', () => {
+		// Every session starts with this check: the description and the layouts of a
+		// guide already installed only made it heavier (18,000 characters for nothing).
+		const result = diffSkillCatalog(catalog, [{ id: 'lyriks-build', contentHash: hashOf('lyriks-build') }], 'claude');
+		expect(entry(result, 'lyriks-build')).toEqual({ id: 'lyriks-build', name: catalog[0].name, contentHash: hashOf('lyriks-build'), status: 'up-to-date' });
+		// What the client still has to write keeps everything it needs.
+		expect(entry(result, 'lyriks-design')).toMatchObject({ status: 'new', installPath: '.claude/skills/lyriks-design/SKILL.md' });
+		expect(entry(result, 'lyriks-design').installTargets).toHaveLength(1);
+	});
+
 	it('reports a stale hash as update, install content attached', () => {
 		const result = diffSkillCatalog(catalog, [{ id: 'lyriks-build', contentHash: 'ffffffff' }]);
 		const build = entry(result, 'lyriks-build');
@@ -255,13 +268,26 @@ describe('diffSkillCatalog', () => {
 		const result = diffSkillCatalog(catalog, [], 'codex');
 		const build = entry(result, 'lyriks-build');
 		expect(build.installTargets).toHaveLength(1);
-		expect(build.installTargets[0].client).toBe('codex');
-		expect(build.installTargets[0].pointerPath).toBe('AGENTS.md');
+		expect(build.installTargets![0].client).toBe('codex');
+		expect(build.installTargets![0].pointerPath).toBe('AGENTS.md');
 	});
 
 	it('returns every layout when the client stays anonymous', () => {
 		const build = entry(diffSkillCatalog(catalog, []), 'lyriks-build');
 		expect(build.installTargets).toHaveLength(5);
+	});
+});
+
+describe('every published guide travels alone in one client answer [criterion:526377e2]', () => {
+	const root = fileURLToPath(new URL('../../../..', import.meta.url));
+	it.each(PUBLISHED_SKILL_IDS)('%s stays under the serialized size one answer carries', (id) => {
+		const raw = readFileSync(join(root, `.claude/skills/${id}/SKILL.md`), 'utf8');
+		const [skill] = buildSkillCatalog({ [`/.claude/skills/${id}/SKILL.md`]: raw });
+		const size = JSON.stringify(skill.installContent).length;
+		expect(
+			size,
+			`${id} weighs ${size} characters serialized, past ${GUIDE_MAX_SERIALIZED_CHARS}: split it into two guides, or clients refuse the answer that carries it.`
+		).toBeLessThanOrEqual(GUIDE_MAX_SERIALIZED_CHARS);
 	});
 });
 
@@ -384,6 +410,23 @@ describe('buildBinding (the repository stays bound to its Lyriks project)', () =
 			expect(block).not.toContain(gone);
 	});
 
+	it('says what Lyriks answers and what the code tools answer [criterion:4cfd9e34]', () => {
+		// Same division as the MCP server instructions (SPEC_AND_CODE_TOOLS) and the per-prompt hook.
+		const block = buildBindingBlock();
+		const line = block.split('\n').find((l) => l.includes('your own code tools'))!;
+		for (const cue of [
+			'Lyriks answers what the product must do, why, and where the code implements it',
+			'answer how the code is written',
+			'`code` on a `get_behavior_feature` read',
+			'tell the person instead of resolving it either way',
+			'A question about the code alone',
+			'without a Lyriks call'
+		])
+			expect(line, cue).toContain(cue);
+		// The spec read stays first for a question about the product.
+		expect(block).toContain('Never answer it from the code alone or from memory.');
+	});
+
 	it('sends every runtime to the instruction file it always loads, with one shared block', () => {
 		expect(of('claude').pointerPath).toBe('CLAUDE.md');
 		expect(of('codex').pointerPath).toBe('AGENTS.md');
@@ -406,6 +449,25 @@ describe('buildBinding (the repository stays bound to its Lyriks project)', () =
 		for (const client of ['codex', 'gemini', 'copilot', 'generic'] as const) {
 			expect(of(client).hook).toBeUndefined();
 		}
+	});
+
+	it('gives Claude Code, and only it, the hook that allows the Lyriks tools, wired for every MCP tool [criterion:ac-leaf-ac-mcp-binding-allows-tools]', () => {
+		const tools = '#!/usr/bin/env node\n// the tools hook\n';
+		const target = (client: SkillClientId) => buildBinding(script, undefined, null, {}, [], tools).targets.find((t) => t.client === client)!;
+		const hook = target('claude').toolsHook!;
+		expect(hook.path).toBe(BINDING_TOOLS_HOOK_PATH);
+		expect(hook.content).toBe(injectScriptHash(tools, fnv1aHash(tools)));
+		expect(hook.settingsPath).toBe('.claude/settings.json');
+		expect(hook.settingsEvent).toBe('PreToolUse');
+		expect(hook.settingsMatcher).toBe('^mcp__.*');
+		expect(hook.settingsEntry.command).toContain(BINDING_TOOLS_HOOK_PATH);
+		const settings = JSON.parse(hook.settingsContent);
+		expect(settings.hooks.PreToolUse[0]).toEqual({ matcher: '^mcp__.*', hooks: [hook.settingsEntry] });
+		for (const client of ['codex', 'gemini', 'copilot', 'generic'] as const) expect(target(client).toolsHook).toBeUndefined();
+		// A client that holds this version gets nothing to write.
+		const held = buildBinding(script, 'claude', null, {}, [{ path: BINDING_TOOLS_HOOK_PATH, contentHash: fnv1aHash(tools) }], tools);
+		expect(held.targets[0].toolsHook).toMatchObject({ unchanged: true });
+		expect(held.targets[0].toolsHook!.content).toBeUndefined();
 	});
 
 	it('narrows to the calling runtime, and falls back to every target for an unknown one', () => {
@@ -433,7 +495,7 @@ describe('the helper scripts ship with the binding, for every runtime', () => {
 			const file = tool.path.slice(BINDING_TOOLS_DIR.length + 1);
 			expect(tool.contentHash).toBe(fnv1aHash(bundled[`./tools/${file}`]));
 			expect(tool.content).toBe(injectScriptHash(bundled[`./tools/${file}`], tool.contentHash));
-			expect(tool.purpose.length).toBeGreaterThan(20);
+			expect(tool.purpose!.length).toBeGreaterThan(20);
 		}
 	});
 
@@ -548,7 +610,8 @@ describe('installed tools: a sync sends only the scripts the client lacks', () =
 		expect(held.every((ref) => typeof ref.contentHash === 'string')).toBe(true);
 		const second = buildBinding(hookScript, 'claude', null, bundled, held);
 		for (const tool of second.tools) {
-			expect(tool).toEqual({ path: tool.path, contentHash: tool.contentHash, unchanged: true, purpose: tool.purpose });
+			// Neither its content nor its purpose: the installed file's header says both.
+			expect(tool).toEqual({ path: tool.path, contentHash: tool.contentHash, unchanged: true });
 		}
 		const hook = second.targets[0].hook!;
 		expect(hook.content).toBeUndefined();
@@ -557,6 +620,7 @@ describe('installed tools: a sync sends only the scripts the client lacks', () =
 		expect(hook.settingsEntry.command).toContain(BINDING_HOOK_PATH);
 		// The point of it all: a routine sync weighs a fraction of a first one.
 		expect(JSON.stringify(second).length).toBeLessThan(JSON.stringify(first).length / 5);
+		expect(JSON.stringify(second.tools).length).toBeLessThan(100 * second.tools.length);
 	});
 
 	it('sends a file again when its hash differs, is missing, or was never reported', () => {
@@ -712,5 +776,140 @@ describe('the bundled binding hook (Claude Code, UserPromptSubmit)', () => {
 			]);
 			expect(context).toMatch(/^Lyriks-bound repository/);
 		});
+	});
+});
+
+describe('what the playbooks say of who acts, of time, of the system and of documents', () => {
+	const root = fileURLToPath(new URL('../../../..', import.meta.url));
+	const playbook = (id: string) => readFileSync(join(root, `.claude/skills/${id}/SKILL.md`), 'utf8');
+
+	it('models who acts, what time does and what the system does, one feature verified at a time [criterion:0ec9f244]', () => {
+		const behavior = playbook('lyriks-behavior');
+		const section = behavior.slice(behavior.indexOf('## Who acts, what time does, what the system does'));
+		expect(section.startsWith('## Who acts, what time does, what the system does')).toBe(true);
+		for (const law of [
+			'**Who is acting is a given, not an action.**',
+			'**What time does is an action of a schedule.**',
+			'**What the world does is an action of the system.**',
+			'**Read the cause the engine gives.**',
+			'**One feature at a time, verified before the next.**'
+		])
+			expect(section, law).toContain(law);
+		expect(behavior).toContain('declare the role ONCE for the whole project, under the same path and the same values in every feature');
+		expect(behavior).toContain('advance_time (`{type:"advance_time", by}`');
+		expect(behavior).toContain('one per role a guard of the feature reads');
+		expect(behavior).not.toContain('declare `session.role` (enum owner|builder|operator|viewer) per feature');
+		expect(playbook('lyriks-build')).toContain('Give every role the values the behaviour reads it by (`roles[].behaviorValues');
+	});
+
+	it('counts the pages of a documentation and puts each kind of page in its place [criterion:c45098f2]', () => {
+		const retrospec = playbook('lyriks-retrospec');
+		const section = retrospec.slice(retrospec.indexOf('## A product known from its documentation'));
+		expect(section).toContain('**The pages are the denominator**');
+		expect(section).toContain('*Where each kind of document goes*');
+		expect(retrospec).toContain('each is an actor of the journey it serves (sign-in, API)');
+		expect(retrospec).toContain('each with its `behaviorValues` (lyriks-build step 9)');
+		const build = playbook('lyriks-build');
+		const table = build.slice(build.indexOf('## Where each kind of document goes'));
+		for (const row of ['`apply_roadmap_batch`', '`evidence`', '`decision` status', '`foundation.painPointLinks`', '`foundation.slas`', 'Legal or Compliance', 'one `api` action per endpoint', 'a `rules` issue'])
+			expect(table, row).toContain(row);
+	});
+});
+
+describe('what the playbooks make a retrospec count and a CI check', () => {
+	const root = fileURLToPath(new URL('../../../..', import.meta.url));
+	const playbook = (id: string) => readFileSync(join(root, `.claude/skills/${id}/SKILL.md`), 'utf8');
+
+	it('counts the screens, the settings and the rules on sensitive data whatever the spine [criterion:c3526104]', () => {
+		const retrospec = playbook('lyriks-retrospec');
+		const ledger = retrospec.slice(retrospec.indexOf('Whatever the spine, five lists always enter the ledger:'));
+		expect(ledger.startsWith('Whatever the spine, five lists always enter the ledger:')).toBe(true);
+		for (const list of [
+			'**The API, endpoint by endpoint.**',
+			'**Every access check of the code.**',
+			'**Every screen, administration and settings pages included.**',
+			'**Every setting that changes what the product does.**',
+			'**Every rule on personal or sensitive data.**'
+		])
+			expect(ledger, list).toContain(list);
+		expect(ledger).toContain('a page declared in\n  metadata or configuration counts as much as a coded one');
+		expect(ledger).toContain('a rule spanned on the\n  code that enforces it');
+		expect(retrospec).not.toContain('two lists always enter the ledger');
+	});
+
+	it('reads a prototype whole, counts its layers and sorts product from sample and control [criterion:d8b6bf0d]', () => {
+		const retrospec = playbook('lyriks-retrospec');
+		const part = retrospec.slice(retrospec.indexOf('## A product known from its prototype or its design'));
+		expect(part.startsWith('## A product known from its prototype or its design')).toBe(true);
+		for (const law of [
+			'**Read every file whole, and say so.**',
+			'Measure each file and its longest\n   line first',
+			'Never cut in silence.',
+			'**Count before writing, layer by layer, in the ledger:**',
+			'every interaction with what\n   its handler really does',
+			'(`readonly`,\n   `disabled`, `aria-*`)',
+			'**Sort every element into product, sample data or prototype control, and\n   write the sort down.**',
+			'**A sample catalogue states rules: take the rule, never the instance.**',
+			'**A label is not a behaviour.**',
+			'**The prototype is a source like any other:**',
+			'**Prove the end with three readings, never with an impression:**'
+		])
+			expect(part, law).toContain(law);
+		expect(retrospec).toContain('with `source_mode: "from_figma"`');
+		expect(retrospec).toContain('| a clickable prototype or a design (one HTML file, a design canvas, a Figma prototype) |');
+		expect(retrospec).toContain("'spec this prototype'");
+	});
+
+	it('ends on the checks, never on an impression, and tells its own work from a decision [criterion:f383eddf]', () => {
+		const retrospec = playbook('lyriks-retrospec');
+		expect(retrospec).toContain('**Read what done means first:** `assess_project_completeness` on the\n   empty project lists what your work ends on');
+		const protocol = retrospec.slice(retrospec.indexOf('## Low-intervention protocol'));
+		expect(protocol).toContain('**Your work, or a person\'s decision.** Only the `scope.mode`, approvals');
+		expect(protocol).toContain('every feature\'s\n  behaviour (never left at 0% unless shells or a target stage were asked)');
+		expect(protocol).toContain('never report them as "a\n  decision" or "to do on request".');
+		expect(protocol).toContain('**Done is proven, never felt.**');
+		expect(protocol).toContain('hand over a coverage report');
+	});
+
+	it('gives the CI job that keeps the places true between two runs [criterion:b9881b7c]', () => {
+		const delivery = playbook('lyriks-delivery');
+		const ci = delivery.slice(delivery.indexOf('## Keep the places true between two runs (CI)'));
+		expect(ci.startsWith('## Keep the places true between two runs (CI)')).toBe(true);
+		for (const cue of [
+			'node .lyriks/tools/check-index.mjs --fix',
+			'no network',
+			'fails, naming the entry, when a code line is found nowhere',
+			'node .lyriks/tools/sync-index.mjs',
+			'`LYRIKS_MCP_URL`',
+			'`LYRIKS_MCP_TOKEN` held as a CI secret',
+			'such a token expires',
+			'Never edit a line number by hand'
+		])
+			expect(ci, cue).toContain(cue);
+	});
+});
+
+describe('every published playbook names nothing of ours and is short enough to be read whole [criterion:5d8e23b4]', () => {
+	const root = fileURLToPath(new URL('../../../..', import.meta.url));
+	const playbook = (id: string) => readFileSync(join(root, `.claude/skills/${id}/SKILL.md`), 'utf8');
+	// The products we ran the playbooks on. A lesson a run taught stays as the rule it taught.
+	const ourRuns = ['linkding', 'kutt', 'taskora', 'zappier', 'big island'];
+
+	it.each(PUBLISHED_SKILL_IDS)('%s tells no story of a run of ours', (id) => {
+		const text = playbook(id).toLowerCase();
+		for (const name of ourRuns) expect(text, `${id} names ${name}`).not.toMatch(new RegExp(`\\b${name}\\b`));
+		expect(text, `${id} dates a run`).not.toMatch(/\b20\d\d-\d\d-\d\d\b/);
+		expect(text, `${id} tells a run`).not.toMatch(/\bin the \w+ run\b|\bfield run\b|\bproven end-to-end on\b/);
+	});
+
+	it.each(PUBLISHED_SKILL_IDS)('%s points to nothing the client does not hold', (id) => {
+		const text = playbook(id);
+		expect(text, `${id} links a memory`).not.toContain('[[');
+		expect(text, `${id} names a file of our repository`).not.toMatch(/docs\/skills\/|localhost:\d+/);
+	});
+
+	it.each(PUBLISHED_SKILL_IDS)('%s stays under the length a client reads whole', (id) => {
+		const length = playbook(id).length;
+		expect(length, `${id} holds ${length} characters, past ${PLAYBOOK_MAX_CHARS}: say a rule once and cut before adding.`).toBeLessThanOrEqual(PLAYBOOK_MAX_CHARS);
 	});
 });

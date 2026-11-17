@@ -210,10 +210,10 @@ describe('append', () => {
   it('adds a keyless row verbatim, injecting no id', () => {
     const draft: Record<string, unknown> = { permissions: [{ roleId: 'admin', capabilityId: 'cap-a' }] }
     expect(applySectionPatch(draft, [
-      { op: 'append', collection: 'permissions', value: { roleId: 'viewer', capabilityId: 'cap-a', action: 'read' } },
+      { op: 'append', collection: 'permissions', value: { roleId: 'viewer', capabilityId: 'cap-a', capabilitySource: 'feature' } },
     ])).toBe(1)
     const rows = draft.permissions as Record<string, unknown>[]
-    expect(rows[1]).toEqual({ roleId: 'viewer', capabilityId: 'cap-a', action: 'read' })
+    expect(rows[1]).toEqual({ roleId: 'viewer', capabilityId: 'cap-a', capabilitySource: 'feature' })
     expect(rows.every((r) => !('id' in r))).toBe(true)
   })
 
@@ -255,5 +255,63 @@ describe('append', () => {
     expect(() => applySectionPatch(draft, [
       { op: 'append', collection: 'capabilities', value: 'Sign out' as unknown as Record<string, unknown> },
     ])).toThrow(/append requires a safe object value/)
+  })
+
+  describe('an op that would empty a whole list is held unless it says so [criterion:3eb55075]', () => {
+    const model = () => ({
+      fields: Array.from({ length: 123 }, (_, i) => ({ id: `f${i}`, name: `Field ${i}` })),
+      entities: [{ id: 'e1', name: 'Project' }],
+      brand: { colors: { tokens: [{ id: 't1' }, { id: 't2' }] }, name: 'Paper' },
+    })
+
+    it('holds a leftover set fields = null at the end of a batch, and lands the rest', () => {
+      const draft = model()
+      const report = applySectionPatchReport(draft, [
+        { op: 'merge', collection: 'entities', id: 'e1', value: { name: 'Projects' } },
+        { op: 'set', path: 'fields', value: null },
+      ])
+      expect(report.applied).toBe(1)
+      expect(draft.entities[0].name).toBe('Projects')
+      expect(draft.fields).toHaveLength(123)
+      expect(report.notApplied).toEqual([
+        expect.objectContaining({ index: 1, op: 'set', target: 'fields', reason: expect.stringContaining('would erase the 123 rows held at `fields`') }),
+      ])
+      expect(report.notApplied[0].reason).toContain('erase:true')
+    })
+
+    it('holds an empty list, a scalar, a path removal and an object of lists set to null', () => {
+      for (const op of [
+        { op: 'set', path: 'fields', value: [] },
+        { op: 'set', path: 'fields', value: 'none' },
+        { op: 'remove', path: 'fields' },
+        { op: 'set', path: 'brand.colors', value: null },
+      ] as PatchOp[]) {
+        const draft = model()
+        const report = applySectionPatchReport(draft, [op])
+        expect(report.applied, JSON.stringify(op)).toBe(0)
+        expect(report.notApplied[0].reason).toMatch(/would erase the (123|2) rows/)
+      }
+    })
+
+    it('applies the same ops when they carry erase:true, and what replaces or drops one row as before', () => {
+      const draft = model()
+      expect(applySectionPatchReport(draft, [{ op: 'set', path: 'fields', value: null, erase: true }]).applied).toBe(1)
+      expect(draft.fields).toBeNull()
+      const other = model()
+      const report = applySectionPatchReport(other, [
+        { op: 'set', path: 'fields', value: [{ id: 'x', name: 'Only' }] },
+        { op: 'remove', collection: 'entities', id: 'e1' },
+        { op: 'set', path: 'brand.colors', value: { tokens: [] } },
+        { op: 'set', path: 'brand.name', value: null },
+      ])
+      expect(report.notApplied).toEqual([])
+      expect(report.applied).toBe(4)
+      expect(other.fields).toEqual([{ id: 'x', name: 'Only' }])
+      expect(other.entities).toEqual([])
+    })
+
+    it('refuses an erase flag that is not a boolean', () => {
+      expect(() => applySectionPatchReport(model(), [{ op: 'set', path: 'fields', value: null, erase: 'yes' as unknown as boolean }])).toThrow('erase must be a boolean')
+    })
   })
 })

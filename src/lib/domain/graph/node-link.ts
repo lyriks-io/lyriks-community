@@ -20,7 +20,7 @@ const CONTEXT_LABEL: Partial<Record<GraphContext, string>> = {
 	features: 'Features',
 	experience: 'Experience',
 	data: 'Infrastructure & Data',
-	rules: 'Rules & edge cases',
+	rules: 'Features · Acceptance criteria',
 	architecture: 'Infrastructure & Data',
 	coherence: 'Project health',
 	behavior: 'Features · Behavior',
@@ -69,8 +69,10 @@ export function nodeSourceHref(projectId: string, node: GraphNode): string | nul
 			// Issues have no board of their own — they surface as incoherences on the
 			// Project health page (and the Control Center's coherence panel).
 			if (node.kind === 'issue') return href(projectId, 'coherence', {});
-			const rtab = node.kind === 'scenario' ? 'edge_cases' : 'inventory';
-			return href(projectId, 'features', { tab: 'rules', rtab, node: raw });
+			// Rules have no tab of their own: a Given / When / Then criterion opens on its feature
+			// in the tree (the page finds it from `case`), anything else on the tree.
+			if (node.kind === 'scenario') return href(projectId, 'features', { tab: 'tree', case: raw, node: raw });
+			return href(projectId, 'features', { tab: 'tree' });
 		}
 		case 'experience': {
 			if (node.kind === 'screen') return href(projectId, 'experience', { tab: 'screens', screen: raw });

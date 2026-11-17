@@ -1,4 +1,3 @@
-import { getServices } from '$composition/container.server';
 import { mcpEndpointFor, mcpRegistrationCommands } from '$domain/foundation';
 import type { PageServerLoad } from './$types';
 
@@ -11,8 +10,8 @@ import type { PageServerLoad } from './$types';
  * user ticks. Access is gated by the project layout. The page also says how to
  * connect an agent that has no Lyriks MCP yet.
  */
-export const load: PageServerLoad = async ({ params, url }) => {
-	const draft = await getServices().loadFoundationDraft.loadIdentity(params.projectId);
+export const load: PageServerLoad = async ({ params, url, locals }) => {
+	const draft = await locals.services.loadFoundationDraft.loadIdentity(params.projectId);
 	const mcpUrl = mcpEndpointFor(url.origin);
 	return {
 		projectId: params.projectId,

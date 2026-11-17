@@ -1,4 +1,6 @@
-import type { CoherenceIssue, CoherenceResult, CoherenceTone } from '$domain/shared';
+import type { CoherenceIssue, CoherenceResult } from '$domain/shared';
+import { NBSP, type SpecLanguage } from '$domain/language';
+import { sectionTone } from '$domain/coherence/section-tone';
 import { stepsOfJourney, type ProjectExperienceDraft } from './draft';
 
 /**
@@ -15,13 +17,11 @@ import { stepsOfJourney, type ProjectExperienceDraft } from './draft';
  * Score clamped to [0, 100], same convention as Steps 01-04.
  */
 
-function toneFor(score: number): { tone: CoherenceTone; label: string } {
-	if (score < 34) return { tone: 'critical', label: 'Critical' };
-	if (score < 67) return { tone: 'at-risk', label: 'At risk' };
-	return { tone: 'strong', label: 'Strong' };
-}
-
-export function computeExperienceCoherence(draft: ProjectExperienceDraft): CoherenceResult {
+export function computeExperienceCoherence(
+	draft: ProjectExperienceDraft,
+	lang: SpecLanguage = 'en'
+): CoherenceResult {
+	const fr = lang === 'fr';
 	const issues: CoherenceIssue[] = [];
 	let score = 0;
 
@@ -30,7 +30,7 @@ export function computeExperienceCoherence(draft: ProjectExperienceDraft): Coher
 
 	// 1. At least one journey — 20 pts.
 	if (journeys.length === 0) {
-		issues.push({ code: 'no-journey', message: 'No Journey authored yet.' });
+		issues.push({ code: 'no-journey', message: fr ? "Aucun parcours n'est encore rédigé." : 'No Journey authored yet.' });
 	} else {
 		score += 20;
 	}
@@ -42,7 +42,9 @@ export function computeExperienceCoherence(draft: ProjectExperienceDraft): Coher
 		if (withStep < journeys.length) {
 			issues.push({
 				code: 'journey-without-step',
-				message: `${journeys.length - withStep} Journey(s) with no Step.`
+				message: fr
+					? `${journeys.length - withStep} parcours sans étape.`
+					: `${journeys.length - withStep} Journey(s) with no Step.`
 			});
 		}
 	}
@@ -57,9 +59,13 @@ export function computeExperienceCoherence(draft: ProjectExperienceDraft): Coher
 			// Name the cores — the count alone is unfixable without hunting them down.
 			issues.push({
 				code: 'core-without-journey',
-				message: `${uncovered.length} Core(s) have no Journey yet: ${uncovered
-					.map((c) => c.name || c.id)
-					.join(', ')}.`
+				message: fr
+					? `${uncovered.length} domaine(s) (Core) sans parcours${NBSP}: ${uncovered
+							.map((c) => c.name || c.id)
+							.join(', ')}.`
+					: `${uncovered.length} Core(s) have no Journey yet: ${uncovered
+							.map((c) => c.name || c.id)
+							.join(', ')}.`
 			});
 		}
 	}
@@ -71,7 +77,9 @@ export function computeExperienceCoherence(draft: ProjectExperienceDraft): Coher
 		if (linked < steps.length) {
 			issues.push({
 				code: 'step-without-screen',
-				message: `${steps.length - linked} Step(s) without a linked Screen.`
+				message: fr
+					? `${steps.length - linked} étape(s) sans écran lié.`
+					: `${steps.length - linked} Step(s) without a linked Screen.`
 			});
 		}
 	}
@@ -85,12 +93,14 @@ export function computeExperienceCoherence(draft: ProjectExperienceDraft): Coher
 		if (withUnderlay < steps.length) {
 			issues.push({
 				code: 'step-without-underlay',
-				message: `${steps.length - withUnderlay} Step(s) with no events flow or data consumed.`
+				message: fr
+					? `${steps.length - withUnderlay} étape(s) sans flux d'événements ni donnée consommée.`
+					: `${steps.length - withUnderlay} Step(s) with no events flow or data consumed.`
 			});
 		}
 	}
 
 	const clamped = Math.max(0, Math.min(100, Math.round(score)));
-	const { tone, label } = toneFor(clamped);
+	const { tone, label } = sectionTone(clamped, lang);
 	return { score: clamped, tone, label, issues };
 }

@@ -5,7 +5,15 @@ interface Grant {
   subject: string
   clientId: string
   expiresAt: number
+  /**
+   * "skills": the playbook installer's sign-in, which reads playbooks only (skills-ticket.ts).
+   * "session-wait": the waiting command of a live session, which only waits in it (session-ticket.ts).
+   */
+  scope?: TokenScope
+  /** The one live session a "session-wait" grant may wait in. */
+  sessionId?: string
 }
+export type TokenScope = 'skills' | 'session-wait'
 const grants = new Map<string, Grant>()
 const MAX_GRANTS = 1000
 export const ACCESS_TOKEN_TTL_SECONDS = 3600
@@ -18,11 +26,21 @@ const REFRESH_PREFIX = 'lyriks_mcp_refresh_'
 const digest = (token: string) => createHash('sha256').update(token).digest('hex')
 
 /** Opaque credentials only resolve here; they cannot authenticate a browser or Back request. */
-export function issueAccessToken(session: string, subject: string, clientId: string): string | null {
+export function issueAccessToken(
+  session: string,
+  subject: string,
+  clientId: string,
+  opts: { scope?: TokenScope; ttlSeconds?: number; sessionId?: string } = {},
+): string | null {
   for (const [key, grant] of grants) if (grant.expiresAt <= Date.now()) grants.delete(key)
   if (grants.size >= MAX_GRANTS) return null
   const token = `lyriks_mcp_${randomBytes(32).toString('base64url')}`
-  grants.set(digest(token), { session, subject, clientId, expiresAt: Date.now() + ACCESS_TOKEN_TTL_SECONDS * 1000 })
+  const expiresAt = Date.now() + (opts.ttlSeconds ?? ACCESS_TOKEN_TTL_SECONDS) * 1000
+  grants.set(digest(token), {
+    session, subject, clientId, expiresAt,
+    ...(opts.scope ? { scope: opts.scope } : {}),
+    ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
+  })
   return token
 }
 

@@ -43,7 +43,7 @@ import {
 	HEADER_SURFACE_ID,
 	type BuilderElementNode
 } from '$domain/experience';
-import { parseExperienceBuilder } from '$application/parse-experience-builder';
+import { parseExperienceBuilder } from '$application/specification/parse-experience-builder';
 
 /** Build a Login screen: root → Header(heading) + Form row(input + wired button), plus a Home screen. */
 function buildLoginScreen() {

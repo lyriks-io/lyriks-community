@@ -39,3 +39,17 @@ export function unresolvedRequestReason(ref: string, lookup: RequestLookup<{ rea
 		return `"${ref}" starts ${lookup.candidates.length} requests: ${lookup.candidates.join(', ')}. Give more of the id.`;
 	return `Request "${ref}" does not exist on this project.`;
 }
+
+/** What the key of a request starts with, the way a tracker prefixes its tickets. */
+export const REQUEST_KEY_PREFIX = 'EVO';
+
+/**
+ * The key a person quotes a request by, like a ticket number: the prefix and
+ * the request's place in the order the requests were opened, on three digits.
+ * Requests are only ever appended and a deleted one keeps its place, so a key
+ * never moves; it is read from the full list, deleted requests included.
+ */
+export function requestKeyOf(requests: readonly { readonly id: string }[], id: string): string | null {
+	const at = requests.findIndex((r) => r.id === id);
+	return at < 0 ? null : `${REQUEST_KEY_PREFIX}-${String(at + 1).padStart(3, '0')}`;
+}

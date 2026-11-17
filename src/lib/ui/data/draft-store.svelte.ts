@@ -15,11 +15,15 @@ import {
 	type FieldType,
 	type Host,
 	type Interface,
-	type ProjectDataDraft
+	type OnDelete,
+	type ProjectDataDraft,
+	onDeleteRefusal
 } from '$domain/data';
 import type { CoherenceResult } from '$domain/shared';
 import type { Session, ToastNotifierPort } from '$application/ports';
 import { SectionAutosave, type SaveStatus } from '$ui/shell/section-autosave.svelte';
+import { specLanguageAccessor } from '$ui/language/spec-language-context';
+import type { FieldKey } from './board/data-map';
 
 export type { SaveStatus };
 
@@ -32,7 +36,9 @@ export type { SaveStatus };
 export class DataStore {
 	draft = $state<ProjectDataDraft>(null as unknown as ProjectDataDraft);
 
-	coherence = $derived.by<CoherenceResult>(() => computeDataCoherence(this.draft));
+	/** The spec's language, from the project it is opened in: its checks read in it. */
+	readonly #lang = specLanguageAccessor();
+	coherence = $derived.by<CoherenceResult>(() => computeDataCoherence(this.draft, this.#lang()));
 	canAdvance = $derived.by<boolean>(() => dataCanAdvance(this.draft));
 	missing = $derived.by<string[]>(() => missingDataRequirements(this.draft));
 
@@ -262,13 +268,67 @@ export class DataStore {
 		const f = this.draft.fields.find((f) => f.id === fieldId);
 		if (!f) return;
 		(f as unknown as Record<string, unknown>)[field as string] = value;
+		// A link made required can no longer be emptied by a deletion (rule 4db09c0c).
+		if (f.onDelete && onDeleteRefusal(f, f.onDelete)) delete f.onDelete;
 		this.#touch('data.fields');
 	};
 	setFieldType = (fieldId: string, type: FieldType) => {
 		const f = this.draft.fields.find((f) => f.id === fieldId);
 		if (!f) return;
 		f.type = type;
-		if (type !== 'relation') f.relationTargetEntityId = null;
+		if (type !== 'relation') {
+			f.relationTargetEntityId = null;
+			delete f.onDelete;
+		}
+		this.#touch('data.fields');
+	};
+	/**
+	 * Say what deleting the record a relation points at does to the record
+	 * holding it (feat-data-model, "Say what deleting the target does"); null
+	 * takes it back to not stated. Answers the refusal, or null once said.
+	 */
+	setOnDelete = (fieldId: string, value: OnDelete | null): string | null => {
+		const f = this.draft.fields.find((f) => f.id === fieldId);
+		if (!f || f.type !== 'relation') return 'Only a relation says what a deletion does.';
+		if (value) {
+			const refusal = onDeleteRefusal(f, value);
+			if (refusal) return refusal;
+			f.onDelete = value;
+		} else delete f.onDelete;
+		this.#touch('data.fields');
+		return null;
+	};
+	/**
+	 * Say what a field is to its table (feature feat-data-model, "Say what a
+	 * field is"). The four keys are exclusive, the way the diagram badges them:
+	 * a primary key is never a pointer, and a pointer always names its target,
+	 * the first other table when none is given, refused when there is none.
+	 */
+	setFieldKey = (fieldId: string, key: FieldKey, targetEntityId: string | null = null) => {
+		const f = this.draft.fields.find((f) => f.id === fieldId);
+		if (!f) return;
+		if (key === 'foreign') {
+			const target =
+				targetEntityId ??
+				f.relationTargetEntityId ??
+				this.draft.entities.find((e) => e.id !== f.entityId)?.id ??
+				null;
+			if (!target || !this.draft.entities.some((e) => e.id === target)) {
+				this.notifier.notify('warn', 'A pointer needs a table to point at.');
+				return;
+			}
+			f.isId = false;
+			f.isUnique = false;
+			f.type = 'relation';
+			f.relationTargetEntityId = target;
+		} else {
+			f.isId = key === 'primary';
+			f.isUnique = key === 'unique';
+			if (f.type === 'relation') {
+				f.type = key === 'primary' ? 'uuid' : 'string';
+				f.relationTargetEntityId = null;
+			}
+		}
 		this.#touch('data.fields');
 	};
 	addNestedField = (parentFieldId: string): string | null => {

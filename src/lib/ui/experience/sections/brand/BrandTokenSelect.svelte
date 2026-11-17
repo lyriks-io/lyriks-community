@@ -19,7 +19,7 @@
 	const active = $derived(options.find((o) => o.value === value));
 </script>
 
-<label class="block text-[10px] font-medium text-ink-500">
+<label class="block text-[0.625rem] font-medium text-ink-500">
 	<span class="mb-0.5 block uppercase tracking-widest text-ink-400">{label}</span>
 	<span class="flex items-center gap-1.5">
 		{#if swatchKey && active?.swatch}
@@ -28,7 +28,7 @@
 		<select
 			value={value}
 			onchange={(e) => onChange(e.currentTarget.value)}
-			class="w-full rounded-field border border-line bg-surface-sunken px-2 py-1.5 text-xs text-ink-700 transition-colors hover:border-line-strong focus:border-brand-400"
+			class="w-full rounded-field border border-line bg-surface px-2 py-1.5 text-xs text-ink-700 transition-colors hover:border-line-strong focus:border-brand-400"
 		>
 			{#each options as opt (opt.value)}
 				<option value={opt.value}>{opt.label}</option>

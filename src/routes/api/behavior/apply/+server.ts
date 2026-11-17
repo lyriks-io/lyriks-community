@@ -1,11 +1,15 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import {
 	featureIdCollisionMessage,
 	featureIdCollisions,
 	requireBehaviorFeatureAccess
 } from '$lib/server/behavior-feature-access.server';
 import { isIsoInstant } from '$domain/shared/iso-instant';
+import { isDraftLeafId } from '$domain/evolution';
+import { applyBatchToDraft } from '$lib/server/draft-behavior-batch.server';
+import { requireEvolutionAccess } from '$lib/server/community-locks.server';
+import { saveRetrospecActs } from '$application/retrospec/retrospec-store';
+import { retrospecActor } from '$lib/server/retrospec-status.server';
 import type { RequestHandler } from './$types';
 
 /**
@@ -71,13 +75,18 @@ export const POST: RequestHandler = async (event) => {
 		? (body.operations as Record<string, unknown>[])
 		: [];
 
+	// A draft an Evolution request carries takes the same batch, kept on the draft.
+	if (isDraftLeafId(featureId)) {
+		requireEvolutionAccess(event.locals.services);
+		return applyBatchToDraft(event, { projectId, draftId: featureId, operations, dryRun, commit });
+	}
 	await requireBehaviorFeatureAccess(event, projectId, featureId, 'write');
 
 	// This id addresses a record another project also claims, so the engine would
 	// write into whichever copy it indexed. Refused in the shape a rejected batch
 	// already has: the leaf drawer reads `batch.errors[0]` and shows it verbatim,
 	// where an HTTP error would reach the same drawer as "The change was rejected."
-	const clashes = await featureIdCollisions(projectId, featureId);
+	const clashes = await featureIdCollisions(event.locals.services, projectId, featureId);
 	if (clashes.length > 0) {
 		const message = featureIdCollisionMessage(projectId, featureId, clashes);
 		return json({
@@ -96,7 +105,7 @@ export const POST: RequestHandler = async (event) => {
 		});
 	}
 
-	const services = getServices();
+	const services = event.locals.services;
 	const { available, batch, warnings } = await services.authorBehavior.execute({
 		projectId,
 		featureId,
@@ -127,6 +136,21 @@ export const POST: RequestHandler = async (event) => {
 	// this is the only path that authors them. Mirror to the back like a section
 	// save does (durable outbox, fire-and-forget), or the engine never sees depth.
 	if (!dryRun && batch?.ok) void services.scheduleBackSync(projectId).catch(() => {});
+	// New states may be the ones that hold data fields: Lyriks links the certain
+	// ones and regenerates the data rules, in the background like a data save.
+	if (!dryRun && batch?.ok) {
+		void services.syncDataRules.execute(projectId).catch((err) => console.warn('[data rules] sync failed:', err));
+		// The Rules tab then reads the feature's rule verdicts at once: the engine
+		// keeps the proof by content, so proving it now is proving it once.
+		void services.proveFeatureRules.warm(projectId, featureId).catch((err) => console.warn('[rule proofs] warm failed:', err));
+		// The behaviour engine checks what was just written now, not at the next read (ac-leaf-ac-score-engine-reaches-all).
+		services.behaviorAdvisories.touch?.(projectId);
+		// The feature now does something: a retrospecification under way counts
+		// it in its progress (recorded once, the first time).
+		void retrospecActor(services, event.cookies)
+			.then((actor) => saveRetrospecActs(services.sectionDocuments, projectId, [{ op: 'behavior_authored', featureId }], { actor, now: new Date().toISOString() }, null))
+			.catch((err) => console.warn('[retrospec] behaviour not recorded:', err));
+	}
 
 	return json({
 		available,

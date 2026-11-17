@@ -5,7 +5,8 @@ import { GET } from '../../routes/api/projects/elaboration/+server';
 const mocks = vi.hoisted(() => ({ access: vi.fn(), exists: vi.fn(), execute: vi.fn() }));
 vi.mock('$lib/server/project-access.server', () => ({ requireProjectAccess: mocks.access }));
 vi.mock('$composition/container.server', () => ({ getServices: () => ({ projectExists: mocks.exists, readProjectElaboration: { execute: mocks.execute } }) }));
-const event = (query: string) => ({ url: new URL('http://localhost/api/projects/elaboration?' + query) }) as Parameters<typeof GET>[0];
+import { getServices } from '$composition/container.server';
+const event = (query: string) => ({ locals: { services: getServices() }, url: new URL('http://localhost/api/projects/elaboration?' + query) }) as Parameters<typeof GET>[0];
 
 describe('elaboration read boundary', () => {
 	beforeEach(() => {

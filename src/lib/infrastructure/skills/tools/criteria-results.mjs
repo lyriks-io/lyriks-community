@@ -6,7 +6,6 @@
 // token in its title (several tokens for several criteria), or a map file
 // `{ "<criterionId>": ["<test title or full name>", ...] }` names the tests
 // whose titles cannot change. Not run directly. No dependencies, no network.
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { basename, relative, resolve } from 'node:path';
 
@@ -60,29 +59,22 @@ export function criterionResults(report, byTitle = new Map(), baseDir = process.
 	return [...tally.values()].map(({ files, ...rest }) => ({ ...rest, files: [...files].sort() }));
 }
 
-/** The commit the tests ran against, when the index lives in a git checkout. */
-export function currentRevision(dir) {
-	try {
-		return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }).trim() || null;
-	} catch {
-		return null;
-	}
-}
-
 /**
  * Writes one criterion's `verification.lastResult` in place and says what it
  * did. An entry the index lacks is created from the run itself (the test files
  * ARE where a criterion is checked); an existing one keeps its kind, command,
  * files and artifacts, and gets the new result.
  */
-export function applyCriterion(index, result, { at, kind, revision, reportFile }) {
+export function applyCriterion(index, result, { at, kind, revision, dirty = false, reportFile }) {
 	const key = `criterion:${result.criterionId}`;
 	const entry = index[key] && typeof index[key] === 'object' && !Array.isArray(index[key]) ? index[key] : null;
 	const lastResult = {
 		passed: result.passed === result.total,
 		at,
 		summary: `${result.passed}/${result.total} tests passed (${basename(reportFile)})`,
-		...(revision ? { revision } : {})
+		...(revision ? { revision } : {}),
+		// Taken on uncommitted code: no commit holds what was tested (ac-evo-branch-proof-commit).
+		...(dirty ? { dirty: true } : {})
 	};
 	const verification = entry?.verification && typeof entry.verification === 'object' ? entry.verification : {};
 	index[key] = {

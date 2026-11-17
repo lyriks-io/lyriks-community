@@ -131,3 +131,16 @@ export function timeline(request: EvolutionRequest): HistoryEntry[] {
 export function entriesWithoutAuthor(request: EvolutionRequest): number {
 	return request.history.filter((e) => e.authorId.trim() === '').length;
 }
+
+/**
+ * Gives the entries appended after `from` back to the kind of author who
+ * actually acted. An act the platform carries on its own, lent a person's
+ * standing to pass a guard, must not rewrite who did it: the history exists to
+ * say whether a person or an assistant moved the request.
+ */
+export function attributeTo(request: EvolutionRequest, from: number, kind: HistoryEntry['authorKind']): EvolutionRequest {
+	return {
+		...request,
+		history: request.history.map((entry, i) => (i >= from ? { ...entry, authorKind: kind } : entry))
+	};
+}

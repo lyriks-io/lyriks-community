@@ -1,5 +1,4 @@
 import { error, type RequestEvent } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from './project-access.server';
 import { canUseSharedEditor } from './shared-editor-access.server';
 
@@ -21,7 +20,7 @@ export async function authorizeSocket(event: RequestEvent, requested: string): P
 	const projectId = url.searchParams.get('project') ?? '';
 	if (!room || !ID.test(projectId)) error(400, 'invalid project room');
 	await requireProjectAccess(event, projectId, 'write');
-	const features = await getServices().loadFeaturesDraft.execute(projectId);
+	const features = await event.locals.services.loadFeaturesDraft.execute(projectId);
 	if (!features.features.some(feature => feature.id === room[1])) error(404, 'Feature not found');
 	// The stock relay has a global room namespace. Project-qualified keys prevent
 	// identical feature ids in distinct projects from sharing a document.

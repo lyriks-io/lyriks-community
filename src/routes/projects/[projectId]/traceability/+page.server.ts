@@ -1,10 +1,9 @@
-import { getServices } from '$composition/container.server';
 import {
 	summarizeBehavior,
 	EMPTY_BEHAVIOR_TOTALS,
 	type BehaviorOverview
-} from '$application/summarize-behavior';
-import { buildTraceability } from '$application/build-traceability';
+} from '$application/specification/summarize-behavior';
+import { buildTraceability } from '$application/analysis/build-traceability';
 import { coherenceScoreOf } from '$domain/coherence/incoherence';
 import { leafFeatures } from '$domain/features';
 import { projectSyncKey, sectionSyncKey } from '$lib/shared/section-sync';
@@ -26,7 +25,7 @@ const EMPTY_OVERVIEW: BehaviorOverview = {
  * overview, while Baselines/Approvals carry their own editable residue drafts.
  * Fail-soft on the behavior read so the matrix still renders from the draft alone.
  */
-export const load: PageServerLoad = async ({ params, depends }) => {
+export const load: PageServerLoad = async ({ params, depends, locals }) => {
 	// Live-sync: re-run when these sections change. The behavior overview and
 	// coherence analysis are cross-section, hence the project-wide key.
 	depends(projectSyncKey(params.projectId));
@@ -35,7 +34,7 @@ export const load: PageServerLoad = async ({ params, depends }) => {
 	depends(sectionSyncKey(params.projectId, 'baselines'));
 	depends(sectionSyncKey(params.projectId, 'approvals'));
 	depends(sectionSyncKey(params.projectId, 'documents'));
-	const services = getServices();
+	const services = locals.services;
 	const behaviorPort = services.behaviorPort;
 
 	const overview = await (async (): Promise<BehaviorOverview> => {

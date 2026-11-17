@@ -1,4 +1,4 @@
-import { coherenceScoreOf, penaltyOf } from './incoherence';
+import { coherenceScoreOf, effectivePenalties } from './incoherence';
 import type { Gap } from './draft';
 
 /**
@@ -53,8 +53,10 @@ export function coherenceHeadline(gaps: readonly Gap[]): CoherenceHeadline {
 	const score = coherenceScoreOf(gaps);
 	const blocking = gaps.filter((g) => g.blocking).length;
 	const highSeverity = gaps.filter((g) => g.severity === 'high').length;
+	const penalties = effectivePenalties(gaps);
 	const weighsMost = gaps
-		.map((g) => ({ id: g.id, title: g.title, costs: Math.round(penaltyOf(g) * 10) / 10 }))
+		.map((g, i) => ({ id: g.id, title: g.title, costs: Math.round(penalties[i] * 10) / 10 }))
+		.filter((g) => g.costs > 0)
 		.sort((a, b) => b.costs - a.costs || a.id.localeCompare(b.id))
 		.slice(0, 5);
 	return {

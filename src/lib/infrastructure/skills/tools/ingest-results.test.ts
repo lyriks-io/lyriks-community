@@ -304,3 +304,66 @@ describe('ingest-results.mjs (acceptance criteria get their lastResult)', () => 
 		expect(readFileSync(join(dir, '.unspa.json'), 'utf8')).toBe(before);
 	});
 });
+
+// A result names the commit of code it ran on (feat-evo-code-branch): the last
+// commit touching code, the index and the JSON report left out, and whether the
+// tree held uncommitted code when the tests ran.
+describe('ingest-results.mjs ties every result to the commit of code it ran on [criterion:ac-leaf-ac-evo-branch-proof-commit]', () => {
+	const git = (cwd: string, args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t.test', ...args], { cwd, encoding: 'utf8' }).trim();
+	type Stamped = Entry & { verifiedRevision?: string; verifiedDirty?: boolean; verification?: { lastResult?: { revision?: string; dirty?: boolean } } };
+	const stampedOf = (dir: string, key: string) => readIndex(dir)[key] as Stamped;
+
+	function gitRepo() {
+		const dir = repo({ 'action:act-boost': located });
+		mkdirSync(join(dir, 'src'));
+		writeFileSync(join(dir, 'src/boost.ts'), 'export function applyBoost() {}\n');
+		git(dir, ['init', '-q', '-b', 'evo/EVO-1-boost']);
+		git(dir, ['add', '-A']);
+		git(dir, ['commit', '-qm', 'code']);
+		const code = git(dir, ['rev-parse', 'HEAD']);
+		// A later commit that only records proofs is no commit of code.
+		writeFileSync(join(dir, '.unspa.json'), readFileSync(join(dir, '.unspa.json'), 'utf8').replace('"index"', '"index" '));
+		git(dir, ['commit', '-qam', 'proof']);
+		return { dir, code };
+	}
+
+	it('writes the last commit of code on the criterion and on the action it stamps', () => {
+		const { dir, code } = gitRepo();
+		const file = reportFile(dir, [['[unspa:surf:act-boost:sc-1] [criterion:c-1] boosts', 'passed']], 'test-report.json');
+		expect(run(dir, [file]).status).toBe(0);
+		expect(stampedOf(dir, 'action:act-boost')).toMatchObject({ verifiedRevision: code });
+		expect(stampedOf(dir, 'action:act-boost').verifiedDirty).toBeUndefined();
+		expect(stampedOf(dir, 'criterion:c-1').verification?.lastResult).toMatchObject({ revision: code });
+		expect(stampedOf(dir, 'criterion:c-1').verification?.lastResult?.dirty).toBeUndefined();
+	});
+
+	it('marks a result taken on uncommitted code, and a clean run later takes the mark away', () => {
+		const { dir, code } = gitRepo();
+		writeFileSync(join(dir, 'src/boost.ts'), 'export function applyBoost() { return 1; }\n');
+		const file = reportFile(dir, [['[unspa:surf:act-boost:sc-1] [criterion:c-1] boosts', 'passed']], 'test-report.json');
+		const said = run(dir, [file]).stdout;
+		expect(said).toContain('with uncommitted code');
+		expect(stampedOf(dir, 'action:act-boost')).toMatchObject({ verifiedRevision: code, verifiedDirty: true });
+		expect(stampedOf(dir, 'criterion:c-1').verification?.lastResult).toMatchObject({ revision: code, dirty: true });
+
+		git(dir, ['commit', '-qam', 'more code']);
+		const next = git(dir, ['log', '-1', '--format=%H', '--', 'src']);
+		run(dir, [file]);
+		expect(stampedOf(dir, 'action:act-boost')).toMatchObject({ verifiedRevision: next });
+		expect(stampedOf(dir, 'action:act-boost').verifiedDirty).toBeUndefined();
+		expect(stampedOf(dir, 'criterion:c-1').verification?.lastResult?.dirty).toBeUndefined();
+	});
+
+	it('takes --revision as given, clean, and names no commit outside a repository', () => {
+		const { dir } = gitRepo();
+		writeFileSync(join(dir, 'src/boost.ts'), 'dirty\n');
+		const file = reportFile(dir, [['[criterion:c-1] boosts', 'passed']], 'test-report.json');
+		run(dir, [file, '--revision', 'abc1234']);
+		expect(stampedOf(dir, 'criterion:c-1').verification?.lastResult).toEqual(expect.objectContaining({ revision: 'abc1234' }));
+		expect(stampedOf(dir, 'criterion:c-1').verification?.lastResult?.dirty).toBeUndefined();
+
+		const outside = repo({ 'action:act-boost': located });
+		run(outside, [reportFile(outside, [['[criterion:c-1] boosts', 'passed']])]);
+		expect(stampedOf(outside, 'criterion:c-1').verification?.lastResult?.revision).toBeUndefined();
+	});
+});

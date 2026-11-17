@@ -1,5 +1,4 @@
 import { error, json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireBehaviorFeatureAccess } from '$lib/server/behavior-feature-access.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { adoptionJson } from '$lib/server/adoption-endpoint.server';
@@ -35,7 +34,7 @@ export const POST: RequestHandler = async (event) => {
 		error(400, 'index must be an object keyed by "<type>:<id>"');
 	}
 	const index = body.index as BehavioralIndexPayload;
-	const adoption = getServices().codeAdoption;
+	const adoption = event.locals.services.codeAdoption;
 
 	if (body.entries === true) {
 		await requireProjectAccess(event, projectId, 'read');
@@ -53,7 +52,7 @@ export const POST: RequestHandler = async (event) => {
 		// then says which entities. Feature access is project access plus an
 		// ownership check, so the sweep needs no wider authority than one feature.
 		await requireProjectAccess(event, projectId, 'read');
-		return json(await getServices().sweepImplementationGaps.execute(projectId, index));
+		return json(await event.locals.services.sweepImplementationGaps.execute(projectId, index));
 	}
 
 	await requireBehaviorFeatureAccess(event, projectId, featureId, 'read');

@@ -1,8 +1,10 @@
 import { getContext, setContext } from 'svelte';
 import {
 	createDocumentSource,
+	passagesOf,
 	type DocumentSource,
-	type ProjectDocumentsDraft
+	type ProjectDocumentsDraft,
+	type SourcePassage
 } from '$domain/documents';
 import type { Session, ToastNotifierPort } from '$application/ports';
 import { SectionAutosave } from '$ui/shell/section-autosave.svelte';
@@ -56,8 +58,18 @@ export class DocumentRegistry {
 		return this.#session.isAuthenticated;
 	}
 
+	/** The register's page: the Sources page of the Specification 360° (criterion b0ea9889). */
 	get documentsHref(): string {
-		return `/projects/${this.draft.projectId}/documents`;
+		return `/projects/${encodeURIComponent(this.draft.projectId)}/spec/tech/sources`;
+	}
+
+	get projectId(): string {
+		return this.draft.projectId;
+	}
+
+	/** The passages an element rests on, in the stored texts of its sources (criterion f09da92d). */
+	passagesOf(element: string): SourcePassage[] {
+		return passagesOf(this.draft, element);
 	}
 
 	hydrate = (incoming: ProjectDocumentsDraft, revision = 0) =>

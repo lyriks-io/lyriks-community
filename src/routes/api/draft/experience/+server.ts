@@ -1,8 +1,7 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
-import { parseExperienceDraft } from '$application/parse-experience-draft';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { saveSectionDraft } from '$lib/server/section-save.server';
+import { EXPERIENCE_WRITE } from '$lib/server/section-write-specs.server';
 import type { RequestHandler } from './$types';
 
 /**
@@ -16,7 +15,7 @@ export const GET: RequestHandler = async (event) => {
 	const projectId = url.searchParams.get('projectId') ?? '';
 	if (!projectId) error(400, 'projectId is required');
 	await requireProjectAccess(event, projectId, 'read');
-	const services = getServices();
+	const services = event.locals.services;
 	const draft = await services.loadExperienceDraft.execute(projectId);
 	return json({ derivedCores: draft.derivedCores });
 };
@@ -28,10 +27,4 @@ export const GET: RequestHandler = async (event) => {
  * matrix via the upstream-capability provider on the next Step 03 load — no
  * extra call needed here.
  */
-export const PUT: RequestHandler = (event) =>
-	saveSectionDraft(event, {
-		section: 'experience',
-		parse: parseExperienceDraft,
-		// Save projects journeys/builder into the canonical local kernel folder.
-		persist: (draft, services) => services.saveExperienceDraft.execute(draft)
-	});
+export const PUT: RequestHandler = (event) => saveSectionDraft(event, EXPERIENCE_WRITE);

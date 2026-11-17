@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findRequestByRef, unresolvedRequestReason } from './request-ref';
+import { findRequestByRef, unresolvedRequestReason, requestKeyOf } from './request-ref';
 
 const requests = [
 	{ id: 'b8456fd3-e4ce-4d2a-9a51-000000000001' },
@@ -32,5 +32,14 @@ describe('a request is named the way the board shortens it', () => {
 		const found = findRequestByRef(requests, 'ffffffff');
 		expect(found.kind).toBe('none');
 		expect(unresolvedRequestReason('ffffffff', found)).toBe('Request "ffffffff" does not exist on this project.');
+	});
+});
+
+describe('the key a person quotes a request by', () => {
+	it('numbers the requests in the order they were opened, deleted ones keeping their place', () => {
+		const requests = [{ id: 'a' }, { id: 'b', status: 'deleted' }, { id: 'c' }];
+		expect(requestKeyOf(requests, 'a')).toBe('EVO-001');
+		expect(requestKeyOf(requests, 'c')).toBe('EVO-003');
+		expect(requestKeyOf(requests, 'z')).toBeNull();
 	});
 });

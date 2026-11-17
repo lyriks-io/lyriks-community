@@ -46,9 +46,7 @@
 			items: collections.map((c) => ({
 				id: c.id,
 				label: c.name || 'Untitled',
-				hint: `${c.fields.length} field${c.fields.length === 1 ? '' : 's'} · ${c.seedCount} seeded row${c.seedCount === 1 ? '' : 's'}`,
-				icon: 'database' as const,
-				count: c.seedCount
+				hint: `${c.fields.length} field${c.fields.length === 1 ? '' : 's'} · ${c.seedCount} seeded row${c.seedCount === 1 ? '' : 's'}`
 			}))
 		}
 	]);
@@ -66,7 +64,7 @@
 </script>
 
 {#snippet intro()}
-	<p class="text-[11px] leading-snug text-ink-400">
+	<p class="text-[0.6875rem] leading-snug text-ink-400">
 		Collections are the demo data the simulator reads and writes. Bind a
 		<span class="font-medium text-ink-600">List</span>
 		element to a collection to show its rows, and add a <span class="font-medium text-ink-600">Create record</span>
@@ -80,20 +78,20 @@
 		<button
 			type="button"
 			onclick={addCollection}
-			class="text-[11px] font-semibold text-brand-500 hover:text-brand-600"
+			class="text-[0.6875rem] font-semibold text-brand-500 hover:text-brand-600"
 		>
 			+ Collection
 		</button>
 		<!-- Import a Step-07 entity as an editable collection (import-once). -->
-		<span class="text-[10px] text-ink-300">·</span>
-		<label class="flex items-center gap-1.5 text-[10px] text-ink-400">
+		<span class="text-[0.625rem] text-ink-300">·</span>
+		<label class="flex items-center gap-1.5 text-[0.625rem] text-ink-400">
 			<Icon name="database" size={12} />
 			<select
 				bind:value={importId}
 				disabled={entities.length === 0}
-				class="rounded border border-line bg-surface px-1.5 py-0.5 text-[11px] text-ink-700 disabled:opacity-50"
+				class="rounded border border-line bg-surface px-1.5 py-0.5 text-[0.6875rem] text-ink-700 disabled:opacity-50"
 			>
-				<option value="">{entities.length ? 'Import from data model…' : 'No entities in Data & Architecture'}</option>
+				<option value="">{entities.length ? 'Import from data model…' : 'No entities in Tech & Data'}</option>
 				{#each entities as e (e.id)}
 					<option value={e.id}>{e.name || 'Untitled entity'}</option>
 				{/each}
@@ -103,18 +101,18 @@
 			<button
 				type="button"
 				onclick={importEntity}
-				class="rounded-field border border-line px-2 py-0.5 text-[11px] font-semibold text-ink-600 hover:border-brand-300 hover:text-brand-600"
+				class="rounded-field border border-line px-2 py-0.5 text-[0.6875rem] font-semibold text-ink-600 hover:border-brand-300 hover:text-brand-600"
 			>
 				Import
 			</button>
 		{/if}
 		{#if entities.length > 0}
-			<span class="text-[10px] text-ink-300">·</span>
+			<span class="text-[0.625rem] text-ink-300">·</span>
 			<button
 				type="button"
 				onclick={() => store.syncCollectionsFromModel()}
-				class="flex items-center gap-1 text-[11px] font-semibold text-brand-500 hover:text-brand-600"
-				title="Import every entity from Data & Architecture and refresh previously imported collections whose model changed. Seed counts and authored rows are kept."
+				class="flex items-center gap-1 text-[0.6875rem] font-semibold text-brand-500 hover:text-brand-600"
+				title="Import every entity from Tech & Data and refresh previously imported collections whose model changed. Seed counts and authored rows are kept."
 			>
 				<Icon name="rotate" size={11} /> Sync all
 			</button>
@@ -156,27 +154,27 @@
 							<button
 								type="button"
 								onclick={() => store.importEntityAsCollection(sourceEntity.id)}
-								class="flex shrink-0 items-center gap-1 rounded-pill bg-warning-100 px-2 py-0.5 text-[10px] font-semibold text-warning-600 hover:bg-warning-50"
+								class="flex shrink-0 items-center gap-1 rounded-pill bg-warning-100 px-2 py-0.5 text-[0.625rem] font-semibold text-warning-600 hover:bg-warning-50"
 								title={`The data model changed since this collection was imported. Re-sync name and fields from "${sourceEntity.name}"; seed count and authored rows are kept.`}
 							>
 								<Icon name="rotate" size={11} /> Re-sync
 							</button>
 						{:else if sourceEntity}
 							<span
-								class="flex shrink-0 items-center gap-1 rounded-pill bg-surface-sunken px-2 py-0.5 text-[10px] text-ink-400"
-								title={`In sync with entity "${sourceEntity.name}" in Data & Architecture.`}
+								class="flex shrink-0 items-center gap-1 rounded-pill bg-surface-sunken px-2 py-0.5 text-[0.625rem] text-ink-400"
+								title={`In sync with entity "${sourceEntity.name}" in Tech & Data.`}
 							>
 								<Icon name="link" size={11} /> Model
 							</span>
 						{:else if modelGone}
 							<span
-								class="flex shrink-0 items-center gap-1 rounded-pill bg-surface-sunken px-2 py-0.5 text-[10px] text-ink-400"
+								class="flex shrink-0 items-center gap-1 rounded-pill bg-surface-sunken px-2 py-0.5 text-[0.625rem] text-ink-400"
 								title="The entity this collection was imported from no longer exists in the data model. The collection lives on as demo-only data."
 							>
 								<Icon name="circle-alert" size={11} /> No entity
 							</span>
 						{/if}
-						<label class="flex shrink-0 items-center gap-1 text-[10px] text-ink-400">
+						<label class="flex shrink-0 items-center gap-1 text-[0.625rem] text-ink-400">
 							Seed
 							<input
 								type="number"
@@ -184,7 +182,7 @@
 								max="50"
 								value={col.seedCount}
 								oninput={(e) => store.updateCollection(col.id, 'seedCount', Number(e.currentTarget.value))}
-								class="w-12 rounded border border-line bg-surface px-1 py-0.5 text-[11px] text-ink-700 outline-none"
+								class="w-12 rounded border border-line bg-surface px-1 py-0.5 text-[0.6875rem] text-ink-700 outline-none"
 							/>
 						</label>
 						<button
@@ -203,7 +201,7 @@
 									value={f.name}
 									oninput={(e) => store.updateCollectionField(col.id, f.id, { name: e.currentTarget.value })}
 									placeholder="Field name"
-									class="min-w-0 flex-1 rounded border border-line bg-surface px-1.5 py-0.5 text-[11px] text-ink-700 outline-none"
+									class="min-w-0 flex-1 rounded border border-line bg-surface px-1.5 py-0.5 text-[0.6875rem] text-ink-700 outline-none"
 								/>
 								<select
 									value={f.kind}
@@ -211,7 +209,7 @@
 										store.updateCollectionField(col.id, f.id, {
 											kind: e.currentTarget.value as FakeFieldKind
 										})}
-									class="shrink-0 rounded border border-line bg-surface px-1 py-0.5 text-[11px] text-ink-700"
+									class="shrink-0 rounded border border-line bg-surface px-1 py-0.5 text-[0.6875rem] text-ink-700"
 								>
 									{#each FAKE_FIELD_KINDS as k (k.code)}<option value={k.code}>{k.label}</option>{/each}
 								</select>
@@ -225,16 +223,16 @@
 						<button
 							type="button"
 							onclick={() => store.addCollectionField(col.id)}
-							class="text-[10px] font-semibold text-brand-500 hover:text-brand-600">+ Field</button
+							class="text-[0.625rem] font-semibold text-brand-500 hover:text-brand-600">+ Field</button
 						>
 					</div>
 
 					<!-- preview -->
 					{#if preview.length > 0}
 						<div class="mt-2 rounded border border-line bg-surface-sunken/40 p-1.5">
-							<p class="mb-1 text-[9px] font-semibold uppercase tracking-wider text-ink-300">Sample rows</p>
+							<p class="mb-1 text-[0.5625rem] font-semibold uppercase tracking-wider text-ink-300">Sample rows</p>
 							{#each preview as row, i (i)}
-								<p class="truncate text-[10px] text-ink-500">
+								<p class="truncate text-[0.625rem] text-ink-500">
 									{col.fields.map((f) => row[fieldKey(f)]).join(' · ')}
 								</p>
 							{/each}

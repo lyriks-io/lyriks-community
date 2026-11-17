@@ -17,12 +17,15 @@
 // `criterion:<id>`, passed when every one of its tests passed, and creates that
 // entry (kind from --kind, default unit, files from the report) when it is
 // missing. The next sync then reports the criterion verified, or failing.
+// Each result names the commit of code it ran on (git-state.mjs), `dirty` when
+// the tree held uncommitted code; --revision overrides it (feat-evo-code-branch).
 // Same rules and exit codes as the engine's own `unspa coverage ingest`: 1 when
 // the report or the index cannot be read, else 0, a failing test included (this
 // records, it does not gate). No dependencies, no network, Node 18+.
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { CRITERION_KINDS, applyCriterion, criterionResults, currentRevision, readCriteriaMap } from './criteria-results.mjs';
+import { CRITERION_KINDS, applyCriterion, criterionResults, readCriteriaMap } from './criteria-results.mjs';
+import { gitState } from './git-state.mjs';
 import { findIndexFile, loadIndexFile, writeIndexFile } from './index-file.mjs';
 
 // The engine's token, as its codegen emits it (cli/scenarios/results.ts).
@@ -69,17 +72,20 @@ function summarizeByAction(results) {
 const isEntry = (entry) => Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry);
 
 /** Applies one action's verdict to the index in place and says what it did. */
-function applyVerdict(index, action, stampedAt) {
+function applyVerdict(index, action, stampedAt, { revision = null, dirty = false } = {}) {
 	const key = `action:${action.actionId}`;
 	const entry = isEntry(index[key]) ? index[key] : null;
 	if (action.verified) {
 		if (!entry) return 'unindexed';
-		index[key] = { ...entry, verifiedAt: stampedAt, verifiedScenarios: action.passed };
+		// The commit the proof was taken on replaces the one before, and so does its dirtiness.
+		const { verifiedRevision: _rev, verifiedDirty: _dirty, ...kept } = entry;
+		const proof = { ...(revision ? { verifiedRevision: revision } : {}), ...(dirty ? { verifiedDirty: true } : {}) };
+		index[key] = { ...kept, verifiedAt: stampedAt, verifiedScenarios: action.passed, ...proof };
 		return 'stamped';
 	}
 	if (entry && entry.verifiedAt !== undefined) {
 		// It was proven and a result now fails: the proof is stale, drop it.
-		const { verifiedAt: _at, verifiedScenarios: _count, ...rest } = entry;
+		const { verifiedAt: _at, verifiedScenarios: _count, verifiedRevision: _rev, verifiedDirty: _dirty, ...rest } = entry;
 		index[key] = rest;
 		return 'cleared';
 	}
@@ -110,6 +116,7 @@ function printReport(report) {
 	console.log(
 		`${report.indexFile}: ${report.tested} actions tested, ${report.verified} fully passing, ${report.tested - report.verified} with failures; ` +
 			`${report.stamped} stamped, ${report.cleared} cleared, ${report.unindexed.length} passing but not in the index` +
+			(report.revision ? `; taken on ${report.revision.slice(0, 12)}${report.dirty ? ' with uncommitted code (proves no commit: commit, then run the tests again)' : ''}` : '') +
 			(report.criteria.length > 0 ? `; ${report.criteria.length} criteria given a lastResult` : '') +
 			(report.dryRun ? ' (dry run: nothing written).' : report.written ? '.' : ' (nothing to write).')
 	);
@@ -150,23 +157,28 @@ function main() {
 	const perAction = summarizeByAction(parseScenarioResults(raw));
 	const indexPath = findIndexFile();
 	const perCriterion = criterionResults(raw, flags.criteria ? readCriteriaMap(resolve(flags.criteria)) : undefined, indexPath ? resolve(indexPath, '..') : process.cwd());
-	const report = { reportFile, indexFile: null, dryRun, written: false, stampedAt: null, tested: perAction.length, verified: 0, stamped: 0, cleared: 0, unindexed: [], actions: [], criteria: [] };
+	const report = { reportFile, indexFile: null, dryRun, written: false, stampedAt: null, revision: null, dirty: false, tested: perAction.length, verified: 0, stamped: 0, cleared: 0, unindexed: [], actions: [], criteria: [] };
 	// Like the engine, a report without tagged tests never needs the index at all.
 	if (perAction.length + perCriterion.length > 0) {
 		const loaded = loadIndexFile();
 		report.indexFile = loaded.path;
 		report.stampedAt = new Date().toISOString();
+		// The commit of code the run tested; a revision given by hand is taken as it is, clean.
+		const git = flags.revision ? null : gitState(loaded.dir);
+		const revision = flags.revision ?? git?.codeHead ?? null;
+		const dirty = !flags.revision && git?.clean === false;
+		report.revision = revision;
+		report.dirty = dirty;
 		for (const action of perAction) {
-			const outcome = applyVerdict(loaded.index, action, report.stampedAt);
+			const outcome = applyVerdict(loaded.index, action, report.stampedAt, { revision, dirty });
 			report.actions.push({ key: `action:${action.actionId}`, ...action, outcome });
 			if (action.verified) report.verified += 1;
 			if (outcome === 'stamped') report.stamped += 1;
 			if (outcome === 'cleared') report.cleared += 1;
 			if (outcome === 'unindexed') report.unindexed.push(action.actionId);
 		}
-		const revision = flags.revision ?? (perCriterion.length > 0 ? currentRevision(loaded.dir) : null);
 		for (const result of perCriterion) {
-			report.criteria.push(applyCriterion(loaded.index, result, { at: report.stampedAt, kind, revision, reportFile }));
+			report.criteria.push(applyCriterion(loaded.index, result, { at: report.stampedAt, kind, revision, dirty, reportFile }));
 		}
 		if (!dryRun && report.stamped + report.cleared + report.criteria.length > 0) {
 			writeIndexFile(loaded);

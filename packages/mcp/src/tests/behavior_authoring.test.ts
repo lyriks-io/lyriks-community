@@ -9,6 +9,12 @@ import {
   getBehaviorOperationsHandler,
   readBehaviorFeatureHandler,
   scoreBehaviorFeatureHandler,
+  simulateBehaviorHandler,
+  whatIfHandler,
+  applyProjectBehaviorBatchHandler,
+  readProjectBehaviorHandler,
+  findStateReferencesHandler,
+  generateBehaviorTypesHandler,
 } from '../tools/behavior.js'
 import { createMcpServer } from '../server.js'
 import type { LyriksClient } from '../lyriks-client.js'
@@ -312,5 +318,106 @@ describe('behavior read and maturity handlers', () => {
     ) as { matches: number; reference: string }
     expect(result.matches).toBe(1)
     expect(result.reference).toContain('add_scenario')
+  })
+})
+
+describe('simulateBehaviorHandler', () => {
+  it('POSTs the walk to the platform, camelCased, and leaves out what was not asked', async () => {
+    const { lyriks, post, body } = makeLyriks({ ok: true, persisted: false, steps: [] })
+
+    await simulateBehaviorHandler(
+      {
+        project_id: 'p1',
+        feature_id: 'draft:abc',
+        steps: [{ actionRef: 'checkout', parameters: { $channel: 'webmcp' } }],
+        operations: [{ kind: 'add_surface', ref: 'cart' }],
+        persona_id: 'buyer',
+        stop_on_blocked: true,
+      },
+      lyriks,
+    )
+    expect(post).toHaveBeenCalledWith('/api/behavior/simulate', expect.any(Object))
+    expect(body()).toEqual({
+      projectId: 'p1',
+      featureId: 'draft:abc',
+      steps: [{ actionRef: 'checkout', parameters: { $channel: 'webmcp' } }],
+      operations: [{ kind: 'add_surface', ref: 'cart' }],
+      personaId: 'buyer',
+      stopOnBlocked: true,
+    })
+
+    await simulateBehaviorHandler({ project_id: 'p1', feature_id: 'f1', steps: [{ actionId: 'a1' }], operations: [] }, lyriks)
+    expect(body()).toEqual({ projectId: 'p1', featureId: 'f1', steps: [{ actionId: 'a1' }] })
+
+    // A full simulation without steps: every scenario and a bounded model check.
+    await simulateBehaviorHandler(
+      { project_id: 'p1', feature_id: 'draft:abc', run_scenarios: true, model_check: { max_depth: 4 } },
+      lyriks,
+    )
+    expect(body()).toEqual({
+      projectId: 'p1',
+      featureId: 'draft:abc',
+      runScenarios: true,
+      modelCheck: { maxDepth: 4 },
+    })
+  })
+})
+
+describe('project-level behavior relays', () => {
+  it('posts the project batch and reads the project, references and types', async () => {
+    const post = vi.fn().mockResolvedValue({ ok: true })
+    const get = vi.fn().mockResolvedValue({ ok: true })
+    const lyriks = { post, get } as unknown as LyriksClient
+
+    await applyProjectBehaviorBatchHandler(
+      { project_id: 'p1', operations: [{ kind: 'add_project_invariant' }], dry_run: true },
+      lyriks,
+    )
+    expect(post).toHaveBeenCalledWith('/api/behavior/project', {
+      projectId: 'p1',
+      operations: [{ kind: 'add_project_invariant' }],
+      dryRun: true,
+    })
+
+    await readProjectBehaviorHandler({ project_id: 'p1' }, lyriks)
+    await findStateReferencesHandler({ project_id: 'p1', feature_id: 'f1', state_path: 'cart.items' }, lyriks)
+    await generateBehaviorTypesHandler({ project_id: 'p1', feature_id: 'f1' }, lyriks)
+    expect(get.mock.calls.map((c) => c[0])).toEqual([
+      '/api/behavior/project?projectId=p1',
+      '/api/behavior/references?projectId=p1&featureId=f1&statePath=cart.items',
+      '/api/behavior/types?projectId=p1&featureId=f1',
+    ])
+  })
+})
+
+// Criterion b64a6410: an AI client asks what a change would do before writing it.
+describe('whatIfHandler', () => {
+  it('POSTs the change to the platform, camelCased, and leaves out what was not asked', async () => {
+    const { lyriks, post, body } = makeLyriks({ ok: true, persisted: false, unchanged: true })
+    await whatIfHandler(
+      { project_id: 'p1', feature_id: 'draft:abc', operations: [{ kind: 'remove_action_rule', ruleId: 'r1' }] },
+      lyriks,
+    )
+    expect(post).toHaveBeenCalledWith('/api/behavior/what-if', expect.any(Object))
+    expect(body()).toEqual({
+      projectId: 'p1',
+      featureId: 'draft:abc',
+      operations: [{ kind: 'remove_action_rule', ruleId: 'r1' }],
+    })
+    await whatIfHandler({ project_id: 'p1', feature_id: 'draft:abc', max_steps: 4 }, lyriks)
+    expect(body()).toEqual({ projectId: 'p1', featureId: 'draft:abc', maxSteps: 4 })
+  })
+})
+
+describe('a large commit answer', () => {
+  it('carries the minted elements and the refs once, so the gateway does not cap it', async () => {
+    const created = Array.from({ length: 128 }, (_, i) => ({ op: i, kind: 'rule', id: `r${i}`, key: `rule:r${i}` }))
+    const refs = Object.fromEntries(created.map((c) => [`ref${c.op}`, c.id]))
+    const raw = { ok: true, refs, created, appliedCount: 128, updatedAt: '2026-10-27T14:00:00.000Z' }
+    const { lyriks } = makeLyriks({ available: true, batch: { ok: true, refs, raw } })
+    const res = await applyBehaviorBatchHandler({ project_id: 'p', feature_id: 'f', commit: 'tok' }, lyriks) as { batch: Record<string, unknown> & { raw: Record<string, unknown> } }
+    expect(res.batch.created).toEqual(created)
+    expect(res.batch.refs).toEqual(refs)
+    expect(res.batch.raw).toEqual({ ok: true, appliedCount: 128, updatedAt: '2026-10-27T14:00:00.000Z' })
   })
 })

@@ -1,5 +1,4 @@
 import { json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { callerWorkspaceScope } from '$lib/server/workspace-scope.server';
 import { callerAllowedDomains } from '$lib/server/domain-scope.server';
 import type { RequestHandler } from './$types';
@@ -11,7 +10,7 @@ export const GET: RequestHandler = async (event) => {
 	const q = event.url.searchParams.get('q') ?? '';
 	const scope = await callerWorkspaceScope(event);
 	const allowedDomains = await callerAllowedDomains(event);
-	const results = await getServices().searchPortfolio.execute(
+	const results = await event.locals.services.searchPortfolio.execute(
 		q,
 		scope,
 		allowedDomains,

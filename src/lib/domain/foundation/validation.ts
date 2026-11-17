@@ -7,7 +7,8 @@
 /** Max-length caps (chars), verbatim from the spec. */
 export const LIMITS = {
 	productName: 80,
-	brief: 2000,
+	/** The product summary, the project's description: read whole on the Overview (criterion 72251131). */
+	brief: 500,
 	briefMin: 40,
 	mainProblem: 600,
 	expectedOutcome: 600,
@@ -51,6 +52,17 @@ export function validateBrief(value: string): Validation {
 		return { message: 'Tell us more: at least one full sentence (40+ chars).' };
 	if (value.length > LIMITS.brief) return tooLong(LIMITS.brief);
 	return null;
+}
+
+/**
+ * Why a save of the product summary is refused, or null when it fits
+ * (criterion 72251131): only a summary the save changes is held to the
+ * limit, so one written longer before blocks no other save.
+ */
+export function summaryRefusal(next: string, before: string): string | null {
+	const length = next.trim().length;
+	if (next === before || length <= LIMITS.brief) return null;
+	return `The product summary holds ${LIMITS.brief} characters at most; this one has ${length}. Shorten it to what the product is, for whom and why.`;
 }
 
 export function isFiniteNumber(value: unknown): value is number {

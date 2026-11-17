@@ -1,5 +1,4 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { isLicenseValid } from '$domain/licensing';
 import { requireAdmin } from '$lib/server/admin.server';
 import type { Actions, PageServerLoad } from './$types';
@@ -7,7 +6,7 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ locals }) => {
 	// `locals.license` is populated by the activation gate when enforcement is on;
 	// otherwise resolve on demand so operators can pre-activate a build too.
-	const services = getServices();
+	const services = locals.services;
 	const view = locals.license ?? (await services.loadActivation.execute());
 	return {
 		license: view,
@@ -36,7 +35,7 @@ export const actions: Actions = {
 		requireAdmin(event);
 		const form = await event.request.formData();
 		const key = String(form.get('key') ?? '');
-		const result = await getServices().previewLicense.execute(key);
+		const result = await event.locals.services.previewLicense.execute(key);
 		if (!result.ok) return fail(400, { reason: result.reason, status: result.view.status });
 		return { preview: result.view, key };
 	},
@@ -44,7 +43,7 @@ export const actions: Actions = {
 	/** Step back to the key this install ran on before the current one. */
 	restorePrevious: async (event) => {
 		requireAdmin(event);
-		const services = getServices();
+		const services = event.locals.services;
 		const actor = event.locals.session?.email ?? 'operator';
 		const result = await services.restorePreviousLicense.execute(actor);
 		if (!result.ok) return fail(400, { restoreReason: result.reason });
@@ -58,7 +57,7 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const key = String(form.get('key') ?? '');
 		const actor = locals.session?.email ?? 'operator';
-		const services = getServices();
+		const services = event.locals.services;
 		const result = await services.activateLicense.execute(key, actor);
 		if (!result.ok) return fail(400, { reason: result.reason, status: result.view.status });
 		// A fresh licence is the install's best identity default (operator name
@@ -75,7 +74,7 @@ export const actions: Actions = {
 		requireAdmin(event);
 		const { locals } = event;
 		const actor = locals.session?.email ?? 'operator';
-		await getServices().deactivateLicense.execute(actor);
+		await event.locals.services.deactivateLicense.execute(actor);
 		return { deactivated: true };
 	}
 };

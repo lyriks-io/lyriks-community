@@ -19,10 +19,8 @@ export function toneLabel(tone: Tone): string {
  * A 0-100 behavior-maturity score read as one of five SPEC MATURITY stages.
  * The stages speak only about how deeply the spec is authored (what the
  * engine actually measures); whether any of it reached code is the
- * implementation coverage's story, never this ladder's. Presentational only:
- * hand-set overrides and the skills' "stop at TRL x" grammar still store and
- * speak the legacy 1-9 rungs, and every stage maps to them losslessly
- * (stage = ceil(rung / 2)), so nothing persisted changes meaning.
+ * implementation coverage's story, never this ladder's. A stage set by hand is
+ * stored as the stage itself (1-5).
  */
 export interface MaturityStage {
 	level: number;
@@ -33,9 +31,9 @@ export interface MaturityStage {
 
 export const MATURITY_STAGES: readonly MaturityStage[] = [
 	{ level: 1, label: 'Idea', means: 'named, behavior not modeled yet' },
-	{ level: 2, label: 'Outlined', means: 'screens and actions are posed' },
+	{ level: 2, label: 'Outlined', means: 'surfaces and actions are posed' },
 	{ level: 3, label: 'Specified', means: 'rules, states and data are written' },
-	{ level: 4, label: 'Simulated', means: 'scenarios run in the simulator' },
+	{ level: 4, label: 'Simulated', means: 'behavior scenarios run on the model' },
 	{ level: 5, label: 'Complete', means: 'full depth: invariants, edge cases, goals' }
 ];
 
@@ -44,27 +42,18 @@ export const MATURITY_STAGE_COUNT = MATURITY_STAGES.length;
 const clampStage = (level: number): number =>
 	Math.max(1, Math.min(MATURITY_STAGE_COUNT, Math.round(level)));
 
-/** The legacy 1-9 projection of a 0-100 score; the STORED form of hand-set
- *  overrides and the target-TRL skill grammar. Internal: presentation reads
- *  it through the stage helpers. */
-function trlFromScore(score: number): number {
-	return Math.max(1, Math.min(9, Math.round((score / 100) * 9)));
-}
-
-/** A 0-100 maturity score as a stage (1-MATURITY_STAGE_COUNT). */
+/** A 0-100 maturity score as a stage (1-MATURITY_STAGE_COUNT): Idea below
+ *  about 27.8, Outlined below 50, Specified below about 72.3, Simulated below
+ *  about 94.5, Complete from there. The score is cut in nine equal steps and
+ *  each stage spans two of them, the last one alone. */
 export function stageFromScore(score: number): number {
-	return stageFromTrl(trlFromScore(score));
+	const step = Math.max(1, Math.min(9, Math.round((score / 100) * 9)));
+	return Math.ceil(step / 2);
 }
 
-/** Read a stored 1-9 readiness value (hand-set override) as a stage. */
-export function stageFromTrl(trl: number): number {
-	return Math.ceil(Math.max(1, Math.min(9, Math.round(trl))) / 2);
-}
-
-/** The 1-9 value to STORE for a stage picked by hand (its representative
- *  rung: 1, 3, 5, 7, 9), keeping persisted overrides on the legacy scale. */
-export function trlOfStage(level: number): number {
-	return clampStage(level) * 2 - 1;
+/** A stage set by hand, clamped to the five stages. */
+export function clampStageLevel(level: number): number {
+	return clampStage(level);
 }
 
 /** The stage's short name (clamps out-of-range input). */

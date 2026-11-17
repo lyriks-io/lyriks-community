@@ -42,7 +42,7 @@
 		aria-modal="true"
 		aria-label={req.title}
 		tabindex="-1"
-		class="fixed inset-0 z-50 grid place-items-center bg-ink-900/40 p-4"
+		class="fixed inset-0 z-50 grid place-items-center bg-ink/45 p-4"
 		onclick={(e) => {
 			if (e.target === e.currentTarget) cancel();
 		}}
@@ -52,11 +52,11 @@
 		}}
 	>
 		<div
-			class="w-full max-w-sm rounded-card border border-line bg-surface p-4 shadow-pop outline-none"
+			class="w-full max-w-sm rounded-card border-2 border-ink-900 bg-white p-4 shadow-pop outline-none"
 		>
-			<p class="text-sm font-semibold text-ink-900">{req.title}</p>
+			<p class="text-[0.9375rem] font-bold tracking-[-0.01em] text-ink">{req.title}</p>
 			{#if req.message}
-				<p class="mt-1 text-xs leading-snug text-ink-500">{req.message}</p>
+				<p class="mt-1 text-xs leading-snug text-ink-2">{req.message}</p>
 			{/if}
 			{#if req.kind === 'confirm' && req.requireText}
 				<p class="mt-3 text-xs text-ink-500">
@@ -72,7 +72,7 @@
 					onkeydown={(e) => {
 						if (e.key === 'Enter') confirm();
 					}}
-					class="mt-3 w-full rounded-field border border-line bg-surface px-3 py-2 text-sm text-ink-900 outline-none placeholder:text-ink-400 focus:border-brand-400"
+					class="mt-3 w-full border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue"
 				/>
 			{/if}
 			<div class="mt-4 flex justify-end gap-2">

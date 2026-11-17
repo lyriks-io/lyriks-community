@@ -89,6 +89,15 @@ const spliceUpgrade = (req, socket, head, target, upstreamPath) => {
 };
 
 const server = createServer(handler);
+// A reverse proxy in front (Caddy keeps idle upstream connections for 2 min,
+// nginx for 60 s) reuses a connection Node already closed when Node's own idle
+// timeout (5 s by default) is the shorter one: the proxy then answers 502 EOF,
+// and it never retries a POST, so a save fails at random. Node keeps its idle
+// connections longer than any proxy in front of it, and its headers timeout
+// stays above that, as Node requires. KEEP_ALIVE_TIMEOUT (seconds) overrides.
+const keepAliveSeconds = Number(process.env.KEEP_ALIVE_TIMEOUT) || 130;
+server.keepAliveTimeout = keepAliveSeconds * 1000;
+server.headersTimeout = (keepAliveSeconds + 5) * 1000;
 
 server.on('upgrade', (req, socket, head) => {
 	const route = upgradeRoutes.find((r) => req.url?.startsWith(r.prefix));

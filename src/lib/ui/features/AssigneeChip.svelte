@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { Icon } from '$ui/design-system';
-	import type { Collaborator } from '$domain/team/team';
+	import { Icon, clickedWithin, floatInView } from '$ui/design-system';
+	import type { Collaborator } from '$domain/team';
 	import { colorTokens, initials } from '$ui/team/team-style';
 
 	interface Props {
@@ -16,8 +16,9 @@
 
 	let open = $state(false);
 	let root = $state<HTMLElement>();
+	let panel = $state<HTMLElement>();
 	function onWindow(e: MouseEvent) {
-		if (open && root && !root.contains(e.target as Node)) open = false;
+		if (open && !clickedWithin(e.target, root, panel)) open = false;
 	}
 	function pick(id: string | null) {
 		onPick(id);
@@ -37,13 +38,13 @@
 		aria-label={current ? `Assigned to ${current.name || current.email}` : 'Assign to a member'}
 		title={current ? current.name || current.email : 'Unassigned (click to assign)'}
 		class={compact
-			? 'grid size-6 place-items-center rounded-full text-[9px] font-bold text-white'
-			: 'inline-flex h-6 items-center gap-1.5 rounded-full border border-line pl-0.5 pr-2 text-[11px] font-medium text-ink-700 transition hover:border-line-strong'}
+			? 'grid size-6 place-items-center text-[0.5625rem] font-bold text-white'
+			: 'inline-flex h-6 items-center gap-1.5 border border-line pl-0.5 pr-2 text-[0.6875rem] font-medium text-ink-700 transition hover:border-line-strong'}
 		style={compact && current ? `background:${colorTokens(current.color).solid}` : ''}
 	>
 		{#if current}
 			<span
-				class="grid size-5 shrink-0 place-items-center rounded-full text-[9px] font-bold text-white"
+				class="grid size-5 shrink-0 place-items-center text-[0.5625rem] font-bold text-white"
 				style="background:{colorTokens(current.color).solid}"
 			>
 				{initials(current.name || current.email)}
@@ -51,12 +52,12 @@
 			{#if !compact}<span class="max-w-24 truncate">{current.name || current.email}</span>{/if}
 		{:else if compact}
 			<span
-				class="grid size-6 place-items-center rounded-full border border-dashed border-line text-ink-300 hover:text-brand-500"
+				class="grid size-6 place-items-center border border-dashed border-line text-ink-300 hover:text-brand-500"
 			>
 				<Icon name="plus" size={11} />
 			</span>
 		{:else}
-			<span class="grid size-5 place-items-center rounded-full border border-dashed border-line text-ink-300">
+			<span class="grid size-5 place-items-center border border-dashed border-line text-ink-300">
 				<Icon name="plus" size={11} />
 			</span>
 			<span class="text-ink-400">Assign</span>
@@ -64,12 +65,12 @@
 	</button>
 
 	{#if open}
-		<div
-			class="absolute right-0 top-full z-50 mt-1 min-w-48 rounded-lg border border-line bg-surface py-1 shadow-xl"
+		<div bind:this={panel} use:floatInView={{ anchor: root, align: 'right' }}
+			class="min-w-48 rounded-lg border border-line bg-surface py-1 shadow-xl"
 			role="menu"
 		>
 			{#if collaborators.length === 0}
-				<p class="px-3 py-1.5 text-[11px] text-ink-400">
+				<p class="px-3 py-1.5 text-[0.6875rem] text-ink-400">
 					No team member yet. Invite one from the Team panel.
 				</p>
 			{:else}
@@ -86,7 +87,7 @@
 							: 'text-ink-700'}"
 					>
 						<span
-							class="grid size-5 shrink-0 place-items-center rounded-full text-[8px] font-bold text-white"
+							class="grid size-5 shrink-0 place-items-center text-[0.5rem] font-bold text-white"
 							style="background:{colorTokens(member.color).solid}"
 						>
 							{initials(member.name || member.email)}

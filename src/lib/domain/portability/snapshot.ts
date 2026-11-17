@@ -64,10 +64,21 @@ export interface KernelFeature {
 	readonly feature: Record<string, unknown>;
 }
 
+/** Evidence next to the models: source documents and per-feature audit records. */
+export interface KernelArtifact {
+	readonly kind: 'source' | 'provenance' | 'implementation';
+	/** Source id for a document, feature id for a per-feature record. */
+	readonly id: string;
+	/** Complete JSON envelope, including its format and version. */
+	readonly document: Readonly<Record<string, unknown>>;
+}
+
 /** The `data/unspa/<projectId>/` folder: the manifest plus every feature shell. */
 export interface ProjectKernelSnapshot {
 	readonly project: Record<string, unknown> | null;
 	readonly features: readonly KernelFeature[];
+	/** Absent on bundles written before evidence was included. */
+	readonly artifacts?: readonly KernelArtifact[];
 }
 
 /** A project, whole. */

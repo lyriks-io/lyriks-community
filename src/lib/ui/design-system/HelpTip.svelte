@@ -99,9 +99,9 @@
 		aria-expanded={open}
 		aria-haspopup="dialog"
 		title={`Help: ${title}`}
-		class="grid size-9 shrink-0 place-items-center rounded-full bg-surface text-base font-bold text-brand-600 shadow-sm ring-1 transition-colors {open
-			? 'bg-brand-50 ring-brand-300'
-			: 'ring-line hover:bg-brand-50 hover:ring-brand-200'} {klass}"
+		class="grid size-9 shrink-0 place-items-center border-[1.5px] font-evo-mono text-base font-bold transition-colors {open
+			? 'border-ink bg-ink text-paper'
+			: 'border-line bg-transparent text-ink hover:border-ink'} {klass}"
 	>
 		?
 	</button>
@@ -113,9 +113,9 @@
 		aria-label={label ?? `Help: ${title}`}
 		aria-expanded={open}
 		aria-haspopup="dialog"
-		class="grid size-5 shrink-0 place-items-center rounded-full border text-[11px] font-bold leading-none transition-colors {open
-			? 'border-brand-400 bg-brand-500 text-white'
-			: 'border-brand-200 bg-brand-50 text-brand-600 hover:border-brand-400 hover:bg-brand-100'} {klass}"
+		class="grid size-5 shrink-0 place-items-center border-[1.5px] font-evo-mono text-[0.6875rem] font-bold leading-none transition-colors {open
+			? 'border-ink bg-ink text-paper'
+			: 'border-ink-3 bg-transparent text-ink hover:border-ink'} {klass}"
 	>
 		?
 	</button>
@@ -127,33 +127,33 @@
 		use:portal
 		role="dialog"
 		aria-label={title}
-		class="fixed z-[130] rounded-card border border-line bg-surface p-4 text-left shadow-card"
+		class="fixed z-[130] border-[1.5px] border-ink bg-paper p-4 text-left shadow-pop"
 		style="left:{x}px; top:{y}px; width:{WIDTH}px; {placeAbove ? 'transform: translateY(-100%);' : ''}"
 	>
 		<div class="mb-1.5 flex items-start gap-2">
-			<span class="grid size-6 shrink-0 place-items-center rounded-lg bg-brand-500/12 text-brand-600">
+			<span class="grid size-6 shrink-0 place-items-center bg-blue-tint text-blue-ink">
 				<Icon name="info" size={13} />
 			</span>
-			<h3 class="flex-1 pt-0.5 text-sm font-bold text-ink-900">{title}</h3>
+			<h3 class="flex-1 pt-0.5 text-sm font-bold tracking-[-0.01em] text-ink">{title}</h3>
 			<button
 				type="button"
 				onclick={() => (open = false)}
 				aria-label="Close help"
-				class="shrink-0 rounded p-0.5 text-ink-400 hover:bg-surface-sunken hover:text-ink-700"
+				class="shrink-0 p-0.5 text-ink-3 hover:bg-surface-sunken hover:text-ink"
 			>
 				<Icon name="x" size={14} />
 			</button>
 		</div>
 
-		<p class="text-[12.5px] leading-relaxed text-ink-600">{what}</p>
+		<p class="text-[0.78125rem] leading-relaxed text-ink-2">{what}</p>
 
 		{#if how.length > 0}
-			<p class="mt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">How to use it</p>
+			<p class="mt-3 font-evo-mono text-[0.6875rem] tracking-[0.08em] text-ink-3 uppercase">How to use it</p>
 			<ul class="mt-1 space-y-1">
 				{#each how as step, i (i)}
-					<li class="flex gap-2 text-[12px] leading-snug text-ink-700">
+					<li class="flex gap-2 text-[0.75rem] leading-snug text-ink-2">
 						<span
-							class="mt-[3px] grid size-3.5 shrink-0 place-items-center rounded-full bg-surface-sunken text-[8px] font-bold text-ink-500"
+							class="mt-[3px] grid size-3.5 shrink-0 place-items-center bg-ink font-evo-mono text-[0.5rem] font-bold text-paper"
 						>
 							{i + 1}
 						</span>
@@ -164,10 +164,10 @@
 		{/if}
 
 		{#if value}
-			<div class="mt-3 flex gap-2 rounded-field border border-brand-200 bg-brand-50/50 p-2.5">
-				<Icon name="sparkles" size={13} class="mt-0.5 shrink-0 text-brand-500" />
-				<p class="text-[11.5px] leading-snug text-ink-600">
-					<span class="font-semibold text-ink-800">Why it matters:</span>
+			<div class="mt-3 flex gap-2 border-l-[6px] border-blue bg-blue-tint p-2.5">
+				<Icon name="sparkles" size={13} class="mt-0.5 shrink-0 text-blue-ink" />
+				<p class="text-[0.71875rem] leading-snug text-ink-2">
+					<span class="font-semibold text-ink">Why it matters:</span>
 					{value}
 				</p>
 			</div>

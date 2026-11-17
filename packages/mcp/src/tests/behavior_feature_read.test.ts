@@ -43,8 +43,12 @@ function makeFeature(surfaces: number, actions: number) {
   }
 }
 
+/** The feature read, and an implementation status with nothing reported yet. */
 function makeLyriks(feature: unknown) {
-  const get = vi.fn().mockResolvedValue({ snapshot: { format: 'unspaghettit', version: 1, feature } })
+  const get = vi.fn().mockImplementation(async (url: string) =>
+    url.startsWith('/api/behavior/implementation/status')
+      ? { available: true, ok: true, status: null }
+      : { snapshot: { format: 'unspaghettit', version: 1, feature } })
   return { lyriks: { get } as unknown as LyriksClient, get }
 }
 
@@ -53,6 +57,24 @@ type Toc = {
   acceptanceCriteria: unknown[]; actionsOmitted?: { surfaceIds: string[]; reason: string }
   surfaces: Array<{ id: string; name: string; stateCount: number; ruleCount: number; invariants: unknown[]; actions?: Array<Record<string, unknown>>; actionCount?: number }>
 }
+
+describe('get_behavior_feature with no selector', () => {
+  it('answers the table of contents when the complete snapshot is over the cap', async () => {
+    const { lyriks } = makeLyriks(makeFeature(7, 31))
+    const toc = await readBehaviorFeatureHandler({ project_id: 'p', feature_id: 'feat-checkout' }, lyriks) as Toc & { fullReadChars: number; next: string }
+    expect(toc.fullReadChars).toBeGreaterThan(RESULT_CAP)
+    expect(toc.surfaces).toHaveLength(7)
+    expect(toc.next).toMatch(/surface_id or action_id/)
+    expect(JSON.stringify(toc).length).toBeLessThanOrEqual(RESULT_CAP)
+  })
+
+  it('still answers a feature that fits in one answer whole', async () => {
+    const feature = makeFeature(1, 1)
+    const { lyriks } = makeLyriks(feature)
+    const read = await readBehaviorFeatureHandler({ project_id: 'p', feature_id: 'feat-checkout' }, lyriks)
+    expect(read).toEqual({ snapshot: { format: 'unspaghettit', version: 1, feature } })
+  })
+})
 
 describe('get_behavior_feature summary:true', () => {
   it('returns a table of contents: ids, names and counts, small enough to read', async () => {
@@ -107,7 +129,7 @@ describe('get_behavior_feature surface_id / action_id', () => {
     const feature = makeFeature(7, 31)
     const { lyriks } = makeLyriks(feature)
     const result = await readBehaviorFeatureHandler({ project_id: 'p', feature_id: 'feat-checkout', surface_id: hex(0x5003) }, lyriks)
-    expect(result).toEqual({ found: true, featureId: 'feat-checkout', surfaceId: hex(0x5003), surfaceName: 'Surface 3', surface: feature.surfaces[3] })
+    expect(result).toEqual({ found: true, featureId: 'feat-checkout', surfaceId: hex(0x5003), surfaceName: 'Surface 3', surface: feature.surfaces[3], code: expect.objectContaining({ linked: false }) })
   })
 
   it('finds an action in whichever surface holds it', async () => {
@@ -115,7 +137,7 @@ describe('get_behavior_feature surface_id / action_id', () => {
     const { lyriks } = makeLyriks(feature)
     const wanted = feature.surfaces[4].actions[1]
     const result = await readBehaviorFeatureHandler({ project_id: 'p', feature_id: 'feat-checkout', action_id: wanted.id as string }, lyriks)
-    expect(result).toEqual({ found: true, featureId: 'feat-checkout', surfaceId: hex(0x5004), surfaceName: 'Surface 4', action: wanted })
+    expect(result).toEqual({ found: true, featureId: 'feat-checkout', surfaceId: hex(0x5004), surfaceName: 'Surface 4', action: wanted, code: expect.objectContaining({ linked: false }) })
   })
 
   it('answers an unknown id with the ids and names that exist', async () => {
@@ -238,5 +260,34 @@ describe('get_behavior_feature index_keys:true', () => {
     expect(tool.description).toContain('state:<dotted.path>')
     expect(tool.description).toContain('event:<name>')
     expect(CAP_HINTS.get_behavior_feature.args).toEqual(expect.arrayContaining(['index_keys', 'limit', 'offset']))
+  })
+})
+
+describe('get_behavior_feature: requirement sentences of the element read', () => {
+  it('carries the EARS and Given/When/Then sentences of the action read, and only those', async () => {
+    const feature = {
+      id: 'feat-w', name: 'Wallet', surfaces: [{
+        id: 's1', name: 'Wallet', rules: [{ id: 'sr1' }], invariants: [{ id: 'si1' }],
+        actions: [
+          { id: 'a1', name: 'Withdraw', rules: [{ id: 'r1' }], invariants: [], scenarios: [{ id: 'sc1' }] },
+          { id: 'a2', name: 'Top up', rules: [{ id: 'r2' }], invariants: [], scenarios: [] },
+        ],
+      }],
+    }
+    const statements = {
+      'rule:r1': 'While the wallet status is "frozen", when the user asks to withdraw, the system shall refuse to withdraw.',
+      'scenario:sc1': 'Given the starting state\nWhen the user asks to withdraw\nThen it is refused',
+      'rule:r2': 'When the user asks to top up, the system shall allow it to top up.',
+      'rule:sr1': 'When the user asks to act on the Wallet screen, the system shall allow it to act there.',
+      'invariant:si1': 'The system shall always ensure that the wallet balance is at least 0.',
+    }
+    const get = vi.fn().mockResolvedValue({ snapshot: { format: 'unspaghettit', version: 1, feature }, statements })
+    const lyriks = { get } as unknown as LyriksClient
+
+    const action = await readBehaviorFeatureHandler({ project_id: 'p', feature_id: 'feat-w', action_id: 'a1' }, lyriks) as Record<string, unknown>
+    expect(action.statements).toEqual({ 'rule:r1': statements['rule:r1'], 'scenario:sc1': statements['scenario:sc1'] })
+
+    const surface = await readBehaviorFeatureHandler({ project_id: 'p', feature_id: 'feat-w', surface_id: 's1' }, lyriks) as Record<string, unknown>
+    expect(Object.keys(surface.statements as object).sort()).toEqual(['invariant:si1', 'rule:r1', 'rule:r2', 'rule:sr1', 'scenario:sc1'])
   })
 })

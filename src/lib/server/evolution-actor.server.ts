@@ -23,15 +23,21 @@ export async function resolveEvolutionActor(
 	event: Pick<RequestEvent, 'request' | 'cookies'>,
 	opts: { readonly asPerson?: boolean } = {}
 ): Promise<Actor> {
-	const session = services.currentSession();
-	// With auth off (a local install, a dev setup) the session has no email: the
-	// one operator of the box is the person, under a name the history can read.
-	const personId = session.email ?? 'local-operator';
+	const personId = currentPersonId(services);
 	const role = await resolveRole(services, event.cookies.get('lyriks_active_ws'));
 	const isClient = callerKind(event.request) === 'ai_client';
 	if (!isClient) return { id: personId, kind: 'person', role, channel: 'page' };
 	if (opts.asPerson) return { id: personId, kind: 'person', role, channel: 'ai_client' };
 	return { id: personId, kind: 'ai_client', role, channel: 'ai_client' };
+}
+
+/**
+ * The signed-in person. With auth off (a local install, a dev setup) the
+ * session has no email: the one operator of the box is the person, under a
+ * name the history can read.
+ */
+export function currentPersonId(services: Pick<AppServices, 'currentSession'>): string {
+	return services.currentSession().email ?? 'local-operator';
 }
 
 /**

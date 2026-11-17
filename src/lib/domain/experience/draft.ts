@@ -26,6 +26,8 @@ export interface Journey {
 	order: number;
 	/** Step-03 Role ids that perform this journey. */
 	actorRoleIds: string[];
+	/** The sources it was read from: the routes, views and handlers it walks (ac-journey-sources). */
+	sourceIds?: string[];
 }
 
 /**

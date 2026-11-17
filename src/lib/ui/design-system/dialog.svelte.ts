@@ -70,6 +70,8 @@ export function promptDialog(opts: {
 	title: string;
 	message?: string;
 	confirmLabel?: string;
+	/** When the act itself is a cancellation, "Cancel" would name both buttons. */
+	cancelLabel?: string;
 	initial?: string;
 	placeholder?: string;
 }): Promise<string | null> {
@@ -81,7 +83,7 @@ export function promptDialog(opts: {
 				title: opts.title,
 				message: opts.message,
 				confirmLabel: opts.confirmLabel ?? 'Save',
-				cancelLabel: 'Cancel',
+				cancelLabel: opts.cancelLabel ?? 'Cancel',
 				danger: false,
 				initial: opts.initial ?? '',
 				placeholder: opts.placeholder ?? '',

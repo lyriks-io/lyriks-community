@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
 	import Select from './Select.svelte';
+	import { fieldBase, fieldBorder, fieldHeight, fieldSideButton } from './field';
 
 	interface SelectOption {
 		code: string;
@@ -48,12 +49,12 @@
 			value={known ? '' : value}
 			{placeholder}
 			oninput={(e) => onchange?.(e.currentTarget.value)}
-			class="h-12 w-full min-w-0 flex-1 rounded-field border border-line bg-surface-sunken px-3.5 py-2.5 text-sm text-ink-900 outline-none transition-colors hover:border-line-strong focus:border-brand-400"
+			class="{fieldBase} {fieldHeight} {fieldBorder} min-w-0 flex-1 px-3.5 py-2.5"
 		/>
 		<button
 			type="button"
 			onclick={backToList}
-			class="grid size-12 shrink-0 place-items-center rounded-field border border-line bg-surface-sunken text-ink-400 transition hover:border-line-strong hover:text-ink-700"
+			class={fieldSideButton}
 			aria-label="Back to the built-in list"
 			title="Back to the built-in list"
 		>

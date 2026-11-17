@@ -25,6 +25,7 @@
 			'<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01"/><path d="M7 16.5h.01"/>',
 		table:
 			'<rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M3 10h18"/><path d="M9.5 10v9.5"/>',
+		chart: '<path d="M4 20h16"/><path d="M7 16v-5"/><path d="M12 16V7"/><path d="M17 16v-8"/>',
 		gauge:
 			'<path d="M3.5 18a9 9 0 1117 0"/><path d="M12 18l4-5"/><circle cx="12" cy="18" r="1.3" fill="currentColor" stroke="none"/>',
 		cpu: '<rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/>',
@@ -34,7 +35,12 @@
 		bell: '<path d="M6 9a6 6 0 1112 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 20a2 2 0 004 0"/>',
 		grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
 		flag: '<path d="M5 21V4"/><path d="M5 4h11l-2 3 2 3H5"/>',
+		'skip-forward': '<path d="M5 4l10 8-10 8V4z"/><path d="M19 5v14"/>',
+		code: '<path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/>',
+		trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/>',
+		timer: '<path d="M10 2h4"/><path d="M12 14l3-3"/><circle cx="12" cy="14" r="8"/>',
 		'chevron-right': '<path d="M9 6l6 6-6 6"/>',
+		'corner-down-right': '<path d="M15 10l5 5-5 5"/><path d="M4 4v7a4 4 0 004 4h12"/>',
 		'chevron-left': '<path d="M15 6l-6 6 6 6"/>',
 		'chevron-down': '<path d="M6 9l6 6 6-6"/>',
 		'chevron-up': '<path d="M6 15l6-6 6 6"/>',
@@ -47,13 +53,17 @@
 		'panel-left-close':
 			'<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 4v16"/><path d="M17 12h-5"/><path d="M14 9l-3 3 3 3"/>',
 		pin: '<path d="M12 17v5"/><path d="M8 3h8l-1 7 3 3v2H6v-2l3-3z"/>',
+		'pin-off': '<path d="M12 17v5"/><path d="M8 3h8l-1 7 3 3v2H6v-2l3-3z"/><path d="M3 3l18 18"/>',
 		'arrow-right': '<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>',
 		'arrow-left': '<path d="M19 12H5"/><path d="M11 6l-6 6 6 6"/>',
 		'arrow-up-right': '<path d="M7 17L17 7"/><path d="M8 7h9v9"/>',
 		filter: '<path d="M3 5h18l-7 8v6l-4 2v-8z"/>',
 		check: '<path d="M5 12.5l4 4 10-10"/>',
+		'git-branch': '<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 01-9 9"/>',
 		copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>',
 		list: '<path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/>',
+		// A drawing of the section, offered beside its list (ac-evo-sol-diagram-alone).
+		workflow: '<rect x="3" y="3" width="8" height="8" rx="2"/><path d="M7 11v4a2 2 0 002 2h4"/><rect x="13" y="13" width="8" height="8" rx="2"/>',
 		pencil:
 			'<path d="M4 20h4L18.5 9.5a2 2 0 000-2.8l-1.2-1.2a2 2 0 00-2.8 0L4 16z"/><path d="M13.5 6.5l4 4"/>',
 		x: '<path d="M6 6l12 12M18 6L6 18"/>',
@@ -61,6 +71,8 @@
 		minus: '<path d="M5 12h14"/>',
 		maximize:
 			'<path d="M4 9V5a1 1 0 011-1h4"/><path d="M15 4h4a1 1 0 011 1v4"/><path d="M20 15v4a1 1 0 01-1 1h-4"/><path d="M9 20H5a1 1 0 01-1-1v-4"/>',
+		expand:
+			'<path d="M14 4h6v6"/><path d="M20 4l-7 7"/><path d="M10 20H4v-6"/><path d="M4 20l7-7"/>',
 		rotate: '<path d="M3 12a9 9 0 109-9 9 9 0 00-6.3 2.6L3 8"/><path d="M3 4v4h4"/>',
 		info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.5h.01"/>',
 		lightbulb:
@@ -83,6 +95,9 @@
 		'alert-triangle':
 			'<path d="M12 4L3 19.2A1.4 1.4 0 004.2 21.3h15.6A1.4 1.4 0 0021 19.2z"/><path d="M12 10v4"/><path d="M12 17.5h.01"/>',
 		circle: '<circle cx="12" cy="12" r="8.5"/>',
+		'circle-dashed':
+			'<path d="M10.1 2.18a9.9 9.9 0 0 1 3.8 0"/><path d="M17.6 3.71a9.9 9.9 0 0 1 2.69 2.7"/><path d="M21.82 10.1a9.9 9.9 0 0 1 0 3.8"/><path d="M20.29 17.6a9.9 9.9 0 0 1-2.7 2.69"/><path d="M13.9 21.82a9.9 9.9 0 0 1-3.8 0"/><path d="M6.4 20.29a9.9 9.9 0 0 1-2.69-2.7"/><path d="M2.18 13.9a9.9 9.9 0 0 1 0-3.8"/><path d="M3.71 6.4a9.9 9.9 0 0 1 2.7-2.69"/>',
+		history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
 		lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/>',
 		key: '<circle cx="8" cy="15" r="3.8"/><path d="M10.8 12.2L20 3"/><path d="M16.5 6.5l2.5 2.5"/><path d="M14.3 8.7l2.2 2.2"/>',
 		bolt: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
@@ -105,7 +120,10 @@
 		frown: '<circle cx="12" cy="12" r="9"/><path d="M15.5 15.5a4.5 4.5 0 00-7 0"/><path d="M9 9.5h.01"/><path d="M15 9.5h.01"/>',
 		send: '<path d="M21 3L10.5 13.5"/><path d="M21 3l-6.8 18-3.7-7.5L3 9.8z"/>',
 		megaphone: '<path d="M3 11l18-6v13L3 13z"/><path d="M11.6 16.8a3 3 0 11-5.8-1.6"/>',
-		'log-out': '<path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>'
+		'log-out': '<path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>',
+		undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/>',
+		'thumbs-up':
+			'<path d="M7 10v12"/><path d="M15 5.88L14 10h5.83a2 2 0 011.92 2.56l-2.33 8A2 2 0 0117.5 22H4a2 2 0 01-2-2v-8a2 2 0 012-2h2.76a2 2 0 001.79-1.11L12 2a3.13 3.13 0 013 3.88z"/>'
 	} as const;
 
 	export type IconName = keyof typeof ICONS;

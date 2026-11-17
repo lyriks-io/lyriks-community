@@ -11,6 +11,8 @@ export interface TechChoice {
 	/** Id of the Documents & Sources row documenting this choice (its official docs). */
 	referenceDocId: string | null;
 	description: string;
+	/** The code repository holding this choice; the board groups by it. Empty = not tied yet. */
+	repository?: string;
 }
 
 /**
@@ -58,6 +60,12 @@ export interface ProjectArchitectureDraft {
 	referenceDocs: ReferenceDoc[];
 	constraints: Constraint[];
 	derivedTech: DerivedTech[];
+	/**
+	 * Upstream technologies (`derivedKey`) the author removed from the board. The
+	 * upstream stack is taken in on its own, so this is what keeps a deliberate
+	 * removal from coming back on the next open.
+	 */
+	dismissedDerived?: string[];
 	lastSavedAt: string | null;
 }
 
@@ -70,6 +78,7 @@ export function createEmptyArchitectureDraft(projectId: string): ProjectArchitec
 		referenceDocs: [],
 		constraints: [],
 		derivedTech: [],
+		dismissedDerived: [],
 		lastSavedAt: null
 	};
 }
@@ -87,6 +96,7 @@ export function createTechChoice(layer: ArchLayer, overrides: Partial<TechChoice
 		version: '',
 		referenceDocId: null,
 		description: '',
+		repository: '',
 		...overrides
 	};
 }
@@ -143,6 +153,32 @@ export function withStableArchitectureIds(
 
 export function techOfLayer(draft: ProjectArchitectureDraft, layer: ArchLayer): TechChoice[] {
 	return draft.techChoices.filter((t) => t.layer === layer);
+}
+
+/** Identity of a technology across the board and the upstream stack. */
+export function derivedKey(layer: ArchLayer, name: string): string {
+	return `${layer}:${name.trim().toLowerCase()}`;
+}
+
+export interface RepositoryGroup {
+	/** Trimmed repository name; '' for the choices not tied to one yet. */
+	repository: string;
+	techChoices: TechChoice[];
+}
+
+/**
+ * The stack read by repository: one group per repository in alphabetical
+ * order, the choices tied to none last, each group keeping the board order.
+ */
+export function techByRepository(draft: ProjectArchitectureDraft): RepositoryGroup[] {
+	const groups = new Map<string, TechChoice[]>();
+	for (const tech of draft.techChoices) {
+		const repository = tech.repository?.trim() ?? '';
+		groups.set(repository, [...(groups.get(repository) ?? []), tech]);
+	}
+	return [...groups.entries()]
+		.sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)))
+		.map(([repository, techChoices]) => ({ repository, techChoices }));
 }
 
 export function layersWithTech(draft: ProjectArchitectureDraft): Set<ArchLayer> {

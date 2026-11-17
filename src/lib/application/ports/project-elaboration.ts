@@ -2,7 +2,7 @@ import type { ProjectFoundationDraft } from '$domain/foundation';
 import type { ProjectFeaturesDraft } from '$domain/features';
 import type { ProjectScopeDraft, ProjectCompletionReport } from '$domain/scope';
 import type { ProjectUsersDraft } from '$domain/users';
-import type { BehaviorOverview } from '../summarize-behavior';
+import type { BehaviorOverview } from '../specification/summarize-behavior';
 
 interface Reader<T> { execute(projectId: string): Promise<T> }
 

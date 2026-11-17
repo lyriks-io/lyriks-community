@@ -10,13 +10,6 @@ export function assessProjectCompletenessHandler(
   return lyriks.get(path(args.project_id))
 }
 
-export function assessPortfolioCompletenessHandler(
-  _args: unknown,
-  lyriks: LyriksClient,
-): Promise<unknown> {
-  return lyriks.get('/api/projects/completion')
-}
-
 export function auditProjectScopeHandler(
   args: { project_id: string },
   lyriks: LyriksClient,

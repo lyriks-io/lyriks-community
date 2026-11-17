@@ -24,16 +24,16 @@ describe('the address of a place on a request page', () => {
 
 	it('carries the place as a query parameter, which survives the way through sign-in', () => {
 		const path = requestPagePath('lyriks-feb747', 'req-1', { kind: 'proposal', id: 'p-1' });
-		expect(path.startsWith('/projects/lyriks-feb747/features?')).toBe(true);
+		expect(path.startsWith('/projects/lyriks-feb747/evolution?')).toBe(true);
 		expect(path).not.toContain('#');
 		const query = new URL(path, 'http://x').searchParams;
-		expect(query.get('tab')).toBe('evolution');
+		expect(query.get('tab')).toBeNull();
 		expect(query.get('request')).toBe('req-1');
 		expect(parsePlace(query.get(PLACE_PARAM))).toEqual({ kind: 'proposal', id: 'p-1' });
 	});
 
 	it('opens the request itself when no place is named', () => {
-		expect(requestPagePath('p', 'r')).toBe('/projects/p/features?tab=evolution&request=r');
+		expect(requestPagePath('p', 'r')).toBe('/projects/p/evolution?request=r');
 	});
 
 	it('gives the page and the address the same element id', () => {

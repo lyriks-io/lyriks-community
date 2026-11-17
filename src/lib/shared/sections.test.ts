@@ -21,14 +21,29 @@ describe('the authorable section vocabulary', () => {
 		.filter((entry) => entry.isDirectory() && existsSync(join('src/routes/api/draft', entry.name, '+server.ts')))
 		.map((entry) => entry.name);
 
+	// Evolution is read like a section and written only through its typed
+	// operations (POST /api/evolution, apply_evolution_batch): no raw PUT exists
+	// that could walk past the lifecycle guards.
+	const raw = SECTIONS.filter((section) => section !== 'evolution');
+
 	it('exposes every section that has a write endpoint', () => {
-		expect([...SECTIONS].sort()).toEqual(draftRoutes.sort());
+		expect([...raw].sort()).toEqual(draftRoutes.sort());
+		expect(existsSync('src/routes/api/draft/evolution/+server.ts')).toBe(false);
+		expect(existsSync('src/routes/api/evolution/+server.ts')).toBe(true);
 	});
 
 	it('reads revisions from the same channel as each public save endpoint', () => {
-		for (const section of SECTIONS) {
+		// A route may take its write spec from the shared registry, the one a request's landing writes through too.
+		const registry = readFileSync('src/lib/server/section-write-specs.server.ts', 'utf8');
+		const specOf = (route: string) => {
+			const name = /saveSectionDraft\(event, ([A-Z_]+)\)/.exec(route)?.[1];
+			if (!name) return route;
+			const start = registry.indexOf(`export const ${name} = {`);
+			return registry.slice(start, registry.indexOf('} satisfies', start));
+		};
+		for (const section of raw) {
 			const route = readFileSync(join('src/routes/api/draft', section, '+server.ts'), 'utf8');
-			const atomic = /atomic:\s*true/.test(route);
+			const atomic = /atomic:\s*true/.test(specOf(route));
 			expect(SECTION_REVISION_STORAGE[section], section).toBe(atomic ? 'document' : 'legacy');
 		}
 	});

@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { extractLicenseKey } from '$domain/licensing';
+	import { page } from '$app/state';
+	import { extractLicenseKey, PRICING_URL } from '$domain/licensing';
+	import { switchTarget } from '$domain/tier';
 	import { Icon, Logo } from '$ui/design-system';
 	import LicenseCard from '$ui/licensing/LicenseCard.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -38,7 +40,10 @@
 	// screen was "remove the stored key". So the safe moment to discover that a
 	// renewal is wrong was after destroying the thing it replaces. The form is
 	// now reachable while active, and what it submits first is a dry run.
-	let replacing = $state(false);
+	// Switch to <plan> in the Plans dialog lands here naming the plan: the page
+	// says where a key for it comes from, and opens the key form at once.
+	const asked = switchTarget(page.url.searchParams.get('plan'));
+	let replacing = $state(asked !== null);
 	let previewed = $derived(form && 'preview' in form ? form.preview : null);
 	let previewedKey = $derived(form && 'key' in form ? String(form.key) : '');
 	let isCommunity = $derived(data.installEdition === 'community');
@@ -100,6 +105,17 @@
 		</div>
 	</div>
 
+	{#if asked}
+		<section data-testid="switch-plan" class="mb-4 border-l-[6px] border-blue bg-blue-tint p-4 text-sm text-ink">
+			<p class="font-semibold">Switch to {asked.name}</p>
+			<p class="mt-1 text-ink-700">
+				A {asked.name} key comes from the plans page:
+				{#if page.data.onlineHelp}<a class="font-semibold text-blue-ink hover:underline" href={PRICING_URL} target="_blank" rel="noopener noreferrer">{PRICING_URL.replace(/^https?:\/\//, '')}</a>{:else}<span class="font-semibold">{PRICING_URL.replace(/^https?:\/\//, '')}</span>{/if}.
+				Enter it below: it switches this installation to {asked.name}.
+			</p>
+		</section>
+	{/if}
+
 	<section class="space-y-5 rounded-card border border-line bg-surface p-6 shadow-card">
 		<LicenseCard view={data.license} />
 
@@ -155,7 +171,7 @@
 					<div>
 						<label
 							for="key"
-							class="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400"
+							class="mb-1.5 block text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-ink-400"
 						>
 							…or paste your {isCommunity ? 'Community' : 'licence'} key
 						</label>
@@ -193,7 +209,7 @@
 					     force; the operator confirms with the entitlements in view
 					     instead of discovering them afterwards. -->
 					<div class="space-y-3 rounded-card border border-brand-200 bg-brand-50 p-4">
-						<p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-700">
+						<p class="text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-brand-700">
 							This key checks out. Here is what it grants:
 						</p>
 						<LicenseCard view={previewed} />
@@ -218,7 +234,7 @@
 							</button>
 						</form>
 						{#if isActive}
-							<p class="text-[11px] leading-relaxed text-ink-500">
+							<p class="text-[0.6875rem] leading-relaxed text-ink-500">
 								Your current key stays in place until you confirm, and is kept afterwards so you
 								can step back to it.
 							</p>
@@ -271,7 +287,7 @@
 					<button
 						type="button"
 						onclick={copyRegistrationCode}
-						class="flex items-center gap-1.5 rounded-field border border-line px-2.5 py-1 text-[11px] font-medium text-ink-600 hover:border-brand-300 hover:text-brand-600"
+						class="flex items-center gap-1.5 rounded-field border border-line px-2.5 py-1 text-[0.6875rem] font-medium text-ink-600 hover:border-brand-300 hover:text-brand-600"
 					>
 						<Icon name={copied ? 'check' : 'copy'} size={12} />
 						{copied ? 'Copied' : 'Copy'}
@@ -280,7 +296,7 @@
 				<p class="select-all font-mono text-sm tracking-wider text-ink-900">
 					{data.registrationCode}
 				</p>
-				<p class="text-[11px] leading-relaxed text-ink-500">
+				<p class="text-[0.6875rem] leading-relaxed text-ink-500">
 					Optional. Paste this code into your account on lyriks.io so we know your key is running
 					{isCommunity ? ' and can keep supporting the Community edition' : ''}. It identifies this
 					installation and nothing else, and it is sent only if you paste it yourself: the appliance
@@ -314,7 +330,7 @@
 		{/if}
 	</section>
 
-	<p class="mt-5 text-center text-[11px] text-ink-400">
+	<p class="mt-5 text-center text-[0.6875rem] text-ink-400">
 		{#if isCommunity}
 			No key yet? The Community key is free and never expires - request one at
 			<span class="font-medium text-ink-600">get.lyriks.io</span> and it arrives by email.

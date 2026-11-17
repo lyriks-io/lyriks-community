@@ -2,6 +2,7 @@ import type { ImpactHypothesis } from './enums';
 import type { EvolutionRequest, ImpactFinding } from './draft';
 import type { FeatureStatus, StatusEntity } from './report-derivation';
 import { stableId } from './ids';
+import { NBSP, quoteName, type SpecLanguage } from '$domain/language';
 
 /**
  * The code plane of the impact report (ac-evo-imp-9): where the change lands
@@ -22,6 +23,8 @@ export interface CodeImpactInput {
 	/** How far from the change each feature is: 1 for a touched feature, else the spec plane's depth. */
 	readonly depthByFeature: Readonly<Record<string, number>>;
 	readonly leafNames: Readonly<Record<string, string>>;
+	/** The language of the spec: the notes are stored, so they are written in it. */
+	readonly lang?: SpecLanguage;
 }
 
 interface FileHit {
@@ -30,10 +33,26 @@ interface FileHit {
 	readonly elements: string[];
 }
 
-const elementName = (e: StatusEntity): string =>
-	`${e.entityType} "${e.entityName ?? e.entityId}"`;
-
 const ELEMENTS_NAMED = 3;
+
+const elementName = (e: StatusEntity, lang: SpecLanguage): string =>
+	lang === 'fr'
+		? `${e.entityType} ${quoteName('fr', e.entityName ?? e.entityId)}`
+		: `${e.entityType} "${e.entityName ?? e.entityId}"`;
+
+/** Why a file is in the code plane: which elements of which features live in it. */
+function fileNote(lang: SpecLanguage, elements: readonly string[], features: readonly string[]): string {
+	const named = elements.slice(0, ELEMENTS_NAMED).join(', ');
+	const extra = elements.length - ELEMENTS_NAMED;
+	const one = elements.length === 1;
+	if (lang === 'fr') {
+		const of = features.map((f) => quoteName('fr', f)).join(', ');
+		const more = extra > 0 ? ` et ${extra} de plus` : '';
+		return `${elements.length} ${one ? 'élément' : 'éléments'} de ${of} ${one ? 'se trouve' : 'se trouvent'} ici${NBSP}: ${named}${more}.`;
+	}
+	const more = extra > 0 ? ` and ${extra} more` : '';
+	return `${elements.length} ${one ? 'element' : 'elements'} of ${features.join(', ')} ${one ? 'lives' : 'live'} here: ${named}${more}.`;
+}
 
 export function deriveCodeImpact(input: CodeImpactInput): ImpactFinding[] {
 	const byFile = new Map<string, FileHit[]>();
@@ -48,7 +67,7 @@ export function deriveCodeImpact(input: CodeImpactInput): ImpactFinding[] {
 					const file = location.file.trim();
 					if (file === '') continue;
 					const list = perFile.get(file) ?? [];
-					const name = elementName(entity);
+					const name = elementName(entity, input.lang ?? 'en');
 					if (!list.includes(name)) list.push(name);
 					perFile.set(file, list);
 				}
@@ -66,8 +85,6 @@ export function deriveCodeImpact(input: CodeImpactInput): ImpactFinding[] {
 		const depth = Math.min(...hits.map((h) => h.depth));
 		const features = [...new Set(hits.map((h) => input.leafNames[h.featureId] ?? h.featureId))];
 		const elements = [...new Set(hits.flatMap((h) => h.elements))];
-		const named = elements.slice(0, ELEMENTS_NAMED).join(', ');
-		const more = elements.length > ELEMENTS_NAMED ? ` and ${elements.length - ELEMENTS_NAMED} more` : '';
 		findings.push({
 			id: stableId('imp', input.request.id, input.hypothesis, `file:${file}`),
 			hypothesis: input.hypothesis,
@@ -76,7 +93,7 @@ export function deriveCodeImpact(input: CodeImpactInput): ImpactFinding[] {
 			nodeLabel: file,
 			nodeKind: 'file',
 			groupPath: features,
-			note: `${elements.length} ${elements.length === 1 ? 'element' : 'elements'} of ${features.join(', ')} ${elements.length === 1 ? 'lives' : 'live'} here: ${named}${more}.`,
+			note: fileNote(input.lang ?? 'en', elements, features),
 			codeWork: depth <= 1 ? (input.hypothesis === 'remove' ? 'remove' : 'change') : 'at_risk',
 			depth,
 			severity: depth <= 1 ? 'high' : depth === 2 ? 'medium' : 'low',
@@ -190,9 +207,14 @@ export function impactVerb(f: ImpactFinding): string {
  * One sentence per hypothesis (ac-evo-imp-11): what it costs, read before any
  * list. Containers (cores) are not something that moves and are left out.
  */
-export function impactSummaryLine(findings: readonly ImpactFinding[], hypothesis: ImpactHypothesis): string {
+export function impactSummaryLine(
+	findings: readonly ImpactFinding[],
+	hypothesis: ImpactHypothesis,
+	lang: SpecLanguage = 'en'
+): string {
+	if (lang === 'fr') return impactSummaryLineFr(findings, hypothesis);
 	const of = (section: string, kind?: string) =>
-		findings.filter((f) => f.section === section && (kind === undefined || f.nodeKind === kind)).length;
+		findings.filter((f) => f.section === section && !f.fromUsed && (kind === undefined || f.nodeKind === kind)).length;
 	const knockOns = findings.filter((f) => f.section !== 'code' && f.depth > 1).length;
 	const n = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 	const parts: string[] = [];
@@ -233,19 +255,152 @@ export function impactSummaryLine(findings: readonly ImpactFinding[], hypothesis
 	return parts.length === 0 ? 'Nothing beyond the touched features depends on it.' : `${parts.join(', ')}.`;
 }
 
-export function impactInPlainWords(
-	findings: readonly ImpactFinding[],
-	hypothesis: ImpactHypothesis = findings[0]?.hypothesis ?? 'add'
-): string[] {
-	const verbs = VERBS[hypothesis];
-	const spec = findings.filter((f) => f.section !== 'code');
+/** Counted French nouns: the plural takes an s, and "peut" agrees with the count. */
+const nFr = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+const canFr = (count: number) => (count === 1 ? 'peut' : 'peuvent');
+
+function impactSummaryLineFr(findings: readonly ImpactFinding[], hypothesis: ImpactHypothesis): string {
+	const of = (section: string) => findings.filter((f) => f.section === section && !f.fromUsed).length;
+	const knockOns = findings.filter((f) => f.section !== 'code' && f.depth > 1).length;
+	const parts: string[] = [];
+	const screens = of('screens_and_journeys');
+	const rules = of('rules_and_scenarios');
+	const roles = of('permissions');
+	const terms = of('glossary_terms');
+	const entities = of('entities_and_fields');
+	const files = of('code');
+	if (hypothesis === 'add') {
+		if (screens) parts.push(`${nFr(screens, 'écran', 'écrans')} à étendre`);
+		if (roles) parts.push(`${nFr(roles, 'rôle', 'rôles')} à accorder`);
+		if (rules) parts.push(`${nFr(rules, 'règle', 'règles')} à rejouer`);
+		if (entities) parts.push(`${nFr(entities, 'entité', 'entités')} qui ${canFr(entities)} gagner un champ`);
+		if (terms) parts.push(`${nFr(terms, 'terme', 'termes')} à étendre`);
+		if (files) parts.push(`${nFr(files, 'fichier', 'fichiers')} à modifier`);
+		return parts.length === 0
+			? `Rien de ce qui existe ne bouge${NBSP}: l'ajout se fait à l'intérieur des fonctionnalités touchées.`
+			: `Rien de ce qui existe ne casse. ${parts.join(', ')}.`;
+	}
+	if (hypothesis === 'change') {
+		if (screens) parts.push(`${nFr(screens, 'écran', 'écrans')} à retravailler`);
+		if (rules) parts.push(`${nFr(rules, 'règle', 'règles')} à réécrire`);
+		if (roles) parts.push(`${nFr(roles, 'rôle', 'rôles')} à définir`);
+		if (entities) parts.push(`${nFr(entities, 'entité', 'entités')} qui ${canFr(entities)} migrer`);
+		if (knockOns) parts.push(`${nFr(knockOns, 'nœud', 'nœuds')} plus loin à revérifier`);
+		if (terms) parts.push(`${nFr(terms, 'terme', 'termes')} à relire`);
+		if (files) parts.push(`${nFr(files, 'fichier', 'fichiers')} à modifier`);
+		return parts.length === 0 ? 'Rien ne bouge au-delà des fonctionnalités touchées.' : `${parts.join(', ')}.`;
+	}
+	if (screens) parts.push(`${nFr(screens, 'écran', 'écrans')} à épurer`);
+	if (roles) parts.push(`${nFr(roles, 'rôle', 'rôles')} à révoquer`);
+	if (rules) parts.push(`${nFr(rules, 'règle', 'règles')} à réécrire ou retirer`);
+	if (entities) parts.push(`${nFr(entities, 'entité', 'entités')} à migrer`);
+	if (knockOns) parts.push(`${nFr(knockOns, 'nœud', 'nœuds')} plus loin qui ${canFr(knockOns)} casser`);
+	if (terms) parts.push(`${nFr(terms, 'terme', 'termes')} à retirer ou restreindre`);
+	if (files) parts.push(`${nFr(files, 'fichier', 'fichiers')} à supprimer`);
+	return parts.length === 0 ? "Rien au-delà des fonctionnalités touchées n'en dépend." : `${parts.join(', ')}.`;
+}
+
+/** The French verbs of the plain reading, singular then plural where the verb agrees. */
+const VERBS_FR: Record<ImpactHypothesis, Record<string, readonly [string, string]>> = {
+	add: {
+		screens: ['à étendre', 'à étendre'],
+		features: ['à relire', 'à relire'],
+		entities: ['qui stocke quelque chose de nouveau', 'qui stockent quelque chose de nouveau'],
+		rules: ['à rejouer', 'à rejouer'],
+		roles: ['à accorder', 'à accorder'],
+		terms: ['dont la définition est à étendre', 'dont la définition est à étendre'],
+		code: ['à modifier', 'à modifier']
+	},
+	change: {
+		screens: ['à retravailler', 'à retravailler'],
+		features: ['à relire', 'à relire'],
+		entities: ['à migrer si sa forme change', 'à migrer si leur forme change'],
+		rules: ['à réécrire', 'à réécrire'],
+		roles: ['à définir', 'à définir'],
+		terms: ['dont la définition est à relire', 'dont la définition est à relire'],
+		code: ['à modifier', 'à modifier']
+	},
+	remove: {
+		screens: ['à épurer', 'à épurer'],
+		features: ['qui risque de casser', 'qui risquent de casser'],
+		entities: ['à migrer', 'à migrer'],
+		rules: ['à réécrire ou retirer', 'à réécrire ou retirer'],
+		roles: ['à révoquer', 'à révoquer'],
+		terms: ['à retirer ou restreindre', 'à retirer ou restreindre'],
+		code: ['à supprimer', 'à supprimer']
+	}
+};
+
+function impactInPlainWordsFr(findings: readonly ImpactFinding[], hypothesis: ImpactHypothesis): string[] {
+	const verbs = VERBS_FR[hypothesis];
+	const spec = findings.filter((f) => f.section !== 'code' && !f.fromUsed);
+	const used = findings.filter((f) => f.section !== 'code' && f.fromUsed && (f.section !== 'leaves' || f.nodeKind === 'feature'));
 	const code = findings.filter((f) => f.section === 'code');
 	const lines: string[] = [];
 	const say = (items: readonly ImpactFinding[], noun: string, plural: string, verb: string) => {
 		if (items.length === 0) return;
-		const names = items.map((f) => f.nodeLabel);
-		const shown = names.length <= 4 ? `: ${names.join(', ')}` : `: ${names.slice(0, 3).join(', ')} and ${names.length - 3} more`;
-		lines.push(`${items.length} ${items.length === 1 ? noun : plural} ${verb}${shown}.`);
+		const one = items.length === 1;
+		const names = items.map((f) => quoteName('fr', f.nodeLabel));
+		const shown =
+			names.length <= 4
+				? `${NBSP}: ${names.join(', ')}`
+				: `${NBSP}: ${names.slice(0, 3).join(', ')} et ${names.length - 3} de plus`;
+		lines.push(`${items.length} ${one ? noun : plural} ${verbs[verb][one ? 0 : 1]}${shown}.`);
+	};
+	say(spec.filter((f) => f.section === 'screens_and_journeys'), 'écran ou parcours', 'écrans et parcours', 'screens');
+	say(spec.filter((f) => f.section === 'leaves' && f.nodeKind === 'feature'), 'fonctionnalité', 'fonctionnalités', 'features');
+	say(spec.filter((f) => f.section === 'entities_and_fields'), 'entité ou champ', 'entités et champs', 'entities');
+	say(spec.filter((f) => f.section === 'rules_and_scenarios'), 'règle', 'règles', 'rules');
+	say(spec.filter((f) => f.section === 'permissions'), 'rôle', 'rôles', 'roles');
+	say(spec.filter((f) => f.section === 'glossary_terms'), 'terme', 'termes', 'terms');
+	if (used.length > 0) {
+		const names = used.map((f) => quoteName('fr', f.nodeLabel));
+		const shown = names.length <= 4 ? names.join(', ') : `${names.slice(0, 3).join(', ')} et ${names.length - 3} de plus`;
+		lines.push(`${nFr(used.length, 'élément repose', 'éléments reposent')} sur ce que le changement utilise tel quel, à revérifier${NBSP}: ${shown}.`);
+	}
+	if (spec.length === 0 && used.length === 0) lines.push(NOTHING_MOVES_FR);
+	if (code.length === 0) {
+		lines.push(
+			`Aucun fichier n'est encore ancré sur les fonctionnalités touchées${NBSP}: synchronisez l'index d'implémentation depuis le dépôt pour lire le plan du code.`
+		);
+	} else {
+		const features = new Set(code.flatMap((f) => f.groupPath));
+		const direct = code.filter((f) => f.depth <= 1).length;
+		lines.push(
+			`${nFr(code.length, 'fichier', 'fichiers')} sur ${nFr(features.size, 'fonctionnalité', 'fonctionnalités')}${NBSP}: ${direct} ${verbs.code[direct === 1 ? 0 : 1]}, ${code.length - direct} à risque.`
+		);
+	}
+	return lines;
+}
+
+/** The plain line that says the specification moves nothing, in each language, so a caller can put a reason in its place. */
+const NOTHING_MOVES_EN = 'Nothing in the specification moves beyond the touched features.';
+const NOTHING_MOVES_FR = 'Rien dans la spécification ne bouge au-delà des fonctionnalités touchées.';
+
+/** Whether a plain line is the calm "nothing moves" one, in whichever language it was written. */
+export const isNothingMovesLine = (line: string): boolean =>
+	line === NOTHING_MOVES_EN || line === NOTHING_MOVES_FR;
+
+export function impactInPlainWords(
+	findings: readonly ImpactFinding[],
+	hypothesis: ImpactHypothesis = findings[0]?.hypothesis ?? 'add',
+	lang: SpecLanguage = 'en'
+): string[] {
+	if (lang === 'fr') return impactInPlainWordsFr(findings, hypothesis);
+	const verbs = VERBS[hypothesis];
+	// What rests on a feature the change uses as it stands is said apart: to check again, never to edit (ac-evo-imp-used).
+	const spec = findings.filter((f) => f.section !== 'code' && !f.fromUsed);
+	// A container listed for context is never counted among what moves (a core, a family).
+	const used = findings.filter((f) => f.section !== 'code' && f.fromUsed && (f.section !== 'leaves' || f.nodeKind === 'feature'));
+	const code = findings.filter((f) => f.section === 'code');
+	const lines: string[] = [];
+	const names = (items: readonly ImpactFinding[]) => {
+		const all = items.map((f) => f.nodeLabel);
+		return all.length <= 4 ? `: ${all.join(', ')}` : `: ${all.slice(0, 3).join(', ')} and ${all.length - 3} more`;
+	};
+	const say = (items: readonly ImpactFinding[], noun: string, plural: string, verb: string) => {
+		if (items.length === 0) return;
+		lines.push(`${items.length} ${items.length === 1 ? noun : plural} ${verb}${names(items)}.`);
 	};
 	say(spec.filter((f) => f.section === 'screens_and_journeys'), 'screen or journey', 'screens and journeys', verbs.screens);
 	say(spec.filter((f) => f.section === 'leaves' && f.nodeKind === 'feature'), 'feature', 'features', verbs.features);
@@ -253,7 +408,8 @@ export function impactInPlainWords(
 	say(spec.filter((f) => f.section === 'rules_and_scenarios'), 'rule', 'rules', verbs.rules);
 	say(spec.filter((f) => f.section === 'permissions'), 'role', 'roles', verbs.roles);
 	say(spec.filter((f) => f.section === 'glossary_terms'), 'term', 'terms', verbs.terms);
-	if (spec.length === 0) lines.push('Nothing in the specification moves beyond the touched features.');
+	if (used.length > 0) lines.push(`${used.length} ${used.length === 1 ? 'thing rests' : 'things rest'} on what the change uses as it stands, to check again${names(used)}.`);
+	if (spec.length === 0 && used.length === 0) lines.push(NOTHING_MOVES_EN);
 	if (code.length === 0) {
 		lines.push('No file is anchored on the touched features yet: sync the implementation index from the checkout to read the code plane.');
 	} else {
@@ -322,7 +478,8 @@ export function emptyImpactReason(request: {
 		readonly behaviour: readonly unknown[];
 		readonly acceptanceCriteria: readonly unknown[];
 	}[];
-}): string {
+}, lang: SpecLanguage = 'en'): string {
+	if (lang === 'fr') return emptyImpactReasonFr(request);
 	if (request.leafIds.length === 0 && request.drafts.length === 0)
 		return 'The request names no feature yet, so there is nothing to walk from.';
 	const silentAdds = request.drafts.filter((d) => d.kind === 'add' && d.dependsOn.length === 0);
@@ -331,4 +488,17 @@ export function emptyImpactReason(request: {
 	if (request.drafts.length > 0 && request.drafts.every((d) => d.kind === 'amend' && d.dependsOn.length === 0 && d.behaviour.length === 0 && d.acceptanceCriteria.length === 0))
 		return 'The change only rewords what it touches: a wording moves nothing else in the specification.';
 	return 'Nothing in the specification is linked to the touched features, so nothing moves with them.';
+}
+
+function emptyImpactReasonFr(request: Parameters<typeof emptyImpactReason>[0]): string {
+	if (request.leafIds.length === 0 && request.drafts.length === 0)
+		return "La demande ne nomme encore aucune fonctionnalité, il n'y a donc rien d'où partir.";
+	const silentAdds = request.drafts.filter((d) => d.kind === 'add' && d.dependsOn.length === 0);
+	if (silentAdds.length > 0 && silentAdds.length === request.drafts.length && request.leafIds.every((id) => id.startsWith('draft:'))) {
+		const one = silentAdds.length === 1;
+		return `${silentAdds.map((d) => quoteName('fr', d.name)).join(', ')} ${one ? 'ne déclare' : 'ne déclarent'} aucune dépendance, donc le parcours n'avait nulle part où aller. Cela dit que rien n'a été déclaré, pas que rien ne suit${NBSP}: nommez ${one ? 'ses' : 'leurs'} dépendances et recalculez.`;
+	}
+	if (request.drafts.length > 0 && request.drafts.every((d) => d.kind === 'amend' && d.dependsOn.length === 0 && d.behaviour.length === 0 && d.acceptanceCriteria.length === 0))
+		return `Le changement ne fait que reformuler ce qu'il touche${NBSP}: une formulation ne déplace rien d'autre dans la spécification.`;
+	return 'Rien dans la spécification n\'est relié aux fonctionnalités touchées, donc rien ne bouge avec elles.';
 }

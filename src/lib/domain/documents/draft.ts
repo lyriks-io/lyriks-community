@@ -1,4 +1,5 @@
 import type { DocumentKind } from './enums';
+import type { SourcePassage, StoredText } from './passages';
 
 /**
  * One cited source: interviews, research, PDFs, diagrams, external links,
@@ -14,6 +15,8 @@ export interface DocumentSource {
 	note: string;
 	/** Authored decision status, not an inferred acceptance or a runtime result. */
 	decision?: { status: 'proposed' | 'accepted' | 'superseded' };
+	/** The text Unspag stores for this source, by reference: the register never keeps its bytes (criterion 81dffe4f). */
+	stored?: StoredText;
 	/** Reported execution evidence; never contributes to model coverage by itself. */
 	evidence?: {
 		kind: 'unit' | 'integration' | 'e2e' | 'visual' | 'load' | 'manual' | 'prototype';
@@ -30,6 +33,8 @@ export interface DocumentSource {
 export interface ProjectDocumentsDraft {
 	projectId: string;
 	sources: DocumentSource[];
+	/** The passages of stored source texts the elements rest on (criterion f09da92d). */
+	passages?: SourcePassage[];
 	lastSavedAt: string | null;
 }
 

@@ -347,3 +347,50 @@ describe('KernelExperienceDraftRepository (Phase 4 Experience flip)', () => {
 		expect(back.journeys.map((j) => j.id)).toEqual(['J1']);
 	});
 });
+
+describe('KernelExperienceDraftRepository writes in the spec language', () => {
+	function repoIn(lang: 'en' | 'fr') {
+		const mem = new MemRepo();
+		const port = new LocalBehaviorPort(mem, { nowIso: () => '2026-01-01T00:00:00.000Z' });
+		const repo = new KernelExperienceDraftRepository(
+			port,
+			new MemResidue(),
+			stubFeatures(null),
+			stubUsers(usersWith()),
+			stubExperience(null),
+			undefined,
+			undefined,
+			async () => lang
+		);
+		return { mem, repo };
+	}
+	type Surface = { id: string; description: string; actions: { id: string; intent: string }[] };
+	const workflowOf = (mem: MemRepo) =>
+		((mem.features.get('p1/p1__experience')!.feature as { surfaces: Surface[] }).surfaces).find(
+			(s) => s.id === 'srf-J1'
+		)!;
+
+	it('stores French prose when the spec is French, and reloads the same journeys', async () => {
+		const { mem, repo } = repoIn('fr');
+		await repo.save(sampleDraft('p1'));
+		expect(workflowOf(mem).description).toBe(
+			'Parcours «\u00a0Checkout\u00a0». Réalisé par\u00a0: «\u00a0Shopper\u00a0».'
+		);
+		const back = (await repo.load('p1'))!;
+		expect(back.steps.map((s) => s.name)).toEqual(['Open cart', 'Pay']);
+	});
+
+	it('rewrites the same elements, without duplicates, when the language changes', async () => {
+		const { mem, repo } = repoIn('en');
+		await repo.save(sampleDraft('p1'));
+		const english = workflowOf(mem);
+		const french = repoIn('fr');
+		french.mem.features.set('p1/p1__experience', mem.features.get('p1/p1__experience')!);
+		await french.repo.save(sampleDraft('p1'));
+		const rewritten = workflowOf(french.mem);
+		expect(rewritten.actions.map((a) => a.id)).toEqual(english.actions.map((a) => a.id));
+		expect(rewritten.actions[1].intent).toBe('Pay');
+		expect(english.description).toBe('Journey: Checkout. Performed by: Shopper.');
+		expect(rewritten.description).toMatch(/^Parcours /);
+	});
+});

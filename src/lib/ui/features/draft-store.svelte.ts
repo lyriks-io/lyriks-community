@@ -35,6 +35,7 @@ import {
 import type { CoherenceResult } from '$domain/shared';
 import type { Session, ToastNotifierPort } from '$application/ports';
 import { SectionAutosave, type SaveStatus } from '$ui/shell/section-autosave.svelte';
+import { specLanguageAccessor } from '$ui/language/spec-language-context';
 
 export type { SaveStatus };
 
@@ -49,7 +50,9 @@ export class FeaturesStore {
 	activeTab = $state<FeaturesTab>('tree');
 	selectedFeatureId = $state<string | null>(null);
 
-	coherence = $derived.by<CoherenceResult>(() => computeFeaturesCoherence(this.draft));
+	/** The spec's language, from the project it is opened in: its checks read in it. */
+	readonly #lang = specLanguageAccessor();
+	coherence = $derived.by<CoherenceResult>(() => computeFeaturesCoherence(this.draft, this.#lang()));
 	canAdvance = $derived.by<boolean>(() => featuresCanAdvance(this.draft));
 	missing = $derived.by<string[]>(() => missingFeaturesRequirements(this.draft));
 
@@ -264,40 +267,20 @@ export class FeaturesStore {
 	};
 
 	/**
-	 * Set a manual TRL (1-9) readiness for a leaf, or clear it (null → back to the
-	 * engine-computed readiness). Clearing deletes the key so the residue stays
-	 * clean rather than carrying an `undefined`.
+	 * Set a manual maturity stage (1 Idea to 5 Complete) for a leaf, or clear it
+	 * (null: back to the stage the engine maturity gives). Clearing deletes the
+	 * key so the residue stays clean rather than carrying an `undefined`.
 	 */
-	setLeafTrl = (featureId: string, level: number | null) => {
-		if (level == null) {
+	setLeafStage = (featureId: string, stage: number | null) => {
+		if (stage == null) {
 			const meta = this.draft.leafMeta?.[featureId];
-			if (meta && meta.trl !== undefined) {
-				delete meta.trl;
+			if (meta && meta.stage !== undefined) {
+				delete meta.stage;
 				this.#touch('features.leafMeta');
 			}
 			return;
 		}
-		this.updateLeafMeta(featureId, { trl: Math.max(1, Math.min(9, Math.round(level))) });
-	};
-
-	/** Manual TRL (1-9) of a single action, or null when unset. Actions have no
-	 * engine score, so this hand-set level is their only readiness. */
-	getActionTrl = (featureId: string, actionId: string): number | null =>
-		this.draft.actionTrl?.[`${featureId}::${actionId}`] ?? null;
-
-	/** Set (1-9) or clear (null) an action's manual TRL. */
-	setActionTrl = (featureId: string, actionId: string, level: number | null) => {
-		const key = `${featureId}::${actionId}`;
-		if (level == null) {
-			if (this.draft.actionTrl && key in this.draft.actionTrl) {
-				delete this.draft.actionTrl[key];
-				this.#touch('features.actionTrl');
-			}
-			return;
-		}
-		if (!this.draft.actionTrl) this.draft.actionTrl = {};
-		this.draft.actionTrl[key] = Math.max(1, Math.min(9, Math.round(level)));
-		this.#touch('features.actionTrl');
+		this.updateLeafMeta(featureId, { stage: Math.max(1, Math.min(5, Math.round(stage))) });
 	};
 
 	/** Release id an action is assigned to, or null when it rides with its feature. */
@@ -625,7 +608,7 @@ export class FeaturesStore {
 		this.notifier.notify(
 			'info',
 			assigned === 0
-				? 'Every feature already has an MVP tier.'
+				? 'Every feature already has a priority.'
 				: `${assigned} feature${assigned === 1 ? '' : 's'} without a tier set to Should.`
 		);
 	};

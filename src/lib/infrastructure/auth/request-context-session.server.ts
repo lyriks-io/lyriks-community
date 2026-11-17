@@ -1,5 +1,4 @@
 import type { Session, SessionPort } from '$application/ports';
-import { currentRequestSession } from '$lib/server/request-context.server';
 
 /**
  * The session port, answered from the per-request context the edge pins in
@@ -11,7 +10,9 @@ import { currentRequestSession } from '$lib/server/request-context.server';
  * caller: fall back to the implicit local session, matching the auth-off edge.
  */
 export class RequestContextSessionAdapter implements SessionPort {
+	constructor(private readonly currentRequestSession: () => Session | null) {}
+
 	current(): Session {
-		return currentRequestSession() ?? { isAuthenticated: true };
+		return this.currentRequestSession() ?? { isAuthenticated: true };
 	}
 }

@@ -1,5 +1,5 @@
+import type { AppServices } from '$composition/container.server';
 import { json, text, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import type { TargetMap } from '$domain/experience';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import type { RequestHandler } from './$types';
@@ -22,7 +22,7 @@ export const GET: RequestHandler = async (event) => {
 	const projectId = url.searchParams.get('projectId') ?? '';
 	if (!projectId) error(400, 'projectId is required');
 	await requireProjectAccess(event, projectId, 'write');
-	return respond(projectId, undefined, url.searchParams.get('format'));
+	return respond(event.locals.services, projectId, undefined, url.searchParams.get('format'));
 };
 
 export const POST: RequestHandler = async (event) => {
@@ -33,11 +33,12 @@ export const POST: RequestHandler = async (event) => {
 	const projectId = typeof body?.projectId === 'string' ? body.projectId : '';
 	if (!projectId) error(400, 'projectId is required');
 	await requireProjectAccess(event, projectId, 'write');
-	return respond(projectId, body?.map, typeof body?.format === 'string' ? body.format : null);
+	return respond(event.locals.services, projectId, body?.map, typeof body?.format === 'string' ? body.format : null);
 };
 
-async function respond(projectId: string, map: TargetMap | undefined, format: string | null) {
-	const result = await getServices().generateAcceptanceTests.execute(projectId, map);
+async function respond(services: AppServices, projectId: string, map: TargetMap | undefined, format: string | null) {
+	const lang = await services.loadSpecLanguage.generated(projectId);
+	const result = await services.generateAcceptanceTests.execute(projectId, map, lang);
 	if (format === 'gherkin') return text(result.gherkin, { headers: { 'content-type': 'text/plain' } });
 	if (format === 'playwright')
 		return text(result.playwright, { headers: { 'content-type': 'text/plain' } });

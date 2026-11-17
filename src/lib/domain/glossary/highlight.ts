@@ -33,6 +33,40 @@ interface Variant {
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** What may separate the words of a term in running text: spaces, a line break, a non-breaking space, a hyphen. */
+const WORD_GAP = '(?:[\\s\\u00A0]+|[\\s\\u00A0]*-[\\s\\u00A0]*)';
+/** A plural or a third person (English -s/-es, French -s/-x), on a word long enough to take one. */
+const INFLECTION = '(?:es|s|x)?';
+
+/**
+ * The pattern a term's value is read with (ac-glos-match-forms): its words in
+ * order, whatever separates them, each in its plain form or, when `inflect`,
+ * with a plural or third-person ending. No capturing group, so callers can
+ * wrap it in their own.
+ */
+function phrasePattern(value: string, inflect: boolean): string {
+	return value
+		.trim()
+		.split(/[\s -]+/)
+		.filter(Boolean)
+		.map((word) => escapeRe(word) + (inflect && word.length >= 3 ? INFLECTION : ''))
+		.join(WORD_GAP);
+}
+
+/**
+ * Whole-word, case-insensitive: a letter, a digit or an underscore on either
+ * side means the match sits inside a longer word or an identifier
+ * (DEFAULT_DOMAIN_ALIASES), never a glossary word; `\b` where the engine lacks
+ * Unicode classes.
+ */
+function wholeWords(body: string): RegExp {
+	try {
+		return new RegExp(`(?<![\\p{L}\\p{N}_])(?:${body})(?![\\p{L}\\p{N}_])`, 'giu');
+	} catch {
+		return new RegExp(`\\b(?:${body})\\b`, 'gi');
+	}
+}
+
 /**
  * Flatten the vocabulary into matchable variants: the canonical term, each
  * allowed synonym and each banned synonym. Longer values win over shorter ones
@@ -83,23 +117,16 @@ export function segmentText(text: string, terms: GlossaryTerm[]): Segment[] {
 	const variants = buildVariants(terms);
 	if (variants.length === 0) return [{ text }];
 
-	const byValue = new Map<string, Mark>();
-	for (const v of variants) byValue.set(v.value.toLowerCase(), v.mark);
-
-	const body = variants.map((v) => escapeRe(v.value)).join('|');
-	let re: RegExp;
-	try {
-		re = new RegExp(`(?<![\\p{L}])(${body})(?![\\p{L}])`, 'giu');
-	} catch {
-		re = new RegExp(`\\b(${body})\\b`, 'gi');
-	}
+	// One group per variant, longest first, so the group that matched names its mark.
+	const re = wholeWords(variants.map((v) => `(${phrasePattern(v.value, true)})`).join('|'));
 
 	const out: Segment[] = [];
 	let last = 0;
 	let m: RegExpExecArray | null;
 	while ((m = re.exec(text)) !== null) {
 		if (m.index > last) out.push({ text: text.slice(last, m.index) });
-		const mark = byValue.get(m[0].toLowerCase());
+		const group = m.findIndex((g, i) => i > 0 && g !== undefined);
+		const mark = group > 0 ? variants[group - 1].mark : undefined;
 		out.push(mark ? { text: m[0], mark } : { text: m[0] });
 		last = m.index + m[0].length;
 		if (m.index === re.lastIndex) re.lastIndex++;
@@ -122,13 +149,8 @@ export function hasGovernedWord(text: string, terms: GlossaryTerm[]): boolean {
 export function replaceOccurrence(text: string, original: string, canonical: string): string {
 	const value = original.trim();
 	if (!value) return text;
-	const body = escapeRe(value);
-	let re: RegExp;
-	try {
-		re = new RegExp(`(?<![\\p{L}])(${body})(?![\\p{L}])`, 'giu');
-	} catch {
-		re = new RegExp(`\\b(${body})\\b`, 'gi');
-	}
+	// The words the mark covered, whatever separates them where they recur.
+	const re = wholeWords(phrasePattern(value, false));
 	// A function replacement treats `$&`, `$1`, `$\`` and `$'` in a user-authored
 	// canonical term as literal text instead of String.replace expansion tokens.
 	return text.replace(re, () => canonical);

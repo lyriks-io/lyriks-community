@@ -1,5 +1,4 @@
 import { error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireBehaviorFeatureAccess } from '$lib/server/behavior-feature-access.server';
 import { adoptionJson } from '$lib/server/adoption-endpoint.server';
 import type { RequestHandler } from './$types';
@@ -19,7 +18,7 @@ export const GET: RequestHandler = async (event) => {
 	if (!projectId || !featureId) error(400, 'projectId and featureId are required');
 
 	await requireBehaviorFeatureAccess(event, projectId, featureId, 'read');
-	const adoption = getServices().codeAdoption;
+	const adoption = event.locals.services.codeAdoption;
 
 	if (params.get('coverage') === 'true') {
 		const sourceId = params.get('sourceId') ?? undefined;

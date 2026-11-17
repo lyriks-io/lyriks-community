@@ -37,6 +37,9 @@ export function subFamiliesOf(draft: ProjectFeaturesDraft, familyId: string): Fa
 	return draft.families.filter((f) => f.parentFamilyId === familyId);
 }
 
+// The tree reads in the app's alphabetical order (criterion 7b327ca1), one law for every list (criterion 4b3d2b4d).
+export { sortByName } from '../shared/alphabetical';
+
 /** Build the family-path string for a leaf, e.g. "Billing/Recurring". */
 export function familyPathOf(draft: ProjectFeaturesDraft, leaf: Feature): string {
 	if (!leaf.parentFamilyId) return '';
@@ -111,4 +114,34 @@ export function familyIdsUnderCore(draft: ProjectFeaturesDraft, coreId: string):
 /** Feature ids whose top ancestor is the given Core. */
 export function featureIdsUnderCore(draft: ProjectFeaturesDraft, coreId: string): string[] {
 	return draft.features.filter((f) => f.coreId === coreId).map((f) => f.id);
+}
+
+/**
+ * What unfolding a grouping (a core or a family) also opens: while it holds
+ * exactly one thing, that thing, and so on down to the first level with a real
+ * choice. Ends on the lone feature when the path reaches one, so its actions
+ * show with it.
+ */
+export function lonePathBelow(
+	draft: ProjectFeaturesDraft,
+	grouping: { coreId: string } | { familyId: string }
+): { familyIds: string[]; featureId: string | null } {
+	const familyIds: string[] = [];
+	let features =
+		'coreId' in grouping
+			? featuresDirectlyUnderCore(draft, grouping.coreId)
+			: featuresDirectlyUnderFamily(draft, grouping.familyId);
+	let families =
+		'coreId' in grouping
+			? familiesDirectlyUnderCore(draft, grouping.coreId)
+			: subFamiliesOf(draft, grouping.familyId);
+	while (features.length + families.length === 1) {
+		if (features.length === 1) return { familyIds, featureId: features[0].id };
+		const lone = families[0];
+		if (familyIds.includes(lone.id)) break;
+		familyIds.push(lone.id);
+		features = featuresDirectlyUnderFamily(draft, lone.id);
+		families = subFamiliesOf(draft, lone.id);
+	}
+	return { familyIds, featureId: null };
 }

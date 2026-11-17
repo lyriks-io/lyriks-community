@@ -47,6 +47,7 @@ function snapshot(overrides: Partial<ProjectSnapshot> = {}): ProjectSnapshot {
 			meta: { domainId: 'finance', shippedAt: null }
 		},
 		kernel: {
+			artifacts: [],
 			project: { id: 'billos-a1b2c3', name: 'Billos', surfaces: [] },
 			// Sorted by id, which is the canonical order a bundle stores them in.
 			features: [

@@ -7,10 +7,11 @@ import {
 	statSync,
 	writeFileSync,
 	renameSync,
-	rmSync
+	rmSync,
+	unlinkSync
 } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { dirname, join, resolve, sep } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 
 import type { BehaviorRepositoryPort } from '$application/ports';
 import { fingerprint } from '$domain/scope';
@@ -134,7 +135,7 @@ export class LocalFsBehaviorRepository implements BehaviorRepositoryPort {
 		for (const name of readdirSync(dir).sort()) {
 			try {
 				const stats = statSync(join(dir, name));
-				entries.push(`${name}:${stats.size}:${Math.trunc(stats.mtimeMs)}`);
+				entries.push(`${name}:${stats.ino}:${stats.size}:${stats.mtimeMs}`);
 			} catch {
 				// Vanished mid-scan (an atomic write's temp file): skip it.
 			}
@@ -171,6 +172,37 @@ export class LocalFsBehaviorRepository implements BehaviorRepositoryPort {
 		// id-named path when no file exists yet.
 		const path = this.#existingFeatureFile(projectId, featureId) ?? this.#featurePath(projectId, featureId);
 		await this.#writeAtomic(path, snapshot);
+		this.#removeTwins(dirname(path), featureId, basename(path));
+	}
+
+	/**
+	 * Remove the other files of this folder that hold the same feature id. A
+	 * folder that switched from slug to id naming kept the slug-named copy
+	 * beside the one written here, and a reader that resolves twins differently
+	 * (the engine took the first by name) then read the stale copy and never
+	 * saw a later write. Best effort: a file this process may not remove stays,
+	 * and the engine's reader still resolves to the id-named file.
+	 */
+	#removeTwins(dir: string, featureId: string, keep: string): void {
+		let removed = false;
+		for (const name of readdirSync(dir)) {
+			if (name === keep || !name.endsWith(FEATURE_SUFFIX)) continue;
+			const path = join(dir, name);
+			let value: unknown;
+			try {
+				value = this.#readJson(path);
+			} catch {
+				continue;
+			}
+			if (featureIdOf(value) !== featureId) continue;
+			try {
+				unlinkSync(path);
+				removed = true;
+			} catch {
+				// not ours to remove (shared volume, another uid)
+			}
+		}
+		if (removed) this.#forgetFolder(dir);
 	}
 
 	/**

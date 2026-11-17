@@ -1,24 +1,25 @@
+import { timedPart } from '$lib/server/slow-requests.server';
 import { canUseSharedEditor } from '$lib/server/shared-editor-access.server';
-import { getServices } from '$composition/container.server';
 import { industryLabelOf } from '$domain/foundation';
 import { toProductCoherence } from '$domain/coherence/incoherence';
-import { leafFeatures } from '$domain/features/tree';
+import { leafFeatures } from '$domain/features';
+import { administersProject } from '$domain/team';
 import {
 	maturityByCore,
 	maturityByFeature,
 	maturityByRelease
-} from '$domain/features/trl-breakdown';
+} from '$domain/features';
 import { capabilityById, CAPABILITIES, resolveVisibleCapability } from '$ui/shell/capabilities';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { callerCanWrite } from '$lib/server/writer-gate.server';
-import { loadVisitDelta } from '$lib/server/coherence-visit.server';
 import { projectSyncKey } from '$lib/shared/section-sync';
+import { rememberCurrentProject } from '$lib/server/app-chrome.server';
 import type { LayoutServerLoad } from './$types';
 
 /**
- * Shared project chrome data: identity (for the sidebar header), the bimodal
- * readiness/coherence scores (for the rail rings + Control Center), and the
- * product tier (for capability gating). Loaded once for every capability page
+ * Shared project chrome data: identity, the per-feature maturity the
+ * Foundation page groups by core and release, and the product tier (for
+ * capability gating). Loaded once for every capability page
  * so the shell stops being copy-pasted into each route.
  */
 export const load: LayoutServerLoad = async (event) => {
@@ -31,12 +32,16 @@ export const load: LayoutServerLoad = async (event) => {
 	// per-project visibility scope (domain breadth ∪ collaborator grants). A project
 	// outside scope 404s here — no-op when auth is off. See requireProjectAccess.
 	await requireProjectAccess(event, params.projectId, 'read');
+	// The app bar keeps pointing at this project from Home and Settings.
+	rememberCurrentProject(event.cookies, params.projectId);
 	// Whether the caller may author here (designer and above). The embedded
 	// behavior editor is only offered to writers; the server refuses a reader
 	// on /behavior anyway, this keeps the tab honest instead of framing a 403.
-	const canWrite = await callerCanWrite(event);
-	const services = getServices();
+	const canWrite = await timedPart('project:canWrite', callerCanWrite(event));
+	const services = event.locals.services;
 
+	// Read once, shared: the language reading checks its prose without a second read.
+	const featuresRead = services.loadFeaturesDraft.execute(params.projectId);
 	const [
 		draft,
 		coherence,
@@ -44,17 +49,21 @@ export const load: LayoutServerLoad = async (event) => {
 		featuresDraft,
 		glossaryDraft,
 		documentsDraft,
-		documentsRevision
+		documentsRevision,
+		specLanguage
 	] = await Promise.all([
-			services.loadFoundationDraft.loadIdentity(params.projectId),
-			services.loadCoherenceDraft.execute(params.projectId),
-			services.loadTeam.execute(params.projectId),
-			services.loadFeaturesDraft.execute(params.projectId),
-			services.loadGlossaryDraft.execute(params.projectId),
+			timedPart('project:identity', services.loadFoundationDraft.loadIdentity(params.projectId)),
+			timedPart('project:coherence', services.loadCoherenceDraft.execute(params.projectId)),
+			timedPart('project:team', services.loadTeam.execute(params.projectId)),
+			featuresRead,
+			timedPart('project:glossary', services.loadGlossaryDraft.execute(params.projectId)),
 			// The evidence register is project-wide: every capability cites it and can
 			// add to it, so it is loaded once here rather than per page.
-			services.loadDocumentRegister.execute(params.projectId),
-			services.sectionDocuments.currentRevision(params.projectId, 'documents')
+			timedPart('project:documents', services.loadDocumentRegister.execute(params.projectId)),
+			services.sectionDocuments.currentRevision(params.projectId, 'documents'),
+			// The one language the spec is written in: every generated text follows
+			// it. Its prose is read from the features loaded above, never twice.
+			services.loadSpecLanguage.execute(params.projectId, featuresRead)
 		]);
 
 	// The governed vocabulary, exposed to every capability page so the in-context
@@ -73,7 +82,7 @@ export const load: LayoutServerLoad = async (event) => {
 	// Bimodal deep coherence spanning the whole product. The gap list already
 	// includes the Experience plan-coverage findings (folded in by the global
 	// checker), so this single mapping is the one source of truth for the rail
-	// rings AND the Control Center — no per-screen drift. Each gap's source step
+	// fix routes and the maturity read below, so no screen drifts. Each gap's source step
 	// resolves to the capability where it's fixed (legacy step ids map through
 			// the registry, e.g. 'data' → infrastructure, legacy Foundation ids →
 			// foundation).
@@ -82,7 +91,7 @@ export const load: LayoutServerLoad = async (event) => {
 		const cap = capabilityById(sourceStep) ?? fallback;
 		// The destination as the reader finds it in the left nav: a hidden
 		// capability (Rules, Permissions) is named under the visible page it folds
-		// into, so "Fix in Features › Rules & edge cases" reads like the sidebar.
+		// into, so "Fix in Features › Acceptance criteria" reads like the sidebar.
 		const visible = resolveVisibleCapability(cap.id);
 		const capabilityTitle =
 			visible && visible.id !== cap.id ? `${visible.title} › ${cap.title}` : cap.title;
@@ -94,23 +103,16 @@ export const load: LayoutServerLoad = async (event) => {
 		};
 	});
 
-	// The Control Center's TRL switcher re-reads the per-leaf maturity behind the
-	// readiness gate along the two roadmap axes (core features, releases) — same
-	// scores, different grouping, so the numbers can never disagree.
-	// The scores over time and what changed for this person since they last
-	// opened the panel: both are cheap residue reads, both degrade to empty.
-	const [history, sinceLastVisit] = await Promise.all([
-		services.scoreHistory.load(params.projectId).catch(() => null),
-		loadVisitDelta(
-			services.projectResidue,
-			params.projectId,
-			services.currentSession().email,
-			productCoherence.incoherences.map((i) => i.id)
-		)
-	]);
+	// Whether the reader may change the project's options, so the left nav shows
+	// Settings to them alone (ac-proj-settings): their role in the active workspace
+	// (no workspace in the open-source build) or their ownership of the project.
+	const workspaces = await timedPart('project:workspaces', services.workspaces.listForCaller().catch(() => []));
+	const activeWorkspaceId = event.cookies.get('lyriks_active_ws');
+	const activeWorkspace = (activeWorkspaceId && workspaces.find((w) => w.id === activeWorkspaceId)) || workspaces[0];
+	const administers = administersProject(activeWorkspace?.role, team, services.currentSession().email);
 
 	const featureMaturity = productCoherence.featureMaturity ?? {};
-	const trlBreakdown = {
+	const maturityBreakdown = {
 		features: maturityByFeature(featuresDraft, featureMaturity),
 		cores: maturityByCore(featuresDraft, featureMaturity),
 		releases: maturityByRelease(featuresDraft, featureMaturity)
@@ -119,17 +121,15 @@ export const load: LayoutServerLoad = async (event) => {
 	return {
 		projectId: params.projectId,
 		canWrite,
+		administers,
 		canUseSharedEditor: canUseSharedEditor(event),
 		team,
 		featureNames,
 		glossaryTerms,
+		specLanguage,
 		projectName: draft.productName.trim() || 'Untitled project',
 		industryLabel,
-		coherence: productCoherence.coherenceScore,
-		productCoherence,
-		scoreHistory: history?.points ?? [],
-		sinceLastVisit,
-		trlBreakdown,
+		maturityBreakdown,
 		tier: services.currentTier(),
 		// Both platform and back address the shared kernel with this immutable id.
 		dashboardProjectId: params.projectId,

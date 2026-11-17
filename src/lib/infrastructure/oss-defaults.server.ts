@@ -3,7 +3,9 @@ import type {
 	BackSystemProbePort,
 	FormalVerdictPort,
 	KnowledgeGraphProviderPort,
+	PersonJobs,
 	ProjectMirrorPort,
+	TeamJobsPort,
 	WorkspaceDirectoryPort,
 	WorkspaceMemberNamePort,
 	WorkspaceSummary,
@@ -70,6 +72,13 @@ export class NoWorkspaceDirectory implements WorkspaceDirectoryPort {
 	}
 	async renameForCaller(): Promise<WorkspaceSummary | null> {
 		return null;
+	}
+}
+
+/** One operator: nobody's job to read. */
+export class NoTeamJobs implements TeamJobsPort {
+	async forProject(): Promise<ReadonlyMap<string, PersonJobs>> {
+		return new Map();
 	}
 }
 

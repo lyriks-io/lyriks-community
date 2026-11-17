@@ -1,4 +1,6 @@
-import type { CoherenceIssue, CoherenceResult, CoherenceTone } from '$domain/shared';
+import type { CoherenceIssue, CoherenceResult } from '$domain/shared';
+import type { SpecLanguage } from '$domain/language';
+import { sectionTone } from '$domain/coherence/section-tone';
 import { ARCH_LAYERS } from './enums';
 import { architectureStage, layersWithTech, type ProjectArchitectureDraft } from './draft';
 
@@ -14,14 +16,12 @@ import { architectureStage, layersWithTech, type ProjectArchitectureDraft } from
  * Score clamped to [0, 100], same convention as Steps 01-07.
  */
 
-function toneFor(score: number): { tone: CoherenceTone; label: string } {
-	if (score < 34) return { tone: 'critical', label: 'Critical' };
-	if (score < 67) return { tone: 'at-risk', label: 'At risk' };
-	return { tone: 'strong', label: 'Strong' };
-}
-
-export function computeArchitectureCoherence(draft: ProjectArchitectureDraft): CoherenceResult {
-	if (architectureStage(draft) === 'logical') return logicalCoherence(draft);
+export function computeArchitectureCoherence(
+	draft: ProjectArchitectureDraft,
+	lang: SpecLanguage = 'en'
+): CoherenceResult {
+	if (architectureStage(draft) === 'logical') return logicalCoherence(draft, lang);
+	const fr = lang === 'fr';
 	const issues: CoherenceIssue[] = [];
 	let score = 0;
 
@@ -29,7 +29,7 @@ export function computeArchitectureCoherence(draft: ProjectArchitectureDraft): C
 
 	// 1. At least one tech — 15 pts.
 	if (tech.length === 0) {
-		issues.push({ code: 'no-tech', message: 'No tech choice yet.' });
+		issues.push({ code: 'no-tech', message: fr ? 'Aucun choix technique pour le moment.' : 'No tech choice yet.' });
 	} else {
 		score += 15;
 	}
@@ -41,7 +41,9 @@ export function computeArchitectureCoherence(draft: ProjectArchitectureDraft): C
 		if (covered < ARCH_LAYERS.length) {
 			issues.push({
 				code: 'thin-layers',
-				message: `${ARCH_LAYERS.length - covered} layer(s) have no tech yet.`
+				message: fr
+					? `${ARCH_LAYERS.length - covered} couche(s) sans technologie pour le moment.`
+					: `${ARCH_LAYERS.length - covered} layer(s) have no tech yet.`
 			});
 		}
 	}
@@ -53,7 +55,9 @@ export function computeArchitectureCoherence(draft: ProjectArchitectureDraft): C
 		if (referenced < tech.length) {
 			issues.push({
 				code: 'unreferenced-tech',
-				message: `${tech.length - referenced} tech choice(s) without an official reference doc.`
+				message: fr
+					? `${tech.length - referenced} choix technique(s) sans document de référence officiel.`
+					: `${tech.length - referenced} tech choice(s) without an official reference doc.`
 			});
 		}
 	}
@@ -63,35 +67,43 @@ export function computeArchitectureCoherence(draft: ProjectArchitectureDraft): C
 	if (draft.sourceIds.length > 0) {
 		score += 15;
 	} else if (tech.length > 0) {
-		issues.push({ code: 'no-doc', message: 'No source cited for the stack.' });
+		issues.push({ code: 'no-doc', message: fr ? "Aucune source n'est citée pour la pile technique." : 'No source cited for the stack.' });
 	}
 
 	// 5. At least one non-negotiable constraint — 15 pts.
 	if (draft.constraints.length > 0) {
 		score += 15;
 	} else {
-		issues.push({ code: 'no-constraint', message: 'No non-negotiable constraint declared.' });
+		issues.push({
+			code: 'no-constraint',
+			message: fr ? "Aucune contrainte non négociable n'est déclarée." : 'No non-negotiable constraint declared.'
+		});
 	}
 
 	const clamped = Math.max(0, Math.min(100, Math.round(score)));
-	const { tone, label } = toneFor(clamped);
+	const { tone, label } = sectionTone(clamped, lang);
 	return { score: clamped, tone, label, issues };
 }
 
 /** Logical design is not penalized for undecided technologies or unused layers. */
-function logicalCoherence(draft: ProjectArchitectureDraft): CoherenceResult {
+function logicalCoherence(draft: ProjectArchitectureDraft, lang: SpecLanguage): CoherenceResult {
+	const fr = lang === 'fr';
 	const issues: CoherenceIssue[] = [];
 	const checks = [
-		{ ok: draft.techChoices.length > 0, points: 25, code: 'no-component', message: 'No logical component yet.' },
+		{ ok: draft.techChoices.length > 0, points: 25, code: 'no-component',
+			message: fr ? 'Aucun composant logique pour le moment.' : 'No logical component yet.' },
 		{ ok: draft.techChoices.length > 0 && draft.techChoices.every((c) => c.name.trim() && c.role.trim()),
-			points: 40, code: 'missing-responsibility', message: 'Give every component a name and a responsibility.' },
-		{ ok: draft.sourceIds.length > 0, points: 15, code: 'no-doc', message: 'Cite the requirements behind this design.' },
-		{ ok: draft.constraints.length > 0, points: 20, code: 'no-constraint', message: 'Record the constraints behind this design.' }
+			points: 40, code: 'missing-responsibility',
+			message: fr ? 'Donnez à chaque composant un nom et une responsabilité.' : 'Give every component a name and a responsibility.' },
+		{ ok: draft.sourceIds.length > 0, points: 15, code: 'no-doc',
+			message: fr ? 'Citez les exigences qui fondent cette conception.' : 'Cite the requirements behind this design.' },
+		{ ok: draft.constraints.length > 0, points: 20, code: 'no-constraint',
+			message: fr ? 'Consignez les contraintes qui fondent cette conception.' : 'Record the constraints behind this design.' }
 	];
 	let score = 0;
 	for (const check of checks) {
 		if (check.ok) score += check.points;
 		else issues.push({ code: check.code, message: check.message });
 	}
-	return { score, ...toneFor(score), issues };
+	return { score, ...sectionTone(score, lang), issues };
 }

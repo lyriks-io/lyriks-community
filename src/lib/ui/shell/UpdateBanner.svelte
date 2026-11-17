@@ -57,27 +57,27 @@
 
 {#if show && status}
 	<div
-		class="flex items-center gap-3 border-b border-brand-500/25 bg-brand-500/10 px-4 py-2 text-sm text-ink-900"
+		class="flex items-center gap-3 border-b-[1.5px] border-blue bg-blue-tint px-4 py-2 text-sm text-ink"
 		role="status"
 	>
 		<Icon name="bolt" size={15} />
 		<p class="flex-1">
 			<span class="font-semibold">Lyriks {status.latest} is available</span>
-			<span class="text-ink-700"> - this install runs {status.current}.</span>
+			<span class="text-ink-2"> - this install runs {status.current}.</span>
 		</p>
-		<code class="rounded bg-white/60 px-2 py-1 text-xs font-semibold text-ink-900">
+		<code class="bg-ink px-2 py-1 font-evo-mono text-xs font-semibold text-paper">
 			{UPDATE_COMMAND}
 		</code>
 		<button
 			type="button"
-			class="rounded-pill border border-brand-500/40 px-2.5 py-1 text-xs font-semibold text-brand-600 hover:bg-white/50"
+			class="pressable border-[1.5px] border-ink bg-transparent px-2.5 py-1 text-xs font-bold tracking-[0.07em] text-ink uppercase"
 			onclick={copyCommand}
 		>
 			{copied ? 'Copied' : 'Copy'}
 		</button>
 		<button
 			type="button"
-			class="rounded p-1 text-ink-500 hover:text-ink-900"
+			class="p-1 text-ink-3 hover:text-ink"
 			aria-label="Dismiss update notice"
 			onclick={dismiss}
 		>

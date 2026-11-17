@@ -1,5 +1,4 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { graphOverview, scopeGraph } from '$domain/graph';
 import type { GraphContext, GraphNodeKind, GraphScope, WalkDirection } from '$domain/graph';
@@ -49,7 +48,7 @@ export const GET: RequestHandler = async (event) => {
 	// in Enterprise. `source=engine` is policy-gated to Enterprise and returns its raw substrate;
 	// `source=local` returns the wizard projection alone.
 	const param = url.searchParams.get('source');
-	const services = getServices();
+	const services = event.locals.services;
 	const provider =
 		param === 'engine'
 			? services.loadEngineKnowledgeGraph

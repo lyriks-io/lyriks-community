@@ -10,13 +10,15 @@ import { z } from 'zod'
 import { createMcpServer } from '../server.js'
 import type { BoundOverlay } from '../enterprise/overlay.js'
 import { CAP_HINTS } from '../util/cap-hints.js'
-import { DEFAULT_CAP_HINT, RESULT_CAP, capResult } from '../util/shape.js'
+import { DEFAULT_CAP_HINT, PROJECT_OUTLINE_NEXT, RESULT_CAP, capResult } from '../util/shape.js'
 
 const size = (v: unknown) => JSON.stringify(v).length
 const row = (i: number) => ({ key: `rule:${i}`, featureId: `feat-${i % 7}`, status: 'implemented', scope: 'element', nested: { deep: [i] } })
 
 type Sampled = { total: number; returned: number; items: Array<Record<string, unknown>> }
 type Capped = { _capped: true; kind: string; bytes: number; hint: string; shape?: unknown; partial: Record<string, unknown> }
+
+const RETIRED_PROTOTYPE_TOOLS = ['verify_experience']
 
 describe('capResult on an object', () => {
   it('passes a small result through untouched', () => {
@@ -113,6 +115,8 @@ function overlay(): BoundOverlay {
   } as unknown as BoundOverlay
 }
 
+const PROOF_TOOLS = ['what_if', 'prove_project_invariants', 'what_if_project']
+
 describe('recovery hints name only arguments their tool accepts', () => {
   // `name:value` is how a hint spells an argument; the colon is glued to the value.
   const spelled = (text: string) => [...text.matchAll(/\b([a-z][a-z_]*):(?=\S)/g)].map((m) => m[1])
@@ -121,6 +125,16 @@ describe('recovery hints name only arguments their tool accepts', () => {
     // @ts-expect-error testing registered wire schemas
     const tools = createMcpServer(ee)._registeredTools as Record<string, { inputSchema: { shape: Record<string, unknown> } }>
     for (const [tool, hint] of Object.entries(CAP_HINTS)) {
+      // Proof by the solver is Enterprise only: the Community gateway does not offer it at all.
+      if (!ee && PROOF_TOOLS.includes(tool)) {
+        expect(tools[tool], `${tool} is not offered on Community`).toBeUndefined()
+        continue
+      }
+      // The screen prototype is retired: its tools keep their hints in the tree, unregistered.
+      if (RETIRED_PROTOTYPE_TOOLS.includes(tool)) {
+        expect(tools[tool], `${tool} is retired`).toBeUndefined()
+        continue
+      }
       expect(tools[tool], `${tool} is a registered tool`).toBeDefined()
       const accepted = Object.keys(tools[tool].inputSchema.shape)
       expect(hint.args.length, `${tool} declares the arguments it names`).toBeGreaterThan(0)
@@ -130,6 +144,14 @@ describe('recovery hints name only arguments their tool accepts', () => {
       }
       for (const arg of spelled(hint.text)) expect(hint.args, `${tool} hint text names ${arg}`).toContain(arg)
     }
+  })
+
+  it('names only arguments get_project accepts in the outline of a project', () => {
+    // @ts-expect-error testing registered wire schemas
+    const tools = createMcpServer(null)._registeredTools as Record<string, { inputSchema: { shape: Record<string, unknown> } }>
+    const accepted = Object.keys(tools.get_project.inputSchema.shape)
+    expect(spelled(PROJECT_OUTLINE_NEXT)).toEqual(['paths', 'full'])
+    for (const arg of spelled(PROJECT_OUTLINE_NEXT)) expect(accepted).toContain(arg)
   })
 
   it('names no argument in the default hint', () => {

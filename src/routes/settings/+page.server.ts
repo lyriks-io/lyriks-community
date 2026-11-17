@@ -1,6 +1,6 @@
-import { getServices } from '$composition/container.server';
-import { tierLabel } from '$domain/tier/tier';
+import { tierLabel } from '$domain/tier';
 import { SESSION_COOKIE } from '$lib/server/session-cookie.server';
+import { isAdmin } from '$lib/server/admin.server';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -12,11 +12,20 @@ import type { PageServerLoad } from './$types';
 const LOCKED_MEMBERS = { locked: true as const, workspace: null };
 
 export const load: PageServerLoad = async (event) => {
-	const services = getServices();
+	const services = event.locals.services;
 	const ai = await services.loadSettings.execute();
 	// The feedback-channel switch (Settings → Feedback): whether the dialog may
 	// offer its online channel on this install.
 	const feedback = await services.loadFeedbackSettings.execute();
+	// The language of the specifications and what may leave the installation (Settings → Configuration).
+	const configuration = await services.loadInstallConfiguration.execute();
+	// How the app reads to everyone (Settings → Display): how long New lasts (criterion 8c1e9288).
+	const display = await services.loadDisplaySettings.execute();
+	// Whether the installation proves with the solver, and the machine it would run on (Settings → Proofs).
+	const proofs = await services.loadProofSettings.execute();
+	// The built-in assistant (Settings → AI assistant): what anyone may read, never
+	// the key; only an administrator gets the form (ac-adm-ai-readonly).
+	const assistant = await services.loadAssistantSettings.execute();
 	// Everything the licence key reports belongs on this screen too, not only on
 	// /activate: the account section is where an operator looks themselves up.
 	// Client-safe view (never the raw key), re-verified offline on each load.
@@ -109,6 +118,12 @@ export const load: PageServerLoad = async (event) => {
 	return {
 		ai,
 		feedback,
+		configuration,
+		destinations: services.outboundDestinations(),
+		display,
+		proofs,
+		assistant,
+		isAdmin: isAdmin(event),
 		license,
 		account,
 		components,

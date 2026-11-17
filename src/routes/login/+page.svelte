@@ -40,7 +40,7 @@
 	<div class="w-full max-w-sm">
 		<div class="mb-6 text-center">
 			<Logo size={44} class="mx-auto mb-3" />
-			<h1 class="text-lg font-bold text-ink-900">
+			<h1 class="text-lg font-bold tracking-[-0.02em] text-ink">
 				{#if data.firstRun}Set up Lyriks{:else}{isRegister
 						? 'Create your Lyriks account'
 						: 'Sign in to Lyriks'}{/if}
@@ -53,7 +53,7 @@
 		</div>
 
 		{#if data.viaInvite}
-			<p class="mb-4 rounded-field border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-ink-600">
+			<p class="mb-4 border-l-[6px] border-blue bg-blue-tint px-3 py-2 text-xs text-ink-2">
 				You've been invited to
 				<span class="font-semibold text-ink-800">{data.inviteWorkspace ?? 'a workspace'}</span>
 				as <span class="font-semibold text-ink-800">{data.inviteEmail}</span>. Create your account
@@ -62,26 +62,26 @@
 		{/if}
 
 		{#if data.inviteExpired}
-			<p class="mb-4 rounded-field border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-600">
+			<p class="mb-4 border-l-[6px] border-orange bg-orange-tint px-3 py-2 text-xs text-ink-2">
 				This invite link is no longer valid. It may have been used, revoked, or expired. Ask your
 				workspace admin for a fresh one.
 			</p>
 		{/if}
 
 		{#if !data.authConfigured}
-			<p class="mb-4 rounded-field border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-600">
+			<p class="mb-4 border-l-[6px] border-orange bg-orange-tint px-3 py-2 text-xs text-ink-2">
 				Authentication isn't configured on this instance (no Lyriks server URL). Contact your admin.
 			</p>
 		{/if}
 
 		{#if data.backUnreachable}
-			<p class="mb-4 rounded-field border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-600">
+			<p class="mb-4 border-l-[6px] border-red bg-red-tint px-3 py-2 text-xs text-red-ink">
 				The Lyriks server could not be reached. Try again in a moment.
 			</p>
 		{/if}
 
 		{#if form?.message}
-			<p class="mb-4 rounded-field border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-600">
+			<p class="mb-4 border-l-[6px] border-red bg-red-tint px-3 py-2 text-xs text-red-ink">
 				{form.message}
 			</p>
 		{/if}
@@ -90,50 +90,50 @@
 			<!-- No account exists on this installation. Nothing was configured at
 			     install time on purpose: the person who owns the licence is the
 			     person who claims the box, and they prove it here. -->
-			<div class="space-y-4 rounded-card border border-line bg-surface p-5 shadow-card">
+			<div class="space-y-4 border border-line bg-surface p-5">
 				{#if firstRunStep === 'identify'}
 					<div>
-						<h2 class="text-sm font-semibold text-ink-900">Claim this installation</h2>
-						<p class="mt-1 text-xs leading-relaxed text-ink-500">
+						<h2 class="text-sm font-bold tracking-[-0.01em] text-ink">Claim this installation</h2>
+						<p class="mt-1 text-xs leading-relaxed text-ink-2">
 							Enter the address your licence was issued to, and the key we sent you. Your key is
 							checked on this machine; nothing leaves it.
 						</p>
 					</div>
 					<form method="POST" action="?/firstRunCheck" class="space-y-3">
 						<label class="block">
-							<span class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-400">Email</span>
+							<span class="mb-1 block font-evo-mono text-xs font-bold tracking-[0.08em] text-ink-3 uppercase">Email</span>
 							<input
 								name="email"
 								type="email"
 								required
 								autocomplete="email"
 								value={firstRunEmail}
-								class="w-full rounded-field border border-line bg-surface px-3 py-2 text-sm text-ink-900 outline-none focus:border-brand-300"
+								class="w-full border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue"
 								placeholder="you@company.com"
 							/>
 						</label>
 						<label class="block">
-							<span class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-400">Licence key</span>
+							<span class="mb-1 block font-evo-mono text-xs font-bold tracking-[0.08em] text-ink-3 uppercase">Licence key</span>
 							<textarea
 								name="key"
 								rows="3"
 								required
 								spellcheck="false"
 								autocomplete="off"
-								class="w-full resize-none rounded-field border border-line bg-surface px-3 py-2 font-mono text-xs text-ink-900 outline-none focus:border-brand-300"
+								class="w-full resize-none border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 font-mono text-xs text-ink outline-none placeholder:text-ink-3 focus:border-blue"
 								placeholder="lyk_…">{firstRunKey}</textarea>
 						</label>
 						<button
 							type="submit"
-							class="w-full rounded-field bg-brand-gradient py-2 text-sm font-semibold text-white shadow-card transition-opacity hover:opacity-95"
+							class="pressable w-full border-[1.5px] border-ink bg-brand-500 py-2 text-xs font-bold tracking-[0.07em] text-paper uppercase"
 						>
 							Continue
 						</button>
 					</form>
 				{:else}
 					<div>
-						<h2 class="text-sm font-semibold text-ink-900">Choose your password</h2>
-						<p class="mt-1 text-xs leading-relaxed text-ink-500">
+						<h2 class="text-sm font-bold tracking-[-0.01em] text-ink">Choose your password</h2>
+						<p class="mt-1 text-xs leading-relaxed text-ink-2">
 							Your key checks out{firstRunLicense?.entitlements?.customer
 								? ` for ${firstRunLicense.entitlements.customer}`
 								: ''}. This creates the administrator account for
@@ -144,31 +144,31 @@
 						<input type="hidden" name="email" value={firstRunEmail} />
 						<input type="hidden" name="key" value={firstRunKey} />
 						<label class="block">
-							<span class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-400">Password</span>
+							<span class="mb-1 block font-evo-mono text-xs font-bold tracking-[0.08em] text-ink-3 uppercase">Password</span>
 							<input
 								name="password"
 								type="password"
 								required
 								autocomplete="new-password"
-								class="w-full rounded-field border border-line bg-surface px-3 py-2 text-sm text-ink-900 outline-none focus:border-brand-300"
+								class="w-full border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue"
 								placeholder="••••••••"
 							/>
 						</label>
 						<label class="block">
-							<span class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-400">Confirm password</span>
+							<span class="mb-1 block font-evo-mono text-xs font-bold tracking-[0.08em] text-ink-3 uppercase">Confirm password</span>
 							<input
 								name="confirm"
 								type="password"
 								required
 								autocomplete="new-password"
-								class="w-full rounded-field border border-line bg-surface px-3 py-2 text-sm text-ink-900 outline-none focus:border-brand-300"
+								class="w-full border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue"
 								placeholder="••••••••"
 							/>
 						</label>
 						<button
 							type="submit"
 							disabled={!data.authConfigured}
-							class="w-full rounded-field bg-brand-gradient py-2 text-sm font-semibold text-white shadow-card transition-opacity hover:opacity-95 disabled:opacity-40"
+							class="pressable w-full border-[1.5px] border-ink bg-brand-500 py-2 text-xs font-bold tracking-[0.07em] text-paper uppercase disabled:opacity-40"
 						>
 							Create my account
 						</button>
@@ -180,29 +180,29 @@
 			{#if isRegister}
 				<div class="grid grid-cols-2 gap-3">
 					<label class="block">
-						<span class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-400">First name</span>
+						<span class="mb-1 block font-evo-mono text-xs font-bold tracking-[0.08em] text-ink-3 uppercase">First name</span>
 						<input
 							name="firstName"
 							type="text"
 							autocomplete="given-name"
-							class="w-full rounded-field border border-line bg-surface px-3 py-2 text-sm text-ink-900 outline-none focus:border-brand-300"
+							class="w-full border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue"
 							placeholder="Ada"
 						/>
 					</label>
 					<label class="block">
-						<span class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-400">Last name</span>
+						<span class="mb-1 block font-evo-mono text-xs font-bold tracking-[0.08em] text-ink-3 uppercase">Last name</span>
 						<input
 							name="lastName"
 							type="text"
 							autocomplete="family-name"
-							class="w-full rounded-field border border-line bg-surface px-3 py-2 text-sm text-ink-900 outline-none focus:border-brand-300"
+							class="w-full border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue"
 							placeholder="Lovelace"
 						/>
 					</label>
 				</div>
 			{/if}
 			<label class="block">
-				<span class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-400">Email</span>
+				<span class="mb-1 block font-evo-mono text-xs font-bold tracking-[0.08em] text-ink-3 uppercase">Email</span>
 				<!-- An invitation is issued to ONE address and acceptance only works for
 				     it, so while registering via invite the field is locked: editing it
 				     could only produce a confusing refusal three fields later. Signing in
@@ -214,28 +214,28 @@
 					autocomplete="email"
 					readonly={isRegister && data.viaInvite}
 					value={form?.email ?? data.inviteEmail ?? ''}
-					class="w-full rounded-field border border-line bg-surface px-3 py-2 text-sm text-ink-900 outline-none focus:border-brand-300 read-only:cursor-not-allowed read-only:bg-surface-2 read-only:text-ink-500"
+					class="w-full border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue read-only:cursor-not-allowed read-only:bg-toner-2 read-only:text-ink-3"
 					placeholder="you@company.com"
 				/>
 				{#if isRegister && data.viaInvite}
-					<span class="mt-1 block text-[11px] text-ink-400">The invitation was issued to this address.</span>
+					<span class="mt-1 block text-[0.6875rem] text-ink-400">The invitation was issued to this address.</span>
 				{/if}
 			</label>
 			<label class="block">
-				<span class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-400">Password</span>
+				<span class="mb-1 block font-evo-mono text-xs font-bold tracking-[0.08em] text-ink-3 uppercase">Password</span>
 				<input
 					name="password"
 					type="password"
 					required
 					autocomplete={isRegister ? 'new-password' : 'current-password'}
-					class="w-full rounded-field border border-line bg-surface px-3 py-2 text-sm text-ink-900 outline-none focus:border-brand-300"
+					class="w-full border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue"
 					placeholder="••••••••"
 				/>
 			</label>
 			<button
 				type="submit"
 				disabled={!data.authConfigured}
-				class="w-full rounded-field bg-brand-gradient py-2 text-sm font-semibold text-white shadow-card transition-opacity hover:opacity-95 disabled:opacity-40"
+				class="pressable w-full border-[1.5px] border-ink bg-brand-500 py-2 text-xs font-bold tracking-[0.07em] text-paper uppercase disabled:opacity-40"
 			>
 				{isRegister ? 'Create account' : 'Sign in'}
 			</button>
@@ -247,7 +247,7 @@
 				<button
 					type="button"
 					onclick={() => (userMode = isRegister ? 'login' : 'register')}
-					class="font-semibold text-brand-600 hover:text-brand-700"
+					class="font-semibold text-blue-ink hover:underline"
 				>
 					{isRegister ? 'Sign in' : 'Create one'}
 				</button>

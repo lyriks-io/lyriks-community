@@ -206,6 +206,25 @@ describe('buildFeaturesProjection', () => {
 	});
 });
 
+describe('the cores of the tree reach the engine registry', () => {
+	it('declares every core once, by the name its leaves are tagged with', () => {
+		const draft = createEmptyFeaturesDraft('p1');
+		draft.cores = [
+			{ id: 'c1', name: 'Billing', description: 'Money in.', tone: 'invoicing' },
+			{ id: 'c2', name: 'billing', description: 'Duplicate by case.', tone: 'invoicing' },
+			{ id: 'c3', name: '', description: '', tone: 'custom' }
+		];
+		const ops = featuresDraftToBehaviorOps(draft, { auxFeatureIds: [], currentProjectTags: [] });
+		expect(ops.find((o) => o.kind === 'setProjectCores')).toEqual({
+			kind: 'setProjectCores',
+			cores: [
+				{ value: 'Billing', description: 'Money in.' },
+				{ value: 'c3', description: 'c3' }
+			]
+		});
+	});
+});
+
 describe('leaf acceptance criteria reach the model', () => {
 	function draftWithCriteria(criteria: { id: string; text: string }[]) {
 		const draft = createEmptyFeaturesDraft('p1');
@@ -263,3 +282,29 @@ describe('leaf acceptance criteria reach the model', () => {
 	});
 });
 
+
+describe('a leaf without a description, in the spec language', () => {
+	const shellOf = (lang?: 'en' | 'fr') => {
+		const draft = createEmptyFeaturesDraft('p1');
+		draft.cores = [{ id: 'c', name: 'Billing', description: '', tone: 'invoicing' }];
+		draft.features = [
+			{ id: 'f1', name: 'Invoice', coreId: 'c', parentFamilyId: null, unspaghettitFeatureId: 'f1', description: '' }
+		];
+		const ops = featuresDraftToBehaviorOps(draft, {
+			auxFeatureIds: [],
+			currentProjectTags: [],
+			...(lang ? { lang } : {})
+		});
+		const shell = ops.find((o) => o.kind === 'upsertFeatureShell');
+		if (shell?.kind !== 'upsertFeatureShell') throw new Error('no shell');
+		return shell;
+	};
+
+	it('describes it in French when the spec is French, its name untouched', () => {
+		expect(shellOf('fr')).toMatchObject({ featureId: 'f1', name: 'Invoice', description: 'Fonctionnalité Lyriks f1' });
+	});
+
+	it('keeps the English fallback by default', () => {
+		expect(shellOf().description).toBe('Lyriks Feature f1');
+	});
+});

@@ -1,6 +1,5 @@
-import { sourceAccessIssues } from '$domain/documents';
-import { parseDocumentsDraft } from '$application/parse-documents-draft';
 import { saveSectionDraft } from '$lib/server/section-save.server';
+import { DOCUMENTS_WRITE } from '$lib/server/section-write-specs.server';
 import type { RequestHandler } from './$types';
 
 /**
@@ -12,18 +11,4 @@ import type { RequestHandler } from './$types';
  * reads the response and fixes the row in the same pass, instead of finding
  * out at the completion gate.
  */
-export const PUT: RequestHandler = (event) =>
-	saveSectionDraft(event, {
-		section: 'documents',
-		parse: parseDocumentsDraft,
-		persist: async (draft, services, _projectId, save) => {
-			const result = await services.saveDocumentsDraft.execute(draft, save);
-			if (result === null) return null;
-			const issues = sourceAccessIssues(draft.sources);
-			return issues.length === 0
-				? result
-				: { ...result, coherenceIssues: issues.slice(0, 20).map((issue) => issue.message) };
-		},
-		atomic: true,
-		mirror: false
-	});
+export const PUT: RequestHandler = (event) => saveSectionDraft(event, DOCUMENTS_WRITE);

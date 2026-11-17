@@ -21,6 +21,7 @@ export function validateSectionPatch(operations: PatchOp[]): void {
     const invalid = (why: string): never => { throw new Error(`Invalid patch operation ${index}: ${why}`) }
     if (!record(op) || !['set', 'merge', 'append', 'remove', ...INCREMENTAL_OPS].includes(op.op)) invalid('unknown operation')
     if (op.insert !== undefined && typeof op.insert !== 'boolean') invalid('insert must be a boolean')
+    if (op.erase !== undefined && typeof op.erase !== 'boolean') invalid('erase must be a boolean')
     for (const path of [op.path, op.collection]) {
       if (path === undefined) continue
       if (typeof path !== 'string' || path.split('.').some(key => !key || dangerous.has(key))) invalid('unsafe or empty path segment')

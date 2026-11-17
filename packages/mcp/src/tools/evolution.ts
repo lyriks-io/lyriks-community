@@ -10,6 +10,7 @@ import { RESULT_CAP } from '../util/shape.js'
 
 export const DOSSIER_PARTS = [
   'summary',
+  'sections',
   'drafts',
   'fields',
   'proposals',
@@ -17,6 +18,14 @@ export const DOSSIER_PARTS = [
   'report',
   'readings',
   'history',
+  // Every frozen version whole, and the data model a data change is declared against.
+  'versions',
+  'data',
+  // In full what the dossier in short cuts to stay under the result cap:
+  // every text with its thread, every coherence finding, every docking point.
+  'texts',
+  'coherence',
+  'points',
   // Without request_id: the board's own lists, paged.
   'leaves',
   'sources',
@@ -123,6 +132,9 @@ const LIST_HOMES: ReadonlyArray<readonly [string, string]> = [
   ['report', 'lines'],
   ['leaves', 'entries'],
   ['sources', 'entries'],
+  ['texts', 'entries'],
+  ['points', 'entries'],
+  ['coherence', 'findings'],
 ]
 
 /**

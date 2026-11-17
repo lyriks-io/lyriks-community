@@ -19,6 +19,7 @@ import { blocksWhenEmpty, inputNodesOfScreen, sampleInputValue } from './builder
 import type { SimAction } from './simulate';
 import { simulate } from './simulate';
 import { planNavigation } from './plan-navigation';
+import { NBSP, quoteName, type SpecLanguage } from '$domain/language';
 
 /** One assertion, both human text and the structured state condition behind it. */
 export interface AcceptanceAssertion {
@@ -80,12 +81,54 @@ export interface AcceptanceSpec {
 	gherkin: string;
 }
 
-const screenNameOf = (draft: ProjectExperienceDraft, id: string | null): string =>
+/** The texts this module writes, in the language of the spec; model names are quoted, never translated. */
+const TEXTS = {
+	en: {
+		screen: 'screen',
+		none: '(none)',
+		step: 'Step',
+		journey: 'Journey',
+		element: 'Element',
+		behaves: (label: string) => `${label} behaves`,
+		state: 'state',
+		finalScreen: 'the final screen',
+		actionsNotArray: (step: string) => `Step "${step}" actions must be an array.`,
+		noExecutablePath: (from: string, to: string) =>
+			`No executable path from "${from}" to "${to}" within the planning budget. Check visibility/validation guards or author steps[].actions explicitly.`,
+		noNavigation: (from: string, to: string) => `No navigation from "${from}" to "${to}".`,
+		isSet: (subject: string) => `${subject} is set`,
+		isNotSet: (subject: string) => `${subject} is not set`,
+		equals: (subject: string, value: string) => `${subject} equals "${value}"`,
+		notEquals: (subject: string, value: string) => `${subject} does not equal "${value}"`
+	},
+	fr: {
+		screen: 'écran',
+		none: '(aucun)',
+		step: 'Étape',
+		journey: 'Parcours',
+		element: 'Élément',
+		behaves: (label: string) => `${label} se comporte comme prévu`,
+		state: "l'état",
+		finalScreen: "l'écran final",
+		actionsNotArray: (step: string) =>
+			`Les actions (steps[].actions) de l'étape ${quoteName('fr', step)} doivent être une liste.`,
+		noExecutablePath: (from: string, to: string) =>
+			`Aucun chemin exécutable de ${quoteName('fr', from)} à ${quoteName('fr', to)} dans le budget de planification. Vérifiez les conditions de visibilité et de validation, ou écrivez steps[].actions explicitement.`,
+		noNavigation: (from: string, to: string) =>
+			`Aucune navigation de ${quoteName('fr', from)} vers ${quoteName('fr', to)}.`,
+		isSet: (subject: string) => `${subject} a une valeur`,
+		isNotSet: (subject: string) => `${subject} n'a pas de valeur`,
+		equals: (subject: string, value: string) => `${subject} vaut ${quoteName('fr', value)}`,
+		notEquals: (subject: string, value: string) => `${subject} ne vaut pas ${quoteName('fr', value)}`
+	}
+} as const;
+
+const screenNameOf = (draft: ProjectExperienceDraft, id: string | null, lang: SpecLanguage = 'en'): string =>
 	id
 		? (draft.screens.find((s) => s.id === id)?.name?.trim() ||
 			draft.components.find((c) => c.id === id)?.name?.trim() ||
-			'screen')
-		: '(none)';
+			TEXTS[lang].screen)
+		: TEXTS[lang].none;
 
 /**
  * Element nodes that render on `screenId` — its own plus those contributed by
@@ -121,16 +164,21 @@ function navElementTo(
  * between them and click it. Records a flow gap wherever no such navigation
  * exists (the prototype can't actually get from one step to the next yet).
  */
-export function deriveJourneyFlow(draft: ProjectExperienceDraft, journey: Journey): JourneyFlow {
+export function deriveJourneyFlow(
+	draft: ProjectExperienceDraft,
+	journey: Journey,
+	lang: SpecLanguage = 'en'
+): JourneyFlow {
+	const t = TEXTS[lang];
 	const hasRoot = (id: string) => Boolean(draft.builder.screenRoots[id]);
 	const steps = stepsOfJourney(draft, journey.id);
 	const stops = steps
 		.filter((s) => s.linkedScreenId && hasRoot(s.linkedScreenId))
 		.map((s) => ({
 			stepId: s.id,
-			step: s.name?.trim() || 'Step',
+			step: s.name?.trim() || t.step,
 			screenId: s.linkedScreenId as string,
-			screen: screenNameOf(draft, s.linkedScreenId)
+			screen: screenNameOf(draft, s.linkedScreenId, lang)
 		}));
 
 	const pathOf = (screenId: string): string => {
@@ -149,7 +197,7 @@ export function deriveJourneyFlow(draft: ProjectExperienceDraft, journey: Journe
 			script.push(...actions);
 			authoredActionCount += actions.length;
 		} else if (actions !== undefined)
-			flowGaps.push(`Step "${from.step}" actions must be an array.`);
+			flowGaps.push(t.actionsNotArray(from.step));
 		const to = stops[i + 1];
 		if (!to) continue;
 		if (from.screenId === to.screenId) continue; // same screen, no nav needed
@@ -166,7 +214,7 @@ export function deriveJourneyFlow(draft: ProjectExperienceDraft, journey: Journe
 		}
 		const el = navElementTo(draft, from.screenId, to.screenId);
 		if (el) {
-			flowGaps.push(`No executable path from "${from.screen}" to "${to.screen}" within the planning budget. Check visibility/validation guards or author steps[].actions explicitly.`);
+			flowGaps.push(t.noExecutablePath(from.screen, to.screen));
 			// A require-valid submit is blocked while its screen holds an invalid
 			// input, so the happy path has to fill the form before pressing it. That
 			// is what a user does, and skipping it made every screen behind a login
@@ -188,18 +236,18 @@ export function deriveJourneyFlow(draft: ProjectExperienceDraft, journey: Journe
 				toScreenId: to.screenId,
 				toPath: pathOf(to.screenId)
 			});
-		} else flowGaps.push(`No navigation from "${from.screen}" to "${to.screen}".`);
+		} else flowGaps.push(t.noNavigation(from.screen, to.screen));
 	}
 
 	// Acceptance criteria: every element scenario on this journey's screens.
 	const criteria: AcceptanceCriterion[] = [];
 	const seenScreens = new Set(stops.map((s) => s.screenId));
 	const fmt = (a: ScenarioAssertion): string => {
-		const subject = a.path || 'state';
-		if (a.op === 'truthy') return `${subject} is set`;
-		if (a.op === 'falsy') return `${subject} is not set`;
-		if (a.op === 'eq') return `${subject} equals "${a.expected ?? ''}"`;
-		return `${subject} does not equal "${a.expected ?? ''}"`;
+		const subject = a.path ? (lang === 'fr' ? quoteName(lang, a.path) : a.path) : t.state;
+		if (a.op === 'truthy') return t.isSet(subject);
+		if (a.op === 'falsy') return t.isNotSet(subject);
+		if (a.op === 'eq') return t.equals(subject, a.expected ?? '');
+		return t.notEquals(subject, a.expected ?? '');
 	};
 	const toAssertion = (a: ScenarioAssertion): AcceptanceAssertion => ({
 		text: fmt(a),
@@ -217,8 +265,8 @@ export function deriveJourneyFlow(draft: ProjectExperienceDraft, journey: Journe
 				seenCriteria.add(`${el.id}-${sc.id}`);
 				criteria.push({
 					id: `${el.id}-${sc.id}`,
-					title: sc.title || `${el.label || 'Element'} behaves`,
-					screen: screenNameOf(draft, screenId),
+					title: sc.title || t.behaves(el.label || t.element),
+					screen: screenNameOf(draft, screenId, lang),
 					screenId,
 					whenTrigger: sc.whenTrigger,
 					given: sc.given.map(toAssertion),
@@ -228,7 +276,7 @@ export function deriveJourneyFlow(draft: ProjectExperienceDraft, journey: Journe
 
 	return {
 		journeyId: journey.id,
-		name: journey.name?.trim() || 'Journey',
+		name: journey.name?.trim() || t.journey,
 		stops,
 		script,
 		authoredActionCount,
@@ -241,39 +289,86 @@ export function deriveJourneyFlow(draft: ProjectExperienceDraft, journey: Journe
 	};
 }
 
+/**
+ * The Gherkin skeleton in each language. French uses the French keywords a
+ * Gherkin parser reads under `# language: fr`; a keyword's colon stays glued
+ * to it (`Fonctionnalité:`), since the parser requires it, while the prose
+ * follows French typography.
+ */
+const GHERKIN = {
+	en: {
+		header: null,
+		feature: 'Feature',
+		scenario: 'Scenario',
+		given: 'Given',
+		when: 'When',
+		then: 'Then',
+		and: null,
+		journeyTitle: (name: string) => `complete the "${name}" journey`,
+		startsOn: (screen: string) => `the user starts on "${screen}"`,
+		proceedsTo: (screen: string) => `the user proceeds to "${screen}"`,
+		landsOn: (screen: string) => `the user lands on "${screen}"`,
+		gap: (gap: string) => `# GAP: ${gap}`,
+		onScreen: (title: string, screen: string) => `${title} (on "${screen}")`,
+		performs: (trigger: string) => `the user performs ${trigger}`
+	},
+	fr: {
+		header: '# language: fr',
+		feature: 'Fonctionnalité',
+		scenario: 'Scénario',
+		given: 'Étant donné',
+		when: 'Quand',
+		then: 'Alors',
+		and: 'Et',
+		journeyTitle: (name: string) => `réaliser le parcours ${quoteName('fr', name)}`,
+		startsOn: (screen: string) => `que l'utilisateur démarre sur ${quoteName('fr', screen)}`,
+		proceedsTo: (screen: string) => `l'utilisateur passe à ${quoteName('fr', screen)}`,
+		landsOn: (screen: string) => `l'utilisateur arrive sur ${quoteName('fr', screen)}`,
+		gap: (gap: string) => `# LACUNE${NBSP}: ${gap}`,
+		onScreen: (title: string, screen: string) => `${title} (sur ${quoteName('fr', screen)})`,
+		performs: (trigger: string) => `l'utilisateur déclenche ${quoteName('fr', trigger)}`
+	}
+} as const;
+
 /** Render the full spec as Gherkin so it reads as acceptance criteria a build must meet. */
-function toGherkin(features: JourneyFlow[]): string {
+function toGherkin(features: JourneyFlow[], lang: SpecLanguage = 'en'): string {
+	const g = GHERKIN[lang];
 	const lines: string[] = [];
+	if (g.header) lines.push(g.header, '');
+	// English repeats the keyword on every line, as it always did; French
+	// continues a clause with "Et", as French Gherkin reads.
+	const keyword = (base: string, index: number): string => (index > 0 && g.and ? g.and : base);
 	for (const f of features) {
-		lines.push(`Feature: ${f.name}`);
+		lines.push(`${g.feature}: ${f.name}`);
 		if (f.stops.length) {
-			lines.push(`  Scenario: complete the "${f.name}" journey`);
-			lines.push(`    Given the user starts on "${f.stops[0].screen}"`);
+			lines.push(`  ${g.scenario}: ${g.journeyTitle(f.name)}`);
+			lines.push(`    ${g.given} ${g.startsOn(f.stops[0].screen)}`);
 			for (let i = 1; i < f.stops.length; i++)
-				lines.push(`    When the user proceeds to "${f.stops[i].screen}"`);
+				lines.push(`    ${keyword(g.when, i - 1)} ${g.proceedsTo(f.stops[i].screen)}`);
 			if (f.finalScreenId)
-				lines.push(`    Then the user lands on "${screenLabel(f)}"`);
-			for (const g of f.flowGaps) lines.push(`    # GAP: ${g}`);
+				lines.push(`    ${g.then} ${g.landsOn(screenLabel(f, lang))}`);
+			for (const gap of f.flowGaps) lines.push(`    ${g.gap(gap)}`);
 		}
 		for (const c of f.criteria) {
-			lines.push(`  Scenario: ${c.title} (on "${c.screen}")`);
-			for (const g of c.given) lines.push(`    Given ${g.text}`);
-			lines.push(`    When the user performs ${c.whenTrigger}`);
-			for (const t of c.then) lines.push(`    Then ${t.text}`);
+			lines.push(`  ${g.scenario}: ${g.onScreen(c.title, c.screen)}`);
+			c.given.forEach((a, i) => lines.push(`    ${keyword(g.given, i)} ${a.text}`));
+			lines.push(`    ${g.when} ${g.performs(c.whenTrigger)}`);
+			c.then.forEach((a, i) => lines.push(`    ${keyword(g.then, i)} ${a.text}`));
 		}
 		lines.push('');
 	}
 	return lines.join('\n').trim();
 }
 
-const screenLabel = (f: JourneyFlow): string => f.stops[f.stops.length - 1]?.screen ?? 'the final screen';
+const screenLabel = (f: JourneyFlow, lang: SpecLanguage = 'en'): string =>
+	f.stops[f.stops.length - 1]?.screen ?? TEXTS[lang].finalScreen;
 
-export function buildAcceptanceSpec(draft: ProjectExperienceDraft): AcceptanceSpec {
+export function buildAcceptanceSpec(draft: ProjectExperienceDraft, lang: SpecLanguage = 'en'): AcceptanceSpec {
 	const features = draft.journeys
 		.slice()
 		.sort((a, b) => a.order - b.order)
-		.map((j) => deriveJourneyFlow(draft, j))
+		.map((j) => deriveJourneyFlow(draft, j, lang))
 		.filter((f) => f.stops.length > 0 || f.criteria.length > 0);
 	const criteriaCount = features.reduce((n, f) => n + f.criteria.length, 0);
-	return { features, criteriaCount, gherkin: toGherkin(features) };
+	return { features, criteriaCount, gherkin: toGherkin(features, lang) };
 }

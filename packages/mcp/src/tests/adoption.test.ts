@@ -11,6 +11,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   attachSourceHandler,
+  citePassagesHandler,
   finalizeAnalysisHandler,
   flagConflictHandler,
   getProvenanceHandler,
@@ -264,5 +265,24 @@ describe('report_implementation_status', () => {
     ])
     // The batch form must not also send a single-scope payload.
     expect(body()).not.toHaveProperty('foundEntities')
+  })
+})
+
+describe('one source, one id (feat-source-register 81dffe4f, f09da92d)', () => {
+  it('names the register row the stored text belongs to', async () => {
+    const { lyriks, body, path } = makeLyriks()
+    await attachSourceHandler({ project_id: 'p1', feature_id: 'f1', file_name: 'Workflow.md', content: 'Between 2 and 12 statuses.', kind: 'file', register_id: 'src-fs-projects' }, lyriks)
+    expect(path()).toBe('/api/behavior/sources')
+    expect(body()).toMatchObject({ projectId: 'p1', featureId: 'f1', fileName: 'Workflow.md', kind: 'file', registerId: 'src-fs-projects' })
+  })
+
+  it('cites passages with their words and what each element took, never an offset', async () => {
+    const { lyriks, body, path } = makeLyriks()
+    await citePassagesHandler(
+      { project_id: 'taskora-d8c2d8', passages: [{ source_id: 'src-fs-projects', anchor: 'feature:feat-tkr-workflow', words: 'between 2 and 12 statuses', takes: 'The limit of statuses a workflow holds.' }] },
+      lyriks,
+    )
+    expect(path()).toBe('/api/projects/taskora-d8c2d8/passages')
+    expect(body()).toEqual({ passages: [{ sourceId: 'src-fs-projects', anchor: 'feature:feat-tkr-workflow', words: 'between 2 and 12 statuses', takes: 'The limit of statuses a workflow holds.' }] })
   })
 })

@@ -99,3 +99,29 @@ describe('validateMembership', () => {
 		expect(res.ok).toBe(false);
 	});
 });
+
+describe('feature tree warnings in French (spec language)', () => {
+	const NB = ' ';
+	it('writes the warnings in French with codes unchanged and names quoted as they are', () => {
+		const feature = createFeature('ghost-core', null, { id: 'x1', name: 'Feat' });
+		const [warning] = collectFeaturesWarnings(draftWith({ features: [feature] }), 'fr');
+		expect(warning).toMatchObject({ code: 'dangling-core-ref', ref: 'x1' });
+		expect(warning.message).toBe(
+			`«${NB}Feat${NB}» fait référence au domaine «${NB}ghost-core${NB}», qui n'existe plus.`
+		);
+	});
+
+	it('writes membership refusals in French', () => {
+		expect(validateMembership({ coreId: '', parentFamilyId: 'nope' }, draftWith({}), 'fr')).toEqual({
+			ok: false,
+			reason: `La famille «${NB}nope${NB}» n'existe pas.`
+		});
+	});
+
+	it('keeps English byte-identical when no language is given', () => {
+		const feature = createFeature('ghost-core', null, { id: 'x1', name: 'Feat' });
+		expect(collectFeaturesWarnings(draftWith({ features: [feature] }))[0].message).toBe(
+			'"Feat" references Core "ghost-core", which no longer exists.'
+		);
+	});
+});

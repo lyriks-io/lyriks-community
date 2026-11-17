@@ -12,6 +12,7 @@
  * usable. Future swap: in-process library, remote MCP, or Rust kernel.
  */
 
+import type { SpecLanguage } from '$domain/language';
 import type { UnspaFeatureSnapshot, UnspaProjectSnapshot } from '$lib/unspa-schema';
 
 export interface FeatureScore {
@@ -72,7 +73,7 @@ export type CriterionEvidenceState = 'verified' | 'failing' | 'unverified' | 'no
  * What verifies one acceptance criterion and how that last went, as a newer
  * engine reads it from the repository's index (`criterion:<id>` entries).
  * Evidence for a reader, kept apart on purpose: it is never folded into
- * `percentage`, a readiness gate or a TRL, because a criterion is prose and the
+ * `percentage`, a readiness gate or a maturity stage, because a criterion is prose and the
  * result is whatever the repository last recorded, not something run here.
  */
 export interface CriterionEvidenceSummary {
@@ -206,6 +207,18 @@ export interface UnreachedAction {
 }
 
 /**
+ * An action the search never ran because one of its inputs has no value it can
+ * try. It was not explored at all, so it is neither dead nor unreached.
+ */
+export interface SkippedAction {
+	readonly surfaceId: string;
+	readonly actionId: string;
+	readonly actionName: string;
+	/** Which input could not be supplied, in the engine's words. */
+	readonly reason: string;
+}
+
+/**
  * Bounded exhaustive verification of the reachable state space, paired with the
  * static navigation-graph analysis. Findings are "within bounds" when
  * `truncated` is true.
@@ -223,6 +236,11 @@ export interface ModelCheckReport {
 	 * `truncated`. Never merged into `deadActions`, never a failure.
 	 */
 	readonly unreachedActions?: readonly UnreachedAction[];
+	/**
+	 * Actions the search never ran. Absent on an engine that does not send them;
+	 * a search that skipped one is never complete.
+	 */
+	readonly skippedActions?: readonly SkippedAction[];
 	/** Reachable states from which no action can fire (potential soft-locks). */
 	readonly deadlockStates: number;
 	/** Screens a user can never navigate to (static nav-graph analysis). */
@@ -251,28 +269,250 @@ export interface SpecGap {
 	readonly entityName: string;
 	readonly reason: string;
 	readonly suggestedFix: string;
+	/**
+	 * What the gap is, stable whatever language its text is written in
+	 * (`missing-scenario`, `not-implemented`, `proof:<finding kind>`...): the
+	 * platform sorts gaps by it. Empty from an older engine, which is then read
+	 * by its English text.
+	 */
+	readonly code: string;
+	/** The element the gap is about (a rule, a statement, a goal), when the engine names one. */
+	readonly subjectId?: string;
 }
 
-/* ── Action simulation (dry_run_simulate) ──────────────────────────────── */
+/** What the path search says about one always-true statement. Only `violated` is a gap. */
+export interface SpecProofPath {
+	readonly invariantId: string;
+	readonly invariantName: string;
+	readonly outcome: 'violated' | 'none-within-bound' | 'unsettled' | 'unsupported';
+	/** For `violated`: how many steps the shortest path found takes. */
+	readonly steps?: number;
+	/** For `unsupported`: what the solver does not read. */
+	readonly reason?: string;
+}
 
-export interface SimulateArgs {
-	readonly featureId: string;
-	readonly surfaceId: string;
+/** What the reach search says about one action. Only `none-within-bound` is a gap, and a bounded one. */
+export interface SpecProofReach {
 	readonly actionId: string;
-	/** Initial state snapshot keyed by dotted path; defaults applied when omitted. */
-	readonly snapshot?: Record<string, unknown>;
-	readonly parameters?: Record<string, unknown>;
+	readonly actionName: string;
+	readonly outcome: 'reached' | 'none-within-bound' | 'unsettled' | 'unsupported';
+	/** For `reached`: how many steps the shortest path found takes, the action's own run included. */
+	readonly steps?: number;
+	/** For `unsupported`: why the search does not answer. */
+	readonly reason?: string;
 }
 
-export interface SimulationResult {
-	readonly status: 'success' | 'blocked';
-	/** Live state after effects ran (unchanged on a blocked run). */
-	readonly nextState: Record<string, unknown>;
-	/** Surface the action transitioned to, if any. */
-	readonly transition: string | null;
-	/** Human-readable reasons the action was blocked (rules / invariants / params). */
-	readonly blockedReasons: readonly string[];
+/** What the reach search says about one reachability goal. Only `none-within-bound` is a gap. */
+export interface SpecProofGoal {
+	readonly goalId: string;
+	readonly goalName: string;
+	readonly outcome: SpecProofReach['outcome'];
+	/** For `reached`: how many steps the shortest path found takes (0: the starting state). */
+	readonly steps?: number;
+	readonly reason?: string;
 }
+
+/** A situation in which an action breaks a statement, with no path from the start found: a lead, never a gap. */
+export interface SpecProofLead {
+	readonly actionId: string;
+	readonly actionName: string;
+	readonly invariantId: string;
+	readonly invariantName: string;
+	readonly situation: string;
+	readonly pathSearch: string;
+}
+
+/**
+ * The solver's answer beside the gaps: whether it ran, what it could not settle,
+ * the outcome of the path search for every statement, and the leads. None of it
+ * is a gap, and none of it may be dropped: "none within the bound" and
+ * "unsettled" must never read as nothing at all.
+ */
+export interface SpecProof {
+	readonly solver: 'ran' | 'unavailable';
+	readonly questions: number;
+	readonly unsettled: number;
+	readonly reason?: string;
+	readonly interrupted?: string;
+	/** On a first pass: whether asking for the full proof (`complete`) may settle more of what it left open. */
+	readonly moreToCome?: boolean;
+	/** The rules whose every question the solver answered; one absent was not settled. */
+	readonly rulesSettled?: readonly string[];
+	readonly paths?: { readonly maxSteps: number; readonly results: readonly SpecProofPath[] };
+	/** The reach search: whether each action can run from the start within the bound. */
+	readonly actions?: { readonly maxSteps: number; readonly results: readonly SpecProofReach[] };
+	/** The same search for reachability goals: whether each can be met from the start within the bound. */
+	readonly goals?: { readonly maxSteps: number; readonly results: readonly SpecProofGoal[] };
+	/** The search for a state no action can leave, from the start within the bound. */
+	readonly deadlocks?: SpecProofDeadlocks;
+	/** Every finding the solver made, as data (an engine that sends them). */
+	readonly findings?: readonly SpecProofFinding[];
+	readonly leads: readonly SpecProofLead[];
+}
+
+/** One step of a path the solver found from the start, replayed by the simulator. */
+export interface SpecProofStep {
+	readonly actionId: string;
+	readonly actionName: string;
+	readonly surfaceId: string;
+	/** Set when the step belongs to another feature of the project. */
+	readonly featureName?: string;
+	readonly parameters: Readonly<Record<string, unknown>>;
+}
+
+/** One finding of the solver, with what it is about and, for a path, its steps. */
+export interface SpecProofFinding {
+	readonly kind: string;
+	readonly severity: 'critical' | 'recommended';
+	readonly detail: string;
+	readonly surfaceName?: string;
+	readonly actionId?: string;
+	readonly actionName?: string;
+	readonly ruleId?: string;
+	readonly invariantId?: string;
+	readonly invariantName?: string;
+	readonly goalId?: string;
+	readonly goalName?: string;
+	readonly path?: readonly SpecProofStep[];
+	/**
+	 * unreachable-action, unmet-goal: each state the guard (or the goal's
+	 * condition) reads that nothing moves from its start, with the actions that
+	 * change it, themselves not reached (empty: nothing changes it). Criterion
+	 * 39ea86c2 of feat-behavior-model.
+	 */
+	readonly stuck?: readonly SpecProofStuckState[];
+}
+
+/** A state that holds a target back: where it starts and what alone could move it. */
+export interface SpecProofStuckState {
+	readonly path: string;
+	readonly startsAt: unknown;
+	readonly changedBy: readonly string[];
+}
+
+/** What the dead-end search says; only `found` names a path (by action names). */
+export interface SpecProofDeadlocks {
+	readonly maxSteps: number;
+	readonly outcome: 'found' | 'none-within-bound' | 'unsettled' | 'unsupported';
+	readonly steps?: number;
+	readonly path?: readonly string[];
+	readonly reason?: string;
+}
+
+/* ── Step-by-step simulation (simulate_steps) ─────────────────────────── */
+
+/** One step of a walk: an action, where it lives when known, and its inputs. */
+export interface WalkStepArgs {
+	readonly actionId?: string;
+	readonly actionRef?: string;
+	readonly surfaceId?: string;
+	readonly surfaceRef?: string;
+	/** Values by parameter name; `$channel` names the channel the call arrives through. */
+	readonly parameters?: Record<string, unknown>;
+	readonly timeAdvance?: number;
+}
+
+export interface SimulateStepsArgs {
+	/** The kernel feature to walk. With `blank`, an empty feature under this id. */
+	readonly featureId?: string;
+	readonly blank?: boolean;
+	/** apply_batch operations applied in memory before the walk; never saved. */
+	readonly operations?: readonly Record<string, unknown>[];
+	/** Ids an earlier answer minted over the same operations, replayed so every id comes out the same. */
+	readonly mintedIds?: readonly string[];
+	/** Operations from this index on are the new ones: `batch` then describes them alone. */
+	readonly newOperationsFrom?: number;
+	readonly steps?: readonly WalkStepArgs[];
+	/** The project whose cross-feature invariants the walk enforces (an empty feature or a draft names it). */
+	readonly projectId?: string;
+	/** State to start from, over the declared defaults. */
+	readonly snapshot?: Record<string, unknown>;
+	readonly personaId?: string;
+	readonly stopOnBlocked?: boolean;
+	/** Run every scenario of the simulated feature. */
+	readonly runScenarios?: boolean;
+	/** Explore its state space, like model_check. */
+	readonly modelCheck?: boolean | { readonly maxDepth?: number; readonly maxStates?: number };
+	/** Return the simulated feature itself. */
+	readonly includeFeature?: boolean;
+}
+
+/**
+ * The engine's walk, relayed as it answers: `{ ok, persisted:false, featureId,
+ * batch?, steps[], notRun, finalState }`, or `{ ok:false, errors }` for a batch
+ * that did not validate. `refused` carries the sentence the engine wrote when it
+ * could not run the walk at all (an unknown action, a missing persona).
+ */
+/**
+ * An engine answer relayed as it came, or the sentence it refused with. The
+ * project-level tools return shapes the platform does not reinterpret, so the
+ * port hands them over whole rather than mapping each field.
+ */
+export type EngineAnswer =
+	| { readonly kind: 'answer'; readonly value: Readonly<Record<string, unknown>> }
+	| { readonly kind: 'refused'; readonly error: string };
+
+/** What the engine holds for a project beyond its features. */
+export interface ProjectBehavior {
+	/** Invariants spanning the project's features. */
+	readonly projectInvariants: readonly Readonly<Record<string, unknown>>[];
+	/** The registry of core features, declared from the feature tree. */
+	readonly coreFeatures: readonly Readonly<Record<string, unknown>>[];
+	/** Canonical state variables, with any drift from the data field they mirror. */
+	readonly stateVariables: Readonly<Record<string, unknown>>;
+	/** Entities, resources and personas defined once and referenced by features. */
+	readonly library: Readonly<Record<string, unknown>>;
+	/**
+	 * The ids of the state variables the project registered explicitly; the
+	 * others in `stateVariables` are projections of feature declarations, which
+	 * must be registered before a data field can be tied to them.
+	 */
+	readonly registeredStateIds?: readonly string[];
+}
+
+/**
+ * The oracle's answer for every rule that spans a project (engine
+ * `prove_project_invariants`): one verdict per rule over the whole project,
+ * with its proof, the actions that would break it, who writes and reads it and
+ * one sentence in the spec's language.
+ */
+export interface ProveProjectRulesArgs {
+	readonly projectId: string;
+	readonly invariantIds?: readonly string[];
+	readonly maxSteps?: number;
+	readonly language?: 'en' | 'fr';
+	/** Only the rules the induction settles, at once, with no feature proved; the others are left out. */
+	readonly quick?: boolean;
+}
+
+/** What a change to a project's rules would do, nothing saved (engine `what_if_project`). */
+export interface WhatIfProjectArgs {
+	readonly projectId: string;
+	readonly operations: readonly Record<string, unknown>[];
+	readonly maxSteps?: number;
+	readonly language?: 'en' | 'fr';
+}
+
+/** What a change written in the batch vocabulary would do, proved before and after (engine `what_if`). */
+export interface WhatIfArgs {
+	readonly featureId: string;
+	readonly operations: readonly Record<string, unknown>[];
+	/** The ids a stored model was built with (an Evolution draft), replayed slot for slot. */
+	readonly mintedIds?: readonly string[];
+	/** The change creates the feature: it is compared with an empty one. */
+	readonly blank?: boolean;
+	readonly projectId?: string;
+	readonly maxSteps?: number;
+}
+
+/** The engine's comparison, as it sent it (see DraftProofImpact for the stored reading). */
+export type WhatIfResult =
+	| { readonly kind: 'comparison'; readonly comparison: Readonly<Record<string, unknown>> }
+	| { readonly kind: 'refused'; readonly error: string };
+
+export type SimulateStepsResult =
+	| { readonly kind: 'walk'; readonly walk: Readonly<Record<string, unknown>> }
+	| { readonly kind: 'refused'; readonly error: string };
 
 /* ── Behavior authoring (apply_batch) — Fix #1: depth writes under auth ─── */
 
@@ -365,6 +605,19 @@ export interface FeatureVerdict {
 	readonly featureId: string;
 	readonly featureName: string;
 	readonly passed: boolean;
+	/**
+	 * Each statement the exploration broke (the feature's own and the project's),
+	 * once per action that breaks it, with the action path that gets there.
+	 * Absent on an engine that sends no traces: unknown, not "none".
+	 */
+	readonly brokenStatements?: readonly BrokenStatement[];
+}
+
+export interface BrokenStatement {
+	/** The statement's name as the engine holds it. */
+	readonly name: string;
+	/** The actions, in order, from the starting state to the break. */
+	readonly path: readonly string[];
 }
 
 export interface VerificationVerdict {
@@ -376,6 +629,11 @@ export interface VerificationVerdict {
 	readonly scenariosFailed: number;
 	readonly invariantViolations: number;
 	readonly features: readonly FeatureVerdict[];
+	/**
+	 * True when the engine's verify proved the features itself: its counts then
+	 * already hold the paths the solver found, so they are not added again.
+	 */
+	readonly solverCounted?: boolean;
 }
 
 /* ── Spec→code drift (get_drift) ───────────────────────────────────────── */
@@ -440,9 +698,13 @@ export interface UnspaghettitAdvisorPort {
 	getFeatureBehavior(featureId: string): Promise<FeatureBehavior | null>;
 	/**
 	 * The dashboard's plain-language behavior digest for a feature (model-derived
-	 * markdown). Null when the engine is unreachable.
+	 * markdown), or for one of its actions when `action` names it. Null when the
+	 * engine is unreachable.
 	 */
-	getDigest(featureId: string): Promise<FeatureDigest | null>;
+	getDigest(
+		featureId: string,
+		action?: { readonly surfaceId: string; readonly actionId: string }
+	): Promise<FeatureDigest | null>;
 	/**
 	 * Implementation coverage tallied from what reports and index syncs located,
 	 * the same record the implementation status reads. Null when the engine is
@@ -471,8 +733,65 @@ export interface UnspaghettitAdvisorPort {
 		opts?: { maxDepth?: number; maxStates?: number } & AdvisorCallBudget
 	): Promise<ModelCheckReport | null>;
 
-	/** Run one action against a state snapshot (pure). Null when unreachable. */
-	simulateAction(args: SimulateArgs): Promise<SimulationResult | null>;
+	/**
+	 * Apply project-level operations atomically (cross-feature invariants,
+	 * canonical state variables, core features). Null when unreachable.
+	 */
+	applyProjectBatch(
+		projectId: string,
+		operations: readonly Record<string, unknown>[],
+		dryRun: boolean
+	): Promise<EngineAnswer | null>;
+
+	/** What the engine holds for a project beyond its features. Null when unreachable. */
+	readProjectBehavior(projectId: string): Promise<ProjectBehavior | null>;
+
+	/** Every place a feature reads or writes a state path. Null when unreachable. */
+	findStateReferences(featureId: string, statePath: string): Promise<EngineAnswer | null>;
+
+	/** The TypeScript module mirroring a feature, as source. Null when unreachable. */
+	generateTypesSource(featureId: string): Promise<EngineAnswer | null>;
+
+	/**
+	 * Move a feature's entity, resource or persona into the project library and
+	 * collapse identical copies elsewhere into references. Null when unreachable.
+	 */
+	promoteToProjectLibrary(input: {
+		expectedProjectId: string;
+		featureId: string;
+		definitionKind: 'entity' | 'resource' | 'persona';
+		id: string;
+		dedupe?: boolean;
+	}): Promise<EngineAnswer | null>;
+
+	/**
+	 * Walk a feature step by step without saving anything (see SimulateStepsArgs).
+	 * Null when the engine is unreachable.
+	 */
+	simulateSteps(
+		args: SimulateStepsArgs,
+		budget?: AdvisorCallBudget
+	): Promise<SimulateStepsResult | null>;
+
+	/**
+	 * What a change would do to a feature's proofs and scenarios, nothing saved.
+	 * Null when the engine is unreachable. Optional: an engine without the solver
+	 * cannot answer it.
+	 */
+	whatIf?(args: WhatIfArgs, budget?: AdvisorCallBudget): Promise<WhatIfResult | null>;
+
+	/**
+	 * The verdict of every rule that spans the project, proved over its
+	 * features. Null when the engine is unreachable; optional, since an engine
+	 * without the solver cannot answer it.
+	 */
+	proveProjectRules?(args: ProveProjectRulesArgs, budget?: AdvisorCallBudget): Promise<EngineAnswer | null>;
+
+	/**
+	 * What adding, changing or removing a rule of the project would do to its
+	 * rules, scenarios and actions, nothing saved. Null when unreachable.
+	 */
+	whatIfProject?(args: WhatIfProjectArgs, budget?: AdvisorCallBudget): Promise<EngineAnswer | null>;
 
 	/**
 	 * Fold the whole verification spine (scenarios + maturity + reachability +
@@ -486,6 +805,34 @@ export interface UnspaghettitAdvisorPort {
 
 	/** Prioritized spec-completeness gaps for a feature. Empty when unreachable. */
 	getSpecGaps(featureId: string, budget?: AdvisorCallBudget): Promise<SpecGap[]>;
+
+	/**
+	 * The same read with the solver's answer kept beside the gaps. Optional: a
+	 * reader without it falls back to `getSpecGaps` and shows no proof.
+	 */
+	getSpecGapsAndProof?(
+		featureId: string,
+		budget?: AdvisorCallBudget,
+		/** The spec's language: the scenarios the solver generates are named in it. */
+		language?: SpecLanguage,
+		/**
+		 * `complete`: the full proof, the phases the first pass left open asked
+		 * again (tens of seconds); otherwise the first pass, at once, with
+		 * `proof.moreToCome` saying whether the full proof may settle more.
+		 */
+		options?: { readonly complete?: boolean }
+	): Promise<{ readonly gaps: SpecGap[]; readonly proof: SpecProof | null }>;
+
+	/**
+	 * The solver on one feature's rules alone (engine `prove_feature_rules`): no
+	 * path search, no scenarios, no gaps, so it settles every rule in seconds
+	 * where the full proof takes a minute. Kept by the engine, by content.
+	 */
+	proveFeatureRules?(
+		featureId: string,
+		budget?: AdvisorCallBudget,
+		language?: SpecLanguage
+	): Promise<SpecProof | null>;
 
 	/**
 	 * Resolve one entity's neighborhood into its kernel address + a connectivity
@@ -528,6 +875,12 @@ export interface UnspaghettitAdvisorPort {
 			 * argument, and a caller that names no version keeps last-write-wins.
 			 */
 			expectedUpdatedAt?: string;
+			/**
+			 * Ids to mint again, slot for slot: those a simulation minted over the same
+			 * operations (an Evolution draft's model), so the batch lands with the ids
+			 * its later operations and scenarios name.
+			 */
+			mintedIds?: readonly string[];
 		}
 	): Promise<BehaviorBatchResult | null>;
 

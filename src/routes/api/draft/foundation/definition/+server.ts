@@ -1,4 +1,4 @@
-import { parseDefinitionDraft } from '$application/parse-foundation-definition';
+import { parseDefinitionDraft } from '$application/specification/parse-foundation-definition';
 import { saveSectionDraft } from '$lib/server/section-save.server';
 import type { RequestHandler } from './$types';
 

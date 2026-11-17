@@ -6,6 +6,7 @@ import type {
 	Gap,
 	GapDecision,
 	GapKind,
+	GapProof,
 	GapProvenance
 } from './draft';
 import { tallyChecks, type CheckTally } from './checks';
@@ -119,6 +120,8 @@ export interface Incoherence {
 	checkId?: string;
 	/** Feature the gap hangs off, when it belongs to one. */
 	featureRef?: string;
+	/** The proof as a scenario, when a solver proved the finding. */
+	proof?: GapProof;
 }
 
 export interface ProductCoherence {
@@ -175,9 +178,37 @@ const PROVENANCE_WEIGHT: Record<GapProvenance, number> = {
 	behavior: 1
 };
 
-/** What one gap takes off the score: its severity, weighted by who says so. */
-export function penaltyOf(gap: Pick<Gap, 'id' | 'severity' | 'provenance'>): number {
-	return PENALTY[gap.severity] * PROVENANCE_WEIGHT[provenanceOf(gap)];
+/**
+ * A defect the author declared (the product mishandles a case, two rules
+ * contradict) weighs more than an open question, still less than the same
+ * defect detected: naming a fault must never cost more than hiding it. The spec
+ * constants are DeclaredGapWeightPercent (40, questions) and
+ * DeclaredDefectWeightPercent (70) of feat-health-scores.
+ */
+const DECLARED_DEFECT_WEIGHT = 0.7;
+
+/** What one gap takes off the score on its own: its severity, weighted by who says so and what it is. */
+export function penaltyOf(gap: Pick<Gap, 'id' | 'severity' | 'provenance' | 'weighs' | 'nature'>): number {
+	if (gap.weighs) return 0;
+	const provenance = provenanceOf(gap);
+	const weight = provenance === 'declared' && gap.nature === 'defect' ? DECLARED_DEFECT_WEIGHT : PROVENANCE_WEIGHT[provenance];
+	return PENALTY[gap.severity] * weight;
+}
+
+/**
+ * What each gap takes off the score once causes are counted once: of the gaps
+ * that share a cause, only the heaviest weighs. A rule broken in six features
+ * is one thing to settle, not six; reading it six times turned three gaps in the
+ * description into a score of 13.
+ */
+export function effectivePenalties(gaps: readonly Gap[]): number[] {
+	const heaviest = new Map<string, number>();
+	gaps.forEach((g, i) => {
+		if (!g.cause) return;
+		const best = heaviest.get(g.cause);
+		if (best === undefined || penaltyOf(g) > penaltyOf(gaps[best])) heaviest.set(g.cause, i);
+	});
+	return gaps.map((g, i) => (g.cause && heaviest.get(g.cause) !== i ? 0 : penaltyOf(g)));
 }
 
 const SEVERITY_RANK: Record<GapSeverity, number> = { high: 0, medium: 1, low: 2 };
@@ -253,7 +284,8 @@ export function toProductCoherence(
 			fixRoute: ref.fixRoute + (gap.fixAnchor ?? ''),
 			blocking: gap.blocking,
 			...(gap.checkId ? { checkId: gap.checkId } : {}),
-			...(gap.featureRef ? { featureRef: gap.featureRef } : {})
+			...(gap.featureRef ? { featureRef: gap.featureRef } : {}),
+			...(gap.proof ? { proof: gap.proof } : {})
 		};
 	};
 	const incoherences: Incoherence[] = analysis.gaps.map(toIncoherence);
@@ -312,14 +344,15 @@ export function coherenceByDimension(
 	const keyForStep = new Map<string, string>();
 	for (const d of dimensions) if (!keyForStep.has(d.sourceStep)) keyForStep.set(d.sourceStep, d.key);
 
-	for (const g of gaps) {
+	const penalties = effectivePenalties(gaps);
+	gaps.forEach((g, i) => {
 		const step = GAP_SOURCE_ALIAS[g.sourceStep] ?? g.sourceStep;
 		const key = keyForStep.get(step);
 		const entry = key ? byKey.get(key) : undefined;
-		if (!entry) continue;
+		if (!entry) return;
 		entry.gapCount += 1;
-		entry.penalty += penaltyOf(g);
-	}
+		entry.penalty += penalties[i];
+	});
 	for (const entry of byKey.values()) entry.score = clamp(100 - entry.penalty);
 	return byKey;
 }
@@ -344,6 +377,6 @@ export function coherenceByDimension(
  */
 const SATURATION = 100;
 export function coherenceScoreOf(gaps: readonly Gap[]): number {
-	const penalty = gaps.reduce((sum, g) => sum + penaltyOf(g), 0);
+	const penalty = effectivePenalties(gaps).reduce((sum, p) => sum + p, 0);
 	return clamp((100 * SATURATION) / (SATURATION + penalty));
 }

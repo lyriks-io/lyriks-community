@@ -6,6 +6,7 @@ vi.mock('$env/dynamic/private', () => ({ env: mockEnv }));
 /** The role gate the composition root hands out: a stub whose verdict each test sets. */
 const gate = vi.hoisted(() => ({ allows: vi.fn(async () => false) }));
 vi.mock('$composition/container.server', () => ({ getServices: () => ({ roleGate: gate }) }));
+import { getServices } from '$composition/container.server';
 
 import { callerCanWrite, tokenHasRole } from './writer-gate.server';
 
@@ -26,20 +27,20 @@ describe('tokenHasRole', () => {
 		vi.stubEnv('DEV', false);
 		mockEnv.LYRIKS_EDITION = 'enterprise';
 		delete mockEnv.LYRIKS_AUTH_REQUIRED;
-		await expect(tokenHasRole('viewer', 'write', 'ws-a')).resolves.toBe(false);
+		await expect(tokenHasRole(getServices(), 'viewer', 'write', 'ws-a')).resolves.toBe(false);
 		expect(gate.allows).toHaveBeenCalled();
 	});
 	it('says yes without asking anyone when auth is off', async () => {
 		mockEnv.LYRIKS_AUTH_REQUIRED = undefined;
-		await expect(tokenHasRole(null, 'write', null)).resolves.toBe(true);
+		await expect(tokenHasRole(getServices(), null, 'write', null)).resolves.toBe(true);
 		expect(gate.allows).not.toHaveBeenCalled();
 	});
 
 	it('hands the token, the door and the active workspace to the gate and returns its verdict', async () => {
 		gate.allows.mockResolvedValueOnce(true);
-		await expect(tokenHasRole('jwt-1', 'mcp', 'ws-a')).resolves.toBe(true);
+		await expect(tokenHasRole(getServices(), 'jwt-1', 'mcp', 'ws-a')).resolves.toBe(true);
 		expect(gate.allows).toHaveBeenCalledWith('jwt-1', 'mcp', 'ws-a');
-		await expect(tokenHasRole('jwt-2', 'write', null)).resolves.toBe(false);
+		await expect(tokenHasRole(getServices(), 'jwt-2', 'write', null)).resolves.toBe(false);
 	});
 });
 
@@ -49,7 +50,7 @@ describe('callerCanWrite', () => {
 		['lyriks_active_ws', 'ws-a']
 	]);
 	const event = (authRequired: boolean) => ({
-		locals: { authRequired },
+		locals: { authRequired, services: getServices() },
 		cookies: { get: (name: string) => cookies.get(name) }
 	});
 

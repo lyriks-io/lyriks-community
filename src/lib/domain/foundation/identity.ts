@@ -51,6 +51,8 @@ export interface FoundationIdentityDraft {
 
 	/* brief */
 	brief: string;
+	/** The sources the summary was written from (ac-brief-identity-sources). */
+	sourceIds: string[];
 
 	/* form factor */
 	formFactors: FormFactorCode[];
@@ -119,6 +121,7 @@ export function createEmptyIdentityDraft(projectId: string): FoundationIdentityD
 		industry: 'saas',
 		productType: 'production_product',
 		brief: '',
+		sourceIds: [],
 		formFactors: [],
 		featureExpressionMode: 'user_story',
 		structuredRuleFormat: 'gherkin',

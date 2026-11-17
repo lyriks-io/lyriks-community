@@ -1,4 +1,5 @@
 import type { DraftLeaf, EvolutionRequest } from './draft';
+import { NBSP, quoteName, type SpecLanguage } from '$domain/language';
 
 /**
  * The features section, taken structurally.
@@ -202,12 +203,64 @@ function delta(
 		.map((c) => (reworded.has(c.id) ? { id: c.id, text: reworded.get(c.id) as string } : c));
 }
 
+/** What the freeze says it wrote, in the language of the spec. Names and ids stay as they are. */
+const MATERIALISE_TEXTS = {
+	en: {
+		removed: (name: string, id: string) => `Removed "${name}" (${id})`,
+		skipped: (name: string) => `Skipped "${name}": the tree holds no core to hang it under`,
+		kept: (n: number) =>
+			`, ${n} acceptance ${n === 1 ? 'criterion' : 'criteria'} it already carried kept the id the feature gave it`,
+		edits: (retired: number, reworded: number) =>
+			`, ${[retired ? `${retired} criteria retired` : '', reworded ? `${reworded} reworded` : ''].filter(Boolean).join(' and ')}`,
+		created: (name: string, id: string, requestId: string, tail: string) =>
+			`Created "${name}" (${id}) from request ${requestId}${tail}`,
+		updated: (name: string, id: string, requestId: string, tail: string) =>
+			`Updated "${name}" (${id}) from request ${requestId}${tail}`,
+		amended: (name: string, id: string, requestId: string, tail: string) =>
+			`Amended "${name}" (${id}) from request ${requestId}${tail}`
+	},
+	fr: {
+		removed: (name: string, id: string) => `Fonctionnalité ${quoteName('fr', name)} (${id}) retirée`,
+		skipped: (name: string) =>
+			`Fonctionnalité ${quoteName('fr', name)} ignorée${NBSP}: l'arbre ne contient aucun cœur où l'accrocher`,
+		kept: (n: number) =>
+			n === 1
+				? `, 1 critère d'acceptation qu'elle portait déjà a gardé l'identifiant que la fonctionnalité lui avait donné`
+				: `, ${n} critères d'acceptation qu'elle portait déjà ont gardé l'identifiant que la fonctionnalité leur avait donné`,
+		edits: (retired: number, reworded: number) =>
+			`, ${[
+				retired ? `${retired} ${retired === 1 ? 'critère retiré' : 'critères retirés'}` : '',
+				// Alone, the reworded count names what it counts.
+				reworded
+					? `${reworded} ${retired ? '' : reworded === 1 ? 'critère ' : 'critères '}${reworded === 1 ? 'reformulé' : 'reformulés'}`
+					: ''
+			]
+				.filter(Boolean)
+				.join(' et ')}`,
+		created: (name: string, id: string, requestId: string, tail: string) =>
+			`Fonctionnalité ${quoteName('fr', name)} (${id}) créée depuis la demande ${requestId}${tail}`,
+		updated: (name: string, id: string, requestId: string, tail: string) =>
+			`Fonctionnalité ${quoteName('fr', name)} (${id}) mise à jour depuis la demande ${requestId}${tail}`,
+		amended: (name: string, id: string, requestId: string, tail: string) =>
+			`Fonctionnalité ${quoteName('fr', name)} (${id}) modifiée depuis la demande ${requestId}${tail}`
+	}
+} as const;
+
 export function materialiseDrafts<T extends Tree>(
 	features: T,
 	request: EvolutionRequest,
-	at: string
+	at: string,
+	lang: SpecLanguage = 'en'
 ): MaterialiseResult<T> {
-	const pending = request.drafts.filter((d) => d.materialisedAs === null);
+	const say = MATERIALISE_TEXTS[lang];
+	// Every draft is written again at every freeze, so a request reopened after
+	// its first version carries what changed since onto the features. Writing is
+	// idempotent: an addition already created is updated under the id it took, an
+	// amendment merges again, and a removal whose feature is gone has nothing left
+	// to do.
+	const pending = request.drafts.filter(
+		(d) => !(d.kind === 'remove' && d.materialisedAt !== null && !features.features.some((f) => f.id === d.baseLeafId))
+	);
 	if (pending.length === 0)
 		return { features, request, lines: [], changed: false };
 
@@ -222,6 +275,10 @@ export function materialiseDrafts<T extends Tree>(
 	// Additions first: a draft that depends on another draft must find it.
 	for (const draft of pending) {
 		if (draft.kind !== 'add') continue;
+		if (draft.materialisedAs && features.features.some((f) => f.id === draft.materialisedAs)) {
+			became.set(draft.id, draft.materialisedAs);
+			continue;
+		}
 		const id = featureIdFor(draft.name, taken);
 		taken.add(id);
 		became.set(draft.id, id);
@@ -238,7 +295,7 @@ export function materialiseDrafts<T extends Tree>(
 			delete meta[draft.id];
 			became.set(draft.id, target);
 			written.push(draft);
-			lines.push(`Removed "${draft.name || target}" (${target})`);
+			lines.push(say.removed(draft.name || target, target));
 			continue;
 		}
 
@@ -248,11 +305,11 @@ export function materialiseDrafts<T extends Tree>(
 		if (!core) {
 			// A tree with no core cannot hold a leaf. Say so rather than writing an
 			// orphan the coherence engine will report a moment later.
-			lines.push(`Skipped "${draft.name}": the tree holds no core to hang it under`);
+			lines.push(say.skipped(draft.name));
 			continue;
 		}
 
-		if (draft.kind === 'add') {
+		if (draft.kind === 'add' && !existing) {
 			list = [
 				...list,
 				{
@@ -294,9 +351,12 @@ export function materialiseDrafts<T extends Tree>(
 			...before,
 			status: before.status ?? 'backlog',
 			objective: signed.objective || draft.objective || before.objective,
-			problem: signed.problem || draft.problem || before.problem,
+			// A new feature is not asked its problem or its value: the request's need
+			// says why once (ac-evo-need-6), so its situation and its cost become the
+			// new feature's, wherever nothing more specific was written.
+			problem: signed.problem || draft.problem || before.problem || (draft.kind === 'add' ? request.need?.situation || undefined : undefined),
 			expectedEffect: signed.expectedEffect || draft.expectedEffect || before.expectedEffect,
-			value: signed.value || draft.value || before.value,
+			value: signed.value || draft.value || before.value || (draft.kind === 'add' ? request.need?.cost || undefined : undefined),
 			// Same rule for the list: a signed list REPLACES the typed one rather than
 			// joining it, or the two say the same thing twice in different words. The
 			// merge stays for what the EXISTING feature already carried, which an
@@ -316,20 +376,16 @@ export function materialiseDrafts<T extends Tree>(
 			signed.acceptanceCriteria?.length ? signed.acceptanceCriteria : criteriaOf(draft)
 		);
 		// Said only when it happened, so the ordinary line stays one sentence.
-		const kept =
-			repeated === 0
-				? ''
-				: `, ${repeated} acceptance ${repeated === 1 ? 'criterion' : 'criteria'} it already carried kept the id the feature gave it`;
+		const kept = repeated === 0 ? '' : say.kept(repeated);
 		const retired = draft.retireCriteria?.length ?? 0;
 		const reworded = draft.changeCriteria?.length ?? 0;
-		const edits =
-			retired + reworded === 0
-				? ''
-				: `, ${[retired ? `${retired} criteria retired` : '', reworded ? `${reworded} reworded` : ''].filter(Boolean).join(' and ')}`;
+		const edits = retired + reworded === 0 ? '' : say.edits(retired, reworded);
 		lines.push(
-			draft.kind === 'add'
-				? `Created "${draft.name}" (${id}) from request ${request.id}${kept}`
-				: `Amended "${draft.name || id}" (${id}) from request ${request.id}${edits}${kept}`
+			draft.kind === 'add' && !existing
+				? say.created(draft.name, id, request.id, kept)
+				: draft.kind === 'add'
+					? say.updated(draft.name, id, request.id, `${edits}${kept}`)
+					: say.amended(draft.name || id, id, request.id, `${edits}${kept}`)
 		);
 	}
 

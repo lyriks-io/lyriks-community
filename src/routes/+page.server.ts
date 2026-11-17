@@ -1,14 +1,16 @@
-import { getServices } from '$composition/container.server';
 import { isSourceModeCode } from '$domain/foundation';
+import { RETROSPEC_SECTION } from '$domain/retrospec';
 import { fail, redirect } from '@sveltejs/kit';
 import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
-import { callerWorkspaceScope } from '$lib/server/workspace-scope.server';
 import { callerAllowedDomains } from '$lib/server/domain-scope.server';
 import { seedOwnerCollaborator } from '$lib/server/seed-owner-collaborator.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { ownNewProject } from '$lib/server/new-project-ownership.server';
-import { callerCanWrite } from '$lib/server/writer-gate.server';
+import { refusedCreation } from '$lib/server/project-creation-refusal.server';
+import { readHome } from '$lib/server/home.server';
+import { projectSyncKey, sectionSyncKey } from '$lib/shared/section-sync';
+import { NOTIFICATIONS_DEPENDENCY } from '$ui/shell/notifications-client';
 import type { Actions, PageServerLoad } from './$types';
 
 /** Audit actor from the request locals: the user email, else dev/anonymous. */
@@ -16,24 +18,21 @@ function actorOf(locals: App.Locals): string {
 	return locals.session?.email ?? (locals.authRequired ? 'anonymous' : 'dev');
 }
 
-/** Home = the portfolio dashboard: domains, their projects, and rollups. Scoped to
-    the caller's own workspaces when auth is on (multi-tenant isolation). */
+/**
+ * Home (feat-home): what needs the reader, then the journal of every project
+ * they can open. A decision on a code change, a read mark, a change of any
+ * project read again what they moved.
+ */
 export const load: PageServerLoad = async (event) => {
-	const services = getServices();
-	const scope = await callerWorkspaceScope(event);
-	const allowedDomains = await callerAllowedDomains(event);
-	const portfolio = await services.buildPortfolio.execute(
-		scope,
-		allowedDomains,
-		event.locals.session?.email ?? null
-	);
-	// Bootstrap signal: auth-on with no workspace → the home shows a "Create your
-	// workspace" panel instead of the dead-end 409 when they try to create a project.
-	const hasWorkspace = scope === null || scope.size > 0;
-	// A reader gets the cards without their menu: every entry on it either
-	// writes (edit, move, ship, delete) or takes a copy (duplicate, download).
-	const canWrite = await callerCanWrite(event);
-	return { portfolio, hasWorkspace, canWrite };
+	const home = await readHome(event);
+	event.depends(NOTIFICATIONS_DEPENDENCY);
+	for (const id of home.projectIds) {
+		event.depends(projectSyncKey(id));
+		event.depends(sectionSyncKey(id, RETROSPEC_SECTION));
+		event.depends(sectionSyncKey(id, 'baselines'));
+		event.depends(sectionSyncKey(id, 'evolution'));
+	}
+	return home;
 };
 
 export const actions: Actions = {
@@ -48,9 +47,9 @@ export const actions: Actions = {
 		const name = String(data.get('name') ?? '').trim();
 		if (!name) return fail(400, { scope: 'workspace', message: 'Give your workspace a name.' });
 
-		const created = await getServices().workspaces.createForCaller(name);
+		const created = await locals.services.workspaces.createForCaller(name);
 		if (!created) {
-			getServices().audit.record({ action: 'workspace.create', actor: actorOf(locals), outcome: 'failure' });
+			locals.services.audit.record({ action: 'workspace.create', actor: actorOf(locals), outcome: 'failure' });
 			return fail(502, { scope: 'workspace', message: 'Could not create your workspace. Please try again.' });
 		}
 		cookies.set('lyriks_active_ws', created.id, {
@@ -60,7 +59,7 @@ export const actions: Actions = {
 			secure: !dev,
 			maxAge: 60 * 60 * 24 * 365
 		});
-		getServices().audit.record({ action: 'workspace.create', actor: actorOf(locals), outcome: 'success' });
+		locals.services.audit.record({ action: 'workspace.create', actor: actorOf(locals), outcome: 'success' });
 		return { created: 'workspace' };
 	},
 
@@ -74,7 +73,7 @@ export const actions: Actions = {
 		if (!name) return fail(400, { scope: 'domain', message: 'Give the domain a name.' });
 		const description = String(data.get('description') ?? '');
 		const icon = String(data.get('icon') ?? '');
-		await getServices().createDomain.execute(name, description, icon);
+		await event.locals.services.createDomain.execute(name, description, icon);
 		return { created: 'domain' };
 	},
 
@@ -89,7 +88,7 @@ export const actions: Actions = {
 		const name = String(data.get('name') ?? '').trim();
 		const description = String(data.get('description') ?? '');
 		const icon = String(data.get('icon') ?? '');
-		const res = await getServices().updateDomain.execute(id, name, description, icon);
+		const res = await event.locals.services.updateDomain.execute(id, name, description, icon);
 		if (!res.updated) return fail(400, { scope: 'domain', message: res.reason });
 		return { updated: 'domain' };
 	},
@@ -101,7 +100,7 @@ export const actions: Actions = {
 		if (allowedDomains !== null && !allowedDomains.has(id)) {
 			return fail(404, { scope: 'domain', message: 'Domain not found.' });
 		}
-		const res = await getServices().removeDomain.execute(id);
+		const res = await event.locals.services.removeDomain.execute(id);
 		if (!res.removed) return fail(400, { scope: 'domain', message: res.reason });
 		return { removed: 'domain' };
 	},
@@ -117,7 +116,7 @@ export const actions: Actions = {
 		if (!isSourceModeCode(sourceMode)) {
 			return fail(400, { scope: 'project', message: 'Unknown starting point for the project.' });
 		}
-		const services = getServices();
+		const services = locals.services;
 
 		// Auth-on: a project is owned by a team. Enterprise installs provision teams
 		// centrally (SSO/admin), so a user with none gets a clear, actionable message
@@ -150,12 +149,19 @@ export const actions: Actions = {
 			}
 		}
 
-		const id = await services.createProject.execute({
-			name,
-			description: String(data.get('description') ?? ''),
-			domainId: String(data.get('domainId') ?? '') || null,
-			sourceMode
-		});
+		const creation = await refusedCreation(() =>
+			services.createProject.execute({
+				name,
+				description: String(data.get('description') ?? ''),
+				domainId: String(data.get('domainId') ?? '') || null,
+				sourceMode
+			})
+		);
+		// Community holds one project: the offer of the plan that opens several (EVO-001).
+		if ('refused' in creation) {
+			return fail(403, { scope: 'project', message: creation.refused.reason, detail: creation.refused.detail, plan: creation.refused.plan });
+		}
+		const id = creation.created;
 
 		// Auth-on: a project must be owned on the back from creation, otherwise the
 		// fail-closed access guard would lock the creator out of their own project.
@@ -174,7 +180,7 @@ export const actions: Actions = {
 			}
 			// Own the project's team: the creator is its first (owner) collaborator, so
 			// per-project scope keeps them able to see and open it (see seedOwnerCollaborator).
-			await seedOwnerCollaborator(id, locals.session?.email);
+			await seedOwnerCollaborator(services, id, locals.session?.email);
 		}
 
 		services.audit.record({ action: 'project.create', actor: actorOf(locals), target: id, outcome: 'success' });
@@ -192,7 +198,7 @@ export const actions: Actions = {
 		const description = String(data.get('description') ?? '');
 		const domainId = String(data.get('domainId') ?? '') || null;
 		if (domainId) {
-			if (!(await getServices().listDomains.execute()).some((domain) => domain.id === domainId)) {
+			if (!(await event.locals.services.listDomains.execute()).some((domain) => domain.id === domainId)) {
 				return fail(400, { scope: 'project', message: 'The destination domain does not exist.' });
 			}
 			const allowedDomains = await callerAllowedDomains(event);
@@ -200,36 +206,13 @@ export const actions: Actions = {
 				return fail(403, { scope: 'project', message: 'The target domain is outside your portfolio scope.' });
 			}
 		}
-		const res = await getServices().updateProject.execute({
+		const res = await event.locals.services.updateProject.execute({
 			projectId,
 			name,
 			description,
 			domainId
 		});
 		if (!res.updated) return fail(400, { scope: 'project', message: res.reason });
-		return { updated: 'project' };
-	},
-
-	// The human shipping call — the ONE delivery fact Lyriks never derives. Kept a
-	// form action on the dashboard (a person, in a session) and deliberately absent
-	// from the project API, so no assistant can declare a product shipped.
-	markProjectShipped: async (event) => {
-		const { request, locals } = event;
-		const data = await request.formData();
-		const projectId = String(data.get('projectId') ?? '');
-		if (!projectId) return fail(400, { scope: 'project', message: 'Missing project id.' });
-		await requireProjectAccess(event, projectId, 'write');
-
-		const shipped = String(data.get('shipped') ?? '') === 'true';
-		const services = getServices();
-		const res = await services.markProjectShipped.execute({ projectId, shipped });
-		if (!res.updated) return fail(400, { scope: 'project', message: res.reason });
-		services.audit.record({
-			action: shipped ? 'project.shipped' : 'project.unshipped',
-			actor: actorOf(locals),
-			target: projectId,
-			outcome: 'success'
-		});
 		return { updated: 'project' };
 	},
 
@@ -248,7 +231,7 @@ export const actions: Actions = {
 		if ((await callerAllowedDomains(event)) !== null) {
 			return fail(403, { scope: 'domain', message: 'Only members with full portfolio access can create domains.' });
 		}
-		const services = getServices();
+		const services = event.locals.services;
 		const domain = await services.createDomain.execute(domainName);
 		const res = await services.updateProject.execute({
 			projectId,
@@ -281,17 +264,23 @@ export const actions: Actions = {
 		// home, so it is a writer's action, like the export.
 		await requireProjectAccess(event, projectId, 'write');
 
-		const services = getServices();
+		const services = event.locals.services;
 		const bundle = await services.exportProject.execute(projectId);
 		if (!bundle) return fail(404, { scope: 'project', message: 'Project not found.' });
 
 		// No domain is passed on purpose: the bundle carries the source's own, and
 		// the import matches it by name, so the copy lands beside its original.
-		const result = await services.importProject.execute({
-			bytes: bundle.bytes,
-			mode: 'copy',
-			name: `${bundle.projectName} (copy)`
-		});
+		const copy = await refusedCreation(() =>
+			services.importProject.execute({
+				bytes: bundle.bytes,
+				mode: 'copy',
+				name: `${bundle.projectName} (copy)`
+			})
+		);
+		if ('refused' in copy) {
+			return fail(403, { scope: 'project', message: copy.refused.reason, detail: copy.refused.detail, plan: copy.refused.plan });
+		}
+		const result = copy.created;
 		if (!result.ok) {
 			services.audit.record({ action: 'project.duplicate', actor: actorOf(locals), target: projectId, outcome: 'failure', detail: result.error });
 			return fail(400, { scope: 'project', message: result.error });
@@ -300,7 +289,7 @@ export const actions: Actions = {
 		// Same ownership invariant as creating or importing one: auth-on, the copy
 		// must be owned from the moment it exists or per-project scope hides it
 		// from the person who just made it.
-		await ownNewProject(locals, result.projectId, 'project.duplicate');
+		await ownNewProject(services, locals, result.projectId, 'project.duplicate');
 		await services.scheduleBackSync(result.projectId);
 		// The copy has to READ the same as its original, not just hold the same
 		// rows: the behavior advisories and the DPO verdict are per-project caches
@@ -334,7 +323,7 @@ export const actions: Actions = {
 		// Same per-request gate as opening the project: membership + visibility scope.
 		await requireProjectAccess(event, id, 'write');
 
-		const services = getServices();
+		const services = event.locals.services;
 		const res = await services.deleteProject.executeConfirmed({
 			projectId: id,
 			confirmName,

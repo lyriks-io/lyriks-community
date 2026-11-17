@@ -1,5 +1,4 @@
 import { json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import type { RequestHandler } from './$types';
 
@@ -14,7 +13,7 @@ export const GET: RequestHandler = async (event) => {
 	const projectId = url.searchParams.get('projectId') ?? '';
 	if (!projectId) return json({ available: false, advice: [] }, { status: 400 });
 	await requireProjectAccess(event, projectId, 'read');
-	const services = getServices();
+	const services = event.locals.services;
 	const available = services.advisorAvailable();
 	// Served from the cached advisor: instant snapshot, engine scoring refreshed in
 	// the background (see CachedFeatureAdvisor) — never blocks the request.

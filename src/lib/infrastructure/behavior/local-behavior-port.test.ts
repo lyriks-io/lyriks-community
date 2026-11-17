@@ -47,6 +47,24 @@ describe('LocalBehaviorPort.apply (engine-off write path)', () => {
 		expect(project.tags).toEqual([{ type: 'core', value: 'Billing' }]);
 	});
 
+	it('declares the cores in the engine registry, normalised, and keeps what the engine wrote', async () => {
+		const repo = new MemRepo();
+		const port = new LocalBehaviorPort(repo, clock);
+		await port.apply('p1', [{ kind: 'setProjectFeatureIds', featureIds: [] }]);
+		// Something only the engine writes, which a Lyriks save must not drop.
+		const stored = (await port.readProject('p1'))!;
+		await repo.saveProject({
+			...stored,
+			project: { ...stored.project, projectInvariants: [{ id: 'pi1' }] } as typeof stored.project
+		});
+
+		await port.apply('p1', [{ kind: 'setProjectCores', cores: [{ value: 'Billing', description: 'Money in.' }] }]);
+
+		const project = (await port.readProject('p1'))!.project as unknown as Record<string, unknown>;
+		expect(project.coreFeatures).toEqual([{ value: 'billing', description: 'Money in.' }]);
+		expect(project.projectInvariants).toEqual([{ id: 'pi1' }]);
+	});
+
 	it('preserves already-authored content on re-upsert (idempotent identity refresh)', async () => {
 		const repo = new MemRepo();
 		repo.features.set('p1/f1', {
@@ -276,10 +294,10 @@ describe('LocalBehaviorPort and per-element spec stamps', () => {
 	const stampsOf = (repo: MemRepo) =>
 		(repo.features.get('p1/f1')!.feature as { elementVersions?: unknown }).elementVersions;
 
-	it('drops stamps it cannot recompute when a projection rewrites elements', async () => {
+	it('stamps the element a projection rewrites, and only that one', async () => {
 		const repo = new MemRepo();
 		repo.features.set('p1/f1', stampedLeaf());
-		const port = new LocalBehaviorPort(repo, clock);
+		const port = new LocalBehaviorPort(repo, { nowIso: () => '2026-03-01T00:00:00.000Z' });
 
 		await port.apply('p1', [
 			{
@@ -290,9 +308,8 @@ describe('LocalBehaviorPort and per-element spec stamps', () => {
 			}
 		] as never);
 
-		// Falling back to the feature stamp is noisy; keeping a stamp that no
-		// longer describes the entity would read as clean, which is worse.
-		expect(stampsOf(repo)).toBeUndefined();
+		// The rewritten entity reads as moved: a stamp that no longer describes it would read as clean.
+		expect(stampsOf(repo)).toEqual({ 'entity:e1': '2026-03-01T00:00:00.000Z' });
 	});
 
 	it('leaves them alone when the projection changes nothing', async () => {
@@ -315,5 +332,75 @@ describe('LocalBehaviorPort and per-element spec stamps', () => {
 		await port.apply('p1', [{ kind: 'renameFeature', featureId: 'f1', name: 'Invoicing' }] as never);
 
 		expect(stampsOf(repo)).toEqual({ 'entity:e1': '2026-01-01T00:00:00.000Z' });
+	});
+});
+
+describe('a write into the features dates only what it changes [criterion:ac-leaf-ac-trace-drift-own-change]', () => {
+	const at = '2026-10-29T15:41:03.792Z';
+	const db = (inTransit: boolean) => ({ id: 'res-db', name: 'Kutt database', kind: 'relational_db', encryptionInTransit: inTransit });
+	/** A leaf as the engine leaves it, with a surface, an action, a rule and a database. */
+	const leaf = (id: string, stamps: Record<string, string> | null): UnspaFeatureSnapshot =>
+		({
+			format: 'unspaghettit',
+			version: 1,
+			feature: {
+				id,
+				name: id,
+				description: 'd',
+				surfaces: [
+					{
+						id: 's1',
+						name: 'Reset',
+						stateDefinitions: [{ path: 'account.exists', type: 'boolean' }],
+						actions: [{ id: 'a1', name: 'Ask for a reset link', rules: [{ id: 'r1', description: 'Rate limited' }], scenarios: [{ id: 'sc1', name: 'ok' }] }]
+					}
+				],
+				personas: [],
+				entities: [],
+				events: [],
+				resources: [db(false)],
+				...(stamps ? { elementVersions: stamps } : {}),
+				createdAt: '2026-10-27T14:05:44.728Z',
+				updatedAt: '2026-10-27T14:05:44.728Z'
+			}
+		}) as unknown as UnspaFeatureSnapshot;
+	const engineStamps = {
+		'surface:s1': '2026-10-27T14:05:44.728Z',
+		'state:account.exists': '2026-10-27T14:05:44.728Z',
+		'action:a1': '2026-10-27T14:05:44.728Z',
+		'rule:r1': '2026-10-28T09:00:00.000Z',
+		'scenario:sc1': '2026-10-27T14:05:44.728Z',
+		'resource:res-db': '2026-10-27T14:05:44.728Z'
+	};
+	const mirror = (featureId: string, inTransit: boolean) => ({ kind: 'mirrorFeatureData', featureId, entities: [], resources: [db(inTransit)] });
+	const stampsOf = (repo: MemRepo, id: string) => (repo.features.get(`p1/${id}`)!.feature as { elementVersions?: Record<string, string> }).elementVersions;
+
+	it('a mirror that changes one resource stamps only that resource', async () => {
+		const repo = new MemRepo();
+		repo.features.set('p1/f1', leaf('f1', engineStamps));
+		await new LocalBehaviorPort(repo, { nowIso: () => at }).apply('p1', [mirror('f1', true)] as never);
+		expect(stampsOf(repo, 'f1')).toEqual({ ...engineStamps, 'resource:res-db': at });
+	});
+
+	it('a feature the write leaves as it was keeps its stamps', async () => {
+		const repo = new MemRepo();
+		repo.features.set('p1/f1', leaf('f1', engineStamps));
+		await new LocalBehaviorPort(repo, { nowIso: () => at }).apply('p1', [mirror('f1', false), { kind: 'renameFeature', featureId: 'f1', name: 'Reset a forgotten password' }] as never);
+		expect(stampsOf(repo, 'f1')).toEqual(engineStamps);
+	});
+
+	it('a feature that never carried stamps is calibrated on its own last date, the changed element apart', async () => {
+		const repo = new MemRepo();
+		repo.features.set('p1/f1', leaf('f1', null));
+		await new LocalBehaviorPort(repo, { nowIso: () => at }).apply('p1', [mirror('f1', true)] as never);
+		const before = '2026-10-27T14:05:44.728Z';
+		expect(stampsOf(repo, 'f1')).toEqual({
+			'surface:s1': before,
+			'state:account.exists': before,
+			'action:a1': before,
+			'rule:r1': before,
+			'scenario:sc1': before,
+			'resource:res-db': at
+		});
 	});
 });

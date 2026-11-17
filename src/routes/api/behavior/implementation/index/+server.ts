@@ -1,11 +1,12 @@
 import { error, json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireBehaviorFeatureAccess } from '$lib/server/behavior-feature-access.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
-import { adoptionJson } from '$lib/server/adoption-endpoint.server';
+import { SEED_SYNCED, adoptionJson, seedAnswerInLyriksTerms } from '$lib/server/adoption-endpoint.server';
 import { scheduleImplementationReconcile } from '$lib/server/implementation-reconcile.server';
+import { holdDraftEntries } from '$lib/server/evolution-held-index.server';
+import { rebuildReportsAfterSync } from '$lib/server/evolution-auto-report.server';
 import type { BehavioralIndexPayload } from '$application/ports';
-import type { RequestHandler } from './$types';
+import type { RequestEvent, RequestHandler } from './$types';
 
 /**
  * The spec↔code map — `.unspa.json`'s `index`, which lives in the CALLER's
@@ -30,20 +31,24 @@ export const GET: RequestHandler = async (event) => {
 	if (!projectId || !featureId) error(400, 'projectId and featureId are required');
 
 	await requireBehaviorFeatureAccess(event, projectId, featureId, 'read');
-	const result = await getServices().codeAdoption.seedIndexFromAnalysis(featureId, {
+	const result = await event.locals.services.codeAdoption.seedIndexFromAnalysis(featureId, {
 		overwrite: params.get('overwrite') === 'true'
 	});
 	if (result === null) error(503, 'Behavior engine unavailable');
 	if (!result.ok) return json({ available: true, ok: false, error: result.error });
+	const seeded = seedAnswerInLyriksTerms(result.value);
+	if (params.get('sync') !== 'true') return json({ available: true, ok: true, ...seeded });
+	// The coverage lands from the spans the engine already holds, so a client
+	// that cannot run a script (Claude Cowork) retypes nothing (criterion 5f704119).
+	await requireProjectAccess(event, projectId, 'write');
+	const entries = seeded.entries && typeof seeded.entries === 'object' ? (seeded.entries as BehavioralIndexPayload) : {};
+	const landed = Object.keys(entries).length > 0 ? await landIndex(event, projectId, entries) : null;
 	return json({
 		available: true,
 		ok: true,
-		...result.value,
-		semantics: {
-			entries:
-				'Write these under `index` in your repo\'s .unspa.json, then POST the whole index back here to sync coverage.',
-			persisted: 'Nothing was written server-side — the index belongs to your checkout.'
-		}
+		...seeded,
+		synced: landed === null ? { ok: false, error: 'Nothing was seeded, so nothing was synced.' } : landed.ok ? landed.value : { ok: false, error: landed.error },
+		semantics: { ...(seeded.semantics as object), synced: SEED_SYNCED }
 	});
 };
 
@@ -67,17 +72,23 @@ export const POST: RequestHandler = async (event) => {
 	}
 
 	await requireProjectAccess(event, projectId, 'write');
-	const services = getServices();
-	const result = await services.codeAdoption.syncImplementationIndex(
-		projectId,
-		body.index as BehavioralIndexPayload
-	);
-	// A landed sync changes what the Features chips should say; recompute the
-	// cached coverage now instead of waiting out its TTL, and align feature
-	// workflow statuses with the new coverage (upgrade-only, in the background).
-	if (result?.ok) {
-		services.implementationCoverage.invalidate(projectId);
-		scheduleImplementationReconcile(projectId);
-	}
-	return adoptionJson(result);
+	return adoptionJson(await landIndex(event, projectId, body.index as BehavioralIndexPayload));
 };
+
+/**
+ * Sync an index and everything a landed sync moves: the cached coverage is
+ * recomputed now instead of waiting out its TTL, feature workflow statuses
+ * follow it (upgrade-only, in the background), what names a change not official
+ * yet is held on its request instead of lost as an orphan, and the reports of
+ * the requests at Build follow it on their own.
+ */
+async function landIndex(event: RequestEvent, projectId: string, index: BehavioralIndexPayload) {
+	const services = event.locals.services;
+	const result = await services.codeAdoption.syncImplementationIndex(projectId, index);
+	if (!result?.ok) return result;
+	services.implementationCoverage.invalidate(projectId);
+	scheduleImplementationReconcile(services, projectId);
+	const value = await holdDraftEntries(services, projectId, index, result.value);
+	await rebuildReportsAfterSync(services, event, projectId);
+	return { ...result, value };
+}

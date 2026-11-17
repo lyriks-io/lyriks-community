@@ -12,7 +12,7 @@ export type AccessAction = 'read' | 'write';
 
 export type AccessDecision =
 	| { readonly ok: true }
-	| { readonly ok: false; readonly reason: 'unauthenticated' | 'forbidden' | 'not_found' };
+	| { readonly ok: false; readonly reason: 'unauthenticated' | 'forbidden' | 'not_found' | 'unavailable' };
 
 export interface ProjectAccessPort {
 	authorize(

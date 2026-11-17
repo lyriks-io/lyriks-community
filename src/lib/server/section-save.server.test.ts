@@ -20,10 +20,12 @@ const projectExists = vi.fn(async () => {
 vi.mock('$composition/container.server', () => ({
 	getServices: () => ({
 		draftLock: { rollback },
+		foundationWrites: { withLock: async (_id: string, run: () => Promise<unknown>) => run() },
 		scheduleBackSync,
 		projectExists
 	})
 }));
+import { getServices } from '$composition/container.server';
 
 vi.mock('$lib/server/project-access.server', () => ({
 	requireProjectAccess: vi.fn(async () => {
@@ -54,7 +56,7 @@ function makeEvent(body: unknown): RequestEvent {
 		headers: { 'content-type': 'application/json', 'x-lyriks-client': 'tab-1' },
 		body: JSON.stringify(body)
 	});
-	return { request } as unknown as RequestEvent;
+	return { request, locals: { services: getServices() } } as unknown as RequestEvent;
 }
 
 const baseSpec = () => ({

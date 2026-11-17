@@ -160,6 +160,19 @@ export type FormFactorCode =
 	| 'biometric'
 	| 'ambient_invisible';
 
+// The short names people and AIs write for the most common form factors (criterion 8a696e52).
+const FORM_FACTOR_SHORT_NAMES: Readonly<Record<string, FormFactorCode>> = {
+	desktop: 'desktop_gui',
+	web: 'web_interface',
+	mobile: 'mobile_touch',
+	tablet: 'tablet_kiosk'
+};
+
+/** The catalog's code for a form factor written by its short name; any other code is returned as it is. Pure. */
+export function catalogFormFactor(code: string): string {
+	return FORM_FACTOR_SHORT_NAMES[code.trim().toLowerCase()] ?? code;
+}
+
 /* ── Languages (ISO 639-1 subset) ─────────────────────────────────────── */
 export const LANGUAGES = [
 	{ code: 'en', label: 'English' },

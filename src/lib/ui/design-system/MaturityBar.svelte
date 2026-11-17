@@ -1,32 +1,33 @@
 <script lang="ts">
 	import {
 		MATURITY_STAGE_COUNT,
+		clampStageLevel,
 		stageFromScore,
-		stageFromTrl,
 		stageLabel,
 		stageMeans
 	} from './tone';
+	import { slantedOutline } from './gauge';
 
 	/**
 	 * Spec maturity rendered the ONLY way it should be shown: one of the named
 	 * stages as a segmented bar, never a 0-100 gauge. Reuse this everywhere
-	 * maturity/readiness appears so the representation stays consistent across
+	 * maturity appears so the representation stays consistent across
 	 * the app.
 	 */
 	interface Props {
-		/** 0-100 maturity/readiness score; mapped to a stage. */
+		/** 0-100 maturity score; mapped to a stage. */
 		score?: number;
-		/** Pass a stored 1-9 readiness value directly instead of a score
+		/** Pass a stage (1-5) directly instead of a score
 		    (0 renders an empty bar: nothing scored yet). */
-		trl?: number;
+		stage?: number;
 		/** Empty-segment styling for dark chrome (sidebar, control center). */
 		dark?: boolean;
 		class?: string;
 	}
-	let { score = 0, trl, dark = false, class: klass = '' }: Props = $props();
+	let { score = 0, stage, dark = false, class: klass = '' }: Props = $props();
 
-	const level = $derived(trl != null ? (trl <= 0 ? 0 : stageFromTrl(trl)) : stageFromScore(score));
-	const empty = $derived(dark ? 'bg-white/10' : 'bg-surface-sunken');
+	const level = $derived(stage != null ? (stage <= 0 ? 0 : clampStageLevel(stage)) : stageFromScore(score));
+	const empty = $derived(dark ? 'bg-night' : 'bg-toner-2');
 </script>
 
 <div
@@ -38,7 +39,8 @@
 >
 	{#each Array(MATURITY_STAGE_COUNT) as _, i (i)}
 		<span
-			class="h-1.5 flex-1 rounded-[2px] transition-colors {i < level ? 'bg-brand-500' : empty}"
+			class="h-1.5 flex-1 transition-colors {i < level ? 'bg-blue' : empty}"
+			style:clip-path={slantedOutline(6)}
 			title={`${stageLabel(i + 1)} · ${stageMeans(i + 1)}`}
 		></span>
 	{/each}

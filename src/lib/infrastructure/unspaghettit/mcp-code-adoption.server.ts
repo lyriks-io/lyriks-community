@@ -111,7 +111,8 @@ export class McpCodeAdoption implements CodeAdoptionPort {
 				endOffset: c.endOffset,
 				summary: c.summary,
 				...(c.sourceId ? { sourceId: c.sourceId } : {}),
-				...(c.kind ? { kind: c.kind } : {}),
+				// The engine names it proposedKind: the element type the candidate would become.
+				...(c.kind ? { proposedKind: c.kind } : {}),
 				...(c.confidence !== undefined ? { confidence: c.confidence } : {})
 			}))
 		});

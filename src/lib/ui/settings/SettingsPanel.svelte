@@ -21,22 +21,22 @@
 
 	const CARD = {
 		default: 'border-line bg-surface',
-		warning: 'border-warning-300 bg-warning-50/40',
-		danger: 'border-danger-300 bg-danger-50/40'
+		warning: 'border-orange bg-orange-tint',
+		danger: 'border-red-ink bg-red-tint'
 	} as const;
 	const TITLE = {
 		default: 'text-ink-900',
 		warning: 'text-ink-900',
-		danger: 'text-danger-600'
+		danger: 'text-red-ink'
 	} as const;
 	const ICON_TONE = {
-		default: 'text-brand-500',
-		warning: 'text-warning-600',
-		danger: 'text-danger-500'
+		default: 'text-ink-900',
+		warning: 'text-orange-ink',
+		danger: 'text-red-ink'
 	} as const;
 </script>
 
-<section {id} class="scroll-mt-6 rounded-card border shadow-card {CARD[tone]}">
+<section {id} class="scroll-mt-6 rounded-card border {CARD[tone]}">
 	<button
 		type="button"
 		onclick={() => onToggle(id)}
@@ -45,12 +45,12 @@
 		class="flex w-full items-center gap-2 rounded-card px-5 py-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
 	>
 		<Icon name={icon} size={15} class={ICON_TONE[tone]} />
-		<h2 class="text-sm font-semibold {TITLE[tone]}">{title}</h2>
+		<h2 class="text-sm font-bold {TITLE[tone]}">{title}</h2>
 		<span class="ml-auto flex items-center gap-2">
 			{#if meta}
-				<span class="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">{meta}</span>
+				<span class="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.08em] text-ink-500">{meta}</span>
 			{/if}
-			<Icon name="chevron-down" size={16} class="text-ink-400 transition-transform {open ? 'rotate-180' : ''}" />
+			<Icon name="chevron-down" size={16} class="text-ink-900 transition-transform {open ? 'rotate-180' : ''}" />
 		</span>
 	</button>
 	{#if open}

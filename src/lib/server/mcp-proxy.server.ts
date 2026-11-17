@@ -144,7 +144,7 @@ async function refuseReader(event: RequestEvent): Promise<Response | null> {
 		);
 		const token = match ? match[1] : '';
 		if (!token) return null;
-		const verdict = await tokenRoleVerdict(token, 'mcp', null);
+		const verdict = await tokenRoleVerdict(event.locals.services, token, 'mcp', null);
 		if (verdict === 'allowed') return null;
 		// A role source that did not answer is not a refusal: the page asks to reload
 		// rather than telling a designer they are a viewer.

@@ -1,5 +1,4 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import type { RequestHandler } from './$types';
 
@@ -24,7 +23,7 @@ export const GET: RequestHandler = async (event) => {
 
 	await requireProjectAccess(event, projectId, 'read');
 
-	const context = await getServices().resolveBehaviorContext.execute({
+	const context = await event.locals.services.resolveBehaviorContext.execute({
 		projectId,
 		journeyId: url.searchParams.get('journeyId') ?? undefined,
 		stepId: url.searchParams.get('stepId') ?? undefined,

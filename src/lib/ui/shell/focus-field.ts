@@ -1,3 +1,4 @@
+import { scrollMotion } from './scroll-motion';
 /**
  * Reusable "focus & flash" anchor mechanism — framework-pure UI, no domain
  * import. A "Fix now" jump (Global Coherence) or an in-page banner link lands on
@@ -15,7 +16,7 @@ const FLASH_MS = 1200;
 /** Scroll an element into view and replay the highlight pulse on it. */
 export function flashElement(el: HTMLElement | null | undefined): void {
 	if (!el) return;
-	el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+	el.scrollIntoView({ behavior: scrollMotion(), block: 'center' });
 	// Restart the animation even if the element is still mid-pulse from a prior
 	// jump: drop the class, force a reflow, then re-add so the keyframes replay.
 	el.classList.remove(FLASH_CLASS);

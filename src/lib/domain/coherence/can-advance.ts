@@ -4,6 +4,7 @@ import {
 	type CoherenceAnalysis,
 	type ProjectCoherenceDraft
 } from './draft';
+import type { SpecLanguage } from '$domain/language';
 
 /** Spec generation is allowed only on a green, gap-free spec. */
 export function canGenerateSpecs(
@@ -27,14 +28,25 @@ export function coherenceCanAdvance(
 
 export function missingCoherenceRequirements(
 	draft: ProjectCoherenceDraft,
-	analysis: CoherenceAnalysis
+	analysis: CoherenceAnalysis,
+	lang: SpecLanguage = 'en'
 ): string[] {
+	const fr = lang === 'fr';
 	const missing: string[] = [];
 	const blocking = blockingGapCount(analysis);
 	if (analysis.readinessScore < draft.threshold) {
-		missing.push(`reach readiness ${draft.threshold} (now ${analysis.readinessScore})`);
+		missing.push(
+			fr
+				? `atteindre une maturité de ${draft.threshold} (actuellement ${analysis.readinessScore})`
+				: `reach readiness ${draft.threshold} (now ${analysis.readinessScore})`
+		);
 	}
-	if (blocking > 0) missing.push(`resolve ${blocking} blocking gap${blocking === 1 ? '' : 's'}`);
-	if (!draft.specsGenerated) missing.push('generate the specifications');
+	if (blocking > 0)
+		missing.push(
+			fr
+				? `résoudre ${blocking} manque${blocking <= 1 ? '' : 's'} bloquant${blocking <= 1 ? '' : 's'}`
+				: `resolve ${blocking} blocking gap${blocking === 1 ? '' : 's'}`
+		);
+	if (!draft.specsGenerated) missing.push(fr ? 'générer les spécifications' : 'generate the specifications');
 	return missing;
 }

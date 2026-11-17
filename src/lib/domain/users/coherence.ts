@@ -1,6 +1,9 @@
-import type { CoherenceIssue, CoherenceResult, CoherenceTone } from '$domain/shared';
+import type { CoherenceIssue, CoherenceResult } from '$domain/shared';
+import { NBSP, type SpecLanguage } from '$domain/language';
+import { sectionTone } from '$domain/coherence/section-tone';
 import { SYSTEM_CAPABILITIES } from './enums';
 import { permissionCoverage, type ProjectUsersDraft } from './draft';
+import { foldGrants } from './fold-grants';
 
 /**
  * Local-coherence for Step 03 — implements the spec's
@@ -16,22 +19,25 @@ import { permissionCoverage, type ProjectUsersDraft } from './draft';
  * checker pass them in. Score clamped to [0, 100].
  */
 
-function toneFor(score: number): { tone: CoherenceTone; label: string } {
-	if (score < 34) return { tone: 'critical', label: 'Critical' };
-	if (score < 67) return { tone: 'at-risk', label: 'At risk' };
-	return { tone: 'strong', label: 'Strong' };
-}
-
 export function computeUsersCoherence(
 	draft: ProjectUsersDraft,
-	derivedCapabilityIds: readonly string[] = []
+	derivedCapabilityIds: readonly string[] = [],
+	lang: SpecLanguage = 'en'
 ): CoherenceResult {
+	const fr = lang === 'fr';
 	// No role ⇒ nothing downstream works; floor the score so it can't read healthy.
 	if (draft.roles.length === 0) {
 		return {
 			score: 0,
-			...toneFor(0),
-			issues: [{ code: 'no-role', message: 'No role authored: Features is blocked.' }]
+			...sectionTone(0, lang),
+			issues: [
+				{
+					code: 'no-role',
+					message: fr
+						? `Aucun rôle n'est rédigé${NBSP}: les fonctionnalités sont bloquées.`
+						: 'No role authored: Features is blocked.'
+				}
+			]
 		};
 	}
 
@@ -52,9 +58,11 @@ export function computeUsersCoherence(
 		const more = cov.uncoveredCapabilityIds.length - shown.length;
 		issues.push({
 			code: 'capability-unassigned',
-			message:
-				`${cov.uncoveredCapabilityIds.length} of ${cov.totalCapabilities} capabilities have no role granted: ` +
-				`${shown.join(', ')}${more > 0 ? ` (+${more} more)` : ''}.`
+			message: fr
+				? `${cov.uncoveredCapabilityIds.length} capacité(s) sur ${cov.totalCapabilities} ne sont accordées à aucun rôle${NBSP}: ` +
+					`${shown.join(', ')}${more > 0 ? ` (+${more} autres)` : ''}.`
+				: `${cov.uncoveredCapabilityIds.length} of ${cov.totalCapabilities} capabilities have no role granted: ` +
+					`${shown.join(', ')}${more > 0 ? ` (+${more} more)` : ''}.`
 		});
 	}
 
@@ -63,7 +71,9 @@ export function computeUsersCoherence(
 	if (cov.coveredRoles < draft.roles.length) {
 		issues.push({
 			code: 'role-no-access',
-			message: `${draft.roles.length - cov.coveredRoles} role(s) hold no capability.`
+			message: fr
+				? `${draft.roles.length - cov.coveredRoles} rôle(s) sans aucune capacité.`
+				: `${draft.roles.length - cov.coveredRoles} role(s) hold no capability.`
 		});
 	}
 
@@ -71,10 +81,25 @@ export function computeUsersCoherence(
 	const named = draft.roles.filter((r) => r.name.trim().length > 0).length;
 	score += 10 * (named / draft.roles.length);
 	if (named < draft.roles.length) {
-		issues.push({ code: 'role-unnamed', message: 'One or more roles have no name.' });
+		issues.push({
+			code: 'role-unnamed',
+			message: fr ? "Un ou plusieurs rôles n'ont pas de nom." : 'One or more roles have no name.'
+		});
 	}
 
 	const clamped = Math.max(0, Math.min(100, Math.round(score)));
-	const { tone, label } = toneFor(clamped);
+	const { tone, label } = sectionTone(clamped, lang);
 	return { score: clamped, tone, label, issues };
+}
+
+/**
+ * What the Users section holds, in one line: its roles and its accesses
+ * (criterion 8554bd0d of feat-access-matrix). Accesses, never stored lines: a
+ * grant carries no verb, so lines once written per verb count once.
+ */
+export function usersCountsLine(draft: ProjectUsersDraft, lang: SpecLanguage = 'en'): string {
+	const accesses = foldGrants(draft.permissions).length;
+	return lang === 'fr'
+		? `${draft.roles.length} rôle(s) · ${accesses} accès`
+		: `${draft.roles.length} role(s) · ${accesses} access grant(s)`;
 }

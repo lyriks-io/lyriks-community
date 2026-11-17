@@ -1,8 +1,12 @@
 import { error, json } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
+import { readSectionDrafts } from '$lib/server/evolution-section-drafts.server';
+import { readRuleDrafts } from '$lib/server/evolution-rule-drafts.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
+import { requireEvolutionAccess } from '$lib/server/community-locks.server';
 import { guardSectionWrite } from '$lib/server/section-save.server';
-import { resolveEvolutionActor } from '$lib/server/evolution-actor.server';
+import { currentPersonId, resolveEvolutionActor } from '$lib/server/evolution-actor.server';
+import { loadDockingGraph, loadLocalGraph } from '$lib/server/evolution-graph.server';
+import { actionReadings, specificationActionTrails } from '$lib/server/evolution-spec-actions.server';
 import {
 	DOSSIER_PARTS,
 	evolutionAggregate,
@@ -10,6 +14,7 @@ import {
 	loadEvolutionView
 } from '$lib/server/evolution-view.server';
 import { applyEvolutionOperations } from '$lib/server/evolution-operations.server';
+import { signalAiActivity } from '$lib/server/ai-activity.server';
 import {
 	findRequestByRef,
 	isImpactHypothesis,
@@ -23,7 +28,7 @@ import type { RequestHandler } from './$types';
  * calls, so an MCP client runs a request from the raw need to acceptance
  * without recomputing the dossier's rules from the raw section document.
  *
- *   GET  /api/evolution?projectId=<id>[&requestId=<id or unique prefix>][&part=drafts|fields|proposals|impact|report|readings|history]
+ *   GET  /api/evolution?projectId=<id>[&requestId=<id or unique prefix>][&part=drafts|fields|proposals|impact|report|readings|history|versions|data|graph|docking|texts|coherence|points]
  *        -> the board (every live request as a card, first), one dossier in
  *           counts, or one list of it, narrowed by `leaf` / `section` /
  *           `verdict` and paged by `offset` / `limit`. Without a request,
@@ -42,13 +47,17 @@ const scopeParam = (raw: string | null): FindingScope | undefined => {
 };
 
 export const GET: RequestHandler = async (event) => {
+	requireEvolutionAccess(event.locals.services);
 	const projectId = event.url.searchParams.get('projectId') ?? '';
 	if (!projectId) error(400, 'projectId is required');
 	await requireProjectAccess(event, projectId, 'read');
-	const services = getServices();
+	const services = event.locals.services;
 	if (!(await services.projectExists(projectId))) error(404, `Project "${projectId}" does not exist.`);
 	const [view, actor] = await Promise.all([
-		loadEvolutionView(services, projectId, { activeWorkspaceId: event.cookies.get('lyriks_active_ws') }),
+		loadEvolutionView(services, projectId, {
+			activeWorkspaceId: event.cookies.get('lyriks_active_ws'),
+			readerId: currentPersonId(services)
+		}),
 		resolveEvolutionActor(services, event)
 	]);
 	const requestId = event.url.searchParams.get('requestId') ?? undefined;
@@ -69,7 +78,37 @@ export const GET: RequestHandler = async (event) => {
 	if (hypothesis !== undefined && !isImpactHypothesis(hypothesis)) {
 		error(400, `unknown hypothesis "${hypothesis}". Valid: add, change, remove`);
 	}
+	// The changes to the other pages of the spec, read against the sections as they stand (ac-evo-draft-section-read).
+	if (part === 'sections') {
+		const lookup = requestId ? findRequestByRef(view.draft.requests.filter((r) => r.status !== 'deleted'), requestId) : null;
+		if (!requestId || !lookup || lookup.kind !== 'found')
+			error(lookup?.kind === 'ambiguous' ? 400 : 404, requestId && lookup ? unresolvedRequestReason(requestId, lookup) : 'part=sections needs a requestId');
+		const sections = await readSectionDrafts(services, projectId, lookup.request);
+		const rules = await readRuleDrafts(services, projectId, lookup.request, view.language);
+		return json({ projectId, revision: view.revision, requestId: lookup.request.id, total: sections.length + rules.length, sections, rules });
+	}
+	// The graph is computed by the engine on demand, from the drafts' behaviour.
+	if (part === 'graph' || part === 'docking') {
+		const lookup = requestId
+			? findRequestByRef(view.draft.requests.filter((r) => r.status !== 'deleted'), requestId)
+			: null;
+		if (!requestId || !lookup || lookup.kind !== 'found')
+			error(lookup?.kind === 'ambiguous' ? 400 : 404, requestId && lookup ? unresolvedRequestReason(requestId, lookup) : `part=${part} needs a requestId`);
+		signalAiActivity(event, projectId, [lookup.request.id], 'read');
+		// The network docks the request on the knowledge graph, built only when a reader opens it.
+		if (part === 'docking')
+			return json({ projectId, revision: view.revision, requestId: lookup.request.id, docking: await loadDockingGraph(services, view, lookup.request) });
+		const graph = await loadLocalGraph(services, view, lookup.request);
+		// Each action of the specification travels with where it stands, validated like an answer.
+		return json({ projectId, revision: view.revision, requestId: lookup.request.id, graph, actions: actionReadings(view, lookup.request, graph) });
+	}
+	// The summary of a request at the Impact analysis counts the Specification's actions too, read with
+	// the engine's graph only there, where the Simulation and the freeze wait on them (ac-evo-form-step-lock).
+	const summarised = requestId && (part === undefined || part === 'summary') ? findRequestByRef(view.draft.requests.filter((r) => r.status !== 'deleted'), requestId) : null;
+	const specificationActions =
+		summarised?.kind === 'found' && summarised.request.stage === 'coherence' ? await specificationActionTrails(services, view, summarised.request) : undefined;
 	const aggregate = evolutionAggregate(view, actor, requestId, {
+		specificationActions,
 		part,
 		section: event.url.searchParams.get('section') ?? undefined,
 		verdict: event.url.searchParams.get('verdict') ?? undefined,
@@ -86,10 +125,24 @@ export const GET: RequestHandler = async (event) => {
 		);
 		error(lookup.kind === 'ambiguous' ? 400 : 404, unresolvedRequestReason(requestId, lookup));
 	}
+	if (aggregate.request) signalAiActivity(event, projectId, [aggregate.request.id], 'read');
 	return json(aggregate);
 };
 
+/** Tries of one batch that met another write before writing anything; each re-reads the dossier. */
+const CONFLICT_ATTEMPTS = 4;
+
+/**
+ * A 409 that wrote nothing: the dossier moved before this batch saved, so it
+ * can run again on the fresh one. A refusal that names the sections it held
+ * (land_section_changes) may have written some of them, and goes back to the caller.
+ */
+function retriableConflict(outcome: { ok: boolean; status?: number; results?: readonly { op: string }[] }): boolean {
+	return !outcome.ok && outcome.status === 409 && !(outcome.results ?? []).some((r) => r.op === 'land_section_changes');
+}
+
 export const POST: RequestHandler = async (event) => {
+	requireEvolutionAccess(event.locals.services);
 	const body = (await event.request.json().catch(() => null)) as {
 		projectId?: unknown;
 		operations?: unknown;
@@ -101,19 +154,25 @@ export const POST: RequestHandler = async (event) => {
 		error(400, 'operations must be a non-empty array of { op, ... }');
 	}
 	await requireProjectAccess(event, projectId, 'write');
-	const services = getServices();
+	const services = event.locals.services;
 	if (!(await services.projectExists(projectId))) error(404, `Project "${projectId}" does not exist.`);
 
 	const actor = await resolveEvolutionActor(services, event, { asPerson: body?.as_person === true });
-	const outcome = await guardSectionWrite('evolution', () =>
-		applyEvolutionOperations(services, {
-			projectId,
-			operations: body!.operations as unknown[],
-			actor,
-			origin: event.request.headers.get('x-lyriks-client'),
-			activeWorkspaceId: event.cookies.get('lyriks_active_ws')
-		})
-	);
+	const apply = () =>
+		guardSectionWrite('evolution', () =>
+			applyEvolutionOperations(services, {
+				projectId,
+				operations: body!.operations as unknown[],
+				actor,
+				origin: event.request.headers.get('x-lyriks-client'),
+				activeWorkspaceId: event.cookies.get('lyriks_active_ws')
+			})
+		);
+	// A batch says what to do, not what the dossier looked like: when another write
+	// landed while it ran and nothing of it was written yet, it is applied again on
+	// the dossier as it now stands, instead of sending the person back to retry by hand.
+	let outcome = await apply();
+	for (let attempt = 1; attempt < CONFLICT_ATTEMPTS && retriableConflict(outcome); attempt++) outcome = await apply();
 	if (!outcome.ok) {
 		return json(
 			{
@@ -122,12 +181,13 @@ export const POST: RequestHandler = async (event) => {
 				results: outcome.results,
 				message:
 					outcome.status === 409
-						? 'The evolution section changed while the batch was being applied. Read it again and retry.'
+						? 'A section this batch writes changed while it was being applied. Read it again and retry.'
 						: 'The batch was refused; nothing was applied. Each result names the operation and the reason.'
 			},
 			{ status: outcome.status }
 		);
 	}
+	signalAiActivity(event, projectId, outcome.requests.map((r) => r.id), 'write');
 	return json({
 		ok: true,
 		applied: true,

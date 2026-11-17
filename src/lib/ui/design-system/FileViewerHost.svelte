@@ -134,18 +134,18 @@
 		list-style: decimal;
 	}
 	.md-preview :global(a) {
-		color: var(--color-brand-600, #2563eb);
+		color: var(--color-brand-600);
 		text-decoration: underline;
 	}
 	.md-preview :global(code) {
 		font-family: ui-monospace, monospace;
 		font-size: 0.9em;
-		background: rgb(0 0 0 / 0.05);
+		background: var(--color-toner-1);
 		padding: 0.1em 0.35em;
 		border-radius: 4px;
 	}
 	.md-preview :global(pre) {
-		background: rgb(0 0 0 / 0.05);
+		background: var(--color-toner-1);
 		padding: 0.8em 1em;
 		border-radius: 8px;
 		overflow-x: auto;
@@ -155,16 +155,16 @@
 		padding: 0;
 	}
 	.md-preview :global(blockquote) {
-		border-left: 3px solid rgb(0 0 0 / 0.15);
+		border-left: 3px solid var(--color-line);
 		padding-left: 1em;
-		color: rgb(0 0 0 / 0.6);
+		color: var(--color-ink-3);
 	}
 	.md-preview :global(table) {
 		border-collapse: collapse;
 	}
 	.md-preview :global(th),
 	.md-preview :global(td) {
-		border: 1px solid rgb(0 0 0 / 0.12);
+		border: 1px solid var(--color-line);
 		padding: 0.4em 0.7em;
 	}
 	.md-preview :global(img) {

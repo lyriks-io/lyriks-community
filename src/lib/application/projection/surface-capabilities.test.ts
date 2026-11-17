@@ -27,7 +27,6 @@ describe('screenCapabilities', () => {
 		expect(rows[0]).toMatchObject({
 			label: 'Invoices',
 			source: 'surface',
-			kind: 'surface',
 			surfaceKind: 'page',
 			path: '/invoices',
 			sourceRefLabel: 'Billing'

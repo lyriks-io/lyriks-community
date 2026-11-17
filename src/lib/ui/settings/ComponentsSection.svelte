@@ -74,14 +74,14 @@
 
 	{#snippet row(c: ComponentVersion)}
 		<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-field border border-line bg-surface-sunken px-3 py-2.5">
-			<span class="text-[13px] font-semibold text-ink-800">{c.name}</span>
-			<span class="font-mono text-[13px] text-ink-900">{c.version ?? '—'}</span>
-			<span class="rounded-field px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.1em] {CHIP[c.status]}">
+			<span class="text-[0.8125rem] font-semibold text-ink-800">{c.name}</span>
+			<span class="font-mono text-[0.8125rem] text-ink-900">{c.version ?? '—'}</span>
+			<span class="rounded-field px-1.5 py-0.5 text-[0.59375rem] font-bold uppercase tracking-[0.1em] {CHIP[c.status]}">
 				{CHIP_LABEL[c.status]}
 			</span>
 			<span class="w-full text-xs text-ink-400">{c.detail}</span>
 			{#if c.build}
-				<dl class="flex w-full flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-ink-400">
+				<dl class="flex w-full flex-wrap gap-x-4 gap-y-0.5 text-[0.6875rem] text-ink-400">
 					{#each Object.entries(c.build) as [label, value] (label)}
 						<div class="flex gap-1.5">
 							<dt>{label}</dt>
@@ -94,13 +94,13 @@
 	{/snippet}
 
 	<div class="space-y-2">
-		<p class="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-400">Lyriks components</p>
+		<p class="text-[0.625rem] font-semibold uppercase tracking-[0.1em] text-ink-400">Lyriks components</p>
 		{#each lyriks as c (c.id)}{@render row(c)}{/each}
 	</div>
 
 	{#if stack.length > 0}
 		<div class="space-y-2">
-			<p class="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-400">Runtime</p>
+			<p class="text-[0.625rem] font-semibold uppercase tracking-[0.1em] text-ink-400">Runtime</p>
 			{#each stack as c (c.id)}{@render row(c)}{/each}
 		</div>
 	{/if}
@@ -115,7 +115,7 @@
 				class="flex w-full items-start gap-2 rounded-field px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
 			>
 				<span class="min-w-0">
-					<span class="block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-400">
+					<span class="block text-[0.625rem] font-semibold uppercase tracking-[0.1em] text-ink-400">
 						Host
 					</span>
 					<span class="block text-xs text-ink-500">

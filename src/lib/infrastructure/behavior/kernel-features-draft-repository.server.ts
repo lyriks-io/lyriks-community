@@ -9,8 +9,9 @@ import {
 	featuresResidueFromDraft,
 	type FeaturesResidue
 } from '$application/projection/features-projection';
+import type { SpecLanguage } from '$domain/language';
 import { isAuxFeatureId } from '$application/projection/aux-feature-ids';
-import type { ProjectFeaturesDraft } from '$domain/features';
+import { keepPersonJourneys, stampFirstSeen, type ProjectFeaturesDraft } from '$domain/features';
 import type { UnspaFeatureSnapshot, UnspaProjectSnapshot } from '$lib/unspa-schema';
 
 const SECTION = 'features';
@@ -33,7 +34,12 @@ export class KernelFeaturesDraftRepository implements FeaturesDraftRepositoryPor
 		private readonly behavior: BehaviorPort,
 		private readonly residue: ProjectResidueRepositoryPort,
 		/** Legacy section store, read once to migrate a pre-kernel project. */
-		private readonly legacy: FeaturesDraftRepositoryPort
+		private readonly legacy: FeaturesDraftRepositoryPort,
+		/**
+		 * The language the project's spec is written in, read on each save: the
+		 * prose the projection writes into the model follows it. Absent, English.
+		 */
+		private readonly languageOf?: (projectId: string) => Promise<SpecLanguage>
 	) {}
 
 	async load(projectId: string): Promise<ProjectFeaturesDraft | null> {
@@ -59,10 +65,17 @@ export class KernelFeaturesDraftRepository implements FeaturesDraftRepositoryPor
 		const current = await this.behavior.readProject(draft.projectId);
 		const ops = featuresDraftToBehaviorOps(draft, {
 			auxFeatureIds: (current?.project.featureIds ?? []).filter(isAuxFeatureId),
-			currentProjectTags: current?.project.tags ?? []
+			currentProjectTags: current?.project.tags ?? [],
+			lang: (await this.languageOf?.(draft.projectId)) ?? 'en'
 		});
+		// What the spec held before this save, read before it is written, so a first appearance gets its moment (criterion 2a6bff42).
+		const kept = (await this.residue.load(draft.projectId, SECTION)) as FeaturesResidue | null;
 		await this.behavior.apply(draft.projectId, ops);
-		await this.residue.save(draft.projectId, SECTION, featuresResidueFromDraft(draft));
+		const before = new Set([...(current?.project.featureIds ?? []), ...(kept?.cores ?? []).map((c) => c.id)]);
+		const firstSeenAt = stampFirstSeen(kept ? (kept.firstSeenAt ?? undefined) : {}, before, [...draft.cores.map((c) => c.id), ...draft.features.map((f) => f.id)], new Date().toISOString());
+		// A person decides the journeys: a save from the wizard or an AI keeps theirs as stored, the rest are suggestions (rule ab71c48c).
+		const actionJourneys = keepPersonJourneys(kept?.actionJourneys ?? {}, draft.actionJourneys ?? {});
+		await this.residue.save(draft.projectId, SECTION, { ...featuresResidueFromDraft(draft), firstSeenAt, actionJourneys });
 	}
 
 	/** Load the leaf (non-aux) feature snapshots the projection needs. */

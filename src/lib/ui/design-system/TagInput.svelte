@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Chip, { type ChipTone } from './Chip.svelte';
 	import Icon from './Icon.svelte';
+	import { fieldBase, fieldBorder, fieldHeight, fieldSideButton } from './field';
 
 	interface Props {
 		tags: string[];
@@ -44,13 +45,13 @@
 			{placeholder}
 			{onkeydown}
 			maxlength={maxLength}
-			class="w-full rounded-field border border-line bg-surface px-3.5 py-2 text-sm text-ink-900 transition-colors placeholder:text-ink-400 hover:border-line-strong focus:border-brand-400"
+			class="{fieldBase} {fieldHeight} {fieldBorder} px-3.5 py-2.5"
 		/>
 		<button
 			type="button"
 			onclick={commit}
 			aria-label="Add"
-			class="grid size-9 shrink-0 place-items-center rounded-field border border-line text-ink-500 transition-colors hover:border-line-strong hover:text-ink-900"
+			class={fieldSideButton}
 		>
 			<Icon name="plus" size={18} />
 		</button>

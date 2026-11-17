@@ -1,3 +1,11 @@
+import type { AiDelegation } from './ai-delegation';
+import type { DiagramAlignment, TechnicalAlignment, TextAlignment } from './functional-sync';
+import type { AiClick, LiveSession } from './live-session';
+import type { ProjectClick } from './project-session';
+import type { StepValidation } from './path';
+import type { StepPrefill } from './step-prefill';
+import type { TicketPost } from './ticket-post';
+import type { DraftProofImpact } from './proof-impact';
 import type {
 	AuthorKind,
 	CodeWork,
@@ -20,6 +28,7 @@ import type {
 	WalkthroughTarget,
 	CanonicalSection
 } from './enums';
+import type { CodeTrack } from './code-branch';
 
 /**
  * The evolution section's stored shape.
@@ -41,12 +50,14 @@ export interface Actor {
 	 * Where the act comes from. A person acts from the dossier page, or through
 	 * the AI client they are talking to, which relays the decision under the
 	 * person's name; the channel is stamped on the timeline so a later reader
-	 * knows the decision was typed to a client, not clicked on the page.
+	 * knows the decision was typed to a client, not clicked on the page. A
+	 * person may also have the installation's built-in assistant do the work
+	 * from the page (ac-evo-diagram-assistant): the act is still the person's.
 	 */
 	readonly channel?: ActorChannel;
 }
 
-export type ActorChannel = 'page' | 'ai_client';
+export type ActorChannel = 'page' | 'ai_client' | 'assistant';
 
 /** A named, dated exception that let a request cross a gate whose threshold was not met. */
 export interface GateWaiver {
@@ -74,6 +85,24 @@ export interface CoherenceFinding {
 	/** The canonical capability and element `Fix now` opens. */
 	fixNowTarget: string;
 	published: boolean;
+	/**
+	 * `inherited` when the product already carried it before the request was
+	 * first checked: it is shown, and never holds the request (the change did
+	 * not cause it). `request` otherwise, the default.
+	 */
+	scope?: FindingScope;
+	/** A person accepted it as a known risk: it stays visible and no longer holds the gate. */
+	risk?: { by: string; at: string; reason: string } | null;
+	/**
+	 * It only says how the change gets proved (a rule proved once the request's
+	 * drafts land): read as information, never a contact point (ac-evo-dock-8).
+	 */
+	note?: boolean;
+}
+
+/** Whether a finding holds the gate: blocking, brought by the change, and nobody accepted the risk. */
+export function findingHoldsGate(f: Pick<CoherenceFinding, 'published' | 'severity' | 'scope' | 'risk'>): boolean {
+	return f.published && f.severity === 'blocking' && f.scope !== 'inherited' && !f.risk;
 }
 
 /** One node the change propagates to, under one hypothesis. */
@@ -115,6 +144,10 @@ export interface ImpactFinding {
 	 * was recorded, which then read with what the request does overall.
 	 */
 	fromLeafId?: string;
+	/** Reached from a feature the change uses as it stands (ac-evo-imp-used): to check again, never edited. */
+	fromUsed?: boolean;
+	/** The section change or the change to the rules the walk reached it from (ac-evo-draft-section-impact). */
+	fromChange?: string;
 	severity: 'none' | 'low' | 'medium' | 'high' | 'blocking';
 	/**
 	 * Entities only: whether following this impact implies a data migration. An
@@ -151,6 +184,8 @@ export interface ImplementationFinding {
 	/** Shown on a non-conform line beside what the code does. */
 	specStatement: string;
 	codeStatement: string;
+	/** The touched feature the line was read on, when the derivation knows it. */
+	leafId?: string;
 	/** False when the span carries no requirement anchor: that is an out-of-scope addition. */
 	hasRequirementAnchor: boolean;
 	/** True when the touched span belongs to another leaf: that is a regression. */
@@ -184,7 +219,8 @@ export interface Proposal {
 	readonly id: string;
 	/** The field it fills, named the way the form names it. */
 	targetField: string;
-	canonicalSection: CanonicalSection;
+	/** The section the value lands in, or `request` for a question of the need. */
+	canonicalSection: CanonicalSection | 'request';
 	canonicalPath: string;
 	value: string;
 	reasoning: string;
@@ -227,6 +263,43 @@ export interface Proposal {
 	reviewerIds: string[];
 	/** The standing verdict of each reviewer who gave one. */
 	verdicts: ProposalVerdict[];
+	/**
+	 * The one fact the AI is missing to finish this suggestion, asked with it
+	 * instead of in the thread (ac-evo-live-card-ask). Absent when it asks nothing.
+	 */
+	ask?: ProposalAsk;
+	/** The questions and answers of the suggestions this one replaced, oldest first: why it reads as it does. */
+	dialogue?: ProposalExchange[];
+	/** The ids of the suggestions this one rewrote in place, oldest first, so a link to one of them still lands here (ac-evo-link-arrival-only). */
+	replaces?: string[];
+	/** Each line of a list suggestion a person decided on its own, oldest first (ac-evo-llm-line-decision). */
+	lineDecisions?: ProposalLineDecision[];
+}
+
+/** One line of a list suggestion, accepted or rejected on its own: added to the answer, or taken away from it. */
+export interface ProposalLineDecision {
+	readonly line: string;
+	readonly side: 'added' | 'removed';
+	readonly decision: 'accepted' | 'refused';
+	readonly by: string;
+	readonly at: string;
+}
+
+/** A question the AI asks with its suggestion, the answers a click gives, and the person's answer once given. */
+export interface ProposalAsk {
+	readonly question: string;
+	readonly choices: readonly string[];
+	/** The question takes several answers: they show as boxes to tick (ac-evo-live-choices). */
+	readonly multiple?: true;
+	readonly answer?: { readonly body: string; readonly by: string; readonly at: string };
+}
+
+/** One question of the AI and the person's answer, kept on the suggestion it led to. */
+export interface ProposalExchange {
+	readonly question: string;
+	readonly answer: string;
+	readonly by: string;
+	readonly at: string;
 }
 
 export interface ProposalVerdict {
@@ -296,6 +369,52 @@ export interface FieldThreadMessage {
 	authorKind: AuthorKind;
 	body: string;
 	postedAt: string;
+	/** The texts the message held before each edit, oldest first, kept readable (ac-evo-fthread-edit). */
+	earlier?: { readonly body: string; readonly at: string }[];
+	/** When it was last edited. */
+	editedAt?: string;
+	/** The message of the same thread this one answers; absent for a message of its own (ac-evo-fthread-reply). */
+	replyTo?: string;
+	/** How a person settled the conversation this message opened; absent while it is open. Only a message of its own carries it. */
+	ruling?: TopicRuling;
+	/** An exchange with one's own AI that nobody else reads until it is published: the person it belongs to (ac-evo-live-ask). */
+	privateTo?: string;
+	/** The AI's reply asks the person something and waits for their answer (ac-evo-live-scope). */
+	awaitsAnswer?: true;
+	/** The answers that question offers as buttons, and whether it takes several (ac-evo-live-choices). */
+	choices?: string[];
+	multiple?: true;
+	/** The texts the AI offers in this message, each at the place it would write, for a person to accept or refuse (ac-evo-live-comment-suggests). */
+	suggests?: SuggestedWrite[];
+	/** How a person decided that suggestion; absent while it waits. */
+	suggestion?: SuggestionDecision;
+	/** Independent requirement decisions; retained when a message is replayed or rewritten. */
+	requirementDecisions?: RequirementDecision[];
+}
+
+/** One text an AI message offers, at the place it would write: a step's description or one of its questions. */
+export interface SuggestedWrite {
+	readonly fieldPath: string;
+	readonly value: string;
+}
+
+export interface RequirementDecision extends SuggestionDecision {
+	readonly fieldPath: string;
+	readonly line: string;
+}
+
+/** Who accepted or refused the suggestion of a message, and when. */
+export interface SuggestionDecision {
+	readonly state: 'accepted' | 'refused';
+	readonly by: string;
+	readonly at: string;
+}
+
+/** A conversation agreed with (validated) or closed (resolved), by whom and when. */
+export interface TopicRuling {
+	readonly state: 'validated' | 'resolved';
+	readonly by: string;
+	readonly at: string;
 }
 
 /**
@@ -319,18 +438,8 @@ export interface FrozenVersion {
 	readonly version: number;
 	at: string;
 	by: string;
-}
-
-/**
- * A touched feature taken out of the readiness average by a workspace admin,
- * with the reason. Traced: the leaf stays listed with it, never dropped.
- */
-export interface ReadinessExclusion {
-	readonly id: string;
-	leafId: string;
-	reason: string;
-	by: string;
-	at: string;
+	/** What the version held, kept at the freeze and never changed after (ac-evo-freeze-5). Absent on versions frozen before copies were kept. */
+	readonly snapshot?: import('./versions').VersionSnapshot;
 }
 
 /** One entry of the append-only timeline. */
@@ -401,6 +510,64 @@ export interface DraftBehaviourNote {
  * Deleting the request deletes its drafts, and the specification is exactly as
  * it was (ac-evo-draft-4).
  */
+/**
+ * The behaviour of a draft as the engine runs it: the change itself, as the
+ * operations that make it (apply_behavior_batch vocabulary), in order. An
+ * addition's operations build the feature from nothing; an amendment's apply
+ * to the feature it stands for. Nothing official holds them: the engine
+ * replays them in memory whenever the draft is read, walked or checked, and
+ * the freeze is what applies them to a feature.
+ *
+ * The operations are kept rather than the resulting feature because a draft
+ * IS a change: an amendment replayed over the feature as it is today says
+ * whether the change still applies, where a stored copy would silently undo
+ * whatever moved since. `mintedIds` are the ids the engine minted replaying
+ * them, handed back on every replay so every element keeps its id and a later
+ * batch can address what an earlier one created.
+ */
+export interface DraftBehaviourModel {
+	/** What the change still has to write: replayed over the feature as it stands. */
+	operations: Record<string, unknown>[];
+	mintedIds: string[];
+	updatedAt: string;
+	/**
+	 * What an earlier freeze already wrote into the feature. A request reopened
+	 * after its first version replays only `operations` over the feature, which
+	 * holds these already; replaying them again would add every element twice.
+	 */
+	landed?: { operations: Record<string, unknown>[]; mintedIds: string[] };
+}
+
+/** Every operation of the change, written or not, for counting what it does. */
+export function behaviourOperationCount(model: DraftBehaviourModel | undefined): number {
+	return (model?.operations.length ?? 0) + (model?.landed?.operations.length ?? 0);
+}
+
+/**
+ * The model once its operations are written into the feature: they move to
+ * `landed`, and nothing is left to replay until the change says more.
+ */
+export function landBehaviourModel(model: DraftBehaviourModel, at: string): DraftBehaviourModel {
+	return {
+		operations: [],
+		mintedIds: [],
+		updatedAt: at,
+		landed: {
+			operations: [...(model.landed?.operations ?? []), ...model.operations],
+			mintedIds: [...(model.landed?.mintedIds ?? []), ...model.mintedIds]
+		}
+	};
+}
+
+/**
+ * The feature a draft's model replays over: the one it amends, or, for an
+ * addition an earlier freeze already created, the feature it became.
+ */
+export function behaviourBaseOf(draft: Pick<DraftLeaf, 'kind' | 'baseLeafId' | 'materialisedAs'>): string | null {
+	if (draft.kind === 'add') return draft.materialisedAs;
+	return draft.baseLeafId;
+}
+
 export interface DraftLeaf {
 	/** `draft:<something>`; usable as a leafId for as long as the request lives. */
 	readonly id: string;
@@ -409,6 +576,13 @@ export interface DraftLeaf {
 	baseLeafId: string | null;
 	name: string;
 	description: string;
+	/**
+	 * What the subject changes, in one sentence shown on the subject itself
+	 * (ac-evo-draft-subject-2). A note for the people deciding: the freeze never
+	 * writes it into the feature, whose description stays what `description`
+	 * and the description delta say.
+	 */
+	changeSummary?: string;
 	/** Where it would hang in the tree. Null until someone says. */
 	coreId: string | null;
 	parentFamilyId: string | null;
@@ -437,6 +611,11 @@ export interface DraftLeaf {
 	dependsOn: string[];
 	sourceIds: string[];
 	behaviour: DraftBehaviourNote[];
+	/**
+	 * The runnable behaviour of the change, when one was authored: see
+	 * DraftBehaviourModel. Absent on a draft described in prose only.
+	 */
+	behaviourModel?: DraftBehaviourModel;
 	/** Set by the freeze that wrote it into the sections, with the id it took. */
 	materialisedAs: string | null;
 	materialisedAt: string | null;
@@ -478,6 +657,19 @@ export interface Iteration {
 }
 
 /** The dossier that carries one change from the raw need to acceptance. */
+/** A request stopped along the way: readable, reopenable, its reason kept (ac-evo-req-cancel). */
+/** The deferred omission a request was started from (criterion 03b7eacf). */
+export interface RequestDeferredFrom {
+	readonly requestId: string;
+	readonly lineId: string;
+}
+
+export interface RequestCancellation {
+	readonly reason: string;
+	readonly by: string;
+	readonly at: string;
+}
+
 export interface EvolutionRequest {
 	readonly id: string;
 	title: string;
@@ -485,6 +677,10 @@ export interface EvolutionRequest {
 	requester: string;
 	stage: RequestStage;
 	status: RequestStatus;
+	/** Why, by whom and when the request was cancelled; absent while it is not (ac-evo-req-cancel). */
+	cancellation?: RequestCancellation;
+	/** The deferred omission it was started from; absent on any other request. */
+	deferredFrom?: RequestDeferredFrom;
 	/**
 	 * The leaf features the change touches. Zero or more, in no particular rank:
 	 * a change routinely spans several, and the requester is not asked to pick a
@@ -500,6 +696,14 @@ export interface EvolutionRequest {
 	 * which is what lets the reports be computed from the change itself.
 	 */
 	drafts: DraftLeaf[];
+	/** The data the request changes: tables added, amended or removed (ac-evo-draft-data). Written into the Data section only when the change is declared live. */
+	dataDrafts: import('./data-drafts').DataDraft[];
+	/** The other parts of the spec the request changes: the Brief, the users, the Experience... (ac-evo-draft-section). Written into their sections only when the change lands. */
+	sectionDrafts: import('./section-drafts').SectionDraft[];
+	/** The rules the whole product keeps that the request adds, changes or retires (ac-evo-draft-rules). Written into the project's behaviour only when the change lands. */
+	ruleDrafts: import('./rule-drafts').RuleDraft[];
+	/** The findings of Project health the request settles, each fixed or kept (ac-evo-draft-findings). They leave Project health when the change lands. */
+	findingDrafts?: import('./finding-drafts').FindingDraft[];
 	/** Numbered from one, only ever moving forward. */
 	iteration: number;
 	iterations: Iteration[];
@@ -521,6 +725,18 @@ export interface EvolutionRequest {
 	 * Absent on requests frozen before it existed; every line then counts.
 	 */
 	baselineKeys?: string[];
+	/**
+	 * The touched features `baselineKeys` already covers: those of the first
+	 * freeze, then each feature a rebrief adds, photographed at the freeze that
+	 * first carries it. Absent on requests baselined before it existed; the
+	 * features their first frozen version amended are read as covered then.
+	 */
+	baselineLeafIds?: string[];
+	/**
+	 * The findings the coherence engine reported at the request's first check,
+	 * before anything was written: what the product already carried.
+	 */
+	coherenceBaseline?: string[];
 	createdAt: string;
 	/**
 	 * The fields the author marked as questions they cannot answer yet, keyed
@@ -540,8 +756,6 @@ export interface EvolutionRequest {
 	fieldSignatures: FieldSignature[];
 	/** The conversations held next to the fields, oldest first. */
 	fieldThreads: FieldThread[];
-	/** Touched features an admin took out of the readiness average, with reasons. */
-	readinessExclusions: ReadinessExclusion[];
 	/**
 	 * The fields the author has marked as written, for the blocks whose home has
 	 * an editor of its own (the behaviour kernel, the access matrix, the data
@@ -566,6 +780,8 @@ export interface EvolutionRequest {
 		projectScore: number;
 		requestDelta: number;
 		ranAt: string | null;
+		/** Project health now and as the change would leave it (ac-evo-coh-after). */
+		health?: import('./finding-drafts').ProjectHealthAfter;
 	};
 	impactReport: {
 		status: 'not_run' | 'ready';
@@ -575,16 +791,353 @@ export interface EvolutionRequest {
 	};
 	coherenceFindings: CoherenceFinding[];
 	impactFindings: ImpactFinding[];
+	/**
+	 * What each draft with a behaviour model does to the solver's proofs of its
+	 * feature, computed with the impact. Absent until an impact ran with one.
+	 */
+	proofImpact?: DraftProofImpact[];
 	implementationFindings: ImplementationFinding[];
 	proposals: Proposal[];
 	observations: Observation[];
 	waivers: GateWaiver[];
 	history: HistoryEntry[];
+	/**
+	 * Why the change exists (ac-evo-need-1..3): the description in the
+	 * requester's words and the facts a specification needs. It belongs to the
+	 * request, is written into no section, and is asked once rather than once per
+	 * touched feature.
+	 */
+	need: RequestNeed;
+	/** The steps of specification a person marked not applicable, each with its reason (ac-evo-req-16). */
+	skippedSteps: StepSkip[];
+	/** Set once a person declared the change live (ac-evo-req-18). Null until then. */
+	deployment: Deployment | null;
+	/** Who stands behind each important step: the validations given (ac-evo-req-19). */
+	stepValidations: StepValidation[];
+	/**
+	 * The free description each step of specification opens on, in the person's
+	 * own words (ac-evo-form-step-description). The Need keeps its own, on `need`.
+	 */
+	stepDescriptions: StepDescriptions;
+	/** The answers to the questions a step asks after its description (ac-evo-func-prose). */
+	stepAnswers: StepAnswers;
+	/** The questions left unanswered on purpose, keyed like a field (ac-evo-form-question-skip). */
+	skippedQuestions: SkippedQuestion[];
+	/**
+	 * The texts of the Functional spec its diagram follows, as they stood when it
+	 * was drawn from them or wrote them; null before any (ac-evo-func-uml-sync).
+	 */
+	diagramAlignment: DiagramAlignment | null;
+	/** The description of the Technical spec its diagram follows; null before any (ac-evo-tech-uml-sync). */
+	technicalAlignment: TechnicalAlignment | null;
+	/** The diagram each text a diagram edit moved past follows, by field key; null while every text is in step (ac-evo-func-uml-sync). */
+	textAlignment: TextAlignment | null;
+	/** How many different people must validate the current version of an answer, one by default (ac-evo-req-validations-per-answer). */
+	validationsPerAnswer: number;
+	/** The people expected to validate an answer or a step, where someone named them (ac-evo-req-named-validators). */
+	namedValidators: NamedValidators[];
+	/** The questions an AI client asked of this request in particular (ac-evo-coach-custom-1). */
+	customQuestions: CustomQuestion[];
+	/** Every value a dossier field held, oldest first (ac-evo-hist-field-versions). */
+	fieldVersions: FieldVersion[];
+	/** Who stands behind which version of a field (ac-evo-hist-field-validation). */
+	fieldValidations: FieldValidation[];
+	/**
+	 * The implementation index entries that name what this request adds, held
+	 * while the change is not official (ac-evo-impl-held): the index resolves
+	 * them only once the change is declared live and lands. Keyed like
+	 * `.unspa.json`, the newest entry of each key kept.
+	 */
+	heldImplementation: Record<string, Readonly<Record<string, unknown>>>;
+	/** Where the request's code stands in git, as its AI reports it, from its branch to its merge (feat-evo-code-branch). */
+	code?: CodeTrack;
+	/** The live sessions people opened with their AI on this request, oldest first (ac-evo-live-start). */
+	liveSessions: LiveSession[];
+	/** The people who delegated validation to their own AI on this request (ac-evo-llm-delegation). */
+	aiDelegations?: AiDelegation[];
+	/** The clicks people sent to their AI, kept until answered (ac-evo-live-nothing-lost). */
+	aiClicks: AiClick[];
+	/** The prefills of a whole step people asked of their AI, each walking the step's sections (ac-evo-live-prefill-step). */
+	stepPrefills?: StepPrefill[];
+	/**
+	 * The baseline of the specification captured when the request closed: the
+	 * version of the Specification 360° the change moved it to. Absent on a
+	 * request closed before closes captured one.
+	 */
+	closingBaselineId?: string;
+	/** What the person's AI did on the ticket the closed request came from, as it reported it. */
+	ticketPost?: TicketPost;
+}
+
+/** The steps that open on a description of their own, beside the Need's. */
+export const DESCRIBED_STEPS = ['solution', 'functional_spec', 'technical_spec'] as const;
+export type DescribedStep = (typeof DESCRIBED_STEPS)[number];
+export const isDescribedStep = (v: unknown): v is DescribedStep =>
+	typeof v === 'string' && (DESCRIBED_STEPS as readonly string[]).includes(v);
+export type StepDescriptions = Record<DescribedStep, string>;
+export const createEmptyStepDescriptions = (): StepDescriptions => ({
+	solution: '',
+	functional_spec: '',
+	technical_spec: ''
+});
+
+/**
+ * The questions the steps of prose ask after their description (ac-evo-sol-prose,
+ * ac-evo-func-prose, ac-evo-tech-prose). Everything a person writes before the
+ * Impact analysis is prose; what the change touches is derived from it there.
+ */
+export const STEP_QUESTIONS = [
+	{
+		step: 'solution',
+		key: 'examples',
+		label: 'How we will know it works',
+		required: true,
+		question: 'How will we know it works? Give a few concrete examples.',
+		example: 'A customer whose bag is ready gets one text within a minute; a customer with no phone number gets none.',
+		whyItMatters: 'The examples become the acceptance criteria the code is checked against.'
+	},
+	{
+		step: 'solution',
+		key: 'out_of_scope',
+		label: 'What is left out',
+		required: false,
+		question: 'What is left out of this change?',
+		example: 'No e-mail, no reminder the next day.',
+		whyItMatters: 'Saying what is not done keeps the change from growing while it is built.'
+	},
+	{
+		// Its rules, refusals included: the key stays 'refusals', the name of the answers already written (src-owner-fr-kinds-20261030).
+		step: 'functional_spec',
+		key: 'refusals',
+		label: 'Its rules',
+		required: true,
+		question: 'What does the product allow or refuse, and why?',
+		example: 'No text without a phone number: the baker sees "no number on file". Never two texts for one order.',
+		whyItMatters: 'The rules are what the code enforces and the tests check.'
+	},
+	{
+		step: 'functional_spec',
+		key: 'interactions',
+		label: 'How the person acts',
+		required: false,
+		question: 'How does the person act on it: what do they click, type or press?',
+		example: 'The baker taps "Ready" on the order; a long press undoes it within ten seconds.',
+		whyItMatters: 'What the person does becomes the actions of the features, and their parameters.'
+	},
+	{
+		step: 'functional_spec',
+		key: 'screens',
+		label: 'What each screen shows',
+		required: false,
+		question: 'What does each screen show, and where?',
+		example: 'The order list shows a "Ready" button on each order not collected yet; the customer screen shows the pick-up slot.',
+		whyItMatters: 'The screens are drawn from it in the Experience.'
+	},
+	{
+		step: 'functional_spec',
+		key: 'experience',
+		label: 'What the person feels',
+		required: false,
+		question: 'What should the person feel or notice: feedback, pace, accessibility?',
+		example: 'The baker sees at once that the text left; nothing makes them wait in the morning rush.',
+		whyItMatters: 'It says how the change should feel, which the design and its checks hold it to.'
+	},
+	{
+		step: 'functional_spec',
+		key: 'failures',
+		label: 'When it goes wrong',
+		required: false,
+		question: 'What happens when something goes wrong?',
+		example: 'The SMS provider is down: the order stays ready and the text is retried for an hour.',
+		whyItMatters: 'What breaks is what nobody thinks of until it happens in production.'
+	},
+	{
+		// The diagram in UML, kept as its notation (ac-evo-func-uml, ac-evo-func-uml-text).
+		step: 'functional_spec',
+		key: 'diagram',
+		label: 'Diagram',
+		required: false,
+		question: 'Draw it: who takes part, how each use case goes and where it may stop, what each thing goes through.',
+		example: 'use case Mark a bag ready: Baker',
+		whyItMatters: 'A drawing shows the holes prose hides: a step nobody does, a refusal with no way out, a state nothing leaves.'
+	},
+	{
+		// The Technical spec's diagram in UML, kept as its notation (ac-evo-tech-uml).
+		step: 'technical_spec',
+		key: 'diagram',
+		label: 'Diagram',
+		required: false,
+		question: 'Draw it: the parts the change involves and what it adds, how they talk, what goes wrong.',
+		example: 'component SMS sender: new',
+		whyItMatters: 'A drawing shows what a decision brings: a new dependency, a new store, a call that can fail.'
+	},
+	{
+		step: 'technical_spec',
+		key: 'data',
+		label: 'The data it moves',
+		required: false,
+		question: 'What data does the change add, change or remove?',
+		example: 'Orders get a "text sent at" date; nothing is removed.',
+		whyItMatters: 'The tables are declared from it at the Impact analysis.'
+	}
+] as const;
+export type StepQuestion = (typeof STEP_QUESTIONS)[number];
+export type AnsweredStep = StepQuestion['step'];
+export type StepAnswers = Record<AnsweredStep, Record<string, string>>;
+export const createEmptyStepAnswers = (): StepAnswers => {
+	const out: StepAnswers = { solution: {}, functional_spec: {}, technical_spec: {} };
+	for (const q of STEP_QUESTIONS) out[q.step][q.key] = '';
+	return out;
+};
+export const stepQuestionOf = (step: string, key: string): StepQuestion | null =>
+	STEP_QUESTIONS.find((q) => q.step === step && q.key === key) ?? null;
+
+/**
+ * Where a version of a field came from. `earlier` is a value the field held
+ * before the dossier kept versions, recorded the first time someone validates
+ * it, under the validator's name as the one who found it there.
+ */
+export type FieldVersionSource = 'typed' | 'proposal' | 'ai_client' | 'earlier' | 'diagram' | 'assistant';
+
+/** One value a field held: what, who, when, and from where. Never edited, never removed. */
+export interface FieldVersion {
+	readonly id: string;
+	/** The field, keyed like `fieldKey`: the bare path, or `path@leafId`. */
+	readonly key: string;
+	readonly value: string;
+	readonly by: string;
+	readonly byKind: AuthorKind;
+	readonly source: FieldVersionSource;
+	readonly proposalId: string | null;
+	readonly at: string;
+}
+
+/** A person standing behind one version of a field. */
+/**
+ * A question left unanswered on purpose, with who decided it and why
+ * (ac-evo-form-question-skip): it is no longer owed, required or not.
+ */
+export interface SkippedQuestion {
+	readonly key: string;
+	readonly reason: string;
+	readonly by: string;
+	readonly byKind: AuthorKind;
+	readonly at: string;
+}
+
+export const skippedQuestionOf = (request: Pick<EvolutionRequest, 'skippedQuestions'>, key: string): SkippedQuestion | null =>
+	(request.skippedQuestions ?? []).find((s) => s.key === key) ?? null;
+
+/**
+ * The people expected to validate one answer (keyed like a field) or one step
+ * validated as a whole (`step:<step>`). Once someone is named, only they count
+ * (ac-evo-req-named-validators). `gone` keeps who was named and left the
+ * workspace, so the card can say it: they are no longer waited on.
+ */
+export interface NamedValidators {
+	readonly target: string;
+	readonly people: readonly string[];
+	readonly gone: readonly string[];
+}
+
+export interface FieldValidation {
+	readonly key: string;
+	readonly versionId: string;
+	readonly by: string;
+	readonly byKind: AuthorKind;
+	readonly at: string;
+	/** Set when the verdict refuses the version rather than standing behind it (ac-evo-form-question-acts). */
+	readonly verdict?: 'refused';
+	/** Given by the person's AI under their delegation: it counts as the person's (ac-evo-llm-delegation-marks). */
+	readonly delegated?: true;
+	/** Why it was refused, in the member's words. */
+	readonly reason?: string;
+}
+
+export type CustomQuestionStatus = 'open' | 'answered' | 'set_aside';
+
+/** A question asked of this request in particular, after reading it. */
+export interface CustomQuestion {
+	readonly id: string;
+	/** The step it is asked on, one of the validated steps. */
+	readonly step: string;
+	/** The field it bears on, keyed like `fieldKey`, or null for the step as a whole. */
+	readonly fieldKey: string | null;
+	readonly question: string;
+	readonly why: string;
+	readonly askedBy: string;
+	readonly askedByKind: AuthorKind;
+	readonly askedAt: string;
+	status: CustomQuestionStatus;
+	/** The answer, or the reason it was set aside. */
+	resolution: string;
+	resolvedBy: string | null;
+	resolvedAt: string | null;
+}
+
+/** The answers of the need, one string per question; a list question holds one entry per line. */
+export interface RequestNeed {
+	description: string;
+	situation: string;
+	symptoms: string;
+	cost: string;
+	objectives: string;
+	measures: string;
+}
+
+export const createEmptyNeed = (): RequestNeed => ({
+	description: '',
+	situation: '',
+	symptoms: '',
+	cost: '',
+	objectives: '',
+	measures: ''
+});
+
+/** One step of specification marked not applicable: who said so, when, and why. */
+export interface StepSkip {
+	step: SkippableStep;
+	reason: string;
+	by: string;
+	at: string;
+}
+
+/** The steps a change may skip: Solution is what it changes, the rest are gates. */
+export const SKIPPABLE_STEPS = ['need', 'functional_spec', 'technical_spec'] as const;
+/**
+ * The steps a person marks not applicable as a whole today (ac-evo-req-16): the
+ * Need skips its questions one by one instead. A Need marked so before is still
+ * read, and its mark can still be lifted, which is why it stays skippable.
+ */
+export const MARKABLE_STEPS = ['functional_spec', 'technical_spec'] as const;
+export const isMarkableStep = (v: unknown): boolean => typeof v === 'string' && (MARKABLE_STEPS as readonly string[]).includes(v);
+export type SkippableStep = (typeof SKIPPABLE_STEPS)[number];
+export const isSkippableStep = (v: unknown): v is SkippableStep =>
+	typeof v === 'string' && (SKIPPABLE_STEPS as readonly string[]).includes(v);
+
+/** The declaration that the change is live, with the roadmap release it shipped in when one was named. */
+export interface Deployment {
+	releaseId: string | null;
+	note: string;
+	declaredBy: string;
+	declaredAt: string;
 }
 
 export interface ProjectEvolutionDraft {
 	projectId: string;
 	requests: EvolutionRequest[];
+	/**
+	 * The branch the project deploys from (ac-evo-branch-setting): every request's
+	 * code is written on a branch derived from it and merged back into it. Absent
+	 * while none is named, and requests are then built and declared live as before.
+	 */
+	deploymentBranch?: string;
+	/** The admins who delegated validation to their own AI on every evolution of the project (ac-evo-llm-delegation). */
+	aiDelegations?: AiDelegation[];
+	/** The sessions of each person's AI on the whole project (ac-ai-session-project). */
+	sessions?: LiveSession[];
+	/** The clicks made outside a request, on the Specification 360° and the Retrospecification (ac-ai-session-ask-block, ac-ai-session-reread). */
+	clicks?: ProjectClick[];
 	lastSavedAt: string | null;
 }
 
@@ -604,6 +1157,10 @@ export function createEvolutionRequest(
 		status: 'open',
 		leafIds: [],
 		drafts: [],
+		dataDrafts: [],
+		sectionDrafts: [],
+		ruleDrafts: [],
+		findingDrafts: [],
 		iteration: 1,
 		iterations: [],
 		specVersion: 0,
@@ -614,7 +1171,6 @@ export function createEvolutionRequest(
 		answeredKeys: [],
 		fieldSignatures: [],
 		fieldThreads: [],
-		readinessExclusions: [],
 		filledFieldKeys: [],
 		coherenceGateClosed: false,
 		coherenceReport: { status: 'not_run', projectScore: 0, requestDelta: 0, ranAt: null },
@@ -626,6 +1182,24 @@ export function createEvolutionRequest(
 		observations: [],
 		waivers: [],
 		history: [],
+		need: createEmptyNeed(),
+		skippedSteps: [],
+		deployment: null,
+		stepValidations: [],
+		stepDescriptions: createEmptyStepDescriptions(),
+		stepAnswers: createEmptyStepAnswers(),
+		skippedQuestions: [],
+		diagramAlignment: null,
+		technicalAlignment: null,
+		textAlignment: null,
+		validationsPerAnswer: 1,
+		namedValidators: [],
+		customQuestions: [],
+		fieldVersions: [],
+		fieldValidations: [],
+		heldImplementation: {},
+		liveSessions: [],
+		aiClicks: [],
 		...overrides
 	};
 }

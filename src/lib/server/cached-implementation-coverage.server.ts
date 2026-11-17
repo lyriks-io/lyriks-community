@@ -1,3 +1,4 @@
+import { needsRefresh, readSignature } from './engine-cache-staleness';
 import type {
 	FeatureImplementationCoverage,
 	LoadImplementationCoverageUseCase
@@ -26,7 +27,6 @@ import { publishSectionChange, subscribeSectionChanges } from './sync-bus.server
  * on the application use-case, keeping the dependency arrow inward.
  */
 
-const TTL_MS = 60_000;
 
 /** Lane priority: before maturity advice (1) and behavior verification (2). */
 const LANE_PRIORITY = 0;
@@ -45,12 +45,15 @@ interface Entry {
 	data: Coverage;
 	at: number; // epoch ms of the last successful compute (0 = never)
 	computing: boolean;
+	signature?: string | null;
 	invalidated?: boolean;
 }
 
 export interface CachedImplementationCoverageOptions {
 	lane?: BackgroundLane;
 	store?: SnapshotStore<Coverage>;
+	/** The project's behaviour-model signature: a reading is recomputed when it moves (engine-cache-staleness). */
+	signature?: (projectId: string) => string;
 }
 
 export class CachedImplementationCoverage {
@@ -59,6 +62,7 @@ export class CachedImplementationCoverage {
 	readonly #seeding = new Map<string, Promise<Entry>>();
 	readonly #lane: BackgroundLane;
 	readonly #store: SnapshotStore<Coverage> | null;
+	readonly #signature: ((projectId: string) => string) | undefined;
 
 	constructor(
 		private readonly load: LoadImplementationCoverageUseCase,
@@ -66,6 +70,7 @@ export class CachedImplementationCoverage {
 	) {
 		this.#lane = options.lane ?? engineLane;
 		this.#store = options.store ?? null;
+		this.#signature = options.signature;
 		// Stale a project's snapshot when its leaf set changes, keeping the last
 		// data so chips never flicker away. Our own `features-implementation` echo
 		// is not an input section, so it can't loop.
@@ -81,7 +86,7 @@ export class CachedImplementationCoverage {
 
 	async get(projectId: string): Promise<Coverage> {
 		const entry = this.#cache.get(projectId) ?? (await this.#seed(projectId));
-		if (!entry.computing && Date.now() - entry.at > TTL_MS) this.#refresh(projectId);
+		if (!entry.computing && needsRefresh(entry, readSignature(this.#signature, projectId))) this.#refresh(projectId);
 		return entry.data;
 	}
 
@@ -129,6 +134,7 @@ export class CachedImplementationCoverage {
 		entry.computing = true;
 		entry.invalidated = false;
 		this.#cache.set(projectId, entry);
+		const signature = readSignature(this.#signature, projectId);
 
 		void this.#lane
 			.run(`coverage:${projectId}`, LANE_PRIORITY, () => this.load.execute(projectId))
@@ -140,17 +146,17 @@ export class CachedImplementationCoverage {
 					return;
 				}
 				const changed = JSON.stringify(data) !== JSON.stringify(entry.data);
-				this.#cache.set(projectId, { data, at: Date.now(), computing: false });
+				this.#cache.set(projectId, { data, at: Date.now(), computing: false, signature });
 				if (changed) {
 					void this.#store?.save(projectId, data).catch(() => {});
 					// Loop-safe like the advisor: the reload served after this publish hits
-					// a fresh entry (within TTL) and does not re-refresh.
+					// a fresh entry (computed on the current model) and does not re-refresh.
 					publishSectionChange({ projectId, section: IMPLEMENTATION_COVERAGE_SECTION, origin: null });
 				}
 			})
 			.catch(() => {
-				// Keep last-known data; back off a full TTL before retrying.
-				this.#cache.set(projectId, { ...entry, at: Date.now(), computing: false });
+				// Keep last-known data; retry once the model moves or past the safety age (engine-cache-staleness).
+				this.#cache.set(projectId, { ...entry, at: Date.now(), computing: false, signature });
 			});
 	}
 }

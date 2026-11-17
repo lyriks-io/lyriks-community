@@ -17,13 +17,22 @@ export interface Version {
 	readonly patch: number;
 	/** Dot-separated identifiers after `-`, e.g. `rc.1` → ['rc','1']. */
 	readonly prerelease?: readonly string[];
+	/** Set on a dated release name; absent on a semantic version. */
+	readonly scheme?: 'release';
 }
+
+/** `2026.11-64`: how the appliance's promoted releases are named (year.month-sequence). */
+const RELEASE_TAG = /^(\d{4})\.(\d{2})-(\d+)$/;
 
 /** `v1.2.3`, `1.2.3`, `1.2.3-rc.1` — build metadata (`+sha`) is ignored. */
 const VERSION_TAG = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/;
 
 /** Parse an image tag into a Version, or null when the tag carries no ordering. */
 export function parseVersion(tag: string): Version | null {
+	const release = RELEASE_TAG.exec(tag.trim());
+	if (release) {
+		return { major: Number(release[1]), minor: Number(release[2]), patch: Number(release[3]), scheme: 'release' };
+	}
 	const m = VERSION_TAG.exec(tag.trim());
 	if (!m) return null;
 	const prerelease = m[4] ? m[4].split('.') : undefined;
@@ -70,7 +79,8 @@ export function compareVersions(a: Version, b: Version): number {
 
 /** Render a Version back to its canonical `v`-prefixed tag. */
 export function formatVersion(v: Version): string {
-	const core = `v${v.major}.${v.minor}.${v.patch}`;
+	if (v.scheme === 'release') return `${v.major}.${String(v.minor).padStart(2, '0')}-${v.patch}`;
+	const core =`v${v.major}.${v.minor}.${v.patch}`;
 	return v.prerelease?.length ? `${core}-${v.prerelease.join('.')}` : core;
 }
 
@@ -79,11 +89,17 @@ export function formatVersion(v: Version): string {
  * install already runs one — an operator on a stable release is never nudged onto
  * an rc, but one already on `1.1.0-rc.1` still learns about `1.1.0-rc.2`.
  */
-export function pickLatest(tags: readonly string[], includePrerelease = false): Version | null {
+export function pickLatest(
+	tags: readonly string[],
+	includePrerelease = false,
+	scheme?: Version['scheme']
+): Version | null {
 	let best: Version | null = null;
 	for (const tag of tags) {
 		const v = parseVersion(tag);
 		if (!v) continue;
+		// A registry holds both kinds of tag, and 2026.11-64 is not newer than v0.9.40 in any sense.
+		if (v.scheme !== scheme) continue;
 		if (v.prerelease && !includePrerelease) continue;
 		if (!best || compareVersions(v, best) > 0) best = v;
 	}

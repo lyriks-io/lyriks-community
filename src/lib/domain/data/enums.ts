@@ -80,5 +80,29 @@ export type Protocol = (typeof PROTOCOLS)[number]['code'];
 export const isProtocol = (v: unknown): v is Protocol =>
 	typeof v === 'string' && (PROTOCOLS as readonly Option[]).some((p) => p.code === v);
 
+/**
+ * What deleting the record a relation points at does to the record holding it
+ * (criterion 99e7cc77): deleted with it, its link emptied, or the deletion
+ * refused while it points there. Absent on a field: not stated, never guessed.
+ */
+export const ON_DELETE = [
+	{ code: 'cascade', label: 'Deleted with it' },
+	{ code: 'set_null', label: 'Link emptied' },
+	{ code: 'restrict', label: 'Deletion refused' }
+] as const satisfies readonly Option[];
+export type OnDelete = (typeof ON_DELETE)[number]['code'];
+export const isOnDelete = (v: unknown): v is OnDelete =>
+	typeof v === 'string' && (ON_DELETE as readonly Option[]).some((o) => o.code === v);
+
+/**
+ * Why a relation may not record what a deletion does, or null when it may: a
+ * required link is never empty, so it never records set_null (rule 4db09c0c).
+ */
+export function onDeleteRefusal(field: { readonly isRequired: boolean; readonly isList: boolean }, value: OnDelete): string | null {
+	return value === 'set_null' && field.isRequired && !field.isList
+		? 'A required link is never empty: say the record is deleted with it, or that the deletion is refused.'
+		: null;
+}
+
 /** How an entity entered the model. */
 export type EntityOrigin = 'journey' | 'feature' | 'manual';

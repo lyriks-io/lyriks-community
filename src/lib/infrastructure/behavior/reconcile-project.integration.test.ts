@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BackLinkRepositoryPort, ClockPort } from '$application/ports';
-import { ReconcileProjectUseCase } from '$application/use-cases/reconcile-project';
+import { ReconcileProjectUseCase } from '$application/specification/reconcile-project';
 import { FsProjectLock } from './fs-project-lock.server';
 import { FsReconciliationStore } from './fs-reconciliation-store.server';
 

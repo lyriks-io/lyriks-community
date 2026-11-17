@@ -9,7 +9,7 @@
 import type { LyriksClient } from '../lyriks-client.js'
 import { createWizardProjectHandler, SECTIONS, type Section } from './sections.js'
 import { updateWizardProjectHandler } from './lyriks-portfolio.js'
-import { getPath, summarize } from '../util/shape.js'
+import { getPath, PROJECT_OUTLINE_NEXT, summarize } from '../util/shape.js'
 
 /** Why there is nothing to file a project under on this install. */
 export const NO_WORKSPACES_NOTE =
@@ -74,7 +74,7 @@ export function sectionsFor(paths?: string[]): Section[] {
  * own section reads.
  */
 export async function getProjectWithoutBack(
-  args: { project_id: string; summary?: boolean; paths?: string[] },
+  args: { project_id: string; summary?: boolean; full?: boolean; paths?: string[] },
   lyriks: LyriksClient,
 ): Promise<unknown> {
   const cards = await wizardCards(lyriks)
@@ -108,13 +108,19 @@ export async function getProjectWithoutBack(
     source_project_id: card.id,
     wizard_envelope: envelope,
   }
-  if (args.summary) return { projectId: card.id, summary: summarize(project) }
-  if (args.paths && args.paths.length > 0) {
+  if (!args.summary && args.paths && args.paths.length > 0) {
     const selected: Record<string, unknown> = {}
     for (const p of args.paths) selected[p] = getPath(project, p)
     return { projectId: card.id, selected }
   }
-  return project
+  if (!args.summary && args.full) return project
+  return {
+    projectId: card.id,
+    kernel_project_id: card.id,
+    source_project_id: card.id,
+    summary: summarize(project),
+    next: PROJECT_OUTLINE_NEXT,
+  }
 }
 
 /** On Community there is only one kind of project to create: the wizard one. */

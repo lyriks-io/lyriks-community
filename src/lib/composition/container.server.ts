@@ -1,6 +1,12 @@
-import { DeleteBehaviorStateUseCase } from '$application/use-cases/delete-behavior-state';
-import { ReadProjectElaborationUseCase } from '$application/use-cases/read-project-elaboration';
-import { readBehaviorOverview } from '$application/read-behavior-overview';
+import { scopedSkillCatalog } from '$lib/application/skills/scoped-skill-catalog';
+import { isCommunity } from '$domain/licensing';
+import type { SpecLanguage } from '$domain/language';
+import { DeleteBehaviorStateUseCase } from '$application/specification/delete-behavior-state';
+import { styledProjectCatalog } from '$application/portfolio/styled-project-catalog';
+import { CheckProjectCreationUseCase } from '$application/portfolio/project-creation-scope';
+import { MakeProjectActiveUseCase, ResolveActiveProjectUseCase } from '$application/portfolio/active-project';
+import { ReadProjectElaborationUseCase } from '$application/analysis/read-project-elaboration';
+import { readBehaviorOverview } from '$application/specification/read-behavior-overview';
 import {
 	AnalyzeBriefUseCase,
 	GenerateSpecsUseCase,
@@ -10,12 +16,12 @@ import {
 	ListProjectsUseCase,
 	CreateProjectUseCase,
 	UpdateProjectUseCase,
-	MarkProjectShippedUseCase,
 	DeleteProjectUseCase,
 	ListDomainsUseCase,
 	CreateDomainUseCase,
 	UpdateDomainUseCase,
 	RemoveDomainUseCase,
+	ReorderDomainsUseCase,
 	BuildPortfolioUseCase,
 	SearchPortfolioUseCase,
 	LoadDataDraftUseCase,
@@ -25,6 +31,8 @@ import {
 	LoadFeatureMaturityReportUseCase,
 	DetectFeatureIdCollisionUseCase,
 	LoadImplementationCoverageUseCase,
+	LoadConformanceUseCase,
+	ReadProjectHealthUseCase,
 	SweepImplementationGapsUseCase,
 	ReconcileImplementationStatusesUseCase,
 	AssessProjectCompletenessUseCase,
@@ -34,7 +42,10 @@ import {
 	SaveScopeDraftUseCase,
 	LoadRulesDraftUseCase,
 	LoadGlossaryDraftUseCase,
+	ListExtractedElementsUseCase,
+	LoadSpecCorpusUseCase,
 	LoadFoundationDraftUseCase,
+	LoadSpecLanguageUseCase,
 	SaveFoundationDraftUseCase,
 	LoadSettingsUseCase,
 	LoadFeedbackSettingsUseCase,
@@ -58,17 +69,38 @@ import {
 	RefreshDerivedCapabilitiesUseCase,
 	SaveCoherenceDraftUseCase,
 	SaveDataDraftUseCase,
+	SyncDataRulesUseCase,
+	TieDataFieldUseCase,
+	ReadDataRulesUseCase,
+	ReadDataLinksUseCase,
+	ProjectRulesOracleUseCase,
+	ProveFeatureRulesUseCase,
 	SaveExperienceDraftUseCase,
 	SaveFeaturesDraftUseCase,
 	SaveRulesDraftUseCase,
 	SaveSimpleSectionDraftUseCase,
 	SaveSettingsUseCase,
-	SaveFeedbackSettingsUseCase,
+	LoadInstallConfigurationUseCase,
+	SaveInstallConfigurationUseCase,
+	LoadAssistantSettingsUseCase,
+	ConnectAssistantUseCase,
+	SwitchAssistantUseCase,
+	RemoveAssistantKeyUseCase,
+	TestAssistantUseCase,
+	DrawDiagramWithAssistantUseCase,
+	WriteTextWithAssistantUseCase,
 	SaveUsersDraftUseCase,
 	ScoreFeaturesUseCase,
 	AssessFeatureUseCase,
+	ReadActionDigestUseCase,
 	ReadBehaviorFeatureUseCase,
 	ScoreBehaviorFeatureUseCase,
+	SimulateBehaviorUseCase,
+	WhatIfUseCase,
+	AuthorProjectBehaviorUseCase,
+	ReadProjectBehaviorUseCase,
+	FindStateReferencesUseCase,
+	GenerateBehaviorTypesUseCase,
 	ReadBehaviorOperationsUseCase,
 	AuthorBehaviorUseCase,
 	ResolveBehaviorContextUseCase,
@@ -91,6 +123,7 @@ import {
 } from '$application/use-cases';
 import type {
 	AuditLogPort,
+	ProofSwitchPort,
 	BackLinkRepositoryPort,
 	BackSyncOutboxPort,
 	BehaviorAdvisoryPort,
@@ -98,6 +131,7 @@ import type {
 	CodeAdoptionPort,
 	DataDraftRepositoryPort,
 	DraftLockPort,
+	ProjectLockPort,
 	SectionDocumentStorePort,
 	FeatureBehavior,
 	ProjectAccessPort,
@@ -105,32 +139,51 @@ import type {
 	ProjectResidueRepositoryPort,
 	Session,
 	WorkspaceDirectoryPort,
+	TeamJobsPort,
 	PortfolioRepositoryPort,
 	FeatureMaturityScorerPort
 } from '$application/ports';
-import { tierFromPlan, tierHasFormalDpo, type Tier } from '$domain/tier/tier';
+import { tierFromPlan, tierHasFormalDpo, type Tier } from '$domain/tier';
 import { isLicenseEnforced } from '$domain/licensing';
-import { displayNameFromLicenseCustomer } from '$domain/team/member-name';
+import { displayNameFromLicenseCustomer } from '$domain/team';
 import { env } from '$env/dynamic/private';
 import { createRequire } from 'node:module';
 import { dirname, resolve as pathResolve } from 'node:path';
 import { SystemClock } from '$infrastructure/clock/system-clock';
-import { NullUpdateFeed } from '$infrastructure/updates/null-update-feed.server';
+import { LoadDiscussionsUseCase } from '$application/collaboration/load-discussions';
+import { AiConversationsUseCase } from '$application/collaboration/ai-conversations';
+import { ActOnDiscussionUseCase } from '$application/collaboration/act-on-discussion';
+import { LoadMapPlacementsUseCase } from '$application/specification/load-map-placements';
+import { LoadDisplaySettingsUseCase } from '$application/operations/load-display-settings';
+import { SaveDisplaySettingsUseCase } from '$application/operations/save-display-settings';
+import { LoadProofSettingsUseCase, SaveProofSettingsUseCase } from '$application/operations/proof-settings';
+import { PlaceMapTablesUseCase } from '$application/specification/place-map-tables';
+import { ArrangeActionJourneysUseCase, LoadActionJourneysUseCase } from '$application/specification/arrange-action-journeys';
+import { AI_CONVERSATIONS_SECTION, DATA_MAP_PLACEMENTS_SECTION, SPEC_DISCUSSIONS_SECTION } from '$lib/shared/section-sync';
+import { runningRelease } from '$domain/updates';
 import { RegistryUpdateFeed } from '$infrastructure/updates/registry-update-feed.server';
 import { ConsoleTelemetry } from '$infrastructure/telemetry/console-telemetry';
 import { StubAiSuggester } from '$infrastructure/ai/stub-ai-suggester';
+import { AnthropicLanguageModel } from '$infrastructure/ai/anthropic-language-model.server';
+import { OpenAiLanguageModel } from '$infrastructure/ai/openai-language-model.server';
+import { ProviderLanguageModel } from '$infrastructure/ai/provider-language-model.server';
+import { AesGcmSecretCipher } from '$infrastructure/settings/aes-gcm-secret-cipher.server';
 import { RequestContextSessionAdapter } from '$infrastructure/auth/request-context-session.server';
+import { currentRequestSession } from '$lib/server/request-context.server';
 import { SingleOperatorProjectAccess } from '$infrastructure/auth/single-operator-project-access.server';
 import { SingleOperatorRoleGate } from '$infrastructure/auth/single-operator-role-gate.server';
 import { LocalIdentityProvider } from '$infrastructure/auth/local-identity-provider.server';
 import { StructuredAuditLog } from '$infrastructure/audit/structured-audit-log.server';
 import { ConsoleToastNotifier } from '$infrastructure/notifier/console-toast';
 import { buildPersistence } from '$infrastructure/persistence/persistence.server';
-import { LocalGlobalCoherenceChecker } from '$application/local-global-coherence-checker';
-import { DecisionAwareCoherenceChecker } from '$application/decision-aware-coherence-checker';
+import { LocalGlobalCoherenceChecker } from '$application/analysis/local-global-coherence-checker';
+import { DecisionAwareCoherenceChecker } from '$application/analysis/decision-aware-coherence-checker';
+import { CachedCoherenceChecker } from '$application/analysis/cached-coherence-checker';
+import { ProjectStateCache } from '$application/projection/project-state-cache';
+import type { BehaviorFold } from '$application/specification/behavior-reading';
 import type { ScoreHistory } from '$domain/coherence';
-import { ProjectedKnowledgeGraphProvider } from '$application/projected-knowledge-graph';
-import { MergedKnowledgeGraphProvider } from '$application/merged-knowledge-graph';
+import { ProjectedKnowledgeGraphProvider } from '$application/analysis/projected-knowledge-graph';
+import { MergedKnowledgeGraphProvider } from '$application/analysis/merged-knowledge-graph';
 import { CachedBehaviorAdvisor } from '$lib/server/cached-behavior-advisor.server';
 import { CachedFeatureAdvisor } from '$lib/server/cached-feature-advisor.server';
 import { CachedImplementationCoverage } from '$lib/server/cached-implementation-coverage.server';
@@ -139,9 +192,10 @@ import type { ClockPort, GlobalCoherenceCheckerPort, RoleGatePort } from '$appli
 import { LocalFsBehaviorRepository } from '$infrastructure/behavior/local-fs-behavior-repository.server';
 import { FsReconciliationStore } from '$infrastructure/behavior/fs-reconciliation-store.server';
 import { FsProjectLock } from '$infrastructure/behavior/fs-project-lock.server';
-import { ReconcileProjectUseCase } from '$application/use-cases/reconcile-project';
+import { ReconcileProjectUseCase } from '$application/specification/reconcile-project';
 import { PgProjectPortabilityStore } from '$infrastructure/persistence/postgres/pg-project-portability-store.server';
 import { ZipArchiveCodec } from '$infrastructure/portability/zip-archive-codec.server';
+import { PackEvolutionTestKitUseCase } from '$application/evolution/pack-evolution-test-kit';
 import { sha256Hex } from '$infrastructure/portability/sha256.server';
 import { ExportProjectUseCase } from '$application/use-cases/portability/export-project';
 import { ImportProjectUseCase } from '$application/use-cases/portability/import-project';
@@ -168,15 +222,15 @@ import { createEmptyDocumentsDraft, type ProjectDocumentsDraft } from '$domain/d
 import { computeGlossaryCoherence, type ProjectGlossaryDraft } from '$domain/glossary';
 import { computeOperationsCoherence, type FoundationOperationsDraft } from '$domain/foundation';
 import { computeArchitectureCoherence, type ProjectArchitectureDraft } from '$domain/architecture';
-import { parseDocumentsDraft } from '$application/parse-documents-draft';
+import { parseDocumentsDraft } from '$application/specification/parse-documents-draft';
 import { createEmptyBaselinesDraft, type ProjectBaselinesDraft } from '$domain/baselines';
-import { parseBaselinesDraft } from '$application/parse-baselines-draft';
+import { parseBaselinesDraft } from '$application/specification/parse-baselines-draft';
 import { createEmptyApprovalsDraft, type ProjectApprovalsDraft } from '$domain/approvals';
 import { createEmptyEvolutionDraft, type ProjectEvolutionDraft } from '$domain/evolution';
-import { parseApprovalsDraft } from '$application/parse-approvals-draft';
-import { parseEvolutionDraft } from '$application/parse-evolution-draft';
+import { parseApprovalsDraft } from '$application/specification/parse-approvals-draft';
+import { parseEvolutionDraft } from '$application/evolution/parse-evolution-draft';
 import type { ProjectScopeDraft } from '$domain/scope';
-import { parseScopeDraft } from '$application/parse-scope-draft';
+import { parseScopeDraft } from '$application/specification/parse-scope-draft';
 import { ProjectModelRevisionReader } from '$infrastructure/persistence/project-model-revision-reader.server';
 import { SECTIONS } from '$lib/shared/sections';
 import { ResidueTeamGateway } from '$infrastructure/team/residue-team-gateway.server';
@@ -187,6 +241,7 @@ import {
 	NoLicenceSync,
 	NoMemberName,
 	NoProjectMirror,
+	NoTeamJobs,
 	NoWorkspaceDirectory
 } from '$infrastructure/oss-defaults.server';
 import { enterpriseOverlay, type OverlayContext } from './enterprise-overlay.server';
@@ -197,8 +252,11 @@ import { McpUnspaghettitAdvisor } from '$infrastructure/unspaghettit/mcp-unspagh
 import { UnspaEngineClient } from '$infrastructure/unspaghettit/unspa-engine-client.server';
 import { DEFAULT_CALL_TIMEOUT_MS } from '$infrastructure/unspaghettit/unspa-engine-client.server';
 import { CachedCompletionEvidence } from '$lib/server/cached-completion-evidence.server';
+import { CachedProjectHealth, type StoredHealth } from '$lib/server/cached-project-health.server';
+import { coalesceLoads } from '$lib/server/coalesced-loads.server';
 import { CachedKnowledgeGraph } from '$lib/server/cached-knowledge-graph.server';
 import { McpCodeAdoption } from '$infrastructure/unspaghettit/mcp-code-adoption.server';
+import { EngineAnalysisStateReader } from '$infrastructure/unspaghettit/analysis-state-reader.server';
 import {
 	declaredEngineVersion,
 	platformBuildInfo
@@ -224,6 +282,8 @@ export interface AppServices {
 	auditProjectScope: AuditProjectScopeUseCase;
 	finishProject: FinishProjectUseCase;
 	loadFoundationDraft: LoadFoundationDraftUseCase;
+	/** The one language the project's spec is written in (declared, English by default). */
+	loadSpecLanguage: LoadSpecLanguageUseCase;
 	saveFoundationDraft: SaveFoundationDraftUseCase;
 	loadUsersDraft: LoadUsersDraftUseCase;
 	saveUsersDraft: SaveUsersDraftUseCase;
@@ -239,6 +299,14 @@ export interface AppServices {
 	 *  instant read, per-leaf engine reads refreshed in the background (see
 	 *  CachedImplementationCoverage). Fail-soft end to end. */
 	implementationCoverage: CachedImplementationCoverage;
+	/** Proven against code: the share of located behavior a passing run proved, read
+	 *  beside the coherence headline and never folded into the coherence score. */
+	loadConformance: LoadConformanceUseCase;
+	readProjectHealth: ReadProjectHealthUseCase;
+	/** Project health as the pages show it: the last reading at once, the next taken behind (ac-score-shown-at-once). */
+	projectHealthView: CachedProjectHealth;
+	/** The fold of the behaviour kernel every specification page reads, once per state of the spec. */
+	behaviorReadings: ProjectStateCache<BehaviorFold>;
 	/** Project-wide gap roll-up: which features still hold unlocated spec entities. */
 	sweepImplementationGaps: SweepImplementationGapsUseCase;
 	/** Plans coverage→status upgrades (never downgrades) so the roadmap follows
@@ -251,6 +319,7 @@ export interface AppServices {
 	loadRulesDraft: LoadRulesDraftUseCase;
 	saveRulesDraft: SaveRulesDraftUseCase;
 	loadGlossaryDraft: LoadGlossaryDraftUseCase;
+	loadSpecCorpus: LoadSpecCorpusUseCase;
 	saveGlossaryDraft: SaveSimpleSectionDraftUseCase<ProjectGlossaryDraft>;
 	/** The evidence register every citing capability reads (legacy architecture docs folded in). */
 	loadDocumentRegister: LoadDocumentRegisterUseCase;
@@ -270,6 +339,17 @@ export interface AppServices {
 	removeReuseTemplate: RemoveReuseTemplateUseCase;
 	loadDataDraft: LoadDataDraftUseCase;
 	saveDataDraft: SaveDataDraftUseCase;
+	/** The data model's provable rules, given to the solver as project invariants. */
+	syncDataRules: SyncDataRulesUseCase;
+	tieDataField: TieDataFieldUseCase;
+	readDataRules: ReadDataRulesUseCase;
+	readDataLinks: ReadDataLinksUseCase;
+	projectRulesOracle: ProjectRulesOracleUseCase;
+	proveFeatureRules: ProveFeatureRulesUseCase;
+	/** Whether this installation proves the spec with the solver now (Enterprise, Settings, Proofs on); pages show no verdict otherwise. */
+	readonly proofs: boolean;
+	loadProofSettings: LoadProofSettingsUseCase;
+	saveProofSettings: SaveProofSettingsUseCase;
 	loadArchitectureDraft: LoadArchitectureDraftUseCase;
 	saveArchitectureDraft: SaveSimpleSectionDraftUseCase<ProjectArchitectureDraft>;
 	loadCoherenceDraft: LoadCoherenceDraftUseCase;
@@ -299,9 +379,18 @@ export interface AppServices {
 	featureAdvice: CachedFeatureAdvisor;
 	/** Deep, on-demand Unspaghettit readout for one leaf feature (the leaf drawer). */
 	assessFeature: AssessFeatureUseCase;
+	/** The engine's summary of one action, scoped from the feature digest. */
+	readActionDigest: ReadActionDigestUseCase;
 	readBehaviorFeature: ReadBehaviorFeatureUseCase;
 	deleteBehaviorState: DeleteBehaviorStateUseCase;
 	scoreBehaviorFeature: ScoreBehaviorFeatureUseCase;
+	simulateBehavior: SimulateBehaviorUseCase;
+	/** What a change would do to a feature's or a draft's proofs, nothing saved. */
+	whatIf: WhatIfUseCase;
+	authorProjectBehavior: AuthorProjectBehaviorUseCase;
+	readProjectBehavior: ReadProjectBehaviorUseCase;
+	findStateReferences: FindStateReferencesUseCase;
+	generateBehaviorTypes: GenerateBehaviorTypesUseCase;
 	readBehaviorOperations: ReadBehaviorOperationsUseCase;
 	/** Author behavior depth through the engine (the Lyriks MCP write path — Fix #1). */
 	authorBehavior: AuthorBehaviorUseCase;
@@ -322,7 +411,25 @@ export interface AppServices {
 	loadSettings: LoadSettingsUseCase;
 	saveSettings: SaveSettingsUseCase;
 	loadFeedbackSettings: LoadFeedbackSettingsUseCase;
-	saveFeedbackSettings: SaveFeedbackSettingsUseCase;
+	loadInstallConfiguration: LoadInstallConfigurationUseCase;
+	saveInstallConfiguration: SaveInstallConfigurationUseCase;
+	/** The hosts named to the administrator who decides; '' when a channel is off on the host. */
+	outboundDestinations(): { readonly updateRegistry: string; readonly feedback: string };
+	/** How long New lasts (criterion 8c1e9288). */
+	loadDisplaySettings: LoadDisplaySettingsUseCase;
+	saveDisplaySettings: SaveDisplaySettingsUseCase;
+	/**
+	 * The built-in assistant (ac-adm-ai-off, -central): one connection set by an
+	 * administrator for everybody, its key sealed at rest, and the only code that
+	 * calls an AI provider from the server, when a person asks for a drawing.
+	 */
+	loadAssistantSettings: LoadAssistantSettingsUseCase;
+	connectAssistant: ConnectAssistantUseCase;
+	switchAssistant: SwitchAssistantUseCase;
+	removeAssistantKey: RemoveAssistantKeyUseCase;
+	testAssistant: TestAssistantUseCase;
+	drawDiagramWithAssistant: DrawDiagramWithAssistantUseCase;
+	writeTextWithAssistant: WriteTextWithAssistantUseCase;
 	/**
 	 * Where the feedback dialog's ONLINE channel posts, or '' when that channel
 	 * is off for this install. The call is made by the user's browser on an
@@ -330,8 +437,8 @@ export interface AppServices {
 	 */
 	feedbackEndpoint(): string;
 	/**
-	 * Advisory check for a newer appliance release. Inert unless
-	 * `LYRIKS_UPDATE_CHECK=1` — the shipped default performs no IO (air-gap).
+	 * Advisory check for a newer appliance release. Inert until an administrator
+	 * allowed it in the configuration of the installation (air-gap).
 	 */
 	checkForUpdate: CheckForUpdateUseCase;
 	loadOperatorProfile: LoadOperatorProfileUseCase;
@@ -388,6 +495,7 @@ export interface AppServices {
 	reconcileProject: ReconcileProjectUseCase;
 	/** Package a whole project as one downloadable archive (rows + kernel + files). */
 	exportProject: ExportProjectUseCase;
+	packEvolutionTestKit: PackEvolutionTestKitUseCase;
 	/** Restore a project from such an archive — as a copy, or over its own id. */
 	importProject: ImportProjectUseCase;
 	pushEnvelopeToBack: PushEnvelopeToBackUseCase;
@@ -414,13 +522,19 @@ export interface AppServices {
 	 */
 	projectExists(projectId: string): Promise<boolean>;
 	createProject: CreateProjectUseCase;
+	/** Whether this installation may hold one more project (Community holds one, EVO-001). */
+	checkProjectCreation: CheckProjectCreationUseCase;
+	/** The project a Community installation works on; null on every other edition. */
+	resolveActiveProject: ResolveActiveProjectUseCase;
+	/** Make a project the active one on Community (the previous one becomes inactive). */
+	makeProjectActive: MakeProjectActiveUseCase;
 	updateProject: UpdateProjectUseCase;
-	markProjectShipped: MarkProjectShippedUseCase;
 	deleteProject: DeleteProjectUseCase;
 	listDomains: ListDomainsUseCase;
 	createDomain: CreateDomainUseCase;
 	updateDomain: UpdateDomainUseCase;
 	removeDomain: RemoveDomainUseCase;
+	reorderDomains: ReorderDomainsUseCase;
 	buildPortfolio: BuildPortfolioUseCase;
 	searchPortfolio: SearchPortfolioUseCase;
 	currentSession(): Session;
@@ -451,12 +565,27 @@ export interface AppServices {
 	/** Optimistic-locking version counter per (project, section) — legacy
 	 *  sections only; consolidated sections carry their revision in-row. */
 	draftLock: DraftLockPort;
+	/** Cross-process Foundation read/modify/write exclusion, shared by every slice. */
+	foundationWrites: ProjectLockPort;
 	/** Consolidated section-document store (revision reads for page loads). */
 	sectionDocuments: SectionDocumentStorePort;
+	/** The Specification 360° discussions: read them (Home, notifications, the pages)… */
+	loadDiscussions: LoadDiscussionsUseCase;
+	aiConversations: AiConversationsUseCase;
+	/** …and act in them (open, reply, resolve, reopen), with the optimistic revision. */
+	actOnDiscussion: ActOnDiscussionUseCase;
+	/** Where people put the tables of the data map, apart from the spec (criterion 7f5769bb). */
+	loadMapPlacements: LoadMapPlacementsUseCase;
+	placeMapTables: PlaceMapTablesUseCase;
+	/** The journeys a feature's actions are arranged in: read them, and arrange them as a person (actions f3bbf419, 2d9a8378). */
+	loadActionJourneys: LoadActionJourneysUseCase;
+	arrangeActionJourneys: ArrangeActionJourneysUseCase;
 	/** Readiness probe for the PostgreSQL datastore. */
 	pingDatastore(): Promise<void>;
 	/** The caller's workspaces ("teams"); none in the open-source build. */
 	workspaces: WorkspaceDirectoryPort;
+	/** What each person does, by project: suggestions only, nobody's job in the open-source build. */
+	teamJobs: TeamJobsPort;
 	/** Portfolio read-model (domains + per-project meta) — used by the domain guard. */
 	portfolio: PortfolioRepositoryPort;
 	/** Project contributors: the local residue, or the overlay's team gateway. */
@@ -502,6 +631,9 @@ function withDeadline(work: Promise<unknown>, ms: number): Promise<void> {
 
 /** Retry tick for the back-sync outbox drain (see startBackSyncDrain). */
 const BACK_SYNC_DRAIN_INTERVAL_MS = 30_000;
+
+/** Whole-project readings weigh megabytes on a large project, and a person works on a few at a time. */
+const HEAVY_READINGS_HELD = 32;
 let backSyncDrainTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
@@ -556,13 +688,16 @@ export function getServices(): AppServices {
 		architectureDrafts,
 		coherenceDrafts,
 		backLinks,
-		projectCatalog,
+		projectCatalog: storedProjectCatalog,
 		portfolio,
 		settingsRepo,
 		operatorProfileRepo,
 		activationRepo,
-		projectResidue
+		projectResidue,
+		activeProjectStore
 	} = persistence;
+	// Every reader of the catalog gets each project's name in the one style (criterion 69aa0fef).
+	const projectCatalog = styledProjectCatalog(storedProjectCatalog);
 	const clock = new SystemClock();
 	const telemetry = new ConsoleTelemetry();
 	const audit = new StructuredAuditLog();
@@ -575,6 +710,9 @@ export function getServices(): AppServices {
 	// licence must cover the declared edition, so a free Community key cannot
 	// unlock an Enterprise appliance.
 	const installEdition = env.LYRIKS_EDITION;
+	// What a Community installation holds (EVO-001): one project, the active one.
+	const checkProjectCreation = new CheckProjectCreationUseCase(() => installEdition, projectCatalog);
+	const resolveActiveProject = new ResolveActiveProjectUseCase(() => installEdition, projectCatalog, activeProjectStore);
 	// EVERY declared edition is gated, Community included: its key is free and
 	// perpetual, and it is how an air-gapped product knows who runs it. The flag
 	// may switch enforcement on for an install that declares nothing (the
@@ -599,19 +737,22 @@ export function getServices(): AppServices {
 	// moving tag (`latest`) or with nothing set stays "unknown" and is never told it
 	// is behind — see resolveUpdateStatus.
 	const runningVersion = env.LYRIKS_VERSION ?? env.LYRIKS_TAG ?? '';
-	// Update check: OFF by default to hold the zero-runtime-egress guarantee. When
-	// an operator opts in, we ask the SAME registry the install already pulls its
-	// images from — no new egress destination, and an internal mirror keeps the
-	// check inside the customer's network.
-	const updateFeed =
+	// Update check: it asks the SAME registry the install already pulls its images
+	// from, so it adds no new destination and an internal mirror keeps it inside
+	// the customer's network. Nothing is asked until an administrator allowed it;
+	// LYRIKS_UPDATE_CHECK=1 only ticks the box they are about to answer.
+	const updateFeed = new RegistryUpdateFeed({
+		registry: env.LYRIKS_REGISTRY ?? 'registry.lyriks.io/enterprise',
+		image: env.LYRIKS_UPDATE_IMAGE || 'lyriks-platform',
+		username: env.LYRIKS_REGISTRY_USERNAME,
+		password: env.LYRIKS_REGISTRY_PASSWORD
+	});
+	const loadInstallConfiguration = new LoadInstallConfigurationUseCase(
+		settingsRepo,
 		env.LYRIKS_UPDATE_CHECK === '1'
-			? new RegistryUpdateFeed({
-					registry: env.LYRIKS_REGISTRY ?? 'registry.lyriks.io/enterprise',
-					image: 'lyriks-platform',
-					username: env.LYRIKS_REGISTRY_USERNAME,
-					password: env.LYRIKS_REGISTRY_PASSWORD
-				})
-			: new NullUpdateFeed();
+	);
+	// What the kit recorded about this machine, the running release included.
+	const hostFacts = new HostFactsFile(env.LYRIKS_HOST_FACTS_FILE || undefined);
 	// Feedback relay: where the in-app dialog's ONLINE channel posts. This URL is
 	// only ever handed to the BROWSER, which calls it on an explicit user send;
 	// the appliance server itself never contacts it, so the zero-egress guarantee
@@ -620,11 +761,18 @@ export function getServices(): AppServices {
 	// switch it off at runtime in Settings → Feedback.
 	const feedbackUrlRaw = (env.LYRIKS_FEEDBACK_URL ?? 'https://get.lyriks.io/api/v1/feedback').trim();
 	const feedbackEndpoint = feedbackUrlRaw === 'off' || feedbackUrlRaw === '0' ? '' : feedbackUrlRaw;
+	const feedbackHost = URL.canParse(feedbackEndpoint) ? new URL(feedbackEndpoint).host : '';
 	// AI seam: brief heuristics stay offline (the stub). Feature suggestions have
 	// no backend at all — the operator's LLM pushes them through the MCP write
 	// path, gated by the Settings switch.
 	const ai = new StubAiSuggester();
-	const session = new RequestContextSessionAdapter();
+	// The built-in assistant is the one seam that calls an AI provider, and only
+	// once an administrator connected and switched it on (ac-adm-ai-egress). Its
+	// key is sealed with a key derived from LYRIKS_SECRETS_KEY, else the session
+	// secret, else a key file written on first use.
+	const secretCipher = new AesGcmSecretCipher({ secret: env.LYRIKS_SECRETS_KEY || env.LYRIKS_JWT_SECRET });
+	const languageModel = new ProviderLanguageModel({ anthropic: new AnthropicLanguageModel(), openai: new OpenAiLanguageModel() });
+	const session = new RequestContextSessionAdapter(currentRequestSession);
 	const notifier = new ConsoleToastNotifier();
 	void notifier; // surfaced on the client via SSR-injected adapter; reference here pins the port wiring.
 	// Behavior shells live in the shared kernel folder
@@ -683,6 +831,7 @@ export function getServices(): AppServices {
 		'evolution',
 		parseEvolutionDraft
 	);
+	const loadEvolutionDraft = coalesceLoads(new LoadResidueDraftUseCase(evolutionDrafts, createEmptyEvolutionDraft));
 	const scopeDrafts = new SectionDocumentDraftRepository(
 		persistence.sectionDocuments,
 		'scope',
@@ -693,10 +842,16 @@ export function getServices(): AppServices {
 	// truth and the sync-features-to-unspaghettit use-case. Same port → every
 	// consumer (page, experience, coherence, scoring, …) is unchanged; the legacy
 	// draft (`legacyFeaturesDrafts`) is kept only to backfill a pre-kernel project.
+	// The spec's language, read on each save so the prose the projections write
+	// into the model follows it. Lazy: `loadSpecLanguage` is built further down,
+	// and it reads the foundation only, never these repositories.
+	const specLanguageOf = (projectId: string): Promise<SpecLanguage> =>
+		loadSpecLanguage.generated(projectId);
 	const featuresDrafts = new KernelFeaturesDraftRepository(
 		behaviorPort,
 		projectResidue,
-		legacyFeaturesDrafts
+		legacyFeaturesDrafts,
+		specLanguageOf
 	);
 	// Phase 4 — USERS flipped onto the generalized residue store: its behavioral half
 	// (actor personas) already reaches the kernel via the Experience projection, so
@@ -719,7 +874,8 @@ export function getServices(): AppServices {
 		// the thunk closes over the binding and only resolves it at save time — the
 		// Core-bridge re-mirror on an Experience save (Fix #5).
 		() => dataDrafts,
-		foundationDefinitionDrafts
+		foundationDefinitionDrafts,
+		specLanguageOf
 	);
 	// Phase 2 — DATA flipped: the section now reads a projection of the kernel's
 	// central "Data Model" feature (+ residue) and writes via BehaviorPort.apply,
@@ -732,7 +888,8 @@ export function getServices(): AppServices {
 		projectResidue,
 		foundationDefinitionDrafts,
 		experienceDrafts,
-		featuresDrafts
+		featuresDrafts,
+		specLanguageOf
 	);
 	// Rules keeps its editable issue/scenario residue here; scenario acceptance criteria
 	// are projected through BehaviorPort on save. The old section document backfills once.
@@ -749,6 +906,15 @@ export function getServices(): AppServices {
 	// Snapshots root is the same directory the behavior repo writes to, so the
 	// engine and v3 share one view of the workspace.
 	const unspaghettitBin = env.UNSPAGHETTIT_MCP_BIN ?? resolveUnspaMcpBin();
+	// Community locks the solver (EVO-001): even an overlay left after a move down proves nothing, and runs no proof again.
+	const proofsAllowed = enterpriseOverlay()?.proofs === true && !isCommunity(installEdition);
+	// Proofs are off on a new installation (criterion 2fa07b24): an administrator
+	// turns them on in Settings, Proofs. The engine reads this switch each time it
+	// starts its subprocess, and the switch restarts it, so no restart of the
+	// installation is needed. The environment's UNSPA_SOLVER=off comes first.
+	const solverOffInEnv = env.UNSPA_SOLVER?.trim().toLowerCase() === 'off';
+	const proofState = { on: false };
+	const proofsOn = (): boolean => proofsAllowed && proofState.on;
 	const engineConfig = {
 		mcpBinPath: unspaghettitBin,
 		snapshotsRoot: behavior.workspaceRoot(),
@@ -756,7 +922,12 @@ export function getServices(): AppServices {
 		// Ceiling for any single engine call. Deliberately below the request budget
 		// an HTTP caller has, and tunable from the compose file so an install with
 		// an unusually large model can be tuned without a new image.
-		callTimeoutMs: msEnv('LYRIKS_ENGINE_CALL_TIMEOUT_MS', DEFAULT_CALL_TIMEOUT_MS)
+		callTimeoutMs: msEnv('LYRIKS_ENGINE_CALL_TIMEOUT_MS', DEFAULT_CALL_TIMEOUT_MS),
+		// Proof by the solver is an Enterprise capability, declared by the overlay,
+		// and runs only while Settings, Proofs has it on (read live, never copied).
+		get proofs(): boolean {
+			return proofsOn();
+		}
 	};
 	// Two engine subprocesses over the same folder, split by who is waiting:
 	//  - `advisor` answers a person: the leaf drawer, verify_experience, authoring.
@@ -774,6 +945,24 @@ export function getServices(): AppServices {
 	);
 	// Code → spec rides the interactive subprocess (a sync answers the caller);
 	// the coverage tier's reads ride the lane's.
+	// Turning proofs on or off restarts both engine subprocesses with or without the solver (action 0d29aee8).
+	const proofSwitch: ProofSwitchPort = {
+		allowed: proofsAllowed,
+		operatorTurnedOff: solverOffInEnv,
+		apply(on: boolean) {
+			const next = on && !solverOffInEnv;
+			if (proofState.on === next) return;
+			proofState.on = next;
+			advisor.engine.recycle();
+			laneAdvisor.engine.recycle();
+		}
+	};
+	if (proofsAllowed) {
+		settingsRepo
+			.loadProofs()
+			.then((stored) => proofSwitch.apply(stored.on))
+			.catch((err) => console.warn('[proofs] could not read Settings, Proofs; proofs stay off:', err));
+	}
 	const codeAdoption = new McpCodeAdoption(advisor.engine);
 	const laneCodeAdoption = new McpCodeAdoption(laneAdvisor.engine);
 	// Product tier for this install (OSS / paid / enterprise). Single source: the
@@ -859,19 +1048,20 @@ export function getServices(): AppServices {
 		// reads it on the host at install and at every update and leaves the
 		// record here, mounted read-only. LYRIKS_HOST_FACTS_FILE only exists so a
 		// developer can point at a sample; the appliance never sets it.
-		new HostFactsFile(env.LYRIKS_HOST_FACTS_FILE || undefined),
+		hostFacts,
 		new ProcessResources()
 	);
 
 	// Load use-cases extracted as consts so the global-coherence checker (Step 09)
 	// can reuse them to aggregate every earlier step.
-	const loadFoundationDraft = new LoadFoundationDraftUseCase(
+	const loadFoundationDraft = coalesceLoads(new LoadFoundationDraftUseCase(
 		foundationIdentityDrafts,
 		foundationDefinitionDrafts,
 		foundationOperationsDrafts
-	);
-	const loadUsersDraft = new LoadUsersDraftUseCase(usersDrafts);
-	const loadFeaturesDraft = new LoadFeaturesDraftUseCase(featuresDrafts);
+	));
+	const loadUsersDraft = coalesceLoads(new LoadUsersDraftUseCase(usersDrafts));
+	const loadFeaturesDraft = coalesceLoads(new LoadFeaturesDraftUseCase(featuresDrafts));
+	const loadSpecLanguage = new LoadSpecLanguageUseCase(loadFoundationDraft, loadFeaturesDraft);
 	// Project team (collaborators): the enterprise back when connected, otherwise a
 	// local residue team so the standalone product still has people to assign work
 	// to. Hoisted so the portfolio/search use-cases apply the per-project scope.
@@ -901,8 +1091,11 @@ export function getServices(): AppServices {
 	// The last snapshot is kept in the project residue so a restarted process
 	// shows the chips at once instead of after a whole background cycle.
 	const implementationCoverage = new CachedImplementationCoverage(loadImplementationCoverage, {
-		store: new ResidueSnapshotStore(projectResidue, 'features-implementation')
+		store: new ResidueSnapshotStore(projectResidue, 'features-implementation'),
+		signature: (projectId) => localBehavior.kernelSignature(projectId)
 	});
+	// Read through the same cached snapshot, so it is instant and agrees with the chips.
+	const loadConformance = new LoadConformanceUseCase(implementationCoverage);
 	const sweepImplementationGaps = new SweepImplementationGapsUseCase(loadFeaturesDraft, codeAdoption);
 	// Reads coverage FRESH (not through the cache): it runs right after a sync
 	// and must see what that sync just wrote.
@@ -910,19 +1103,21 @@ export function getServices(): AppServices {
 		loadFeaturesDraft,
 		loadImplementationCoverage
 	);
-	const loadExperienceDraft = new LoadExperienceDraftUseCase(experienceDrafts, featuresDrafts);
-	const loadRulesDraft = new LoadRulesDraftUseCase(
+	const loadExperienceDraft = coalesceLoads(new LoadExperienceDraftUseCase(experienceDrafts, featuresDrafts));
+	const loadRulesDraft = coalesceLoads(new LoadRulesDraftUseCase(
 		rulesDrafts,
 		foundationDefinitionDrafts,
 		usersDrafts,
-		experienceDrafts
-	);
-	const loadDataDraft = new LoadDataDraftUseCase(dataDrafts, experienceDrafts);
-	const loadArchitectureDraft = new LoadArchitectureDraftUseCase(
+		experienceDrafts,
+		specLanguageOf
+	));
+	const loadDataDraft = coalesceLoads(new LoadDataDraftUseCase(dataDrafts, experienceDrafts));
+	const syncDataRules = new SyncDataRulesUseCase(dataDrafts, advisor, specLanguageOf);
+	const loadArchitectureDraft = coalesceLoads(new LoadArchitectureDraftUseCase(
 		architectureDrafts,
 		foundationDefinitionDrafts,
 		dataDrafts
-	);
+	));
 	// Mirrors a project's metadata into the Unspaghettit workspace (the
 	// Docker-shipped OSS dashboard). Hoisted to a const so project CREATION can
 	// fire it too — not just the per-step save routes.
@@ -939,8 +1134,16 @@ export function getServices(): AppServices {
 	// violations become blocking gaps, a `formal` dimension folds into readiness.
 	// If the engine is down/unwired we degrade to local alone. Single wiring,
 	// no use-case/UI change — the seam is `GlobalCoherenceCheckerPort`.
-	const loadGlossaryDraft = new LoadGlossaryDraftUseCase(glossaryDrafts);
-	const localChecker = new LocalGlobalCoherenceChecker(
+	const loadGlossaryDraft = coalesceLoads(new LoadGlossaryDraftUseCase(glossaryDrafts));
+	// What the spec is at: every section's revision channel. Keys the graph
+	// and analysis caches below and the completion evidence further down.
+	const projectModelRevision = new ProjectModelRevisionReader(
+		SECTIONS.filter((section) => section !== 'scope'),
+		persistence.sectionDocuments,
+		persistence.draftLock
+	);
+	const kernelSignature = (projectId: string) => localBehavior.kernelSignature(projectId);
+	const localChecker = new CachedCoherenceChecker(new LocalGlobalCoherenceChecker(
 		loadFoundationDraft,
 		loadUsersDraft,
 		loadFeaturesDraft,
@@ -951,20 +1154,22 @@ export function getServices(): AppServices {
 		loadGlossaryDraft,
 		behavior,
 		maturityScorer
-	);
+	), projectModelRevision, kernelSignature);
 	// Behavior (unspa) advisory tier — cached read served instantly on every load,
 	// the heavy verify runs in the background and pushes over live-sync. Independent
 	// of the DPO, so it enriches the checker whether or not the back is wired.
 	const behaviorAdvisories = new CachedBehaviorAdvisor(
-		new ComputeBehaviorAdvisoriesUseCase(laneAdvisor, behavior),
-		{ store: new ResidueSnapshotStore(projectResidue, 'features-advisories') }
+		new ComputeBehaviorAdvisoriesUseCase(laneAdvisor, behavior, loadSpecLanguage, {
+			ids: async (projectId) => new Set(Object.keys((await dataDrafts.load(projectId))?.rules?.generated ?? {}))
+		}),
+		{ store: new ResidueSnapshotStore(projectResidue, 'features-advisories'), signature: kernelSignature }
 	);
 	// Per-leaf maturity scoring, cached the same way: the Features tree reads a
 	// snapshot instantly and the heavy per-leaf engine scoring runs in the
 	// background, pushing over live-sync when it lands (see CachedFeatureAdvisor).
 	const featureAdvice = new CachedFeatureAdvisor(
 		new ScoreFeaturesUseCase(featuresDrafts, laneAdvisor, behavior),
-		{ store: new ResidueSnapshotStore(projectResidue, 'features-advice') }
+		{ store: new ResidueSnapshotStore(projectResidue, 'features-advice'), signature: kernelSignature }
 	);
 	// Always wrap with the enriched checker. Formal reads are policy-gated to
 	// Enterprise even if a back URL is accidentally configured on another tier;
@@ -983,14 +1188,6 @@ export function getServices(): AppServices {
 		(err) => console.warn('[coherence] decisions/history unavailable:', err)
 	);
 
-	// What the spec is at: every section's revision channel. Keys the graph
-	// cache below and the completion evidence further down.
-	const projectModelRevision = new ProjectModelRevisionReader(
-		SECTIONS.filter((section) => section !== 'scope'),
-		persistence.sectionDocuments,
-		persistence.draftLock
-	);
-	const kernelSignature = (projectId: string) => localBehavior.kernelSignature(projectId);
 
 	// The central knowledge graph, the official read model for anything that
 	// reasons across sections: a derived graph that folds every per-context
@@ -1041,35 +1238,66 @@ export function getServices(): AppServices {
 	const loadScopeDraft = new LoadResidueDraftUseCase(scopeDrafts, (projectId) =>
 		parseScopeDraft(null, projectId)
 	);
-	const loadDocumentRegister = new LoadDocumentRegisterUseCase(
+	const loadDocumentRegister = coalesceLoads(new LoadDocumentRegisterUseCase(
 		documentsDrafts,
 		architectureDrafts
+	));
+	// Everything authored, for the Glossary to count its words against.
+	const loadSpecCorpus = new LoadSpecCorpusUseCase(
+		[
+			(id) => loadFoundationDraft.execute(id),
+			(id) => loadUsersDraft.execute(id),
+			(id) => loadFeaturesDraft.execute(id),
+			(id) => loadExperienceDraft.execute(id),
+			(id) => loadRulesDraft.execute(id),
+			(id) => loadDataDraft.execute(id),
+			(id) => loadArchitectureDraft.execute(id),
+			(id) => loadDocumentRegister.execute(id)
+		],
+		behaviorPort
 	);
 	const loadApprovalsDraft = new LoadResidueDraftUseCase(
 		approvalsDrafts,
 		createEmptyApprovalsDraft
 	);
 	const loadCoherenceDraft = new LoadCoherenceDraftUseCase(coherenceDrafts, globalChecker);
+	const engineReadBudgets = {
+		readMs: msEnv('LYRIKS_ENGINE_READ_BUDGET_MS', DEFAULT_ENGINE_READ_BUDGETS.readMs),
+		explorationMs: msEnv(
+			'LYRIKS_ENGINE_EXPLORATION_BUDGET_MS',
+			DEFAULT_ENGINE_READ_BUDGETS.explorationMs
+		),
+		explorationWork: msEnv(
+			'LYRIKS_ENGINE_EXPLORATION_WORK',
+			DEFAULT_ENGINE_READ_BUDGETS.explorationWork
+		)
+	};
 	const verifyExperience = new VerifyExperienceUseCase(
 		loadExperienceDraft,
 		loadUsersDraft,
 		loadDataDraft,
 		advisor,
-		{
-			readMs: msEnv('LYRIKS_ENGINE_READ_BUDGET_MS', DEFAULT_ENGINE_READ_BUDGETS.readMs),
-			explorationMs: msEnv(
-				'LYRIKS_ENGINE_EXPLORATION_BUDGET_MS',
-				DEFAULT_ENGINE_READ_BUDGETS.explorationMs
-			),
-			explorationWork: msEnv(
-				'LYRIKS_ENGINE_EXPLORATION_WORK',
-				DEFAULT_ENGINE_READ_BUDGETS.explorationWork
-			)
-		}
+		engineReadBudgets
 	);
 	// The gate, the audit and the finish all read the SAME evidence; a caller that
 	// retries reads it again. Memoizing it on the model's own fingerprints is what
 	// turns closing a project into one computation instead of one per call.
+	const readDataLinks = new ReadDataLinksUseCase(dataDrafts, advisor, featuresDrafts);
+	// The whole-project evidence rides the background engine. It verifies every
+	// journey end to end and reads every leaf's data links: about half a minute on
+	// a large product. On the interactive engine it queued every click behind it
+	// (a 0.1 s read waited 16 s on the Lyriks project). The Overview computes it
+	// behind its answer; a caller of the completion gate waits on this lane instead.
+	const verifyExperienceInBackground = new VerifyExperienceUseCase(
+		loadExperienceDraft,
+		loadUsersDraft,
+		loadDataDraft,
+		laneAdvisor,
+		engineReadBudgets
+	);
+	const readDataLinksInBackground = new ReadDataLinksUseCase(dataDrafts, laneAdvisor, featuresDrafts);
+	// Read from its code, documents or design, every element says where it comes from (ac-src-extracted, 7a8be13f).
+	const listExtractedElements = new ListExtractedElementsUseCase(loadFoundationDraft, loadFeaturesDraft, loadRulesDraft, loadGlossaryDraft, loadUsersDraft, loadDataDraft);
 	const completionEvidence = new CachedCompletionEvidence(
 		new BuildCompletionEvidenceUseCase(
 			loadDocumentRegister,
@@ -1077,21 +1305,37 @@ export function getServices(): AppServices {
 			loadCoherenceDraft,
 			loadFeatureMaturity,
 			loadDataDraft,
-			verifyExperience,
-			projectModelRevision
+			verifyExperienceInBackground,
+			projectModelRevision,
+			loadSpecLanguage,
+			(projectId) => readDataLinksInBackground.unlinkedCheckable(projectId),
+			(projectId) => listExtractedElements.execute(projectId)
 		),
 		projectModelRevision,
 		kernelSignature
 	);
 	const assessProjectCompleteness = new AssessProjectCompletenessUseCase(
 		loadScopeDraft,
-		completionEvidence
+		completionEvidence,
+		loadSpecLanguage
 	);
+	const readProjectHealth = new ReadProjectHealthUseCase(
+		loadCoherenceDraft,
+		assessProjectCompleteness,
+		implementationCoverage,
+		loadFeaturesDraft,
+		loadFoundationDraft,
+		new EngineAnalysisStateReader(codeAdoption)
+	);
+	// What the Overview and a feature's page show: never waiting on the engine's verification of the Experience.
+	const projectHealthView = new CachedProjectHealth(readProjectHealth, projectModelRevision, {
+		store: new ResidueSnapshotStore<StoredHealth>(projectResidue, 'project-health')
+	});
 
 	// Hoisted so the data-collection import can reuse the same save + push path the
 	// experience autosave uses. The Experience adapter now projects the behavior graph
 	// on save (Phase 4), so there is no separate sync-experience step to fire.
-	const saveExperienceDraft = new SaveExperienceDraftUseCase(experienceDrafts, clock, telemetry);
+	const saveExperienceDraft = new SaveExperienceDraftUseCase(experienceDrafts, clock, telemetry, specLanguageOf);
 	const pushEnvelopeToBack = new PushEnvelopeToBackUseCase(
 		foundationIdentityDrafts,
 		scopeDrafts,
@@ -1141,7 +1385,8 @@ export function getServices(): AppServices {
 		foundationDefinitionDrafts,
 		clock,
 		telemetry,
-		saveOperationsDraft
+		saveOperationsDraft,
+		specLanguageOf
 	);
 	const deletionPolicy = tierHasFormalDpo(tier)
 		? overlayPorts.stateDeletionCheck ?? { checkStateDeletion: async () => null }
@@ -1184,14 +1429,19 @@ export function getServices(): AppServices {
 			session
 		),
 		loadFoundationDraft,
+		loadSpecLanguage,
 		saveFoundationDraft,
 		loadUsersDraft,
-		saveUsersDraft: new SaveUsersDraftUseCase(usersDrafts, clock, telemetry, upstream),
+		saveUsersDraft: new SaveUsersDraftUseCase(usersDrafts, clock, telemetry, upstream, specLanguageOf),
 		loadFeaturesDraft,
 		loadFeatureMaturity,
 		loadFeatureMaturityReport,
 		detectFeatureIdCollision,
 		implementationCoverage,
+		loadConformance,
+		readProjectHealth,
+		projectHealthView,
+		behaviorReadings: new ProjectStateCache<BehaviorFold>(projectModelRevision, kernelSignature, HEAVY_READINGS_HELD),
 		sweepImplementationGaps,
 		reconcileImplementationStatuses,
 		maturityScorer,
@@ -1205,9 +1455,11 @@ export function getServices(): AppServices {
 			telemetry,
 			foundationDefinitionDrafts,
 			usersDrafts,
-			experienceDrafts
+			experienceDrafts,
+			specLanguageOf
 		),
 		loadGlossaryDraft,
+		loadSpecCorpus,
 		saveGlossaryDraft: new SaveSimpleSectionDraftUseCase<ProjectGlossaryDraft>('glossary', glossaryDrafts, clock, telemetry, {
 			coherence: computeGlossaryCoherence
 		}),
@@ -1217,7 +1469,7 @@ export function getServices(): AppServices {
 		saveBaselinesDraft: new SaveResidueDraftUseCase(baselinesDrafts, clock),
 		loadApprovalsDraft,
 		saveApprovalsDraft: new SaveResidueDraftUseCase(approvalsDrafts, clock),
-		loadEvolutionDraft: new LoadResidueDraftUseCase(evolutionDrafts, createEmptyEvolutionDraft),
+		loadEvolutionDraft,
 		saveEvolutionDraft: new SaveResidueDraftUseCase(evolutionDrafts, clock),
 		loadReuseLibrary: new LoadReuseLibraryUseCase(projectResidue),
 		exportRequirement: new ExportRequirementUseCase(
@@ -1244,10 +1496,24 @@ export function getServices(): AppServices {
 			loadDataDraft,
 			loadArchitectureDraft,
 			new LoadResidueDraftUseCase(documentsDrafts, createEmptyDocumentsDraft),
-			featureAcceptance
+			featureAcceptance,
+			specLanguageOf
 		),
 		loadDataDraft,
-		saveDataDraft: new SaveDataDraftUseCase(dataDrafts, clock, telemetry),
+		saveDataDraft: new SaveDataDraftUseCase(dataDrafts, clock, telemetry, specLanguageOf, (projectId) => {
+			syncDataRules.execute(projectId).catch((err) => console.warn('[data rules] sync failed:', err));
+		}),
+		syncDataRules,
+		tieDataField: new TieDataFieldUseCase(dataDrafts, advisor, syncDataRules, specLanguageOf),
+		readDataRules: new ReadDataRulesUseCase(dataDrafts, advisor, specLanguageOf, featuresDrafts),
+		readDataLinks,
+		projectRulesOracle: new ProjectRulesOracleUseCase(advisor, dataDrafts, specLanguageOf),
+		proveFeatureRules: new ProveFeatureRulesUseCase(advisor, behavior, specLanguageOf),
+		get proofs(): boolean {
+			return proofsOn();
+		},
+		loadProofSettings: new LoadProofSettingsUseCase(settingsRepo, proofSwitch, new ProcessResources()),
+		saveProofSettings: new SaveProofSettingsUseCase(settingsRepo, proofSwitch),
 		loadArchitectureDraft,
 		saveArchitectureDraft: new SaveSimpleSectionDraftUseCase<ProjectArchitectureDraft>(
 			'architecture',
@@ -1280,7 +1546,8 @@ export function getServices(): AppServices {
 			loadDataDraft,
 			loadArchitectureDraft,
 			new LoadResidueDraftUseCase(documentsDrafts, createEmptyDocumentsDraft),
-			featureAcceptance
+			featureAcceptance,
+			specLanguageOf
 		),
 		loadKnowledgeGraph: new LoadKnowledgeGraphUseCase(knowledgeGraph),
 		loadEngineKnowledgeGraph: new LoadKnowledgeGraphUseCase(engineKnowledgeGraph),
@@ -1302,12 +1569,19 @@ export function getServices(): AppServices {
 		generateRepoScaffold: new GenerateRepoScaffoldUseCase(loadExperienceDraft),
 		scoreFeatures: new ScoreFeaturesUseCase(featuresDrafts, advisor, behavior),
 		featureAdvice,
-		assessFeature: new AssessFeatureUseCase(advisor),
+		assessFeature: new AssessFeatureUseCase(advisor, behavior, loadSpecLanguage),
+		readActionDigest: new ReadActionDigestUseCase(advisor),
 		readBehaviorFeature: new ReadBehaviorFeatureUseCase(behaviorPort),
 		deleteBehaviorState,
 		scoreBehaviorFeature: new ScoreBehaviorFeatureUseCase(advisor),
+		simulateBehavior: new SimulateBehaviorUseCase(advisor),
+		whatIf: new WhatIfUseCase(advisor),
+		authorProjectBehavior: new AuthorProjectBehaviorUseCase(advisor),
+		readProjectBehavior: new ReadProjectBehaviorUseCase(advisor, new ProjectStateCache(projectModelRevision, kernelSignature, HEAVY_READINGS_HELD)),
+		findStateReferences: new FindStateReferencesUseCase(advisor),
+		generateBehaviorTypes: new GenerateBehaviorTypesUseCase(advisor),
 		readBehaviorOperations: new ReadBehaviorOperationsUseCase(advisor),
-		authorBehavior: new AuthorBehaviorUseCase(advisor, deleteBehaviorState),
+		authorBehavior: new AuthorBehaviorUseCase(advisor, deleteBehaviorState, loadFoundationDraft),
 		codeAdoption,
 		resolveBehaviorContext: new ResolveBehaviorContextUseCase(advisor, async (projectId) =>
 			(await loadFeaturesDraft.execute(projectId)).features.map((feature) => feature.id)
@@ -1317,8 +1591,24 @@ export function getServices(): AppServices {
 		loadSettings: new LoadSettingsUseCase(settingsRepo),
 		saveSettings: new SaveSettingsUseCase(settingsRepo),
 		loadFeedbackSettings: new LoadFeedbackSettingsUseCase(settingsRepo),
-		saveFeedbackSettings: new SaveFeedbackSettingsUseCase(settingsRepo),
-		checkForUpdate: new CheckForUpdateUseCase(updateFeed, runningVersion, clock),
+		loadInstallConfiguration,
+		saveInstallConfiguration: new SaveInstallConfigurationUseCase(settingsRepo, clock),
+		outboundDestinations: () => ({ updateRegistry: updateFeed.destination, feedback: feedbackHost }),
+		loadDisplaySettings: new LoadDisplaySettingsUseCase(settingsRepo),
+		saveDisplaySettings: new SaveDisplaySettingsUseCase(settingsRepo),
+		loadAssistantSettings: new LoadAssistantSettingsUseCase(settingsRepo),
+		connectAssistant: new ConnectAssistantUseCase(settingsRepo, secretCipher, clock),
+		switchAssistant: new SwitchAssistantUseCase(settingsRepo, clock),
+		removeAssistantKey: new RemoveAssistantKeyUseCase(settingsRepo, clock),
+		testAssistant: new TestAssistantUseCase(settingsRepo, secretCipher, languageModel, clock),
+		drawDiagramWithAssistant: new DrawDiagramWithAssistantUseCase(settingsRepo, secretCipher, languageModel),
+		writeTextWithAssistant: new WriteTextWithAssistantUseCase(settingsRepo, secretCipher, languageModel),
+		checkForUpdate: new CheckForUpdateUseCase(
+			updateFeed,
+			async () => runningRelease(runningVersion, (await hostFacts.read().catch(() => null))?.release),
+			clock,
+			async () => (await loadInstallConfiguration.allowance()).updateCheck
+		),
 		loadOperatorProfile: new LoadOperatorProfileUseCase(operatorProfileRepo),
 		saveOperatorProfile: new SaveOperatorProfileUseCase(operatorProfileRepo),
 		resolveActiveMemberName: new ResolveActiveMemberNameUseCase(
@@ -1372,6 +1662,7 @@ export function getServices(): AppServices {
 		suggestPersonas: new SuggestPersonasUseCase(ai),
 		syncBehaviorProject,
 		reconcileProject,
+		packEvolutionTestKit: new PackEvolutionTestKitUseCase(archiveCodec),
 		exportProject: new ExportProjectUseCase(
 			portabilityStore,
 			reconciliationStore,
@@ -1389,7 +1680,9 @@ export function getServices(): AppServices {
 			portfolio,
 			projectLock,
 			archiveCodec,
-			clock
+			clock,
+			undefined,
+			checkProjectCreation
 		),
 		pushEnvelopeToBack,
 		// Enqueue is awaited (durable before we answer the caller's fire-and-forget
@@ -1409,8 +1702,14 @@ export function getServices(): AppServices {
 			foundationIdentityDrafts,
 			clock,
 			portfolio,
-			syncBehaviorProject
+			syncBehaviorProject,
+			undefined,
+			{ operations: foundationOperationsDrafts, preferred: () => loadInstallConfiguration.preferredSpecLanguage() },
+			checkProjectCreation
 		),
+		checkProjectCreation,
+		resolveActiveProject,
+		makeProjectActive: new MakeProjectActiveUseCase(resolveActiveProject, projectCatalog, activeProjectStore),
 		updateProject: new UpdateProjectUseCase(
 			foundationIdentityDrafts,
 			clock,
@@ -1418,12 +1717,12 @@ export function getServices(): AppServices {
 			syncBehaviorProject,
 			persistence.draftLock
 		),
-		markProjectShipped: new MarkProjectShippedUseCase(portfolio, clock),
 		deleteProject: new DeleteProjectUseCase(projectCatalog, behavior, projectMirror, teamGateway),
 		listDomains: new ListDomainsUseCase(portfolio),
 		createDomain: new CreateDomainUseCase(portfolio, clock),
 		updateDomain: new UpdateDomainUseCase(portfolio),
 		removeDomain: new RemoveDomainUseCase(portfolio),
+		reorderDomains: new ReorderDomainsUseCase(portfolio),
 		buildPortfolio: new BuildPortfolioUseCase(
 			projectCatalog,
 			portfolio,
@@ -1431,7 +1730,8 @@ export function getServices(): AppServices {
 			loadFeaturesDraft,
 			backLinks,
 			loadTeam,
-			loadFoundationDraft
+			loadFoundationDraft,
+			loadEvolutionDraft
 		),
 		searchPortfolio: new SearchPortfolioUseCase(
 			projectCatalog,
@@ -1455,15 +1755,25 @@ export function getServices(): AppServices {
 		enterpriseHooks: overlayPorts.hooks ?? null,
 		audit,
 		draftLock: persistence.draftLock,
+		foundationWrites: projectLock,
 		sectionDocuments: persistence.sectionDocuments,
+		loadDiscussions: new LoadDiscussionsUseCase(persistence.sectionDocuments, SPEC_DISCUSSIONS_SECTION),
+		aiConversations: new AiConversationsUseCase(persistence.sectionDocuments, AI_CONVERSATIONS_SECTION),
+		actOnDiscussion: new ActOnDiscussionUseCase(persistence.sectionDocuments, SPEC_DISCUSSIONS_SECTION, clock, () => crypto.randomUUID()),
+		loadMapPlacements: new LoadMapPlacementsUseCase(persistence.sectionDocuments, DATA_MAP_PLACEMENTS_SECTION),
+		placeMapTables: new PlaceMapTablesUseCase(persistence.sectionDocuments, DATA_MAP_PLACEMENTS_SECTION),
+		loadActionJourneys: new LoadActionJourneysUseCase(projectResidue),
+		arrangeActionJourneys: new ArrangeActionJourneysUseCase(behaviorPort, projectResidue),
 		pingDatastore: persistence.ping,
 		workspaces,
+		teamJobs: overlayPorts.teamJobs ?? new NoTeamJobs(),
 		portfolio,
 		loadTeam,
 		addCollaborator: new AddCollaboratorUseCase(teamGateway),
 		removeCollaborator: new RemoveCollaboratorUseCase(teamGateway),
 		// Authoring skills are bundled into the server build — no runtime IO (air-gap).
-		skillCatalog: new BundledSkillCatalog()
+		// On Community the Evolution playbook is left out (EVO-001): its every call would be refused.
+		skillCatalog: scopedSkillCatalog(new BundledSkillCatalog(), () => installEdition)
 	};
 	services = built;
 	overlay?.attach(built, overlayContext);

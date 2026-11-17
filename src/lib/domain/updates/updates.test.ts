@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { compareVersions, formatVersion, parseVersion, pickLatest } from './version';
-import { isComparableVersion, resolveUpdateStatus } from './update-status';
+import { isComparableVersion, resolveUpdateStatus, runningRelease } from './update-status';
 
 const v = (tag: string) => {
 	const parsed = parseVersion(tag);
@@ -108,5 +108,39 @@ describe('isComparableVersion', () => {
 	it('separates real versions from moving tags', () => {
 		expect(isComparableVersion('v0.2.0')).toBe(true);
 		expect(isComparableVersion('behavior')).toBe(false);
+	});
+});
+
+describe('dated release names', () => {
+	it('reads and writes them back as they are named', () => {
+		expect(formatVersion(v('2026.11-64'))).toBe('2026.11-64');
+		expect(formatVersion(v('2026.08-1'))).toBe('2026.08-1');
+		expect(isComparableVersion('2026.11-64')).toBe(true);
+	});
+
+	it('orders them by number', () => {
+		expect(compareVersions(v('2026.11-10'), v('2026.11-9'))).toBe(1);
+		expect(compareVersions(v('2027.01-1'), v('2026.12-99'))).toBe(1);
+	});
+
+	it('picks only among tags of the kind asked for', () => {
+		const tags = ['v0.9.40', '2026.11-64', '2026.10-63', 'stable'];
+		expect(formatVersion(pickLatest(tags, false, 'release')!)).toBe('2026.11-64');
+		expect(formatVersion(pickLatest(tags)!)).toBe('v0.9.40');
+	});
+});
+
+describe('runningRelease', () => {
+	it('trusts a pinned tag', () => {
+		expect(runningRelease('2026.11-64', '2026.10-63')).toBe('2026.11-64');
+	});
+
+	it('reads the release the kit recorded when the tag is a moving alias', () => {
+		expect(runningRelease('stable', '2026.11-64')).toBe('2026.11-64');
+	});
+
+	it('stays on the moving tag, so unknown, when nothing was recorded', () => {
+		expect(runningRelease('stable', null)).toBe('stable');
+		expect(isComparableVersion(runningRelease('stable', undefined))).toBe(false);
 	});
 });

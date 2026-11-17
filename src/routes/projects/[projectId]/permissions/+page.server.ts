@@ -1,12 +1,11 @@
 import { redirect } from '@sveltejs/kit';
+import { legacyPageTarget } from '$ui/spec360/legacy-addresses';
 import type { PageServerLoad } from './$types';
 
 /**
- * Permissions has been merged into the Users & Permissions capability as its
- * "Access matrix" tab (matching the prototype). This route is kept only so old
- * deep-links and Control Center "Fix now" targets still resolve — it redirects
- * to the merged page with the matrix tab pre-selected.
+ * An old address kept so bookmarks and stored links still open something
+ * (criterion 84162c34). Permissions is Who can do what, under Users of Knowledge.
  */
-export const load: PageServerLoad = async ({ params }) => {
-	redirect(308, `/projects/${params.projectId}/users?tab=permissions`);
+export const load: PageServerLoad = ({ params, url }) => {
+	redirect(308, legacyPageTarget(params.projectId, 'permissions', url.searchParams));
 };

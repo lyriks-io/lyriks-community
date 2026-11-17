@@ -1,7 +1,10 @@
 <script lang="ts">
-	import { Button, Icon, Textarea } from '$ui/design-system';
+	import { Button, Icon, Textarea, pushToast } from '$ui/design-system';
 	import type { DossierCounts } from '$lib/server/evolution-view.server';
 	import { applyEvolution } from './reading-api';
+	import { TONE } from './verdict-tones';
+	import { personName } from './people';
+	import { whileBusy } from './busy.svelte';
 
 	/**
 	 * The band that moves a request to its next step, or says exactly why it
@@ -20,18 +23,30 @@
 	let reason = $state('');
 	let busy = $state(false);
 
+	/** The engine's stages, named as the step of the path they open (ac-evo-req-6). */
 	const LABEL: Record<string, string> = {
-		coherence: 'the challenge: the idea is settled, the report is read',
-		implementation: 'Verify (freezes the spec as a numbered version)',
-		acceptance: 'Accept',
-		delivered: 'Delivered'
+		coherence: 'Impact analysis',
+		implementation: 'Build: freezes the spec as a numbered version',
+		acceptance: 'Approval',
+		delivered: 'Deployment: the stakeholders approved it'
 	};
 	const next = $derived(dossier.gate.next ? (LABEL[dossier.gate.next] ?? dossier.gate.next) : null);
 
+	/** What Lyriks does while a gate is crossed, said on the veil (busy.svelte.ts). */
+	const CROSSING: Record<string, string> = {
+		coherence: 'Lyriks is comparing the specification with the existing system…',
+		implementation: 'Lyriks is preparing the implementation specification…',
+		acceptance: 'Lyriks is compiling the implementation report…',
+		delivered: 'Archiving the report and updating the reference spec…'
+	};
 	async function run(op: Record<string, unknown>) {
 		busy = true;
 		try {
-			return await applyEvolution(projectId, [{ requestId: dossier.id, ...op }]);
+			const send = () => applyEvolution(projectId, [{ requestId: dossier.id, ...op }]);
+			const crossing = op.op === 'cross_stage' && dossier.gate.next ? CROSSING[dossier.gate.next] : null;
+			const ok = crossing ? await whileBusy(crossing, send) : await send();
+			if (ok && op.op === 'cross_stage') pushToast({ level: 'success', message: `Moved on: ${next}` });
+			return ok;
 		} finally {
 			busy = false;
 		}
@@ -46,14 +61,15 @@
 </script>
 
 {#if next}
-	<div class="rounded-card border {dossier.gate.ok ? 'border-success-200 bg-success-50/40' : 'border-warning-200 bg-warning-50/40'} p-4">
+	{@const tone = dossier.gate.ok ? TONE.ok : dossier.coherence.blockingUndecided > 0 ? TONE.blocks : TONE.decide}
+	<div class="rounded-card border border-l-4 p-4 {tone.box}">
 		{#if dossier.waiver}
-			<div class="mb-3 flex flex-wrap items-start gap-2 rounded-field border border-accent-200 bg-accent-50/60 px-3 py-2">
-				<Icon name="flag" size={14} class="mt-0.5 shrink-0 text-accent-600" />
+			<div class="mb-3 flex flex-wrap items-start gap-2 rounded-field border border-l-4 px-3 py-2 {TONE.decide.box}">
+				<Icon name="flag" size={14} class="mt-0.5 shrink-0 {TONE.decide.text}" />
 				<div class="min-w-0 flex-1">
-					<p class="text-[11px] font-semibold uppercase tracking-wide text-accent-700">Crossed on a waiver</p>
+					<p class="font-mono text-[0.6875rem] tracking-[0.08em] uppercase {TONE.decide.text}">Crossed on a waiver</p>
 					<p class="mt-0.5 text-xs text-ink-700">{dossier.waiver.reason}</p>
-					<p class="mt-0.5 text-[10px] text-ink-400">Granted by {dossier.waiver.grantedBy} on {dossier.waiver.grantedAt.slice(0, 10)}</p>
+					<p class="mt-0.5 font-mono text-[0.625rem] text-ink-400">Granted by {personName(dossier.waiver.grantedBy)} on {dossier.waiver.grantedAt.slice(0, 10)}</p>
 				</div>
 				{#if isAdmin}
 					<Button variant="outline" size="sm" disabled={busy} onclick={() => run({ op: 'lift_waiver' })}>Lift waiver</Button>
@@ -63,9 +79,9 @@
 
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<div class="min-w-0 flex-1">
-				<p class="flex items-center gap-1.5 text-sm font-semibold text-ink-900">
-					<Icon name={dossier.gate.ok ? 'check' : 'lock'} size={14} class={dossier.gate.ok ? 'text-success-600' : 'text-warning-600'} />
-					{dossier.gate.ok ? `Ready to move to ${next}` : (dossier.gate.reason ?? 'Not ready yet')}
+				<p class="flex items-center gap-1.5 text-[0.9375rem] font-bold text-ink-900">
+					<Icon name={dossier.gate.ok ? 'check' : 'lock'} size={14} class={tone.text} />
+					{dossier.gate.ok ? `Next: ${next}` : (dossier.gate.reason ?? 'Not ready yet')}
 				</p>
 				{#if !dossier.gate.ok && dossier.gate.detail}
 					<p class="mt-0.5 text-xs text-ink-700">{dossier.gate.detail}</p>
@@ -75,14 +91,31 @@
 				<div class="flex flex-wrap gap-2">
 					{#if dossier.gate.ok}
 						<Button disabled={busy} onclick={() => run({ op: 'cross_stage' })}>
-							Validate and move on
-							<Icon name="arrow-right" size={14} />
+							{#if dossier.gate.next === 'implementation'}
+								<Icon name="lock" size={14} />
+								Freeze version {dossier.specVersion + 1}
+							{:else if dossier.gate.next === 'delivered'}
+								<Icon name="check" size={14} />
+								Approve
+							{:else}
+								Move on
+								<Icon name="arrow-right" size={14} />
+							{/if}
 						</Button>
 					{:else if !waiving}
-						<Button variant="outline" size="sm" disabled={busy} onclick={() => (waiving = true)}>Cross anyway, with a reason</Button>
+						<Button variant="outline" size="sm" disabled={busy} onclick={() => (waiving = true)}>Cross anyway</Button>
 					{/if}
-					{#if dossier.stage !== 'specification' && dossier.stage !== 'draft' && dossier.stage !== 'delivered'}
-						<Button variant="ghost" size="sm" disabled={busy} onclick={() => run({ op: 'rebrief' })}>Back to the idea</Button>
+					{#if dossier.stage !== 'specification' && dossier.stage !== 'draft' && dossier.status === 'open'}
+						<Button
+							variant="ghost"
+							size="sm"
+							disabled={busy}
+							title={dossier.specVersion > 0 ? `Reopens version ${dossier.specVersion} for changes; the next freeze makes version ${dossier.specVersion + 1}.` : 'Back to the specification.'}
+							onclick={() => run({ op: 'rebrief' })}
+						>
+							<Icon name="pencil" size={12} />
+							Reopen the specification
+						</Button>
 					{/if}
 				</div>
 			{/if}
@@ -90,7 +123,7 @@
 
 		{#if waiving}
 			<div class="mt-3">
-				<Textarea value={reason} rows={2} placeholder="The reason everyone downstream will read until an admin lifts it" oninput={(v) => (reason = v)} />
+				<Textarea value={reason} rows={2} placeholder="Why (shown to everyone until an admin lifts it)" oninput={(v) => (reason = v)} />
 				<div class="mt-2 flex gap-2">
 					<Button size="sm" disabled={busy || reason.trim() === ''} onclick={waive}>Cross with this waiver</Button>
 					<Button size="sm" variant="ghost" onclick={() => (waiving = false)}>Cancel</Button>

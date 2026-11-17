@@ -1,14 +1,17 @@
+import { createEmptyDataDraft } from '$domain/data';
 import { describe, expect, it } from 'vitest';
 import {
 	ALL_ROWS,
 	dossierFieldRows,
 	fieldsPart,
+	historyPart,
 	proposalsPart,
 	readingsPart,
 	requestSummary,
 	filledInlineKeys,
 	proposedKinds,
 	inheritanceOf,
+	specificationHoldOf,
 	type EvolutionView
 } from './evolution-view.server';
 import {
@@ -56,10 +59,10 @@ function viewWith(leaves: number): { view: EvolutionView; request: EvolutionRequ
 		glossaryTerms: [],
 		productName: 'Test',
 		revision: 1,
+		data: createEmptyDataDraft('proj'),
 		held: {},
 		coverage: {},
 		filled: {},
-		trlByLeaf: {},
 		readings: {
 			'req-1': features.features.map((f) => ({
 				key: `01-origin.objective|${f.id}`,
@@ -71,10 +74,18 @@ function viewWith(leaves: number): { view: EvolutionView; request: EvolutionRequ
 				moving: []
 			}))
 		},
-		members: []
+		members: [],
+		language: 'en',
+		assistantAvailable: false
 	};
 	return { view, request };
 }
+
+/** The touched leaves read as features the request adds, so every question of a subject is asked. */
+const asAdditions = (request: EvolutionRequest): EvolutionRequest => ({
+	...request,
+	drafts: request.leafIds.map((id) => createDraftLeaf({ id, kind: 'add', name: id }))
+});
 
 describe('a dossier summary is the same size whatever the request touches', () => {
 	it('counts the fields, the readings and the proposals instead of listing them', () => {
@@ -102,8 +113,10 @@ describe('a dossier summary is the same size whatever the request touches', () =
 		// reader needs in order to ask for the rest: about a hundred bytes each,
 		// where a row costs that much per field per feature.
 		expect(sizeOf(twenty) - sizeOf(one)).toBeLessThan(3000);
-		expect(sizeOf(twenty)).toBeLessThan(10_000);
-		expect(rowsOf(twenty)).toBeGreaterThan(sizeOf(twenty));
+		// Well under the ~24 KB an agent runtime reads through (capResult), with
+		// room for what each diagram says of its texts (textsBehind).
+		expect(sizeOf(twenty)).toBeLessThan(11_000);
+		expect(rowsOf(twenty)).toBeGreaterThan(rowsOf(one) * 10);
 		expect(dossierFieldRows(twenty.view, twenty.request).length).toBeGreaterThan(
 			dossierFieldRows(one.view, one.request).length * 10
 		);
@@ -124,10 +137,10 @@ describe('every list of a dossier is read on its own', () => {
 
 	it('pages the fields and says what it did not return', () => {
 		const { view, request } = viewWith(4);
-		const page = fieldsPart(view, request, { offset: 2, limit: 3 });
+		const page = fieldsPart(view, request, { offset: 0, limit: 3 });
 
 		expect(page.fields.entries).toHaveLength(3);
-		expect(page.fields.offset).toBe(2);
+		expect(page.fields.offset).toBe(0);
 		expect(page.fields.limit).toBe(3);
 		expect(page.fields.matched).toBeGreaterThan(3);
 	});
@@ -261,7 +274,8 @@ describe('excerpting is the caller decision, not the reading', () => {
 	const longValue = () => {
 		const { view, request } = viewWith(1);
 		view.features.leafMeta = { [leafId(0)]: { objective: long } };
-		return { view, request };
+		// The objective is asked of a feature the request adds (ac-evo-form-9).
+		return { view, request: asAdditions(request) };
 	};
 
 	it('shortens by default, so a tool answer stays one size', () => {
@@ -277,6 +291,13 @@ describe('excerpting is the caller decision, not the reading', () => {
 			(r) => r.path === '01-origin.objective'
 		);
 		expect(objective?.value).toBe(long);
+	});
+
+	it('gives the page every version of a field whole, and a tool answer their excerpts [criterion:ac-leaf-ac-evo-hist-field-versions]', () => {
+		const { request } = viewWith(1);
+		const versioned = { ...request, fieldVersions: [{ id: 'v1', key: 'step.functional_spec.description', value: long, by: 'ana', byKind: 'person' as const, source: 'typed' as const, proposalId: null, at: '2026-10-20T10:00:00.000Z' }] };
+		expect(historyPart(versioned).fieldVersions['step.functional_spec.description'][0].value.endsWith('...')).toBe(true);
+		expect(historyPart(versioned, { excerpt: false }).fieldVersions['step.functional_spec.description'][0].value).toBe(long);
 	});
 });
 
@@ -317,12 +338,12 @@ describe('a touched feature is read once, whichever side of it the request holds
 		expect(summary.leaves.map((l) => l.drafted)).toEqual([false, true, false]);
 	});
 
-	it('asks the five questions once per feature, not once per side', () => {
+	it('asks each feature once, not once per side', () => {
 		const { view, request } = viewWith(2);
 		const drafted = withDrafts(request);
 		const rows = dossierFieldRows(view, drafted);
 
-		expect([...new Set(rows.map((r) => r.leafId))]).toEqual([leafId(0), 'draft:add', leafId(1)]);
+		expect(new Set(rows.map((r) => r.leafId))).toEqual(new Set([leafId(0), 'draft:add', leafId(1)]));
 		// The answers of an amended feature are the ones the leaf already holds,
 		// which is where the freeze patches them: never an empty second set.
 		expect(rows.some((r) => r.leafId === 'draft:amend')).toBe(false);
@@ -399,10 +420,10 @@ describe('every place a person acts on carries the address that opens on it', ()
 				})
 			]
 		};
-		const rows = dossierFieldRows(view, withProposal);
+		const rows = dossierFieldRows(view, asAdditions(withProposal));
 		const signing = rows.find((r) => r.leafId === leafId(0) && r.path === '01-origin.objective')!;
 		const open = rows.find((r) => r.leafId === leafId(1) && r.path === '01-origin.objective')!;
-		expect(signing.href.startsWith('/projects/proj/features?tab=evolution&request=req-1')).toBe(true);
+		expect(signing.href.startsWith('/projects/proj/evolution?request=req-1')).toBe(true);
 		expect(at(signing.href)).toBe('proposal__prop-0');
 		expect(at(open.href)).toBe(`field__${leafId(1)}__01-origin.objective`);
 	});
@@ -425,7 +446,7 @@ describe('every place a person acts on carries the address that opens on it', ()
 		const part = proposalsPart(view, withProposal, person);
 		expect(at(part.proposals.entries[0].href)).toBe('proposal__prop-9');
 		const summary = requestSummary(view, withProposal, person);
-		expect(summary.href).toBe('/projects/proj/features?tab=evolution&request=req-1');
+		expect(summary.href).toBe('/projects/proj/evolution?request=req-1');
 		expect(at(summary.proposals.href!)).toBe('proposal__prop-9');
 		expect(at(summary.gate.href)).toBe('next-step');
 	});
@@ -451,5 +472,21 @@ describe('the maturity says how much of what it counts was inherited', () => {
 		const answered = { ...request, answeredKeys: [`02-problem.statement@${leafId(0)}`] };
 		expect(inheritanceOf(view.features, answered)).toEqual({ answeredHere: 1, inherited: 1 });
 		expect(inheritanceOf(view.features, request)).toEqual({ answeredHere: 0, inherited: 2 });
+	});
+});
+
+describe('the Specification waits for the changes to the other pages and to the rules [criterion:ac-leaf-ac-evo-draft-section-read]', () => {
+	it('counts each section change and each change to the rules in the validation the freeze waits for', () => {
+		const { view, request } = viewWith(0);
+		const carried: EvolutionRequest = {
+			...request,
+			sectionDrafts: [{ id: 'section:s1', page: 'requirements', summary: 'HTTPS', edits: [{ op: 'add_to_set', path: 'definition.security.encryption', value: 'in_transit' }], sourceIds: [], materialisedAt: null }],
+			ruleDrafts: [{ id: 'rules:r1', summary: 'Never empty', operations: [{ kind: 'remove_project_invariant', invariantId: 'i1' }], sourceIds: [], materialisedAt: null }]
+		};
+		const hold = specificationHoldOf(view, carried);
+		expect(hold).toEqual({ total: 2, validated: 0 });
+		const summary = requestSummary(view, carried, person);
+		expect(summary.sectionChanges.entries[0]).toMatchObject({ pageName: 'Requirements', key: 'element.section.s1' });
+		expect(summary.ruleChanges.entries[0]).toMatchObject({ summary: 'Never empty', key: 'element.rules.r1' });
 	});
 });

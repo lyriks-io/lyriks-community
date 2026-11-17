@@ -1,12 +1,11 @@
 import { json, error } from '@sveltejs/kit';
-import { getServices } from '$composition/container.server';
 import { IdentityError } from '$application/ports';
 import { SESSION_COOKIE } from '$lib/server/session-cookie.server';
 import type { RequestHandler } from './$types';
 
 /** Read the single operator's profile (Community / solo editions). */
-export const GET: RequestHandler = async () => {
-	const profile = await getServices().loadOperatorProfile.execute();
+export const GET: RequestHandler = async ({ locals }) => {
+	const profile = await locals.services.loadOperatorProfile.execute();
 	return json({ profile });
 };
 
@@ -21,7 +20,7 @@ export const GET: RequestHandler = async () => {
  * when no somebody else exists.
  */
 export const PUT: RequestHandler = async (event) => {
-	const services = getServices();
+	const services = event.locals.services;
 	if (services.identity.multiUser) {
 		const body = (await event.request.json().catch(() => ({}))) as {
 			firstName?: string;

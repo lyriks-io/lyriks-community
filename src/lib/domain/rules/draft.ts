@@ -41,6 +41,13 @@ export interface Issue {
 	relatedFeatureId: string | null;
 	relatedJourneyId: string | null;
 	autoDetected: boolean;
+	/**
+	 * What an automatic scan found, named by kind and the ids it is about (the
+	 * candidate's `key`), never by wording: the scan recognises the same issue
+	 * whatever language its title is written in. Absent on authored issues and
+	 * on issues stored before the key existed, which are matched by title.
+	 */
+	detectionKey?: string;
 	/** Ids from the project Documents & Sources register that evidence this issue. */
 	sourceIds: string[];
 }
@@ -55,6 +62,8 @@ export interface EdgeCase {
 	expectedOutcome: EdgeOutcome;
 	relatedIssueId: string | null;
 	relatedJourneyId: string | null;
+	/** The feature the case tests; null = the product as a whole. */
+	relatedFeatureId: string | null;
 	covered: boolean;
 	/** Ids from the project Documents & Sources register that this case comes from. */
 	sourceIds: string[];
@@ -116,6 +125,7 @@ export function createEdgeCase(overrides: Partial<EdgeCase> = {}): EdgeCase {
 		expectedOutcome: 'success',
 		relatedIssueId: null,
 		relatedJourneyId: null,
+		relatedFeatureId: null,
 		covered: false,
 		sourceIds: [],
 		...overrides

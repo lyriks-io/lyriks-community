@@ -1,378 +1,477 @@
 <script lang="ts">
-	import { Icon, Logo, type IconName } from '$ui/design-system';
+	import { browser } from '$app/environment';
+	import { onMount, tick } from 'svelte';
+	import { mcpEndpointFor, mcpRegistrationCommands } from '$domain/foundation';
+	import { DOC_GROUPS, DOC_TOPICS, START_PATHS, helpEntries, stepOpenedBy, topicInView, topicsMatching, type HelpEntry } from '$ui/docs/doc-topics';
+	import { PRICING_URL } from '$domain/licensing';
+	import { PLANS } from '$domain/tier';
+	import DocSection from '$ui/docs/DocSection.svelte';
+	import FirstStepsDialog from '$ui/shell/FirstStepsDialog.svelte';
+	import SideIcon from '$ui/shell/SideIcon.svelte';
+	import type { SideIconName } from '$ui/shell/side-icons';
+	import { openFeedback } from '$ui/shell/feedback.svelte';
+	import { firstSteps } from '$ui/shell/first-steps-guide';
+	import { firstStepsUrlFor } from '$ui/shell/first-steps';
+	import { HELP_LINKS } from '$ui/shell/help-links';
+	import { scrollMotion } from '$ui/shell/scroll-motion';
+	import type { PageData } from './$types';
 
-	// Air-gapped appliance docs: bundled with the install, no public site. The page
-	// is its own scroll container (the app shell is overflow-hidden) and offers a
-	// sticky table of contents + a filter, mirroring Settings.
-	type Topic = { id: string; label: string; icon: IconName; keywords: string };
-	const TOPICS: Topic[] = [
-		{ id: 'overview', label: 'Overview', icon: 'book', keywords: 'what is lyriks spec specification coherence appliance air-gap on-prem' },
-		{ id: 'editions', label: 'Editions', icon: 'layers', keywords: 'community enterprise edition tier plan features licence' },
-		{ id: 'portfolio', label: 'Portfolio & domains', icon: 'grid', keywords: 'portfolio domains projects create greenfield reverse engineering home' },
-		{ id: 'workspace', label: 'The project workspace', icon: 'list', keywords: 'wizard capabilities foundation brief business market features experience rules data functional glossary sidebar sections' },
-		{ id: 'coherence', label: 'Project health', icon: 'gauge', keywords: 'readiness coherence maturity control center scores breaches incoherence' },
-		{ id: 'experience', label: 'Experience & simulator', icon: 'play', keywords: 'experience builder screens journeys components simulator run demo' },
-		{ id: 'team', label: 'Team & roles', icon: 'users', keywords: 'team members roles owner admin designer viewer invitations domain scope enterprise' },
-		{ id: 'ai', label: 'AI suggestions', icon: 'sparkles', keywords: 'ai suggestions llm lyriks mcp authorize block switch' },
-		{ id: 'mcp', label: 'MCP authoring', icon: 'server', keywords: 'mcp model context protocol author programmatic tools automation' },
-		{ id: 'deployment', label: 'Deployment & air-gap', icon: 'shield', keywords: 'deployment air-gap egress offline licence activation postgres back dpo components install' },
-		{ id: 'shortcuts', label: 'Keyboard shortcuts', icon: 'bolt', keywords: 'keyboard shortcuts search control center cmd ctrl k j' }
-	];
+	/**
+	 * The Documentation (criterion e3629a5f, action a6210dd0): built into the
+	 * installation, so it reads with no route out of the machine. It opens in the
+	 * app's shell on its name, then Get help (First steps, Guided tour, the
+	 * community once its address is known, Leave us feedback), Where to start per
+	 * kind of reader, then the topics. A table of contents beside them narrows
+	 * them as words are typed (their names and their whole text) and lights the
+	 * topic in view while the page scrolls.
+	 */
+	let { data }: { data: PageData } = $props();
 
-	let query = $state('');
-	function topicMatches(t: Topic): boolean {
-		const q = query.trim().toLowerCase();
-		if (!q) return true;
-		return `${t.label} ${t.keywords}`.toLowerCase().includes(q);
+	const steps = $derived(firstSteps({ hasProject: !!data.currentProject, ...data.chrome.progress }, data.currentProject?.id ?? null));
+	let stepsOpen = $state(false);
+
+	// Read in the browser only: the guide learns this installation from the fragment, and the MCP address is this origin's.
+	const origin = $derived(browser ? location.origin : null);
+	const help = $derived(helpEntries({ guideUrl: data.onlineHelp ? firstStepsUrlFor(origin) : null, discord: data.onlineHelp ? HELP_LINKS.discord : null }));
+	const HELP_ICON: Record<HelpEntry['key'], SideIconName> = { 'first-steps': 'flag', tour: 'overview', community: 'chat', feedback: 'feedback' };
+	const mcpUrl = $derived(origin ? mcpEndpointFor(origin) : 'https://<your-lyriks-address>/mcp');
+	const mcp = $derived(mcpRegistrationCommands(mcpUrl));
+
+	function openHelp(entry: HelpEntry) {
+		if (entry.key === 'first-steps') stepsOpen = true;
+		else if (entry.key === 'feedback') openFeedback();
 	}
-	const visibleTopics = $derived(TOPICS.filter(topicMatches));
-	const shown = $derived(new Set(visibleTopics.map((t) => t.id)));
+
+	// The search reads every word of each topic once the page is drawn, so a reader finds a topic by what it says.
+	let query = $state('');
+	let texts = $state<Record<string, string>>({});
+	const visible = $derived(topicsMatching(DOC_TOPICS, texts, query));
+	const shown = $derived(new Set(visible.map((t) => t.id)));
+	const groups = $derived(DOC_GROUPS.map((g) => ({ g, topics: visible.filter((t) => t.group === g) })).filter((x) => x.topics.length > 0));
+
+	let current = $state<string | null>(DOC_TOPICS[0].id);
+	const READING_LINE = 120;
+
+	onMount(() => {
+		const read: Record<string, string> = {};
+		for (const el of document.querySelectorAll<HTMLElement>('[data-doc-topic]')) read[el.dataset.docTopic ?? ''] = el.textContent?.replace(/\s+/g, ' ') ?? '';
+		texts = read;
+
+		// The page scrolls in the app's one scroller: the topic in view is the last one whose top passed the reading line.
+		const scroller = document.getElementById('app-scroll');
+		if (!scroller) return;
+		const follow = () => {
+			const top = scroller.getBoundingClientRect().top;
+			const tops = [...document.querySelectorAll<HTMLElement>('[data-doc-topic]')].map((el) => ({ id: el.dataset.docTopic ?? '', top: el.getBoundingClientRect().top - top }));
+			current = topicInView(tops, READING_LINE);
+		};
+		follow();
+		scroller.addEventListener('scroll', follow, { passive: true });
+		// A link to a topic (#editions) lands on it.
+		const hash = location.hash.slice(1);
+		if (hash) void tick().then(() => document.getElementById(hash)?.scrollIntoView({ block: 'start' }));
+		return () => scroller.removeEventListener('scroll', follow);
+	});
 
 	function jumpTo(e: MouseEvent, id: string) {
 		e.preventDefault();
-		document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		document.getElementById(id)?.scrollIntoView({ behavior: scrollMotion(), block: 'start' });
 		history.replaceState(null, '', `#${id}`);
+		current = id;
 	}
 
-	// Capabilities grouped exactly like the project sidebar (Specify / Validate /
-	// Govern) so the docs never describe a navigation that doesn't exist. Folded
-	// tabs (Behavior, Rules, Reuse) are mentioned inside their host capability.
-	const CAPABILITY_GROUPS: { group: string; items: { name: string; blurb: string }[] }[] = [
-		{
-			group: 'Specify',
-			items: [
-				{ name: 'Foundation', blurb: 'Brief, business, market, tech, security & ops in one place.' },
-				{ name: 'Users & Permissions', blurb: 'Personas and the access matrix (who can do what).' },
-				{
-					name: 'Features',
-					blurb: 'The feature tree, roadmap and work queue, with Behavior, Rules & edge cases and the Reuse library folded in as tabs.'
-				},
-				{ name: 'Experience', blurb: 'Journeys, screens and a live, runnable demo.' },
-				{ name: 'Data & Architecture', blurb: 'Hosts, databases, entities and the stack.' },
-				{ name: 'Glossary', blurb: 'Canonical terms and synonyms.' }
-			]
-		},
-		{
-			group: 'Validate',
-			items: [
-				{ name: 'Knowledge graph', blurb: 'The whole project as one graph.' },
-				{
-					name: 'Control Center',
-					blurb: 'Coverage, coherence, build readiness and behavior maturity in one cockpit. Opens from the sidebar score card.'
-				}
-			]
-		},
-		{
-			group: 'Govern',
-			items: [
-				{
-					name: 'Documents & Traceability',
-					blurb: 'Evidence sources and requirement links, in the header "Project tools" menu.'
-				}
-			]
-		}
-	];
+	const KICKER = 'font-evo-mono text-xs tracking-[0.08em] text-ink-3 uppercase';
 </script>
 
 <svelte:head><title>Documentation · Lyriks</title></svelte:head>
 
-<div class="min-h-0 flex-1 overflow-y-auto">
-	<!-- Hero -->
-	<header class="gradient-violet text-white">
-		<div class="mx-auto max-w-5xl px-6 py-8">
-			<a href="/" class="inline-flex items-center gap-1.5 text-xs font-medium text-white/70 transition hover:text-white">
-				<Icon name="arrow-left" size={14} /> Back to projects
-			</a>
-			<div class="mt-4 flex items-center gap-3">
-				<Logo size={30} />
-				<div>
-					<h1 class="text-2xl font-bold tracking-tight">Documentation</h1>
-					<p class="text-sm text-white/70">How Lyriks turns product intent into a coherent, buildable specification.</p>
-				</div>
-			</div>
-		</div>
+<div class="mx-auto box-border flex w-full max-w-[1240px] flex-col px-[26px] pt-[22px] pb-16 max-[760px]:px-4 max-[760px]:pt-4">
+	<header class="mb-6 flex flex-col gap-2 border-b-2 border-ink pb-[18px]">
+		<span class={KICKER}>Help &amp; support</span>
+		<h1 class="m-0 text-[2.125rem] leading-[0.98] font-bold tracking-[-0.025em] text-ink max-[700px]:text-[1.625rem]">Documentation</h1>
+		<p class="m-0 max-w-[86ch] text-[0.9375rem] leading-[1.6] text-ink-2">
+			How to use Lyriks, whatever your part. Start with Get help or Where to start, or type what you look for in the search beside the topics.
+		</p>
 	</header>
 
-	<div class="mx-auto max-w-5xl px-6 py-8">
-		<div class="grid gap-8 md:grid-cols-[204px_1fr]">
-			<!-- TOC rail: filter + jump links, sticky on desktop. -->
-			<aside class="space-y-3 md:sticky md:top-6 md:self-start">
-				<div class="relative">
-					<span class="pointer-events-none absolute inset-y-0 left-2.5 grid place-items-center text-ink-400">
-						<Icon name="search" size={14} />
-					</span>
-					<input
-						bind:value={query}
-						type="search"
-						placeholder="Search docs…"
-						aria-label="Search documentation"
-						class="w-full rounded-pill border border-line bg-surface py-1.5 pl-8 pr-3 text-sm text-ink-900 outline-none focus:border-brand-300"
-					/>
-				</div>
-				<nav class="flex flex-col gap-0.5">
-					{#each visibleTopics as t (t.id)}
-						<a
-							href="#{t.id}"
-							onclick={(e) => jumpTo(e, t.id)}
-							class="flex items-center gap-2 rounded-field px-2.5 py-1.5 text-sm font-medium text-ink-600 transition hover:bg-surface-sunken hover:text-ink-900"
-						>
-							<Icon name={t.icon} size={14} />
-							{t.label}
-						</a>
-					{:else}
-						<p class="px-2.5 py-1.5 text-xs text-ink-400">No topic matches.</p>
-					{/each}
-				</nav>
-			</aside>
+	<div class="grid items-start gap-7 md:grid-cols-[232px_minmax(0,1fr)]">
+		<!-- The table of contents: the search at its head, the topic in view lit with the navigation's blue edge. -->
+		<aside class="flex flex-col gap-3 md:sticky md:top-5" aria-label="Contents">
+			<label class="relative block">
+				<span class="pointer-events-none absolute inset-y-0 left-2.5 grid place-items-center text-ink-3"><SideIcon name="search" size={15} /></span>
+				<input
+					bind:value={query}
+					type="search"
+					placeholder="Search the documentation"
+					aria-label="Search the documentation"
+					class="box-border h-10 w-full border-[1.5px] border-ink bg-paper pr-3 pl-8 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue"
+				/>
+			</label>
+			<!-- On a phone the list would push the topics a screen down: the search alone stays. -->
+			<nav class="flex flex-col gap-3 max-md:hidden" aria-label="Topics">
+				{#each groups as { g, topics } (g)}
+					<div class="flex flex-col">
+						<span class="mb-1 {KICKER} text-[0.6875rem]">{g}</span>
+						{#each topics as t (t.id)}
+							<a
+								href="#{t.id}"
+								onclick={(e) => jumpTo(e, t.id)}
+								aria-current={current === t.id ? 'location' : undefined}
+								class="border-l-[3px] py-1.5 pr-2 pl-2.5 text-sm no-underline transition-colors {current === t.id
+									? 'border-blue bg-surface-sunken font-semibold text-ink'
+									: 'border-transparent text-ink-2 hover:bg-surface-sunken hover:text-ink'}">{t.label}</a
+							>
+						{/each}
+					</div>
+				{:else}
+					<p class="m-0 text-sm text-ink-3">No topic holds “{query.trim()}”.</p>
+				{/each}
+			</nav>
+		</aside>
 
-			<!-- Content -->
-			<div class="min-w-0 space-y-5">
-				{#if shown.has('overview')}
-					<section id="overview" class="scroll-mt-6 space-y-3 rounded-card border border-line bg-surface p-6 shadow-card">
-						<h2 class="flex items-center gap-2 text-base font-bold text-ink-900">
-							<Icon name="book" size={17} class="text-brand-500" /> Overview
-						</h2>
-						<p class="text-sm leading-relaxed text-ink-600">
-							Lyriks is a self-hosted platform for authoring a product's specification as
-							<strong>executable behavior</strong>, and keeping that specification coherent as it
-							grows. You describe the product once (foundation, users, features, experience, rules,
-							data), and Lyriks continuously checks it for gaps and contradictions, so what you hand
-							to a team (or an AI) is buildable, not just a pile of docs.
-						</p>
-						<p class="text-sm leading-relaxed text-ink-600">
-							It runs <strong>on-prem and air-gapped</strong> with zero runtime egress. The platform
-							works standalone on PostgreSQL with a local coherence engine and a built-in AI stub
-							(the <em>Minimal Autonomous Product</em>), and layers in richer AI, formal verification
-							and multi-member collaboration when you enable them.
-						</p>
-					</section>
-				{/if}
+		<div class="flex min-w-0 flex-col gap-5">
+			{#if shown.has('get-help')}
+				<DocSection id="get-help" title="Get help" lead="The ways in, whatever you came for.">
+					<div class="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
+						{#each help as entry (entry.key)}
+							{#snippet body()}
+								<span class="flex items-center justify-between gap-2">
+									<span aria-hidden="true" class="flex size-[38px] items-center justify-center border-[1.5px] border-ink bg-paper text-ink"><SideIcon name={HELP_ICON[entry.key]} size={18} /></span>
+									{#if entry.href}<span class="text-ink-3" title="Opens in a new tab"><SideIcon name="external" size={14} /></span>{/if}
+								</span>
+								<span class="text-[0.9375rem] font-bold text-ink">{entry.title}</span>
+								<span class="text-[0.8125rem] leading-normal text-ink-2">{entry.line}</span>
+							{/snippet}
+							{#if entry.href}
+								<a href={entry.href} target="_blank" rel="noopener noreferrer" data-help={entry.key} class="pressable flex flex-col gap-2 border-[1.5px] border-ink bg-toner-1 p-4 text-left no-underline">{@render body()}</a>
+							{:else}
+								<button type="button" data-help={entry.key} onclick={() => openHelp(entry)} class="pressable flex cursor-pointer flex-col gap-2 border-[1.5px] border-ink bg-toner-1 p-4 text-left">{@render body()}</button>
+							{/if}
+						{/each}
+					</div>
+					<p>Help &amp; support, at the foot of the navigation, opens the same first steps and the feedback from any page.</p>
+				</DocSection>
+			{/if}
 
-				{#if shown.has('editions')}
-					<section id="editions" class="scroll-mt-6 space-y-3 rounded-card border border-line bg-surface p-6 shadow-card">
-						<h2 class="flex items-center gap-2 text-base font-bold text-ink-900">
-							<Icon name="layers" size={17} class="text-brand-500" /> Editions
-						</h2>
-						<p class="text-sm text-ink-600">Three editions on the same PostgreSQL foundation, so upgrading never needs a data migration.</p>
-						<div class="overflow-x-auto">
-							<table class="w-full min-w-[34rem] border-collapse text-sm">
-								<thead>
-									<tr class="border-b border-line text-left text-[11px] uppercase tracking-wide text-ink-400">
-										<th class="py-2 pr-3 font-semibold">Edition</th>
-										<th class="py-2 pr-3 font-semibold">For</th>
-										<th class="py-2 font-semibold">Adds</th>
-									</tr>
-								</thead>
-								<tbody class="text-ink-700">
-									<tr class="border-b border-line/70">
-										<td class="py-2 pr-3 font-semibold text-ink-900">Community</td>
-										<td class="py-2 pr-3">A single trusted operator</td>
-										<td class="py-2">Spec authoring + local & behavior coherence. Free, with a perpetual key requested at get.lyriks.io and pasted once at <code>/activate</code>.</td>
-									</tr>
-									<tr>
-										<td class="py-2 pr-3 font-semibold text-ink-900">Enterprise</td>
-										<td class="py-2 pr-3">A team</td>
-										<td class="py-2">+ multi-member workspaces, Team & roles, SSO/invitations and formal DPO coherence.</td>
-									</tr>
-								</tbody>
-							</table>
-						</div>
-						<p class="text-xs text-ink-500">Your current edition is shown in <a href="/settings#account" class="font-medium text-brand-600 hover:underline">Settings → Account</a>.</p>
-					</section>
-				{/if}
-
-				{#if shown.has('portfolio')}
-					<section id="portfolio" class="scroll-mt-6 space-y-3 rounded-card border border-line bg-surface p-6 shadow-card">
-						<h2 class="flex items-center gap-2 text-base font-bold text-ink-900">
-							<Icon name="grid" size={17} class="text-brand-500" /> Portfolio & domains
-						</h2>
-						<p class="text-sm leading-relaxed text-ink-600">
-							The home screen is your <strong>portfolio</strong>. Projects are grouped into
-							<strong>domains</strong> (Sales, Product, Platform…) that you create and rename from the
-							left rail. Each project card shows its delivery stage (read from the spec itself, up to
-							<strong>MVP in progress</strong>; only a human marks a product <strong>shipped</strong>,
-							from the card menu), plus its readiness, coherence and production scores at a glance.
-						</p>
-						<p class="text-sm leading-relaxed text-ink-600">
-							Create a project greenfield, or reverse-engineer an existing one via code-to-spec. Use
-							the search in the top bar (<kbd class="rounded border border-line bg-surface-sunken px-1 text-[11px]">⌘/Ctrl-K</kbd>)
-							to jump to any project or component.
-						</p>
-					</section>
-				{/if}
-
-				{#if shown.has('workspace')}
-					<section id="workspace" class="scroll-mt-6 space-y-4 rounded-card border border-line bg-surface p-6 shadow-card">
-						<h2 class="flex items-center gap-2 text-base font-bold text-ink-900">
-							<Icon name="list" size={17} class="text-brand-500" /> The project workspace
-						</h2>
-						<p class="text-sm leading-relaxed text-ink-600">
-							Inside a project, the left sidebar is a set of <strong>capabilities</strong> you can visit
-							in any order; there's no forced wizard. Each one owns a slice of the specification and
-							validates its own input at the edge.
-						</p>
-						{#each CAPABILITY_GROUPS as g (g.group)}
-							<div>
-								<p class="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">{g.group}</p>
-								<ul class="divide-y divide-line rounded-field border border-line">
-									{#each g.items as it (it.name)}
-										<li class="flex items-start gap-3 px-3 py-2 text-sm">
-											<Icon name="chevron-right" size={14} class="mt-0.5 shrink-0 text-brand-400" />
-											<span><span class="font-semibold text-ink-900">{it.name}:</span> <span class="text-ink-600">{it.blurb}</span></span>
+			{#if shown.has('start')}
+				<DocSection id="start" title="Where to start" lead="One short path for each part people play in Lyriks.">
+					<!-- Two by two: four paths never leave one alone on its row. -->
+					<div class="grid grid-cols-2 gap-3 max-[900px]:grid-cols-1">
+						{#each START_PATHS as path (path.who)}
+							<div class="flex flex-col gap-2.5 border border-line bg-toner-1 p-4">
+								<span class="text-[0.9375rem] font-bold text-ink">{path.who}</span>
+								<ol class="m-0 flex list-none flex-col gap-1.5 p-0">
+									{#each path.steps as step, i (step.text)}
+										{@const opener = stepOpenedBy(step, data.edition)}
+										<li class="flex gap-2.5 text-[0.8125rem] leading-normal text-ink-2">
+											<span aria-hidden="true" class="flex size-5 flex-none items-center justify-center border-[1.5px] border-ink font-evo-mono text-[0.6875rem] font-bold text-ink">{i + 1}</span>
+											{#if opener}
+												<span>{step.text}: <a href="#editions" onclick={(e) => jumpTo(e, 'editions')}>{opener} opens it</a></span>
+											{:else}
+												<a href="#{step.topic}" onclick={(e) => jumpTo(e, step.topic)}>{step.text}</a>
+											{/if}
 										</li>
 									{/each}
-								</ul>
+								</ol>
 							</div>
 						{/each}
-					</section>
-				{/if}
-
-				{#if shown.has('coherence')}
-					<section id="coherence" class="scroll-mt-6 space-y-3 rounded-card border border-line bg-surface p-6 shadow-card">
-						<h2 class="flex items-center gap-2 text-base font-bold text-ink-900">
-							<Icon name="gauge" size={17} class="text-brand-500" /> Project health
-						</h2>
-						<p class="text-sm leading-relaxed text-ink-600">
-							Lyriks keeps four signals distinct. <strong>Coverage</strong> is structural breadth;
-							<strong>Behavior Maturity</strong> is authored behavior depth in five named stages
-							(Idea to Complete);
-							<strong>Build Readiness</strong> combines both into the implementation gate; and
-							<strong>Coherence</strong> measures whether the parts agree without contradictions,
-							dangling references or unmet rules.
-						</p>
-						<p class="text-sm leading-relaxed text-ink-600">
-							The Build Readiness card at the foot of the project sidebar opens the
-							<strong>Control Center</strong>, where breaches and incoherences are listed with the
-							next best action for each. Open it anywhere with
-							<kbd class="rounded border border-line bg-surface-sunken px-1 text-[11px]">⌘/Ctrl-J</kbd>.
-						</p>
-					</section>
-				{/if}
-
-				{#if shown.has('experience')}
-					<section id="experience" class="scroll-mt-6 space-y-3 rounded-card border border-line bg-surface p-6 shadow-card">
-						<h2 class="flex items-center gap-2 text-base font-bold text-ink-900">
-							<Icon name="play" size={17} class="text-brand-500" /> Experience & simulator
-						</h2>
-						<p class="text-sm leading-relaxed text-ink-600">
-							The Experience capability is a visual builder for the product's journeys and screens,
-							assembled from reusable components with a shared brand. It doubles as a
-							<strong>runnable prototype</strong>: switch to run mode to click through the flows, with
-							screen areas gated per persona from the permissions matrix.
-						</p>
-						<p class="text-sm leading-relaxed text-ink-600">
-							Coverage tooling tells you which journeys and screens are still unreached, so the demo
-							and the spec stay in step.
-						</p>
-					</section>
-				{/if}
-
-				{#if shown.has('team')}
-					<section id="team" class="scroll-mt-6 space-y-3 rounded-card border border-line bg-surface p-6 shadow-card">
-						<h2 class="flex items-center gap-2 text-base font-bold text-ink-900">
-							<Icon name="users" size={17} class="text-brand-500" /> Team & roles
-						</h2>
-						<p class="text-sm text-ink-600">Multi-member collaboration is an Enterprise capability. Roles:</p>
-						<ul class="divide-y divide-line rounded-field border border-line text-sm">
-							<li class="flex gap-3 px-3 py-2"><span class="w-20 shrink-0 font-semibold text-ink-900">Owner</span><span class="text-ink-600">The workspace's founder; cannot be demoted or removed.</span></li>
-							<li class="flex gap-3 px-3 py-2"><span class="w-20 shrink-0 font-semibold text-ink-900">Admin</span><span class="text-ink-600">Manages members and every project.</span></li>
-							<li class="flex gap-3 px-3 py-2"><span class="w-20 shrink-0 font-semibold text-ink-900">Designer</span><span class="text-ink-600">Edits the projects they're granted, scoped by domain.</span></li>
-							<li class="flex gap-3 px-3 py-2"><span class="w-20 shrink-0 font-semibold text-ink-900">Viewer</span><span class="text-ink-600">Read-only access to the projects they're granted.</span></li>
-						</ul>
-						<p class="text-sm leading-relaxed text-ink-600">
-							Invite everyone from <a href="/settings#members" class="font-medium text-brand-600 hover:underline">Settings → Members</a>:
-							admins see every project; designers and viewers get all projects or a selection, which
-							you can change at any time, while the invitation is still pending too. Air-gapped by
-							design: no email is sent. You copy an accept link and share it.
-						</p>
-					</section>
-				{/if}
-
-				{#if shown.has('ai')}
-					<section id="ai" class="scroll-mt-6 space-y-3 rounded-card border border-line bg-surface p-6 shadow-card">
-						<h2 class="flex items-center gap-2 text-base font-bold text-ink-900">
-							<Icon name="sparkles" size={17} class="text-brand-500" /> AI suggestions
-						</h2>
-						<p class="text-sm leading-relaxed text-ink-600">
-							AI suggestions are <strong>opt-in and blocked by default</strong>, and Lyriks never calls
-							an AI service itself: no keys, no outbound traffic. Suggestions have exactly one
-							source: your own LLM (Claude, or any MCP client) working through the Lyriks MCP tools,
-							outside the app. The switch in
-							<a href="/settings#ai" class="font-medium text-brand-600 hover:underline">Settings → AI suggestions</a>
-							authorizes or blocks that generation for the whole workspace. When blocked, MCP
-							suggestion writes are rejected and nothing is shown in the wizard.
-						</p>
-					</section>
-				{/if}
-
-				{#if shown.has('mcp')}
-					<section id="mcp" class="scroll-mt-6 space-y-3 rounded-card border border-line bg-surface p-6 shadow-card">
-						<h2 class="flex items-center gap-2 text-base font-bold text-ink-900">
-							<Icon name="server" size={17} class="text-brand-500" /> MCP authoring
-						</h2>
-						<p class="text-sm leading-relaxed text-ink-600">
-							Everything you can do in the UI, you can do programmatically through the Lyriks
-							<strong>MCP</strong> (Model Context Protocol) server: create projects, author each
-							specification section, build screens and drive the simulator, then verify coverage. It's
-							the same bounded API the app uses, so agent-authored changes stay coherent.
-						</p>
-						<p class="text-sm leading-relaxed text-ink-600">
-							The MCP gateway runs as its own service beside the platform and is served on your
-							install's origin at <code>/mcp</code>; point your MCP client at it to start authoring.
-						</p>
-					</section>
-				{/if}
-
-				{#if shown.has('deployment')}
-					<section id="deployment" class="scroll-mt-6 space-y-3 rounded-card border border-line bg-surface p-6 shadow-card">
-						<h2 class="flex items-center gap-2 text-base font-bold text-ink-900">
-							<Icon name="shield" size={17} class="text-brand-500" /> Deployment & air-gap
-						</h2>
-						<p class="text-sm text-ink-600">The appliance is the platform, the MCP gateway and the behaviour dashboard on PostgreSQL. Enterprise adds two components; the platform runs on its own if they are absent.</p>
-						<ul class="divide-y divide-line rounded-field border border-line text-sm">
-							<li class="flex gap-3 px-3 py-2"><span class="w-32 shrink-0 font-semibold text-ink-900">lyriks-platform</span><span class="text-ink-600">This app: SvelteKit / Node / PostgreSQL, with the realtime relay.</span></li>
-							<li class="flex gap-3 px-3 py-2"><span class="w-32 shrink-0 font-semibold text-ink-900">MCP gateway</span><span class="text-ink-600">The entry point of AI clients, served on the app origin at /mcp.</span></li>
-							<li class="flex gap-3 px-3 py-2"><span class="w-32 shrink-0 font-semibold text-ink-900">Dashboard</span><span class="text-ink-600">The unspaghettit behaviour editor, served at /behavior.</span></li>
-							<li class="flex gap-3 px-3 py-2"><span class="w-32 shrink-0 font-semibold text-ink-900">lyriks-back</span><span class="text-ink-600">Enterprise: the companion API (workspaces, members, invitations).</span></li>
-							<li class="flex gap-3 px-3 py-2"><span class="w-32 shrink-0 font-semibold text-ink-900">lyriks-dpo</span><span class="text-ink-600">Enterprise: the formal engine (Rust) with its own PostgreSQL.</span></li>
-						</ul>
-						<p class="text-sm leading-relaxed text-ink-600">
-							There is <strong>zero runtime egress</strong> to the public Internet: no CDNs, web fonts,
-							telemetry or remote APIs by default. Icons are bundled offline. Product activation uses a
-							signed licence key verified locally against a bundled public key, with no network required.
-						</p>
-						<p class="text-xs text-ink-500">Install, upgrade and security procedures live in the deployment dossier bundled with your appliance under <code class="font-mono">docs/deployment/</code>.</p>
-					</section>
-				{/if}
-
-				{#if shown.has('shortcuts')}
-					<section id="shortcuts" class="scroll-mt-6 space-y-3 rounded-card border border-line bg-surface p-6 shadow-card">
-						<h2 class="flex items-center gap-2 text-base font-bold text-ink-900">
-							<Icon name="bolt" size={17} class="text-brand-500" /> Keyboard shortcuts
-						</h2>
-						<ul class="divide-y divide-line rounded-field border border-line text-sm">
-							<li class="flex items-center gap-3 px-3 py-2">
-								<kbd class="rounded border border-line bg-surface-sunken px-1.5 py-0.5 text-[11px] font-semibold">⌘/Ctrl-K</kbd>
-								<span class="text-ink-600">Search projects & components (portfolio), or everything in the current project.</span>
-							</li>
-							<li class="flex items-center gap-3 px-3 py-2">
-								<kbd class="rounded border border-line bg-surface-sunken px-1.5 py-0.5 text-[11px] font-semibold">⌘/Ctrl-J</kbd>
-								<span class="text-ink-600">Open the project Control Center.</span>
-							</li>
-							<li class="flex items-center gap-3 px-3 py-2">
-								<kbd class="rounded border border-line bg-surface-sunken px-1.5 py-0.5 text-[11px] font-semibold">Esc</kbd>
-								<span class="text-ink-600">Close the open menu, dialog or panel.</span>
-							</li>
-						</ul>
-					</section>
-				{/if}
-
-				{#if visibleTopics.length === 0}
-					<div class="rounded-card border border-line bg-surface p-8 text-center text-sm text-ink-400">
-						No documentation matches “{query}”.
 					</div>
-				{/if}
-			</div>
+				</DocSection>
+			{/if}
+
+			{#if shown.has('what')}
+				<DocSection id="what" title="What Lyriks is" lead="One specification for the whole product, kept true as the product changes.">
+					<p>
+						Lyriks holds the specification of a product as one whole: what it does (its features, the actions people take and the rules each action obeys), who uses it, how it looks and
+						flows, the data it keeps and what it runs on. The specification is <strong>executable</strong>: every action carries its rules and its scenarios, so Lyriks checks it for gaps
+						and contradictions instead of leaving a pile of documents.
+					</p>
+					<p>
+						You rarely write it from a blank page. <strong>Your own AI</strong> (Claude, Codex, Cursor or any client that speaks MCP) reads your code and your documents through the Lyriks MCP
+						and writes the specification; people read it, correct it and validate it in <strong>Knowledge</strong>. From then on every change goes to the specification first,
+						and Lyriks follows the code against it.
+					</p>
+					<p>Lyriks runs on your own servers, offline if you want: by default it calls no AI service and nothing on the Internet.</p>
+				</DocSection>
+			{/if}
+
+			{#if shown.has('editions')}
+				<DocSection id="editions" title="Editions" lead="What the licence key of the installation opens.">
+					<!-- The offers as the Plans dialog lists them: one source, PLANS, so the two never disagree. -->
+					<ul class="rows">
+						{#each PLANS as plan (plan.id)}
+							<li><span>{plan.name}</span><span>{plan.free ? 'Free. ' : ''}{plan.pitch} {[...plan.includes, ...plan.excludes].join('; ')}.</span></li>
+						{/each}
+					</ul>
+					<p>
+						The key is checked on the machine itself: activation never calls home. A key for a paid plan also opens a Community installation; a Community key does not open a paid one.
+						Your edition reads in <a href="/settings#account">Settings, Account</a>, the Plans entry of the account menu lists the offers, and the prices are on the plans page,
+						{#if data.onlineHelp}<a href={PRICING_URL} target="_blank" rel="noopener noreferrer">{PRICING_URL.replace(/^https?:\/\//, '')}</a>{:else}{PRICING_URL.replace(/^https?:\/\//, '')}{/if}.
+					</p>
+				</DocSection>
+			{/if}
+
+			{#if shown.has('projects')}
+				<DocSection id="projects" title="Projects and folders" lead="Home, the projects of the installation and how to start a new one.">
+					<p>
+						<strong>Home</strong> tells you, across every project you can open, what came in since you last read it: one sentence sums it up, its numbers filter the feed, and
+						<strong>All projects</strong> narrows it to some projects. The feed groups its cards by level, the most urgent first (critical, drift, missing, your decision, match,
+						certified, good to know); a card opens where it happened, and <strong>Got it</strong> or <strong>Later</strong> puts it aside, as in the notifications. A feature whose code
+						changed outside Lyriks reads as a drift card that opens Mismatch. At the right, <strong>Running now</strong> shows what Lyriks is doing for you: each Reverse-Specification
+						and evolution under way, stopped or waiting on you, with where it stands.
+					</p>
+					<p>
+						The current project is the button under Notifications in the navigation: it opens the projects, filed in their <strong>folders</strong>. <strong>+ Folder</strong> adds a folder,
+						its pencil (or a double click on its name) renames it, <strong>+ Project</strong> files a new project in it, and an empty folder can be deleted. A project moves to another
+						folder or is deleted from its row; deleting one that holds anything asks you to type its name.
+					</p>
+					<p>
+						Drag a folder by its grip, or press <kbd>Alt</kbd> with <kbd>↑</kbd> or <kbd>↓</kbd> on it, to put the folders in the order your team works in: the order is the same for
+						everyone. <strong>No folder</strong>, the projects filed nowhere, stays last; a folder nobody placed yet reads in alphabetical order after the others.
+					</p>
+					<h3>Starting a project</h3>
+					<p>
+						<strong>+ New project</strong> asks for its name, then whether the product already exists. An existing product is learned <strong>from a codebase</strong> (recommended: your AI
+						reads the repository and Lyriks rebuilds the whole specification), <strong>from anything else</strong> (documents, even outdated) or <strong>manually</strong> (you describe it
+						section by section with your AI). A new product starts from a document or from an idea, with your AI block by block, all at once, or without AI for now. Lyriks then hands you the
+						prompt to paste in your AI.
+					</p>
+				</DocSection>
+			{/if}
+
+			{#if shown.has('reverse-spec')}
+				<DocSection id="reverse-spec" title="Reverse-Specification" lead="Rebuilding the specification of a product that already exists.">
+					<p>
+						A <strong>Reverse-Specification</strong> rebuilds the specification from the code and the documents of the product. Lyriks hands you a prompt; you paste it in your AI, which
+						reads the product through the Lyriks MCP and writes each part of the specification, citing where each element comes from.
+					</p>
+					<p>
+						Its page has two steps, <strong>Source</strong> and <strong>Analysis</strong>. The analysis shows its phases as your AI goes through them (reading the code, product and users,
+						features, actions and rules, data model, experience and design, business rules, tech stack, final check), what it found so far and the log of its calls.
+					</p>
+					<p>
+						If your AI stops calling, the analysis reads <strong>paused</strong> and a red alert says since when. Look in your AI's window first: it may be asking you to allow a Lyriks tool.
+						If it stopped, copy the prompt from the alert and paste it in your AI session: it resumes where it stopped, without rewriting what is written.
+					</p>
+					<p>
+						Your AI ends with its final check. If it stopped before, <strong>Mark the analysis as finished</strong>, at the foot of the board, closes it. The summary then says what was read,
+						how much of the specification was found in the code and how much cites its source, and Knowledge opens for validation.
+					</p>
+					<p>
+						<strong>Reverse</strong>, in the navigation, opens the runs of the product: the last one, then its history (date, source, commit, result). Once the analysis of the last
+						run is over, validated or not, <strong>Relaunch the analysis</strong> starts the next one; a last run not validated closes and keeps the validations already given. The next runs are <strong>complementary</strong>, whatever they read: each starts from the specification already
+						gathered and erases nothing. It reads only what changed in the code since the last validated run (or, when no commit was recorded, what changed in the code and the
+						documents the specification cites), and the edits made by hand, or, if you choose so, the whole product again. Only what it changes goes back to validation.
+					</p>
+				</DocSection>
+			{/if}
+
+			{#if shown.has('spec360')}
+				<DocSection id="spec360" title="Knowledge" lead="The whole specification of the project, page by page, as the tabs of Knowledge list it.">
+					<ul class="rows">
+						<li><span>Overview</span><span>About the product, why it exists (today's situation and the target), what it does, who uses it and what Lyriks noticed, under its figures: Features, Users, Health, Noticed.</span></li>
+						<li><span>Features</span><span>The core features and the features inside each. A feature's page shows the path a person goes through, its screens and actions; each action says who may do it and the rules it obeys, written as requirements (When ..., the system shall ...), and the data it keeps.</span></li>
+						<li><span>Users</span><span>The profiles who use the product, end users and admins, and the access each one has to each action.</span></li>
+						<li><span>Experience</span><span>The journeys people go through, and the Design: the design.md a coding agent reads to build the interface on-brand.</span></li>
+						<li><span>Technology &amp; data</span><span>The Data map, the Architecture, the Operations of the running product, the Requirements and the Sources the specification rests on.</span></li>
+						<li><span>Glossary</span><span>The words of the product, with the synonyms to avoid.</span></li>
+					</ul>
+					<h3>Editing</h3>
+					<p>
+						<strong>Edit</strong>, in the head of a page, or <kbd>Ctrl</kbd> <kbd>E</kbd> (<kbd>⌘</kbd> <kbd>E</kbd> on a Mac), turns every text the page can change into a field.
+						<strong>Save</strong> records what you changed and leaves the Edit mode; <strong>Cancel editing</strong> drops it after asking.
+					</p>
+					<h3>Discussing</h3>
+					<p>
+						Every block takes comments, its thread at its foot. <strong>Ask my AI</strong>, at the foot of the navigation, is where you ask your AI about the page you read: it answers
+						in a thread, and Reply under its answer asks it again. In a drawer or an enlarged diagram, the comments offer <strong>Ask your AI</strong> beside New topic. The book with a count opens the sources a block rests on: the code, a document, a ticket.
+					</p>
+					<p>
+						<strong>New</strong> marks what entered the specification lately (<a href="/settings#display">Settings, Display</a> sets for how many days, 0 turns it off), and what an
+						evolution brought stays marked until you open it.
+					</p>
+				</DocSection>
+			{/if}
+
+			{#if shown.has('validation')}
+				<DocSection id="validation" title="Validating the specification" lead="Who says the specification is right, and how.">
+					<p>
+						A specification written by an AI is a <strong>DRAFT</strong> until people validate it. Each element shows <strong>Validate</strong> with the initials of the people it waits on;
+						once they all validated, it reads Validated. A section's <strong>Validate all</strong> validates at once everything in it that waits on you, and the box under the head of a page
+						counts what is validated on the page and in the whole specification, with a button for your items on the page and one for the whole specification.
+					</p>
+					<p>
+						Under the top bar of Knowledge, a band reads DRAFT · TO VALIDATE until everything is validated, then <strong>VALIDATED</strong>; while it is a draft, a tab whose elements are all
+						validated carries a small green check. A validated specification stays editable: each edit made by hand is followed on Mismatch until a Reverse-Specification reads it in the code.
+					</p>
+				</DocSection>
+			{/if}
+
+			{#if shown.has('follow-up')}
+				<DocSection id="follow-up" title="Follow-up" lead="What happens to the specification once it is written.">
+					<ul class="rows">
+						<li>
+							<span>Changes</span><span>Enterprise. An evolution carries one change to the product: its need, its solution and its specification, step by step, with your AI if you want. Lyriks shows its impact on the product as it would be; the specification is then frozen into a new version and the code is checked against it. The board lists the requests in progress, completed and canceled.</span>
+						</li>
+						<li>
+							<span>Mismatch</span><span>Once the specification is validated: the changes in the code that wait for a decision and the edits made by hand in the specification, each kept until a Reverse-Specification reads the code. The navigation counts what waits. While a later Reverse-Specification is not validated, it holds that run's report.</span>
+						</li>
+						<li>
+							<span>Health</span><span>The score of the project, then every point that weighs on it, by type, the heaviest first: a contradiction, a gap, an open question. Each says where to fix it; tick points to open a New evolution with them, or reject one that is not a problem.</span>
+						</li>
+					</ul>
+				</DocSection>
+			{/if}
+
+			{#if shown.has('ai')}
+				<DocSection id="ai" title="Working with your AI" lead="Lyriks writes nothing with an AI of its own: your AI does, through the Lyriks MCP.">
+					<h3>Connecting a client</h3>
+					<p>This installation serves its MCP at <code>{mcpUrl}</code>. Register it once in your client:</p>
+					<ul class="rows">
+						<li><span>Claude Code</span><code>{mcp.claudeCode}</code></li>
+						<li><span>Codex</span><code>{mcp.codex}</code></li>
+						<li><span>Other clients</span><span>Claude Desktop and Cowork, Cursor and the others add the same address as a remote MCP server.</span></li>
+					</ul>
+					<p>
+						The first call opens the Lyriks sign-in in your browser; a client that cannot open it shows a code to paste by hand. Your client then asks you to allow each Lyriks tool:
+						allow them for the whole task (or always), or your AI stops at each one and Lyriks only sees it go quiet.
+					</p>
+					<h3>Your AI in session</h3>
+					<p>
+						Without a session, <strong>Ask my AI</strong>, at the foot of the navigation, copies the prompt that opens one, and your question waits for it. Your AI then waits for your clicks on any page of the project
+						(Ask my AI, Reply in a conversation it answered in, Re-read the code with my AI on a feature read from the code) and answers each where it was made; the chip at the right of the top bar says what it does, and
+						<strong>End the session</strong> stops it. In a repository bound to the project, your AI opens the session by itself.
+					</p>
+					<p>
+						Once the session ended or your AI is gone, the chip leaves the top bar: your next question with Ask my AI copies the prompt again. <strong>Check your AI</strong> means it
+						went quiet: look in its window, it may be asking you to allow a tool.
+					</p>
+					<h3>What the AI may do</h3>
+					<p>
+						<a href="/settings#ai">Settings, AI suggestions</a> authorizes or blocks what an AI may suggest into the projects, for the whole workspace.
+						<a href="/settings#assistant">Settings, AI assistant</a> is Lyriks' own assistant, off until an administrator gives it a key: it draws diagrams from the server.
+					</p>
+				</DocSection>
+			{/if}
+
+			{#if shown.has('measures')}
+				<DocSection id="measures" title="Health and the other measures" lead="What the figures of the Overview say, and what they leave out.">
+					<ul class="rows">
+						<li><span>Features</span><span>How many features the product has, in how many core features.</span></li>
+						<li><span>Users</span><span>How many profiles use it, end users and admins.</span></li>
+						<li><span>Health</span><span>One score out of 100 with its word (Strong, To watch, Critical), computed from every point listed in Health: the coherence of the specification, what the completeness audit flags and, once code is linked, what the code says about it. A defect of the product weighs most, then a gap in the description, then an open question; what Lyriks could not check counts nothing. Pointing at the figure says what it weighs now.</span></li>
+						<li><span>Noticed</span><span>The points still waiting, major and minor. Every one of them is listed in Health.</span></li>
+						<li><span>In the code</span><span>After a Reverse-Specification, its summary says how much of the specification was found in the code and how much cites its source.</span></li>
+					</ul>
+					<p>Read them together: a high health on a specification nobody validated yet still waits for people.</p>
+				</DocSection>
+			{/if}
+
+			{#if shown.has('team')}
+				<DocSection id="team" title="Team, roles and jobs" lead="Enterprise: who may do what in the workspace.">
+					<p>
+						<a href="/settings#members">Settings, Members</a> invites people. Lyriks sends no email: you copy the accept link and share it. Each member holds a role:
+					</p>
+					<ul class="rows">
+						<li><span>Owner</span><span>Founded the workspace; cannot be demoted or removed.</span></li>
+						<li><span>Admin</span><span>Manages the members and every project.</span></li>
+						<li><span>Designer</span><span>Edits the projects granted: all of them, or a selection changed at any time.</span></li>
+						<li><span>Viewer</span><span>Reads the projects granted.</span></li>
+					</ul>
+					<p>
+						A <strong>job</strong> (product, design, development, QA, security... the list is the workspace's own) says what each person does; an admin sets it in Settings, Members. A
+						job grants nothing: it helps name who validates what.
+					</p>
+				</DocSection>
+			{/if}
+
+			{#if shown.has('search')}
+				<DocSection id="search" title="Search" lead="Everything of the project, a few letters away.">
+					<p>
+						<strong>Search</strong> in the navigation, or <kbd>Ctrl</kbd> <kbd>K</kbd> (<kbd>⌘</kbd> <kbd>K</kbd> on a Mac) from anywhere, opens it beside the navigation. Empty, it lists
+						what you opened lately, what was recently added or changed in the project, and the actions (New evolution, New project).
+					</p>
+					<p>
+						Typed, it finds the pages, core features, features, profiles, journeys, glossary terms and evolutions of the project, and the <strong>rules</strong> by any part of their
+						sentence, then the other projects. <kbd>↑</kbd> <kbd>↓</kbd> move, <kbd>Enter</kbd> opens, <kbd>Esc</kbd> closes.
+					</p>
+				</DocSection>
+			{/if}
+
+			{#if shown.has('deployment')}
+				<DocSection id="deployment" title="Deployment and air-gap" lead="What runs, and what never leaves your network.">
+					<ul class="rows">
+						<li><span>Platform</span><span>This application, on PostgreSQL, with its realtime relay.</span></li>
+						<li><span>MCP gateway</span><span>The entry of AI clients, served on the application's address at /mcp.</span></li>
+						<li><span>Behavior engine</span><span>The engine that runs the rules and scenarios, and its editor at /behavior.</span></li>
+						<li><span>Enterprise services</span><span>The companion API (workspaces, members, invitations) and the formal engine; the platform runs on its own without them.</span></li>
+					</ul>
+					<p>
+						There is <strong>no runtime egress</strong>: no CDN, web font, telemetry or remote API by default, icons included. The update check, online feedback and the links outside stay shut until an administrator allows them, right after the first password or at any time in <a href="/settings#configuration">Settings, Configuration</a>. The licence is a signed key, pasted once at
+						<a href="/activate">/activate</a> and verified on the machine. <a href="/settings#versions">Settings, Versions</a> says what runs. Install, update and security procedures
+						come with the appliance, in its deployment dossier.
+					</p>
+				</DocSection>
+			{/if}
+
+			{#if shown.has('shortcuts')}
+				<DocSection id="shortcuts" title="Keyboard shortcuts" lead="On a Mac, ⌘ stands for Ctrl.">
+					<ul class="rows">
+						<li><span><kbd>Ctrl</kbd> <kbd>K</kbd></span><span>Open the search, from anywhere.</span></li>
+						<li><span><kbd>[</kbd></span><span>Fold or unfold the navigation, outside a text field.</span></li>
+						<li><span><kbd>Ctrl</kbd> <kbd>E</kbd></span><span>Turn the Edit mode on or off, on a page of Knowledge.</span></li>
+						<li><span><kbd>Esc</kbd></span><span>Close the open panel, menu or dialog; put back a folder being dragged.</span></li>
+						<li><span><kbd>↑</kbd> <kbd>↓</kbd> <kbd>Enter</kbd></span><span>Move through the search results and open one.</span></li>
+						<li><span><kbd>Alt</kbd> <kbd>↑</kbd> <kbd>↓</kbd></span><span>Move a folder up or down, its grip focused.</span></li>
+						<li><span><kbd>Ctrl</kbd> <kbd>Enter</kbd></span><span>Send the change you request during a review.</span></li>
+					</ul>
+				</DocSection>
+			{/if}
+
+			{#if shown.has('troubleshooting')}
+				<DocSection id="troubleshooting" title="Troubleshooting" lead="The questions people ask most.">
+					<ul class="rows">
+						<li><span>The analysis reads paused</span><span>Your AI made no call for a while. Look in its window: it may be waiting for you to allow a Lyriks tool. If it stopped, copy the prompt from the alert and paste it in that conversation.</span></li>
+						<li><span>My AI asks to allow every tool</span><span>Allow the Lyriks tools for the whole task, or always: a first Reverse-Specification calls dozens of them.</span></li>
+						<li><span>My client does not connect</span><span>Check that its address ends with /mcp and is this installation's. A client that cannot open the browser sign-in shows a code to paste by hand.</span></li>
+						<li><span>I cannot edit a page</span><span>Edit shows to who may edit the project: a viewer reads only. In Community, only the active project opens.</span></li>
+						<li><span>The health is low</span><span>Open Health: each point says what is wrong and where to fix it, the heaviest first.</span></li>
+						<li><span>Where is the Control Center?</span><span>It is gone: everything it listed is in Health.</span></li>
+						<li><span>Does anything leave my network?</span><span>No, unless you click a link that opens outside (the guided tour, the community) or an administrator gives the AI assistant a key.</span></li>
+					</ul>
+					<p>Not here? <button type="button" class="cursor-pointer border-0 bg-transparent p-0 text-[0.9375rem] font-semibold text-blue-ink hover:underline" onclick={openFeedback}>Leave us feedback</button>: we read every note.</p>
+				</DocSection>
+			{/if}
+
+			{#if shown.has('words')}
+				<DocSection id="words" title="Words of Lyriks" lead="The words the app uses, each with one meaning.">
+					<ul class="rows">
+						<li><span>Reverse-Specification</span><span>The rebuilding of a product's specification from what already exists, by your AI.</span></li>
+						<li><span>Knowledge</span><span>The whole specification of a project, page by page, where people read and validate it.</span></li>
+						<li><span>Core feature</span><span>A large area of the product, grouping its features.</span></li>
+						<li><span>Feature</span><span>What the product lets someone do, with its screens and actions.</span></li>
+						<li><span>Action</span><span>One thing a person or the system does, always governed by rules.</span></li>
+						<li><span>Rule</span><span>A requirement an action obeys: when it is allowed, refused, what it changes.</span></li>
+						<li><span>Journey</span><span>The path a profile goes through to reach a goal.</span></li>
+						<li><span>Profile</span><span>A kind of user of the product, end user or admin.</span></li>
+						<li><span>Draft, Validated</span><span>A specification waiting for people, and one they all approved.</span></li>
+						<li><span>Evolution</span><span>A request that carries one change, specified before it is built.</span></li>
+						<li><span>Mismatch</span><span>What moved between the code and the validated specification.</span></li>
+						<li><span>Health</span><span>The score of the project and the points that weigh on it.</span></li>
+						<li><span>MCP</span><span>The protocol your AI uses to read and write in Lyriks.</span></li>
+						<li><span>AI session</span><span>Your AI waiting for your clicks on the project, until the session ends.</span></li>
+						<li><span>Source</span><span>What an element rests on: code, a document, a ticket.</span></li>
+					</ul>
+				</DocSection>
+			{/if}
+
+			{#if visible.length === 0}
+				<div class="border border-line bg-paper p-8 text-center text-sm text-ink-3">Nothing in the documentation holds “{query.trim()}”.</div>
+			{/if}
 		</div>
 	</div>
 </div>
+
+{#if stepsOpen}
+	<FirstStepsDialog {steps} onClose={() => (stepsOpen = false)} />
+{/if}

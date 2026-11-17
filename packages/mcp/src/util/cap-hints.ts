@@ -24,14 +24,13 @@ export const CAP_HINTS = {
     args: ['query', 'workspace_id', 'limit', 'offset', 'summary', 'paths'],
   },
   get_section: SUMMARY_THEN_PATHS,
-  get_project: SUMMARY_THEN_PATHS,
+  get_project: {
+    text: 'Response capped. Drop full:true to read the outline, read one section with get_section, or name a smaller sub-tree with paths:["wizard_envelope.<section>.<key>"].',
+    args: ['full', 'paths'],
+  },
   get_knowledge_graph: {
     text: 'Response capped. Lower limit:<n>, filter with contexts:["behavior"] or kinds:["feature"], search with q:"<label>", or expand one node with focus_node:"<id>" and depth:1, one way only with direction:"in" (what points at it) or direction:"out".',
     args: ['limit', 'contexts', 'kinds', 'q', 'focus_node', 'depth', 'direction'],
-  },
-  get_project_elaboration: {
-    text: 'Response capped. Page with limit:<n> and offset:<nextOffset>, or filter with kind:"question" or section:"<section>".',
-    args: ['limit', 'offset', 'kind', 'section'],
   },
   verify_experience: {
     text: 'Response capped. The detailed spec-gap list is the usual weight: page it with gap_limit:<n> and gap_offset:<n>, or keep one severity with gap_severity:"critical".',
@@ -48,6 +47,30 @@ export const CAP_HINTS = {
   score_behavior_feature: {
     text: 'Response capped. Limit the issues with surface_id:"<id>", area:"<area>" or severity:"critical", or leave them out with include_issues:false.',
     args: ['surface_id', 'area', 'severity', 'include_issues'],
+  },
+  simulate_behavior: {
+    text: 'Response capped. Every step carries its state changes and the walk ends with finalState: walk fewer steps at once (steps:[...] then continue from the finalState you read as snapshot:{...}), or end at the first refusal with stop_on_blocked:true.',
+    args: ['steps', 'snapshot', 'stop_on_blocked'],
+  },
+  what_if: {
+    text: 'Response capped. The difference lists every statement, branch and scenario that moves: send a smaller change at once with operations:[...], or ask on one draft at a time.',
+    args: ['operations'],
+  },
+  prove_project_invariants: {
+    text: 'Response capped. Every rule carries its proof and its writers: ask on fewer rules at once with invariant_ids:["<id>"].',
+    args: ['invariant_ids'],
+  },
+  get_data_links: {
+    text: 'Response capped. Read fewer fields at once: one table with table:"<name>", unlinked_only:true, a smaller limit:<n>, and continue with offset:<nextOffset>.',
+    args: ['table', 'unlinked_only', 'limit', 'offset'],
+  },
+  link_data_fields: {
+    text: 'Response capped. Send fewer links at once: one table per call with links:[...], and only that table in existence:[...].',
+    args: ['links', 'existence'],
+  },
+  what_if_project: {
+    text: 'Response capped. The difference lists every rule, scenario and action that moves: send a smaller change at once with operations:[...].',
+    args: ['operations'],
   },
   get_behavior_operations: {
     text: 'Response capped. Search fewer terms with query:"<operation>", lower max_chars:<n>, and continue with offset:<nextOffset>.',

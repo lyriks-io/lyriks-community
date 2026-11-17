@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { env } from '$env/dynamic/private';
 import type { RequestEvent } from '@sveltejs/kit';
 
@@ -70,6 +71,33 @@ export function editorForbidden(pathname: string): Response {
 	});
 }
 
+/**
+ * Framed in Lyriks (`embed=1`), the editor is a detour from the page that opened
+ * it, and that page owns the browser history: Back must return to it in one
+ * press. The editor's own routing would add entries the reader has to step back
+ * through first, so in embed mode its `pushState` becomes `replaceState` before
+ * any of its scripts run. Its navigation still works, it just never grows the
+ * history.
+ */
+const EMBED_HISTORY_SCRIPT =
+	'(function(){var h=window.history;h.pushState=function(s,t,u){return h.replaceState(s,t,u);};})();';
+const EMBED_HISTORY_HASH = `'sha256-${createHash('sha256').update(EMBED_HISTORY_SCRIPT).digest('base64')}'`;
+
+/** The embed page with the history script first in its head, and its CSP letting it run. */
+export function injectEmbedHistory(html: string, headers: Headers): string {
+	const head = /<head[^>]*>/i.exec(html);
+	if (!head) return html;
+	const at = head.index + head[0].length;
+	const csp = headers.get('content-security-policy');
+	if (csp && /script-src/i.test(csp)) {
+		headers.set(
+			'content-security-policy',
+			csp.replace(/script-src([^;]*)/i, (_, sources: string) => `script-src${sources} ${EMBED_HISTORY_HASH}`)
+		);
+	}
+	return `${html.slice(0, at)}<script>${EMBED_HISTORY_SCRIPT}</script>${html.slice(at)}`;
+}
+
 const EDITOR_FORBIDDEN_MESSAGE =
 	'The shared behavior editor requires an installation administrator. Continue editing your authorized projects in Lyriks.';
 
@@ -119,6 +147,15 @@ export async function proxyToUnspa(
 	// decode it a second time and fail on the first byte.
 	out.delete('content-encoding');
 	out.delete('content-length');
+
+	const embedPage =
+		event.request.method === 'GET' &&
+		event.url.searchParams.get('embed') === '1' &&
+		(out.get('content-type') ?? '').includes('text/html');
+	if (embedPage) {
+		const html = injectEmbedHistory(await response.text(), out);
+		return new Response(html, { status: response.status, statusText: response.statusText, headers: out });
+	}
 
 	return new Response(response.body, {
 		status: response.status,

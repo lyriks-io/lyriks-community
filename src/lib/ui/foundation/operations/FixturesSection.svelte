@@ -9,12 +9,7 @@
 	const fixtures = $derived(store.draft.testFixtures);
 </script>
 
-<SectionCard
-	eyebrow="Test fixtures"
-	icon="database"
-	title="Realistic sample data the LLM imitates"
-	subtitle="A couple of realistic data sets per critical entity."
->
+<SectionCard icon="database" title="Test fixtures">
 	<div class="space-y-3">
 		{#each fixtures as fx (fx.id)}
 			<div class="space-y-2 rounded-field border border-ink-100 bg-surface-sunken p-3">

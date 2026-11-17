@@ -11,18 +11,13 @@
 	const error = $derived(validateBrief(store.draft.brief)?.message ?? null);
 </script>
 
-<SectionCard
-	eyebrow="Brief"
-	icon="sparkles"
-	title="The raw idea"
-	subtitle="Write it freely - it anchors the rest of the wizard."
->
+<SectionCard icon="sparkles" title="Description">
 	<!-- Inline click-to-edit (the mockup's EditText): reads as prose, tints on hover,
 	     turns into an editable textarea on click. Commits on blur. -->
 	<Field error={store.draft.brief.length > 0 ? error : null}>
 		<EditableText
 			multiline
-			ariaLabel="Brief"
+			ariaLabel="Description"
 			value={store.draft.brief}
 			onCommit={store.setBrief}
 			placeholder="What problem are we solving, for whom, and why now? Mention competitors, payment methods, compliance, target customers…"

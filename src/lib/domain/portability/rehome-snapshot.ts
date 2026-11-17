@@ -13,7 +13,8 @@
  * thing a copy must never alter.
  */
 
-import type { ProjectSnapshot } from './snapshot';
+import type { KernelArtifact, ProjectSnapshot } from './snapshot';
+import { copyReferences, type CopyIdentities } from './copy-references';
 
 export interface RehomeTarget {
 	readonly projectId: string;
@@ -28,8 +29,8 @@ export function rehomeSnapshot(snapshot: ProjectSnapshot, target: RehomeTarget):
 	// from it (`<projectId>__experience`, `<projectId>__data_model`). Left as they
 	// were, the copy would look for `<newId>__data_model`, find nothing, and show
 	// an empty data model beside a kernel that holds every entity.
-	const swap = <T>(value: T): T =>
-		replaceExact(value, projectScopedIds(snapshot.projectId), projectScopedIds(target.projectId)) as T;
+	const ids = copyIdentities(snapshot, target.projectId);
+	const swap = <T>(value: T): T => copyReferences(value, ids);
 	const name = target.name?.trim() || snapshot.name;
 
 	const rehomed: ProjectSnapshot = {
@@ -39,7 +40,7 @@ export function rehomeSnapshot(snapshot: ProjectSnapshot, target: RehomeTarget):
 		rows: {
 			legacyDocuments: swap(snapshot.rows.legacyDocuments),
 			sectionDocuments: swap(snapshot.rows.sectionDocuments),
-			residue: swap(snapshot.rows.residue),
+			residue: swap(Object.fromEntries(Object.entries(snapshot.rows.residue).filter(([key]) => target.projectId === snapshot.projectId || !key.startsWith('cache:') || key === 'cache:score-history'))),
 			revisions: snapshot.rows.revisions,
 			meta:
 				target.domainId === undefined
@@ -48,12 +49,31 @@ export function rehomeSnapshot(snapshot: ProjectSnapshot, target: RehomeTarget):
 		},
 		kernel: {
 			project: swap(snapshot.kernel.project),
-			features: swap(snapshot.kernel.features)
+			features: swap(snapshot.kernel.features),
+			...(snapshot.kernel.artifacts ? { artifacts: snapshot.kernel.artifacts.map(artifact => rehomeArtifact(artifact, ids, target.projectId)) } : {})
 		},
 		domain: snapshot.domain
 	};
 
 	return name === snapshot.name ? rehomed : renameIn(rehomed, name);
+}
+
+function rehomeArtifact(artifact: KernelArtifact, ids: CopyIdentities, projectId: string): KernelArtifact {
+	if (artifact.kind !== 'source') {
+		return { ...artifact, id: ids.records.get(artifact.id) ?? artifact.id, document: copyReferences(artifact.document, ids) };
+	}
+	// A stored document is evidence, including its metadata. Only its ownership
+	// and the predecessor link change; never rewrite ids inside the evidence.
+	const document = structuredClone(artifact.document);
+	const source = document.source as Record<string, unknown>;
+	const id = ids.sources.get(artifact.id) ?? artifact.id;
+	return {
+		...artifact, id,
+		document: { ...document, source: {
+			...source, id, projectId,
+			...(typeof source.supersedes === 'string' ? { supersedes: ids.sources.get(source.supersedes) ?? source.supersedes } : {})
+		} }
+	};
 }
 
 /**
@@ -76,24 +96,20 @@ function renameIn(snapshot: ProjectSnapshot, name: string): ProjectSnapshot {
 	};
 }
 
-/** Every id the project id spells: itself, then the aux features derived from it. */
+/** Project-level records have names derived from their owning project. */
 function projectScopedIds(projectId: string): readonly string[] {
 	return [projectId, `${projectId}__experience`, `${projectId}__data_model`];
 }
 
-/** Deep copy with every string exactly equal to `from[i]` replaced by `to[i]`. */
-function replaceExact(value: unknown, from: readonly string[], to: readonly string[]): unknown {
-	if (typeof value === 'string') {
-		const at = from.indexOf(value);
-		return at === -1 ? value : to[at];
-	}
-	if (Array.isArray(value)) return value.map((v) => replaceExact(v, from, to));
-	if (value && typeof value === 'object') {
-		return Object.fromEntries(
-			Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, replaceExact(v, from, to)])
-		);
-	}
-	return value;
+/** Allocate disjoint record namespaces; nested action and surface ids stay local. */
+function copyIdentities(snapshot: ProjectSnapshot, projectId: string): CopyIdentities {
+	const records = new Map<string, string>();
+	const sources = new Map<string, string>();
+	if (projectId === snapshot.projectId) return { records, sources };
+	projectScopedIds(snapshot.projectId).forEach((id, index) => records.set(id, projectScopedIds(projectId)[index]));
+	snapshot.kernel.features.filter(feature => !records.has(feature.id)).map(feature => feature.id).sort().forEach((id, index) => records.set(id, `feat-${projectId}-${index + 1}`));
+	(snapshot.kernel.artifacts ?? []).filter(artifact => artifact.kind === 'source').map(artifact => artifact.id).sort().forEach((id, index) => sources.set(id, `src-${projectId}-${index + 1}`));
+	return { records, sources };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

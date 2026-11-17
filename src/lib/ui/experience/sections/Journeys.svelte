@@ -91,7 +91,7 @@
 						journey{store.draft.journeys.length === 1 ? '' : 's'}
 					</span>
 				</h2>
-				<p class="text-xs text-ink-400">Macro stages mirror the cores from Features & Prioritization.</p>
+				<p class="text-xs text-ink-400">Macro stages mirror the cores from Features.</p>
 			</div>
 			<SearchInput
 				bind:value={search}
@@ -129,11 +129,11 @@
 					{@const style = coreToneStyle(core.tone, i)}
 					<div class="flex w-[260px] shrink-0 flex-col rounded-card border {style.card}">
 						<header class="flex items-center gap-2 rounded-t-card border-b border-white/60 bg-white/55 px-3 py-2.5">
-							<span class="grid size-6 place-items-center rounded-md text-[11px] font-bold {style.icon}">
+							<span class="grid size-6 place-items-center rounded-md text-[0.6875rem] font-bold {style.icon}">
 								{core.order + 1}
 							</span>
 							<h3 class="min-w-0 flex-1 truncate text-sm font-semibold text-ink-900">{core.name}</h3>
-							<span class="rounded-pill px-1.5 py-0.5 text-[10px] font-semibold {style.soft}">
+							<span class="rounded-pill px-1.5 py-0.5 text-[0.625rem] font-semibold {style.soft}">
 								{journeys.length}
 							</span>
 						</header>
@@ -152,7 +152,7 @@
 									<p class="truncate text-xs font-semibold text-ink-900">
 										{journey.name || 'Untitled journey'}
 									</p>
-									<p class="mt-0.5 text-[10px] text-ink-400">
+									<p class="mt-0.5 text-[0.625rem] text-ink-400">
 										{steps.length} step{steps.length === 1 ? '' : 's'}
 										{#if journey.actorRoleIds.length > 0}
 											· {journey.actorRoleIds.map(roleName).join(', ')}
@@ -163,7 +163,7 @@
 							<button
 								type="button"
 								onclick={() => store.addJourney(core.id)}
-								class="rounded-lg border border-dashed border-white/80 px-2 py-1.5 text-[11px] font-semibold transition-colors {style.text} hover:border-current"
+								class="rounded-lg border border-dashed border-white/80 px-2 py-1.5 text-[0.6875rem] font-semibold transition-colors {style.text} hover:border-current"
 							>
 								+ Journey
 							</button>
@@ -197,16 +197,16 @@
 					/>
 					<!-- actor roles -->
 					<div class="flex flex-wrap items-center gap-1.5 pt-0.5">
-						<span class="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-400">Actors</span>
+						<span class="text-[0.625rem] font-semibold uppercase tracking-[0.1em] text-ink-400">Actors</span>
 						{#if roles.length === 0}
-							<span class="text-[11px] text-ink-300">Author roles in Users &amp; Permissions</span>
+							<span class="text-[0.6875rem] text-ink-300">Author roles in Users &amp; Permissions</span>
 						{:else}
 							{#each roles as role (role.id)}
 								{@const on = selected.actorRoleIds.includes(role.id)}
 								<button
 									type="button"
 									onclick={() => store.toggleActorRole(selected.id, role.id)}
-									class="rounded-pill border px-2 py-0.5 text-[10px] font-medium transition-colors {on
+									class="rounded-pill border px-2 py-0.5 text-[0.625rem] font-medium transition-colors {on
 										? (selectedStyle?.selected ?? 'border-brand-300 bg-brand-50 text-brand-600')
 										: 'border-line bg-surface text-ink-400 hover:text-ink-700'}"
 								>
@@ -218,14 +218,14 @@
 				</div>
 				<div class="flex shrink-0 items-center gap-1">
 					{#if selectedCore}
-						<span class="rounded-pill px-2 py-0.5 text-[10px] font-semibold {selectedStyle?.soft ?? 'bg-surface-sunken text-ink-400'}">
+						<span class="rounded-pill px-2 py-0.5 text-[0.625rem] font-semibold {selectedStyle?.soft ?? 'bg-surface-sunken text-ink-400'}">
 							{selectedCore.name}
 						</span>
 					{/if}
 					<button
 						type="button"
 						onclick={() => store.selectJourney(selected.id)}
-						class="rounded-field border border-line px-2 py-1 text-[11px] text-ink-400 hover:text-ink-700"
+						class="rounded-field border border-line px-2 py-1 text-[0.6875rem] text-ink-400 hover:text-ink-700"
 					>
 						Close
 					</button>
@@ -241,7 +241,7 @@
 							class="flex w-[200px] shrink-0 flex-col rounded-xl border border-line bg-surface p-2.5"
 						>
 							<div class="mb-1 flex items-center gap-1.5">
-								<span class="grid h-5 min-w-[1.25rem] place-items-center rounded bg-brand-50 px-1 text-[10px] font-bold text-brand-600">
+								<span class="grid h-5 min-w-[1.25rem] place-items-center rounded bg-brand-50 px-1 text-[0.625rem] font-bold text-brand-600">
 									{i + 1}
 								</span>
 								<div class="ml-auto flex items-center gap-0.5">
@@ -274,7 +274,7 @@
 									e.currentTarget.value
 										? store.linkScreen(step.id, e.currentTarget.value)
 										: store.unlinkScreen(step.id)}
-								class="mb-1.5 w-full truncate rounded border border-line bg-surface-sunken px-1.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-brand-600 outline-none"
+								class="mb-1.5 w-full truncate rounded border border-line bg-surface px-1.5 py-1 text-[0.625rem] font-semibold uppercase tracking-wider text-brand-600 outline-none"
 								title={screenName(step.linkedScreenId) || 'Pick screen'}
 							>
 								<option value="">Pick screen…</option>
@@ -308,13 +308,13 @@
 			<!-- Invisible underlays (Events Flow / Data Consumed) -->
 			<div class="border-t border-line px-4 py-3">
 				<div class="mb-2 flex items-center justify-between">
-					<p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">
+					<p class="text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-ink-400">
 						Behind the steps · Events Flow & Data Consumed
 					</p>
 					<button
 						type="button"
 						onclick={store.toggleInvisible}
-						class="flex items-center gap-1.5 rounded-field border px-2.5 py-1 text-[11px] font-semibold transition-colors {store.showInvisible
+						class="flex items-center gap-1.5 rounded-field border px-2.5 py-1 text-[0.6875rem] font-semibold transition-colors {store.showInvisible
 							? 'border-brand-300 bg-brand-50 text-brand-600'
 							: 'border-line bg-surface-sunken text-ink-500 hover:text-ink-700'}"
 					>
@@ -343,7 +343,7 @@
 					<Icon name="info" size={14} />
 				</span>
 				<div>
-					<p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-warning-600">
+					<p class="text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-warning-600">
 						Unassigned · core removed in Features
 					</p>
 					<h3 class="text-sm font-semibold text-ink-900">
@@ -358,7 +358,7 @@
 							<p class="truncate text-sm font-medium text-ink-800">
 								{journey.name || '<unnamed journey>'}
 							</p>
-							<p class="text-[11px] text-ink-400">Re-home it to a current core, or remove it.</p>
+							<p class="text-[0.6875rem] text-ink-400">Re-home it to a current core, or remove it.</p>
 						</div>
 						<select
 							value=""

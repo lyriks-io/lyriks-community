@@ -56,7 +56,7 @@
 				value={store.filter}
 				oninput={(e) => store.setFilter(e.currentTarget.value)}
 				placeholder="Filter approvals…"
-				class="w-full rounded-pill border border-line bg-surface-sunken py-1.5 pl-8 pr-3 text-sm text-ink-900 outline-none placeholder:text-ink-400 focus:border-brand-300"
+				class="w-full rounded-pill border border-line bg-surface py-1.5 pl-8 pr-3 text-sm text-ink-900 outline-none placeholder:text-ink-400 focus:border-brand-300"
 			/>
 		</div>
 		<Button size="sm" onclick={store.addItem}>
@@ -125,7 +125,7 @@
 								oninput={(e) => store.updateItem(item.id, { note: e.currentTarget.value })}
 								rows="2"
 								placeholder="Review comment or accepted-risk rationale…"
-								class="w-full resize-y rounded-field border border-line bg-surface px-2.5 py-1.5 text-[13px] text-ink-700 outline-none placeholder:text-ink-300 focus:border-brand-300"
+								class="w-full resize-y rounded-field border border-line bg-surface px-2.5 py-1.5 text-[0.8125rem] text-ink-700 outline-none placeholder:text-ink-300 focus:border-brand-300"
 							></textarea>
 						</div>
 						<button
