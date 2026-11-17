@@ -93,14 +93,14 @@ describe('resolveUpdateStatus', () => {
 		});
 	});
 
-	it('stays unknown when the feed cannot answer — the air-gapped default', () => {
+	it('stays unknown when no release of the same kind was found', () => {
 		// Silence is honest; "up to date" would be a claim with no feed behind it.
-		expect(resolveUpdateStatus('v0.2.0', null)).toEqual({ state: 'unknown' });
+		expect(resolveUpdateStatus('v0.2.0', null)).toEqual({ state: 'unknown', current: 'v0.2.0', reason: 'no_release' });
 	});
 
 	it('stays unknown when the install runs a moving tag', () => {
-		expect(resolveUpdateStatus('behavior', v('v9.9.9'))).toEqual({ state: 'unknown' });
-		expect(resolveUpdateStatus('latest', v('v9.9.9'))).toEqual({ state: 'unknown' });
+		expect(resolveUpdateStatus('behavior', v('v9.9.9'))).toEqual({ state: 'unknown', reason: 'release_unknown' });
+		expect(resolveUpdateStatus('latest', v('v9.9.9'))).toEqual({ state: 'unknown', reason: 'release_unknown' });
 	});
 });
 

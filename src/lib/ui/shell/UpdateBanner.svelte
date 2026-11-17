@@ -14,12 +14,14 @@
 	import { onMount } from 'svelte';
 	import { Icon } from '$ui/design-system';
 	import type { UpdateStatus } from '$domain/updates';
+	import UpdateGuideDialog from './UpdateGuideDialog.svelte';
 
 	const UPDATE_COMMAND = './lyriks update';
 
 	let status = $state<UpdateStatus | null>(null);
 	let dismissed = $state(false);
 	let copied = $state(false);
+	let guideOpen = $state(false);
 
 	/** Dismissal is per-version: a later release speaks up again. */
 	const storageKey = $derived(status?.latest ? `lyriks.update.dismissed.${status.latest}` : '');
@@ -75,6 +77,14 @@
 		>
 			{copied ? 'Copied' : 'Copy'}
 		</button>
+		<!-- Opens the same guide as Settings, Versions, in place (criterion e7bfe524). -->
+		<button
+			type="button"
+			class="cursor-pointer border-0 bg-transparent p-0 text-xs font-semibold text-ink underline underline-offset-2 hover:text-blue"
+			onclick={() => (guideOpen = true)}
+		>
+			How to update
+		</button>
 		<button
 			type="button"
 			class="p-1 text-ink-3 hover:text-ink"
@@ -84,4 +94,8 @@
 			<Icon name="x" size={14} />
 		</button>
 	</div>
+{/if}
+
+{#if guideOpen && status}
+	<UpdateGuideDialog latest={status.latest} current={status.current} onClose={() => (guideOpen = false)} />
 {/if}

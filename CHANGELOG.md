@@ -6,6 +6,31 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.46] - 2026-11-17
+
+An installation is told about a new version, can check on demand, and says
+how to update.
+
+### Added
+
+- Settings, Versions groups everything about updates in one band: Check now
+  asks the registry at once, Last checked gives the date and time to the
+  second, and How to update opens a guide with the steps, the command to
+  copy, the way back and the offline update. The update notice links to the
+  same guide.
+- With the automatic check off, Check now asks once after a confirmation
+  that says what leaves the installation; the check stays off and the
+  confirmed check is written to the audit trail.
+- When no version can be offered, Versions says why: the check is off, the
+  running release has no name to compare, the registry did not answer (with
+  the pull credentials it needs), or it holds no release of this kind.
+
+### Fixed
+
+- A Community appliance compared itself with the image of the other edition
+  and read Up to date forever: the check now reads the image the
+  installation runs.
+
 ## [0.9.45] - 2026-11-17
 
 What a new user reads now says what the product does, and a sign-off keeps

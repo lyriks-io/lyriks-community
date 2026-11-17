@@ -12,6 +12,7 @@
 	import AssistantPanelBody from '$ui/settings/AssistantPanelBody.svelte';
 	import ProofsPanelBody from '$ui/settings/ProofsPanelBody.svelte';
 	import InstallConfigurationForm from '$ui/settings/InstallConfigurationForm.svelte';
+	import UpdateStatusPanel from '$ui/settings/UpdateStatusPanel.svelte';
 	import type { Component } from 'svelte';
 	import SettingsPanel from '$ui/settings/SettingsPanel.svelte';
 	import { openFeedback } from '$ui/shell/feedback.svelte';
@@ -79,22 +80,9 @@
 		}
 	}
 
-	// ── Update advisory ──────────────────────────────────────────────────────────
-	// `./lyriks update` is the whole operation: it takes the pre-update backup,
-	// refreshes the kit AND the images, and reconciles. Naming it here saves the
-	// operator a trip to the docs at the one moment they need it.
-	const UPDATE_COMMAND = 'cd ~/lyriks && ./lyriks update';
+	// The update status as Settings was loaded; the Versions panel shows it and
+	// re-checks on demand (UpdateStatusPanel).
 	const update = $derived(data.update);
-	let copied = $state(false);
-	async function copyUpdateCommand() {
-		try {
-			await navigator.clipboard.writeText(UPDATE_COMMAND);
-			copied = true;
-			setTimeout(() => (copied = false), 2000);
-		} catch {
-			/* clipboard blocked (no HTTPS, or denied) — the command is on screen anyway */
-		}
-	}
 
 	// ── Password (Enterprise: the credential lives in lyriks-back) ───────────────
 	let pwCurrent = $state('');
@@ -933,40 +921,7 @@
 					open={openSection === 'versions'}
 					onToggle={togglePanel}
 				>
-					{#if update?.state === 'available'}
-						<!-- Advisory only. The platform container has no Docker socket and
-						     must never be given one to update itself, so the most this can
-						     do is name the command — which is also the thing an operator
-						     otherwise has to go and look up. -->
-						<div class="mb-3 space-y-2 border-l-[6px] border-blue bg-blue-tint p-3">
-							<p class="text-sm font-semibold text-ink-900">
-								Version {update.latest} is available
-								<span class="font-normal text-ink-500">— you are on {update.current}</span>
-							</p>
-							<p class="text-xs text-ink-600">Run this on the appliance host:</p>
-							<div class="flex items-center gap-2">
-								<code
-									class="flex-1 overflow-x-auto bg-ink px-3 py-2 font-mono text-xs text-paper"
-									>{UPDATE_COMMAND}</code
-								>
-								<button
-									type="button"
-									onclick={copyUpdateCommand}
-									class="pressable shrink-0 border-[1.5px] border-ink px-3 py-2 text-xs font-bold tracking-[0.07em] text-ink uppercase"
-								>
-									{copied ? 'Copied' : 'Copy'}
-								</button>
-							</div>
-							<p class="text-xs text-ink-500">
-								It takes a verified backup first, updates the kit and the images, and
-								reconciles the stack.
-							</p>
-						</div>
-					{:else if update?.state === 'current'}
-						<p class="mb-3 text-xs font-medium text-green-ink">
-							Up to date — {update.current} is the newest published release.
-						</p>
-					{/if}
+					<UpdateStatusPanel status={data.update} isAdmin={data.isAdmin} registry={data.destinations.updateRegistry} />
 					<ComponentsSection components={data.components} />
 				</SettingsPanel>
 			{/if}
