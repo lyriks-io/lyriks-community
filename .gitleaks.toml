@@ -7,8 +7,12 @@ title = "Lyriks Community"
 useDefault = true
 
 [allowlist]
-description = "Fabricated fixtures: a placeholder licence token and test-only JWT secrets."
+description = "Fabricated fixtures (a placeholder licence token, test-only JWT secrets) and field keys the generic rule reads as keys."
 paths = [
   '''src/lib/domain/licensing/license\.test\.ts''',
   '''packages/mcp/src/tests/security-config\.test\.ts''',
+]
+# Field names, not secrets: the operations targets form keys its rows by them.
+regexes = [
+  '''^latencyP9[59]Ms$''',
 ]
