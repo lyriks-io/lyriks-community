@@ -99,7 +99,7 @@ export async function describeSectionHandler(
  * reads it any more, so no section tool reads or writes it.
  */
 const RETIRED_PROTOTYPE_REASON =
-  'The screen prototype is retired: the experience `builder` sub-tree (layouts, simulator seeds, demo collections) is neither read nor written through the MCP. Describe the experience with journeys, steps, the screen inventory (screens) and the design.md sources (brand); acceptance tests come from export_behavior_scenarios.'
+  'The screen prototype is retired: the experience `builder` sub-tree (layouts, simulator seeds, demo collections) is neither read nor written through the MCP. Describe the experience with journeys, steps, the screen inventory (screens) and the design system sources (brand, read back with get_design_system); acceptance tests come from export_behavior_scenarios.'
 
 function touchesRetiredPrototype(section: Section, path: string | undefined): boolean {
   return section === 'experience' && typeof path === 'string' && (path === 'builder' || path.startsWith('builder.'))

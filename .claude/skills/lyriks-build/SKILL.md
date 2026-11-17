@@ -1,6 +1,6 @@
 ---
 name: lyriks-build
-description: "Build or extend a Lyriks project end-to-end through the Lyriks MCP: declare the external scope, author and assess every section, describe the Experience (journeys, screen inventory, design.md), verify the behavior, run the whole-project audit, and finish only when its deterministic gate passes. Use whenever the task is to create or populate a Lyriks project through the MCP."
+description: "Build or extend a Lyriks project end-to-end through the Lyriks MCP: declare the external scope, author and assess every section, describe the Experience (journeys, screen inventory, design system), verify the behavior, run the whole-project audit, and finish only when its deterministic gate passes. Use whenever the task is to create or populate a Lyriks project through the MCP."
 ---
 
 # /lyriks-build
@@ -117,7 +117,7 @@ memory. Several projects: assess each, audit and finish each alone.
 4. **users**: personas first; the permission pass comes at step 9.
 5. **data**, **rules**, **architecture**, each claim tied to the evidence register. The data model is a loop: write, read the write's `coherenceIssues`, fix. Every entity relates to what owns it or what points at it (*No orphan table* below). Logical architecture may precede technology choices.
 6. **experience**: journeys (actor roles, core), ordered steps, each step on a screen of the inventory (`screens[]`: name, route, device, description), what it does (`stepOperations`) and the data it reads or writes (`stepDataReads`). There is no screen prototype: never author a layout.
-7. **design.md**: `lyriks-design`, the `brand` sources.
+7. **Design system**: `lyriks-design`, the `brand` sources.
 8. Targeted edits with `patch_section` (one journey, step, screen or brand item by id).
 9. The **users** permission pass over system, feature, action, journey and surface capabilities. A permission is ACCESS: one `{roleId, capabilityId, capabilitySource}` row per role and capability it reaches, no verb, no row where it cannot. Give every role the values the behaviour reads it by (`roles[].behaviorValues: [{path:"session.workspaceRole", value:"admin"}]`): Lyriks then names each action whose rules refuse a role the matrix grants, or let in one it keeps out. Send the pass as ONE `patch_section` of `append` ops.
 10. **glossary**, **approvals**, **baselines**, **coherence**, **documents**: authored, or recorded as derived or not applicable in `scope.sectionAssessments`; never silent.

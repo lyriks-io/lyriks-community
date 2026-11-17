@@ -6,6 +6,25 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.45] - 2026-11-17
+
+What a new user reads now says what the product does, and a sign-off keeps
+who gave it.
+
+### Fixed
+
+- An approval keeps who set its status and when: the card reads <Status> by
+  <name> after a reload, and saving the worklist again no longer erases it.
+- On the Reverse page, a live update during an analysis never interrupts a
+  page being opened.
+- The Documentation says a licence key grants an edition, Community or
+  Enterprise, and that switching plan also takes a change of the
+  installation's configuration; it describes the band's Validate all section
+  for the page on screen.
+- No text promises a design.md file any more: the playbooks, the MCP and the
+  Experience help name the design system an AI client reads with
+  `get_design_system`.
+
 ## [0.9.44] - 2026-11-17
 
 Health says where each problem lies and keeps the fixes to confirm apart,

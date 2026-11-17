@@ -196,16 +196,18 @@
 			{/if}
 
 			{#if shown.has('editions')}
-				<DocSection id="editions" title="Editions" lead="What the licence key of the installation opens.">
-					<!-- The offers as the Plans dialog lists them: one source, PLANS, so the two never disagree. -->
+				<DocSection id="editions" title="Editions" lead="The plans Lyriks is offered in, and the edition a licence key grants.">
+					<!-- The offers as the Plans dialog lists them: one source, PLANS, so the two never disagree; what a key changes and what the configuration sets (criterion ac-leaf-313aafc6). -->
 					<ul class="rows">
 						{#each PLANS as plan (plan.id)}
 							<li><span>{plan.name}</span><span>{plan.free ? 'Free. ' : ''}{plan.pitch} {[...plan.includes, ...plan.excludes].join('; ')}.</span></li>
 						{/each}
 					</ul>
 					<p>
-						The key is checked on the machine itself: activation never calls home. A key for a paid plan also opens a Community installation; a Community key does not open a paid one.
-						Your edition reads in <a href="/settings#account">Settings, Account</a>, the Plans entry of the account menu lists the offers, and the prices are on the plans page,
+						The key is checked on the machine itself: activation never calls home. A licence key grants one of two editions, Community or Enterprise; a key for a paid plan also
+						opens a Community installation, a Community key does not open a paid one. Switching plan takes a key for that plan, entered on the activation page, and a change of this
+						installation's configuration by whoever runs it: the key alone does not change which pages it opens.
+						The edition this installation runs reads in <a href="/settings#account">Settings, Account</a>, the Plans entry of the account menu lists the offers, and the prices are on the plans page,
 						{#if data.onlineHelp}<a href={PRICING_URL} target="_blank" rel="noopener noreferrer">{PRICING_URL.replace(/^https?:\/\//, '')}</a>{:else}{PRICING_URL.replace(/^https?:\/\//, '')}{/if}.
 					</p>
 				</DocSection>
@@ -295,10 +297,11 @@
 
 			{#if shown.has('validation')}
 				<DocSection id="validation" title="Validating the specification" lead="Who says the specification is right, and how.">
+					<!-- The band counts the page on screen and offers Validate all section, never the whole specification (criteria 71c9c06b, d7cd4e43). -->
 					<p>
 						A specification written by an AI is a <strong>DRAFT</strong> until people validate it. Each element shows <strong>Validate</strong> with the initials of the people it waits on;
-						once they all validated, it reads Validated. A section's <strong>Validate all</strong> validates at once everything in it that waits on you, and the box under the head of a page
-						counts what is validated on the page and in the whole specification, with a button for your items on the page and one for the whole specification.
+						once they all validated, it reads Validated. A section's <strong>Validate all</strong> validates at once everything in it that waits on you, and the band at the top of Knowledge
+						counts what is validated on the page on screen, with <strong>Validate all section</strong> for the elements of the page that wait on you.
 					</p>
 					<p>
 						Under the top bar of Knowledge, a band reads DRAFT · TO VALIDATE until everything is validated, then <strong>VALIDATED</strong>; while it is a draft, a tab whose elements are all

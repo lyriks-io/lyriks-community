@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { goto, invalidate } from '$app/navigation';
+	import { navigating } from '$app/state';
 	import { page } from '$app/state';
 	import { AI_ACTIVITY_EVENT, PROJECT_ACTIVITY_ID, type AiActivity } from '$lib/shared/ai-activity';
 	import { DEFAULT_DOCS_LOCATION, RETROSPEC_PHASES, resumeRetrospecPrompt, runPaused, type DocsLocation, type Finding, type PhaseState, type RetrospecMode, type RetrospecScope, type RetrospecStatusKind } from '$domain/retrospec';
@@ -189,6 +190,16 @@
 		let timer: ReturnType<typeof setTimeout> | null = null;
 		// The page re-reads at most this often while the AI works: a burst of calls costs one reload.
 		const THROTTLE_MS = 3000;
+		// A re-read replaces SvelteKit's navigation token: while a page is being opened it waits, so a live update never
+		// interrupts it (criterion 6787a611), as the app's live sync does.
+		const reread = () => {
+			timer = null;
+			if (navigating.to !== null) {
+				timer = setTimeout(reread, THROTTLE_MS);
+				return;
+			}
+			void invalidate(retrospecLiveKey(projectId));
+		};
 		const onActivity = (event: Event) => {
 			const { detail } = event as CustomEvent<AiActivity>;
 			if (detail.requestId !== PROJECT_ACTIVITY_ID) return;
@@ -199,7 +210,7 @@
 				greeted = true;
 				pushToast({ level: 'success', message: `Your LLM connected to ${data.productName} via the Lyriks MCP` });
 			}
-			if (timer === null) timer = setTimeout(() => ((timer = null), void invalidate(retrospecLiveKey(projectId))), THROTTLE_MS);
+			if (timer === null) timer = setTimeout(reread, THROTTLE_MS);
 		};
 		window.addEventListener(AI_ACTIVITY_EVENT, onActivity);
 		// Fine enough for the LLM pill to turn from working to connected on time.

@@ -103,7 +103,7 @@ export const CAPABILITIES: Capability[] = [
 	{
 		id: 'experience',
 		title: 'Experience',
-		subtitle: 'design.md, journeys & screens',
+		subtitle: 'Design system, journeys & screens',
 		icon: 'monitor',
 		tier: 'oss',
 		status: 'built',

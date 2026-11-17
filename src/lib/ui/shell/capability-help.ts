@@ -80,14 +80,14 @@ export const CAPABILITY_HELP: Record<string, HelpEntry> = {
 	},
 	experience: {
 		title: 'Experience',
-		what: 'How the product looks and flows: the design.md a coding agent reads, the journeys and the screens they visit.',
+		what: 'How the product looks and flows: the design system a coding agent reads through the MCP (get_design_system), the journeys and the screens they visit.',
 		how: [
-			'Write the design.md from the brand: identity, colors, typography, examples.',
+			'Write the design system from the brand: identity, colors, typography, examples.',
 			'Map the journeys step by step, with the test fixtures they need.',
 			'List every screen with its route and the steps that visit it.'
 		],
 		value:
-			'A precise design.md and an honest screen inventory are what an AI coder needs to ship the right UI the first time.'
+			'A precise design system and an honest screen inventory are what an AI coder needs to ship the right UI the first time.'
 	},
 	functional: {
 		title: 'Functional',

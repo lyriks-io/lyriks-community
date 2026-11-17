@@ -292,7 +292,7 @@ rewording, complete, correct, cite the new sources.
 3. `users`: distinct access checks, API client and identity provider, each with its `behaviorValues` (lyriks-build step 9).
 4. `features`: the capability tree, then `lyriks-behavior` at full depth per leaf, adopting as you go (*Adopting the codebase*).
 5. `data`: the reconciliation above, then the infrastructure map when its code is within reach.
-6. `experience`: journeys from the real navigation, the screen inventory, the design.md sources (`lyriks-design`).
+6. `experience`: journeys from the real navigation, the screen inventory, the design system's sources (`lyriks-design`).
 7. `rules`, `glossary`, the remaining contexts per `lyriks-build`.
 8. `find_inconsistencies`, `assess_project_completeness` (including `behavior-entity-unmodeled`), `audit_project_scope`, code proof; `finish_project` only on the user's word and with no blank ledger line.
 9. Before finish, `report_retrospec_reading` (`commit`, `repository`) records the next run's baseline.

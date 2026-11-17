@@ -1,19 +1,19 @@
 ---
 name: lyriks-design
-description: "Write a product's design.md through the Lyriks MCP: the one file a coding agent reads to build the UI on-brand. Derive the identity from the product (never the default look, never the reflex dark+green), or extract it from the real product when one exists, and author it as the Experience brand sources (identity, colors, typography, spacing, markers, examples) the design.md is written from. Load this before any patch_section on the experience `brand` sub-tree. Invoked by lyriks-build at the design step and by lyriks-retrospec for an existing product; usable standalone."
+description: "Write a product's design system through the Lyriks MCP: what a coding agent reads with get_design_system to build the UI on-brand. Derive the identity from the product (never the default look, never the reflex dark+green), or extract it from the real product when one exists, and author it as the Experience brand sources (identity, colors, typography, spacing, markers, examples) the design system is read from. Load this before any patch_section on the experience `brand` sub-tree. Invoked by lyriks-build at the design step and by lyriks-retrospec for an existing product; usable standalone."
 ---
 
 # /lyriks-design
 
 The Experience capability no longer draws screens: there is no screen prototype,
-no builder and no simulator. What it keeps of design is the **design.md**: the
+no builder and no simulator. What it keeps of design is the **design system**: the
 `brand` sub-tree of the experience section, which a coding agent reads through
 `get_design_system` to build the product's UI and which Knowledge shows on its
 Experience page. Your job is to make those sources precise, true to the
 product and distinct.
 
-The design.md is only as good as its sources. An empty source leaves its part out
-(nothing is invented for it), so a thin brand gives a thin file. Read the
+The design system is only as good as its sources. An empty source leaves its part out
+(nothing is invented for it), so a thin brand gives a thin design system. Read the
 current one with `get_design_system`, in the app (Knowledge, Experience: Colors,
 Typography, Corners and spacing, Shadows and breakpoints), or from
 `get_section experience paths:["brand"]`.
@@ -83,7 +83,7 @@ Derive it from the foundation (audience, domain, tone), never from habit:
    friendly; vary them per element type. Compact density for data-heavy ops,
    comfortable for content. Set every marker on purpose.
 
-Self-check: *"Could this design.md describe my last project, or a generic AI
+Self-check: *"Could this design system describe my last project, or a generic AI
 mock?"* If yes, rederive. Positive check: *"Can I name the adjective each of
 accent, font, radius and density traces back to?"*
 
@@ -99,7 +99,7 @@ example says what to do, what not to do, and why, in the product's own words
 Through the MCP alone there is no render. When you extract from a running
 product, say what you looked at (files, URLs, screenshots); when you could not
 look, say so in your report and ask for a screenshot or the theme file. A
-design.md reported as faithful when nothing was compared is the one move this
+design system reported as faithful when nothing was compared is the one move this
 skill exists to prevent.
 
 ## Done when

@@ -33,8 +33,10 @@ RUN pnpm build \
 # Proof by the solver is an Enterprise capability, and a module of its own: the
 # engine holds no solver and loads the proof module @lyriks/unspa-prover when
 # UNSPA_PROVER names it (subprocess-env.server.ts sets it where the
-# installation proves). The module is private: the release puts its packed
-# tarball at ee/prover/unspa-prover.tgz (npm pack in lyriks-io/unspa-prover),
+# installation proves). The module is private: its packed tarball goes at
+# ee/prover/unspa-prover.tgz (npm pack in lyriks-io/unspa-prover; the image
+# pipeline pulls it from the private package lyriks-platform-prover at the
+# version ee/prover/VERSION pins),
 # and an Enterprise image built without it fails here instead of shipping
 # without proofs. It needs no install of its own: it runs on the engine's
 # runtime and holds nothing but its source. It proves on the native solver only

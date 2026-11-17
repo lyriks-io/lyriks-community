@@ -199,7 +199,7 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string, s
         'block in the instruction file your runtime always loads, plus the per-prompt hook for Claude ' +
         'Code): it is what keeps the repository bound to its Lyriks project for every later session ' +
         'and every user; then follow the relevant skill — ' +
-        'lyriks-build to author a project end-to-end, lyriks-design to write the design.md, ' +
+        'lyriks-build to author a project end-to-end, lyriks-design to write the design system, ' +
         'lyriks-behavior when creating features, lyriks-retrospec when ' +
         'reverse-engineering an EXISTING product into its spec, whatever it is read from (its codebase, its ' +
         'documentation, or its design: a Figma file, a clickable prototype, a mockup artifact), lyriks-delivery when ' +
@@ -293,7 +293,7 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string, s
         'declare it (foundation.operations.i18n, read as the languages of Specification 360° › Tech and data › Requirements) instead of switching on your own. ' +
         'THE EXPERIENCE IS DESCRIBED, NEVER DRAWN: journeys, their steps (each on a screen of the ' +
         'inventory, saying what it does and which data it reads), the screen inventory and the ' +
-        'design.md sources (brand), all written with patch_section. The screen prototype is retired: ' +
+        'design system sources (brand, read back with get_design_system), all written with patch_section. The screen prototype is retired: ' +
         'no layout, no simulator, no demo collection, and the experience `builder` sub-tree is refused. ' +
         'On an existing codebase, validate the spec against the code with the adoption and ' +
         'implementation tools (record_element_spans, seed_implementation_index, ' +
@@ -347,7 +347,7 @@ export function createMcpServer(ee: BoundOverlay | null, lyriksToken?: string, s
 
   mcp.tool(
     'list_skills',
-    'Lists the authoring guides ("skills") that ship with this Lyriks install — the playbooks for building Lyriks projects THROUGH this MCP. Install and follow the relevant one BEFORE authoring: "lyriks-build" to author a project end-to-end (every section), "lyriks-design" to write the design.md (the Experience brand sources), "lyriks-behavior" when creating features (apply_behavior_batch depth), "lyriks-retrospec" to reverse-engineer an existing product or ingest a codebase, "lyriks-delivery" to turn a spec into tickets and re-sync the implementation index once code lands. The returned list is the AUTHORITY: a skill named in this description but absent from the response is not published by this install (usually an out-of-date appliance), and get_skill will 404 on it; report that instead of retrying. Returns { skills: [{ id, name, description, sizeBytes, contentHash }] }. To install or refresh, prefer sync_skills (one call reconciles everything); get_skill fetches a single one.',
+    'Lists the authoring guides ("skills") that ship with this Lyriks install — the playbooks for building Lyriks projects THROUGH this MCP. Install and follow the relevant one BEFORE authoring: "lyriks-build" to author a project end-to-end (every section), "lyriks-design" to write the design system (the Experience brand sources get_design_system answers), "lyriks-behavior" when creating features (apply_behavior_batch depth), "lyriks-retrospec" to reverse-engineer an existing product or ingest a codebase, "lyriks-delivery" to turn a spec into tickets and re-sync the implementation index once code lands. The returned list is the AUTHORITY: a skill named in this description but absent from the response is not published by this install (usually an out-of-date appliance), and get_skill will 404 on it; report that instead of retrying. Returns { skills: [{ id, name, description, sizeBytes, contentHash }] }. To install or refresh, prefer sync_skills (one call reconciles everything); get_skill fetches a single one.',
     {},
     async () => json(await listSkillsHandler({}, lyriks)),
   )

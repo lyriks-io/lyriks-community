@@ -222,7 +222,7 @@ import { createEmptyBaselinesDraft, type ProjectBaselinesDraft } from '$domain/b
 import { parseBaselinesDraft } from '$application/specification/parse-baselines-draft';
 import { createEmptyApprovalsDraft, type ProjectApprovalsDraft } from '$domain/approvals';
 import { createEmptyEvolutionDraft, type ProjectEvolutionDraft } from '$domain/evolution';
-import { parseApprovalsDraft } from '$application/specification/parse-approvals-draft';
+import { parseStoredApprovalsDraft } from '$application/specification/parse-approvals-draft';
 import { parseEvolutionDraft } from '$application/evolution/parse-evolution-draft';
 import type { ProjectScopeDraft } from '$domain/scope';
 import { parseScopeDraft } from '$application/specification/parse-scope-draft';
@@ -807,7 +807,7 @@ export function getServices(): AppServices {
 	const approvalsDrafts = new SectionDocumentDraftRepository(
 		persistence.sectionDocuments,
 		'approvals',
-		parseApprovalsDraft
+		parseStoredApprovalsDraft
 	);
 	const evolutionDrafts = new SectionDocumentDraftRepository(
 		persistence.sectionDocuments,
