@@ -406,7 +406,7 @@ async function draftBehaviour(
 export async function loadEvolutionView(
 	services: AppServices,
 	projectId: string,
-	opts: { readonly activeWorkspaceId?: string; readonly readerId?: string } = {}
+	opts: { readonly readerId?: string } = {}
 ): Promise<EvolutionView> {
 	const [storedDraft, features, register, initDraft, revision, users, data, glossary, architecture, definition, coverage, advice, rules, members, specLanguage, assistant] =
 		await Promise.all([

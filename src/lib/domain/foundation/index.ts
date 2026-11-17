@@ -8,6 +8,7 @@ export * from './identity-coherence';
 export * from './kickoff-prompt';
 export * from './definition-enums';
 export * from './definition';
+export * from './security-answers';
 export * from './definition-coherence';
 export * from './operations-enums';
 export * from './operations';

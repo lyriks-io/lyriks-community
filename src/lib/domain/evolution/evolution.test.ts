@@ -188,6 +188,11 @@ describe('opening and steering a request', () => {
 		expect(canCloseRequest(req({ stage: 'acceptance' })).ok).toBe(false);
 	});
 
+	it('refuses to close a deleted or an already closed request (issue 85)', () => {
+		expect(canCloseRequest(req({ stage: 'delivered', status: 'deleted' }))).toMatchObject({ ok: false, reason: 'This request is deleted.' });
+		expect(canCloseRequest(req({ stage: 'delivered', status: 'closed' }))).toMatchObject({ ok: false, reason: 'This request is closed.' });
+	});
+
 	it('refuses to delete a request twice', () => {
 		expect(canDeleteRequest(req({ status: 'open' })).ok).toBe(true);
 		expect(canDeleteRequest(req({ status: 'deleted' })).ok).toBe(false);

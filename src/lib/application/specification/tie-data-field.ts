@@ -33,14 +33,18 @@ export class TieDataFieldUseCase {
 		private readonly languageOf?: (projectId: string) => Promise<SpecLanguage>
 	) {}
 
-	/** A person links one field. */
-	async tie(projectId: string, fieldId: string, statePath: string): Promise<TieDataFieldResult> {
-		return this.#one(await this.link(projectId, [{ fieldId, statePath }], 'person'));
+	/**
+	 * Link one field. `author` is who calls, read from the request by the
+	 * caller: a person's tie is theirs, and an AI client is never taken for one
+	 * (it may not link again a field a person unlinked).
+	 */
+	async tie(projectId: string, fieldId: string, statePath: string, author: LinkAuthor): Promise<TieDataFieldResult> {
+		return this.#one(await this.link(projectId, [{ fieldId, statePath }], author));
 	}
 
-	/** A person takes one link back: Lyriks will not make it again by itself. */
-	async untie(projectId: string, fieldId: string): Promise<TieDataFieldResult> {
-		return this.#one(await this.link(projectId, [{ fieldId, statePath: null }], 'person'));
+	/** Take one link back: a person's untie is a refusal Lyriks keeps, an AI client's is not. */
+	async untie(projectId: string, fieldId: string, author: LinkAuthor): Promise<TieDataFieldResult> {
+		return this.#one(await this.link(projectId, [{ fieldId, statePath: null }], author));
 	}
 
 	async link(projectId: string, requests: readonly LinkRequest[], author: LinkAuthor): Promise<LinkDataFieldsResult> {

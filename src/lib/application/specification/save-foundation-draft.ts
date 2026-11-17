@@ -3,6 +3,7 @@ import {
 	computeIdentityCoherence,
 	createEmptyDefinitionDraft,
 	seedDefinitionFromIdentity,
+	securityAnswersAfterSave,
 	withoutLegacyDefinitionFields,
 	type FoundationDefinitionDraft,
 	type FoundationIdentityDraft,
@@ -95,10 +96,16 @@ export class SaveFoundationDraftUseCase {
 		};
 	}
 
-	/** Persist the definition slice: stamp `lastSavedAt` and emit its coherence pair. */
+	/**
+	 * Persist the definition slice: stamp `lastSavedAt`, keep which security
+	 * questions were answered (a save of the response times answers no audit
+	 * level, issues.232) and emit its coherence pair.
+	 */
 	async saveDefinition(draft: FoundationDefinitionDraft): Promise<SaveFoundationSliceResult> {
 		const savedAt = this.clock.nowIso();
-		const stamped: FoundationDefinitionDraft = { ...draft, lastSavedAt: savedAt };
+		const stored = await this.definitionDrafts.load(draft.projectId);
+		const answered = securityAnswersAfterSave(stored, draft);
+		const stamped: FoundationDefinitionDraft = { ...draft, security: { ...draft.security, answered }, lastSavedAt: savedAt };
 		await this.definitionDrafts.save(stamped);
 
 		const lang = (await this.languageOf?.(draft.projectId)) ?? 'en';

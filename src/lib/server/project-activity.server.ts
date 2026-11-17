@@ -15,6 +15,7 @@ import { parseReads, type ActivityReads } from '$domain/activity';
 import { mapLimit } from '$lib/shared/map-limit';
 import { callerWorkspaceScope } from './workspace-scope.server';
 import { callerCanSeeProject } from './project-scope.server';
+import { projectWorkspaceId } from './caller-workspace.server';
 
 /**
  * The activity of the projects a reader can see, and what they have read of
@@ -39,13 +40,29 @@ export async function visibleProjects(
 	return scoped.filter((_, i) => seen[i]).map((p) => ({ id: p.id, name: p.name.trim() || 'Untitled project' }));
 }
 
-/** The people of the active workspace, by the id their acts carry (their email). */
-export async function workspaceRoster(services: AppServices, activeWorkspaceId: string | undefined): Promise<ActivityMember[]> {
+/**
+ * The people of the workspaces that own the given projects, by the id their
+ * acts carry (their email): a project's people are those of its own workspace,
+ * never only the one the switcher shows. A project that belongs to no
+ * workspace reads the active one's; a workspace the caller is not in is not read.
+ */
+export async function workspaceRoster(
+	services: AppServices,
+	projects: readonly VisibleProject[],
+	activeWorkspaceId: string | undefined
+): Promise<ActivityMember[]> {
 	try {
 		const workspaces = await services.workspaces.listForCaller();
+		const mine = new Set(workspaces.map((w) => w.id));
 		const active = (activeWorkspaceId && workspaces.find((w) => w.id === activeWorkspaceId)) || workspaces[0];
-		if (!active) return [];
-		return (await services.workspaces.listMembers(active.id)).map((m) => ({ id: m.email, name: m.name?.trim() || m.email }));
+		const owners = await mapLimit(projects, 8, (p) => projectWorkspaceId(services, p.id));
+		const ids = new Set(owners.map((owner) => owner ?? active?.id).filter((id): id is string => !!id && mine.has(id)));
+		if (ids.size === 0 && active) ids.add(active.id);
+		const people = new Map<string, ActivityMember>();
+		for (const members of await Promise.all([...ids].map((id) => services.workspaces.listMembers(id).catch(() => [])))) {
+			for (const m of members) if (!people.has(m.email)) people.set(m.email, { id: m.email, name: m.name?.trim() || m.email });
+		}
+		return [...people.values()];
 	} catch {
 		return [];
 	}

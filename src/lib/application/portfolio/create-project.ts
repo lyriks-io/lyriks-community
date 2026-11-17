@@ -8,6 +8,7 @@ import {
 import { makeProjectId } from '$domain/catalog';
 import { humanizeDomainName } from '$domain/portfolio';
 import { assertProjectCreation, type CheckProjectCreationUseCase } from './project-creation-scope';
+import { FOLDER_OUT_OF_SCOPE, FOLDER_SCOPE_REFUSAL } from './folder-policy';
 import type {
 	ClockPort,
 	FoundationIdentityRepositoryPort,
@@ -34,6 +35,30 @@ export interface CreateProjectInput {
 	 * codebase"). Lands on the Foundation identity; defaults to greenfield.
 	 */
 	sourceMode?: SourceModeCode;
+	/**
+	 * Where the creator stands, when the installation has workspaces: the
+	 * workspace that will own the project and the folders they reach there
+	 * (null = every folder). Absent where there are none: every folder is theirs.
+	 */
+	placement?: ProjectPlacement | null;
+}
+
+export interface ProjectPlacement {
+	readonly workspaceId: string;
+	readonly folders: ReadonlySet<string> | null;
+}
+
+/**
+ * A folder the project may not be filed in (issue 157), refused before anything
+ * is written: another workspace's or one outside a limited member's folders
+ * (rule a8664b7b), or a new one from a member who may not add folders (rule ed4ab638).
+ */
+export class ProjectFolderRefusedError extends Error {
+	readonly status = 403;
+	constructor(reason: string) {
+		super(reason);
+		this.name = 'ProjectFolderRefusedError';
+	}
 }
 
 /**
@@ -68,6 +93,7 @@ export class CreateProjectUseCase {
 	/** Throws `ProjectScopeRefusedError` when the installation's edition holds no more projects. */
 	async execute(input: CreateProjectInput): Promise<string> {
 		await assertProjectCreation(this.scope);
+		const folder = await this.folderFor(input.domainId ?? null, input.placement ?? null);
 		const productName = styledProjectName(input.name) || 'Untitled product';
 		const id = makeProjectId(productName, this.randomSuffix());
 		const base = createEmptyIdentityDraft(id);
@@ -80,8 +106,8 @@ export class CreateProjectUseCase {
 		};
 		await this.drafts.save(draft);
 		await this.declareLanguage(id);
-		const domainId = await this.ensureDomain(input.domainId ?? null);
-		await this.portfolio.setMeta(id, { domainId });
+		if (folder?.create) await this.createFolder(folder.id, input.placement?.workspaceId ?? null);
+		await this.portfolio.setMeta(id, { domainId: folder?.id ?? null });
 
 		// Mirror the new project into the Unspaghettit workspace right away so it
 		// appears in the Docker-shipped OSS dashboard on creation — not only after
@@ -106,26 +132,40 @@ export class CreateProjectUseCase {
 	}
 
 	/**
-	 * Materialise the target domain when the caller references one that has no
-	 * Domain record yet. The dashboard only groups a project under a domain whose
-	 * id it knows — an unknown id silently drops the project into "unassigned".
-	 * The UI always passes an existing domain id (chosen from the picker) or null,
-	 * so this is a no-op there; it's the programmatic path (MCP `create_wizard_project`
-	 * with a fresh `domain_id`) that would otherwise orphan the project. We honour
-	 * the caller's exact id — a freshly-minted id wouldn't match what the project
-	 * card carries — and derive a human-readable name from it.
+	 * The folder the project is filed in, checked before anything is written.
+	 * The dashboard only groups a project under a domain whose id it knows, so an
+	 * id that names no folder yet is materialised (the MCP `create_wizard_project`
+	 * with a fresh `domain_id`); the UI always passes an existing one or null. We
+	 * honour the caller's exact id, a freshly minted one would not match what the
+	 * project card carries. With workspaces, the folder must be one of the owning
+	 * workspace's that the creator reaches, and only a member who reaches every
+	 * folder there may make one (the same checks as moving a project and adding a
+	 * folder).
 	 */
-	private async ensureDomain(domainId: string | null): Promise<string | null> {
+	private async folderFor(domainId: string | null, placement: ProjectPlacement | null): Promise<{ id: string; create: boolean } | null> {
 		if (!domainId) return null;
-		const domains = await this.portfolio.listDomains();
-		if (domains.some((d) => d.id === domainId)) return domainId;
+		const existing = (await this.portfolio.listDomains()).find((d) => d.id === domainId);
+		if (existing) {
+			const outside =
+				placement !== null &&
+				((existing.workspaceId ?? null) !== placement.workspaceId ||
+					(placement.folders !== null && !placement.folders.has(existing.id)));
+			if (outside) throw new ProjectFolderRefusedError(FOLDER_OUT_OF_SCOPE);
+			return { id: domainId, create: false };
+		}
+		if (placement !== null && placement.folders !== null) throw new ProjectFolderRefusedError(FOLDER_SCOPE_REFUSAL);
+		return { id: domainId, create: true };
+	}
+
+	/** Materialise a folder under the id the caller named, with a readable name, in the owning workspace. */
+	private async createFolder(id: string, workspaceId: string | null): Promise<void> {
 		await this.portfolio.saveDomain({
-			id: domainId,
-			name: humanizeDomainName(domainId),
+			id,
+			name: humanizeDomainName(id),
 			description: '',
 			icon: 'lucide:building-2',
-			createdAt: this.clock.nowIso()
+			createdAt: this.clock.nowIso(),
+			workspaceId
 		});
-		return domainId;
 	}
 }

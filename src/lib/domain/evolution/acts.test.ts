@@ -23,6 +23,7 @@ import {
 	runImpactAct,
 	setLeavesAct,
 	tagReviewersAct,
+	updateNeedAct,
 	updateRequestAct,
 	validateFieldAct,
 	withdrawFieldVerdictAct,
@@ -142,6 +143,15 @@ describe('opening and describing a request', () => {
 		expect(ok(updateRequestAct(ctxFor(client), request, { title: 'Coupons' })).title).toBe('Coupons');
 		expect(reasonOf(updateRequestAct(ctxFor(client), { ...request, status: 'closed' }, { title: 'x' }))).toBe('This request is closed.');
 	});
+
+	it('keeps the Briefing of a frozen request: who asked and where it comes from are refused, a new title is not (issue 45)', () => {
+		const frozen = { ...opened(), frozen: true, specVersion: 2 };
+		const refusal = 'The specification is frozen as version 2. Rebrief the request before changing its Briefing.';
+		expect(reasonOf(updateRequestAct(ctxFor(person), frozen, { requester: 'Ana' }))).toBe(refusal);
+		expect(reasonOf(updateRequestAct(ctxFor(person), frozen, { origin: 'regulatory' }))).toBe(refusal);
+		expect(ok(updateRequestAct(ctxFor(person), frozen, { title: 'Coupons, frozen' })).title).toBe('Coupons, frozen');
+		expect(reasonOf(updateNeedAct(ctxFor(person), frozen, { situation: 'Customers pay at once.' }))).toBe(refusal);
+	});
 });
 
 describe('proposals: a client proposes, a person decides', () => {
@@ -212,6 +222,16 @@ describe('proposals: a client proposes, a person decides', () => {
 		expect(written).toBe(0);
 		expect(accepted).toMatchObject({ origin: 'support_ticket', requester: 'Carmen Martin' });
 		expect(accepted.fieldVersions.filter((v) => v.key === 'request.requester' || v.key === 'request.origin').map((v) => v.value)).toEqual(['support_ticket', 'Carmen Martin']);
+	});
+
+	it('accepting a Briefing value on a frozen request is refused as writing it is (issue 45)', () => {
+		const suggested = ok(propose(opened(), client, { leafId: null, fieldPath: 'request.requester', value: 'Carmen Martin' }));
+		const frozen = { ...suggested, frozen: true, specVersion: 2 };
+		const id = frozen.proposals[0].id;
+		expect(reasonOf(decideProposalAct(ctxFor(person), frozen, id, { decision: 'accept' }, () => ALLOW))).toBe(
+			'The specification is frozen as version 2. Rebrief the request before changing its Briefing.'
+		);
+		expect(ok(decideProposalAct(ctxFor(person), frozen, id, { decision: 'refuse', comment: 'Not now.' }, () => ALLOW)).proposals[0].decision).toBe('refused');
 	});
 
 	it('a client cannot accept, refuse or reword; a person can; a relayed person can', () => {

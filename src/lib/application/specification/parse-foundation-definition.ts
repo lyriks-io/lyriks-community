@@ -5,6 +5,7 @@ import {
 	isCertificationCode,
 	isEncryptionScope,
 	REQUIREMENT_QUESTIONS,
+	SECURITY_QUESTIONS,
 	type ConstraintEntry,
 	type RequirementQuestion,
 	type CompetitorEntry,
@@ -297,7 +298,12 @@ export function parseDefinitionDraft(input: unknown, projectId: string): Foundat
 				base.security.auditLogs,
 			expectedCertifications: certifications.codes,
 			dataRetention: arr(security, 'dataRetention'),
-			sourceIds: stringList(security, 'sourceIds')
+			sourceIds: stringList(security, 'sourceIds'),
+			// Kept only when the payload carries it: a definition stored before the
+			// answers were kept apart is read by `answeredSecurityQuestions`.
+			...(Array.isArray(security.answered)
+				? { answered: SECURITY_QUESTIONS.filter((q) => (security.answered as unknown[]).includes(q)) }
+				: {})
 		},
 		constraints: {
 			items: constraints,

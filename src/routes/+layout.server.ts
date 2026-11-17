@@ -4,6 +4,8 @@ import { requireProjectAccess } from '$lib/server/project-access.server';
 import { rememberCurrentProject, resolveCurrentProjectContext } from '$lib/server/app-chrome.server';
 import { navigationSessionBoundary } from '$lib/server/navigation-session.server';
 import { NAV_FOLDED_COOKIE } from '$ui/shell/nav-folded';
+import { pickActiveWorkspace } from '$lib/server/caller-workspace.server';
+import { writesIn } from '$application/portfolio/project-visibility';
 import type { LayoutServerLoad } from './$types';
 
 /** Surface the request-scoped session (set in hooks) to the app shell: the
@@ -55,13 +57,16 @@ export const load: LayoutServerLoad = async (event) => {
 	// Only authenticated, back-integrated installs have teams to switch between.
 	if (!locals.authRequired || !locals.session?.isAuthenticated) {
 		const memberName = await services.resolveActiveMemberName.execute(null);
-		return { ...base, onlineHelp, projectCreation, workspaces: [], activeWorkspace: null, memberName, ...projectContext, contextWorkspaceId: null };
+		return { ...base, onlineHelp, projectCreation, mayCreateProjects: true, workspaces: [], activeWorkspace: null, memberName, ...projectContext, contextWorkspaceId: null };
 	}
 	const workspaces = await services.workspaces.listForCaller();
 	const cookie = cookies.get('lyriks_active_ws') ?? null;
-	const activeWorkspace =
-		cookie && workspaces.some((w) => w.id === cookie) ? cookie : (workspaces[0]?.id ?? null);
+	const active = pickActiveWorkspace(workspaces, cookie);
+	const activeWorkspace = active?.id ?? null;
+	// A viewer of the workspace the switcher shows is offered no project creation there (rule 029ff8b4).
+	// Without workspaces (the one operator) there is no role to read; a member in none reads the server's own refusal.
+	const mayCreateProjects = active ? writesIn(active.role) : true;
 	// The name Lyriks attributes work to in deep links (behavior dashboard `user=`).
 	const memberName = await services.resolveActiveMemberName.execute(activeWorkspace);
-	return { ...base, onlineHelp, projectCreation, workspaces, activeWorkspace, memberName, ...projectContext, contextWorkspaceId: cookie ?? activeWorkspace };
+	return { ...base, onlineHelp, projectCreation, mayCreateProjects, workspaces, activeWorkspace, memberName, ...projectContext, contextWorkspaceId: cookie ?? activeWorkspace };
 };

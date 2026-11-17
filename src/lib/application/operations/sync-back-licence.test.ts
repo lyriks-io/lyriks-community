@@ -12,6 +12,7 @@ function activations(stored: StoredActivation | null): ActivationRepositoryPort 
 		load: async () => stored,
 		save: async () => {},
 	loadPrevious: async () => null,
+		removeCurrent: async () => {},
 		clear: async () => {},
 		readClockFloor: async () => null,
 		advanceClockFloor: async () => {},

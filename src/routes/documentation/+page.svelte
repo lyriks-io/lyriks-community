@@ -272,7 +272,7 @@
 						<li><span>Overview</span><span>About the product, why it exists (today's situation and the target), what it does, who uses it and what Lyriks noticed, under its figures: Features, Users, Health, Noticed.</span></li>
 						<li><span>Features</span><span>The core features and the features inside each. A feature's page shows the path a person goes through, its screens and actions; each action says who may do it and the rules it obeys, written as requirements (When ..., the system shall ...), and the data it keeps.</span></li>
 						<li><span>Users</span><span>The profiles who use the product, end users and admins, and the access each one has to each action.</span></li>
-						<li><span>Experience</span><span>The journeys people go through, and the Design: the design.md a coding agent reads to build the interface on-brand.</span></li>
+						<li><span>Experience</span><span>The journeys people go through, and the design system the screens are drawn with (colors, typography, corners and spacing, shadows and breakpoints) with the reusable components. Your AI reads the same design system through the Lyriks MCP (get_design_system) to build the interface on-brand, and holds a design against it (check_design).</span></li>
 						<li><span>Technology &amp; data</span><span>The Data map, the Architecture, the Operations of the running product, the Requirements and the Sources the specification rests on.</span></li>
 						<li><span>Glossary</span><span>The words of the product, with the synonyms to avoid.</span></li>
 					</ul>
@@ -302,7 +302,7 @@
 					</p>
 					<p>
 						Under the top bar of Knowledge, a band reads DRAFT · TO VALIDATE until everything is validated, then <strong>VALIDATED</strong>; while it is a draft, a tab whose elements are all
-						validated carries a small green check. A validated specification stays editable: each edit made by hand is followed on Mismatch until a Reverse-Specification reads it in the code.
+						validated carries a small green check. A validated specification is no longer changed in place: a change to it goes through an evolution, in Changes. In place it still takes a decision on a point Lyriks noticed, an operations target, and cancelling a hand edit made earlier.
 					</p>
 				</DocSection>
 			{/if}
@@ -311,10 +311,10 @@
 				<DocSection id="follow-up" title="Follow-up" lead="What happens to the specification once it is written.">
 					<ul class="rows">
 						<li>
-							<span>Changes</span><span>Enterprise. An evolution carries one change to the product: its need, its solution and its specification, step by step, with your AI if you want. Lyriks shows its impact on the product as it would be; the specification is then frozen into a new version and the code is checked against it. The board lists the requests in progress, completed and canceled.</span>
+							<span>Changes</span><span>Solo Builder, Team and Enterprise. An evolution carries one change to the product: its need, its solution and its specification, step by step, with your AI if you want. Lyriks shows its impact on the product as it would be; the change is then frozen as a numbered version the code is built and checked against, and written into the specification when it goes live, never before. The board lists the requests in progress, completed and canceled.</span>
 						</li>
 						<li>
-							<span>Mismatch</span><span>Once the specification is validated: the changes in the code that wait for a decision and the edits made by hand in the specification, each kept until a Reverse-Specification reads the code. The navigation counts what waits. While a later Reverse-Specification is not validated, it holds that run's report.</span>
+							<span>Mismatch</span><span>Once the specification is validated: the changes in the code that wait for a decision, each kept until a Reverse-Specification reads the code, and the hand edits a validated specification took before editing it in place was put on hold. The navigation counts what waits. While a later Reverse-Specification is not validated, it holds that run's report.</span>
 						</li>
 						<li>
 							<span>Health</span><span>The score of the project, then every point that weighs on it, by type, the heaviest first: a contradiction, a gap, an open question. Each says where to fix it; tick points to open a New evolution with them, or reject one that is not a problem.</span>

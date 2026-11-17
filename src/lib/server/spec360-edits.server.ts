@@ -28,7 +28,7 @@ import {
 	type ElementEdit
 } from '$application/spec360/edits';
 import { roleUses } from '$application/spec360/role-uses';
-import { keepFinding, reopenFinding } from '$application/spec360/settle-finding';
+import { confirmFix, keepFinding, reopenFinding, reopenFix } from '$application/spec360/settle-finding';
 import { tickMatrixCell } from '$application/spec360/matrix-grant';
 import { OPERATIONS_TARGET_TITLE, operationsTargetRefusal, withOperationsTarget } from '$application/spec360/operations-targets';
 import { anchorOf } from '$domain/discussions';
@@ -332,6 +332,15 @@ async function applySpecEditLocked(services: AppServices, projectId: string, req
 		case 'reopen_finding': {
 			const next = reopenFinding(await services.loadRulesDraft.execute(projectId), request.issueId);
 			if (!next) error(400, 'This finding is no longer rejected. Reload the page.');
+			await persistLocked(services, projectId, 'rules', origin, () => services.saveRulesDraft.execute(next));
+			break;
+		}
+		case 'confirm_fix':
+		case 'reopen_fix': {
+			// A fix waiting for confirmation is resolved or put back to review, the note signed (criterion 2a55c3e7).
+			const settle = request.op === 'confirm_fix' ? confirmFix : reopenFix;
+			const next = settle(await services.loadRulesDraft.execute(projectId), request.issueId, actor.name, new Date().toISOString());
+			if (!next) error(400, 'This fix no longer waits for confirmation. Reload the page.');
 			await persistLocked(services, projectId, 'rules', origin, () => services.saveRulesDraft.execute(next));
 			break;
 		}

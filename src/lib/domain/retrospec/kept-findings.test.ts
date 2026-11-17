@@ -5,7 +5,7 @@ import { createEmptyFeaturesDraft } from '../features';
 import { createEmptyRulesDraft } from '../rules';
 import { registerIssueIdOf } from '../evolution/finding-drafts';
 import type { Gap } from '../coherence';
-import { finalCheckFindings, keptIssueFindings, retrospecFindings } from './findings';
+import { finalCheckFindings, fixToConfirmFindings, keptIssueFindings, retrospecFindings } from './findings';
 
 const P = 'p-1';
 const issue = (id: string, over: object = {}) => ({
@@ -73,5 +73,33 @@ describe('a point Lyriks noticed names itself to Project health and to its featu
 			['issue:i-1', 'minor']
 		]);
 		expect(retrospecFindings(input([issue('i-1', { status: 'resolved', resolutionNote: 'Kept as it is by Ana on 2026-11-01.' })]))).toEqual([]);
+	});
+});
+
+describe('a fix waiting for confirmation reads apart [criterion:2a55c3e7]', () => {
+	it('is no point to review: it reads under Fix to confirm with its note, and neither Reject nor a change is offered', () => {
+		const issues = [issue('i-open'), issue('i-fix', { status: 'in_review', resolutionNote: 'Fixed: the page now refuses it.' })];
+		expect(retrospecFindings(input(issues)).map((f) => f.id)).toEqual(['issue:i-open']);
+		const [fix] = fixToConfirmFindings(input(issues));
+		expect(fix).toMatchObject({ id: 'issue:i-fix', fix: { issueId: 'i-fix', note: 'Fixed: the page now refuses it.' } });
+		expect(fix.decision).toBeUndefined();
+		expect(fix.gapIds).toBeUndefined();
+		expect(fix.sheet.kicker).toBe('FIX TO CONFIRM · AMBIGUITY');
+		expect(fix.sheet.sections.map((s) => s.heading)).toEqual(['IN SHORT', 'NOTE', 'WHAT YOU CAN DO', 'WHERE YOU FIND IT AGAIN']);
+	});
+});
+
+describe('every point says where its problem lies [criterion:c86ea441]', () => {
+	it('reads an issue that cites the code as the product, one that does not as the specification', () => {
+		const [fromCode, unsaid] = retrospecFindings(
+			input([issue('i-code', { detail: 'The page refuses it.\n\nWhere the code says it: lyriks-platform:src/a.ts:3.' }), issue('i-spec', { detail: 'Nobody decided.' })])
+		);
+		expect(fromCode).toMatchObject({ origin: 'product', originLine: 'Something is wrong in the product as it ships: the code was read or tested doing it.' });
+		expect(unsaid.origin).toBe('specification');
+	});
+
+	it('reads what Lyriks computes on the specification as the specification', () => {
+		const computed = retrospecFindings({ ...input([]), authoredFeatureIds: [] });
+		expect(computed.every((f) => f.origin === 'specification')).toBe(true);
 	});
 });

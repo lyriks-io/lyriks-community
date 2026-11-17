@@ -34,6 +34,8 @@ export type SpecEditRequest =
 	| { readonly op: 'keep_finding'; readonly issueId: string }
 	/** A rejection taken back by Undo: the issue is open again (criterion e0f69b3c). */
 	| { readonly op: 'reopen_finding'; readonly issueId: string }
+	/** A fix that waited for confirmation, confirmed (resolved) or reopened (open again) from Health (criterion 2a55c3e7). */
+	| { readonly op: 'confirm_fix' | 'reopen_fix'; readonly issueId: string }
 	/** A cell of who can do what ticked: `on` grants the user the action, off takes it back (criterion eba33558). */
 	| { readonly op: 'tick_permission'; readonly roleId: string; readonly capabilityId: string; readonly on: boolean }
 	/** A hand edit of a validated specification cancelled from Code drift: the element reads again what it read before (criterion 0873e142). */
@@ -134,6 +136,11 @@ export function parseSpecEdit(body: unknown): { ok: true; request: SpecEditReque
 			return typeof o.issueId === 'string' && o.issueId.length > 0 && o.issueId.length <= 200 && !/\s/.test(o.issueId)
 				? { ok: true, request: { op: o.op, issueId: o.issueId } }
 				: { ok: false, reason: o.op === 'keep_finding' ? 'Name the issue to keep.' : 'Name the issue to put back to review.' };
+		case 'confirm_fix':
+		case 'reopen_fix':
+			return typeof o.issueId === 'string' && o.issueId.length > 0 && o.issueId.length <= 200 && !/\s/.test(o.issueId)
+				? { ok: true, request: { op: o.op, issueId: o.issueId } }
+				: { ok: false, reason: o.op === 'confirm_fix' ? 'Name the issue whose fix to confirm.' : 'Name the issue whose fix to reopen.' };
 		case 'edit': {
 			if (!isAnchor(o.anchor)) return { ok: false, reason: 'Name the element to edit.' };
 			const text = str(o.text);

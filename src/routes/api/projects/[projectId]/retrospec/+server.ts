@@ -1,16 +1,20 @@
 import { error, json } from '@sveltejs/kit';
 import { parseRetrospecActs } from '$application/retrospec/parse-retrospec-acts';
 import { loadRetrospecDocument, readSectionRevisions, saveRetrospecActs } from '$application/retrospec/retrospec-store';
-import { RETROSPEC_SECTIONS, applyRetrospecActs, retrospecBaseline, type RetrospecAct, type RetrospecScope } from '$domain/retrospec';
+import { RETROSPEC_SECTIONS, applyRetrospecActs, retrospecBaseline, type ActContext, type RetrospecAct, type RetrospecScope } from '$domain/retrospec';
 import { analysisOver } from '$domain/retrospec/reverse-page';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { readSpecElements } from '$lib/server/spec-elements.server';
 import { nextRunScope, readRetrospecEvents, readRetrospecStatus, retrospecActor } from '$lib/server/retrospec-status.server';
 import { callerKind } from '$lib/server/caller.server';
+import { readValidationGuards } from '$lib/server/spec-validation.server';
 import type { RequestHandler } from './$types';
 
 const fingerprintsOf = (elements: readonly { readonly id: string; readonly fingerprint?: string | null }[]) =>
 	Object.fromEntries(elements.flatMap((e) => (e.fingerprint ? [[e.id, e.fingerprint] as const] : [])));
+
+/** The acts this door shares with Knowledge's validation, which therefore answer to its guards (criteria 6972f3ea, 7a8555f6). */
+const GUARDED_OPS: ReadonlySet<string> = new Set(['validate', 'withdraw', 'publish']);
 
 /**
  * The retrospecification of one project.
@@ -20,10 +24,12 @@ const fingerprintsOf = (elements: readonly { readonly id: string; readonly finge
  *        reject, set aside, share, comment, publish…) and answers `{ ok, revision }`.
  *
  * A start records the specification's revisions as the run's baseline, read
- * here, never from the body. A publish first captures a baseline of the
- * specification (the immutable snapshot Traceability lists), then records it on
- * the run; an act the run refuses answers 400 with its reason, before anything
- * is captured.
+ * here, never from the body. Validate, withdraw and publish answer to the same
+ * guards as Knowledge's validation: a validation only from someone the element
+ * waits on, a publication only once every element is validated. A publish first
+ * captures a baseline of the specification (the immutable snapshot Traceability
+ * lists), then records it on the run; an act the run refuses answers 400 with
+ * its reason, before anything is captured.
  */
 export const GET: RequestHandler = async (event) => {
 	const { projectId } = event.params;
@@ -45,8 +51,10 @@ export const POST: RequestHandler = async (event) => {
 	// A person decides what enters the specification, never their AI (criterion 50b00229).
 	if (callerKind(event.request) === 'ai_client' && parsed.acts.some((a) => a.op === 'decide_change' || a.op === 'validate_changes' || a.op === 'open_writing')) error(403, 'A person decides on a change of the report, never their AI.');
 	const origin = event.request.headers.get('x-lyriks-client');
-	const actor = await retrospecActor(services, event.cookies);
+	const actor = await retrospecActor(services, projectId, event.cookies);
 	const now = new Date().toISOString();
+	const guards = parsed.acts.some((a) => GUARDED_OPS.has(a.op)) ? await readValidationGuards(services, projectId, actor) : {};
+	const ctx: ActContext = { actor, now, ...guards };
 
 	const needsBaseline = parsed.acts.some((a) => a.op === 'start');
 	const baseline = needsBaseline
@@ -68,7 +76,7 @@ export const POST: RequestHandler = async (event) => {
 	if (parsed.acts.some((a) => a.op === 'publish')) {
 		// Refused acts never leave a baseline behind them: try the batch first.
 		const { doc } = await loadRetrospecDocument(services.sectionDocuments, projectId);
-		const dry = applyRetrospecActs(doc, resolve(null), { actor, now });
+		const dry = applyRetrospecActs(doc, resolve(null), ctx);
 		if (!dry.ok) error(400, dry.reason);
 		const identity = await services.loadFoundationDraft.loadIdentity(projectId);
 		const product = identity.productName.trim() || 'the product';
@@ -77,7 +85,7 @@ export const POST: RequestHandler = async (event) => {
 		baselineId = captured.draft.baselines[0]?.id ?? null;
 	}
 
-	const outcome = await saveRetrospecActs(services.sectionDocuments, projectId, resolve(baselineId), { actor, now }, origin);
+	const outcome = await saveRetrospecActs(services.sectionDocuments, projectId, resolve(baselineId), ctx, origin);
 	if (!outcome.ok) error(outcome.conflict ? 409 : 400, outcome.reason);
 	return json({ ok: true, revision: outcome.revision });
 };

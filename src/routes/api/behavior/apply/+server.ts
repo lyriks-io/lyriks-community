@@ -147,7 +147,7 @@ export const POST: RequestHandler = async (event) => {
 		services.behaviorAdvisories.touch?.(projectId);
 		// The feature now does something: a retrospecification under way counts
 		// it in its progress (recorded once, the first time).
-		void retrospecActor(services, event.cookies)
+		void retrospecActor(services, projectId, event.cookies)
 			.then((actor) => saveRetrospecActs(services.sectionDocuments, projectId, [{ op: 'behavior_authored', featureId }], { actor, now: new Date().toISOString() }, null))
 			.catch((err) => console.warn('[retrospec] behaviour not recorded:', err));
 	}

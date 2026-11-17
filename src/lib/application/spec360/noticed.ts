@@ -1,4 +1,5 @@
 import type { Finding, FindingKind } from '$domain/retrospec';
+import { POINT_ORIGIN_LABEL, POINT_ORIGINS, type PointOrigin } from '$domain/coherence';
 import { findingsSettledByRequests, liveFindingDrafts, requestKeyOf, requestPagePath, type EvolutionRequest } from '$domain/evolution';
 
 /**
@@ -54,6 +55,32 @@ export interface NoticedView {
 	readonly minor: number;
 	/** The requests picked points can be added to (criterion 3f977777): still open to changes, newest first. */
 	readonly targets: readonly NoticedTarget[];
+	/**
+	 * The issues whose fix waits for confirmation (criterion 2a55c3e7): listed
+	 * apart under Fix to confirm, in none of the counts above.
+	 */
+	readonly toConfirm: readonly NoticedPoint[];
+}
+
+/** The key the address of Health names the fixes to confirm by (`?type=fix-to-confirm`), as it names a type. */
+export const FIX_TO_CONFIRM_KEY = 'fix-to-confirm';
+export const FIX_TO_CONFIRM_LABEL = 'Fix to confirm';
+export const FIX_TO_CONFIRM_MEANING =
+	'Issues whose fix is written and waits for someone to confirm the product now does it. They count nothing in the health until then: confirm the fix and the issue is resolved, reopen it and it waits for review again. Finishing the project still needs them resolved.';
+
+/** "3 fixes to confirm". */
+export const fixesWord = (n: number) => `${n} ${n === 1 ? 'fix' : 'fixes'} to confirm`;
+
+/** Where the problem lies, as the filter beside the severity narrows to it (criterion c86ea441). */
+export type OriginFilter = 'all' | PointOrigin;
+export const ORIGIN_FILTERS: readonly { readonly key: OriginFilter; readonly label: string }[] = [
+	{ key: 'all', label: 'Everywhere' },
+	...POINT_ORIGINS.map((origin) => ({ key: origin, label: POINT_ORIGIN_LABEL[origin] }))
+];
+
+/** Whether a point shows under the origin picked; a point that names none reads as the specification's. */
+export function showsUnder(point: NoticedPoint, origin: OriginFilter): boolean {
+	return origin === 'all' || (point.finding.origin ?? 'specification') === origin;
 }
 
 /** An evolution request that still takes points: neither frozen, closed, cancelled nor deleted. */
@@ -127,10 +154,13 @@ export interface NoticedSummary {
 	readonly minor: number;
 	/** One line per type, the type holding the heaviest point first, counted as the page groups them. */
 	readonly types: readonly NoticedTypeLine[];
+	/** How many fixes wait for confirmation, counted apart (criterion e75b8909). */
+	readonly toConfirm: number;
 }
 
 export function noticedSummary(view: NoticedView): NoticedSummary {
 	return {
+		toConfirm: view.toConfirm.length,
 		total: view.total,
 		pending: view.pending,
 		settled: view.settled,
@@ -168,6 +198,8 @@ export function noticedView(input: {
 	readonly open: readonly Finding[];
 	/** The issues rejected from the Overview (keptIssueFindings). */
 	readonly kept: readonly Finding[];
+	/** The issues whose fix waits for confirmation (fixToConfirmFindings). */
+	readonly toConfirm?: readonly Finding[];
 	readonly requests: readonly EvolutionRequest[];
 	readonly projectId: string;
 }): NoticedView {
@@ -212,7 +244,10 @@ export function noticedView(input: {
 		.reverse()
 		.filter(takesFindings)
 		.map((r) => ({ id: r.id, key: requestKeyOf(input.requests, r.id) ?? 'Evolution', title: r.title.trim(), href: requestPagePath(input.projectId, r.id) }));
+	// Neither rejected nor sent to a change: a fix is confirmed or reopened (criterion 2a55c3e7).
+	const toConfirm = (input.toConfirm ?? []).map((finding): NoticedPoint => ({ finding, state: 'pending', canReject: false, canEvolve: false, request: null }));
 	return {
+		toConfirm,
 		targets,
 		points,
 		total: points.length,

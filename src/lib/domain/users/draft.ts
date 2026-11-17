@@ -184,10 +184,17 @@ export interface PermissionCoverage {
  * when the author grants one. Off-structure and derived product capabilities
  * are explicit scope and remain mandatory. A capability counts as covered when
  * any role has access to it (for a feature, to it or to one of its actions).
+ *
+ * `reach` names, for a granted capability, the features it opens beyond its
+ * own row (a surface of a feature, a page of the Core a feature belongs to):
+ * a feature reached through a granted page is not one the matrix forgot
+ * (criterion 02a56f3c). The Users domain cannot read pages and surfaces on
+ * its own, so the caller that holds them passes the map.
  */
 export function permissionCoverage(
 	draft: ProjectUsersDraft,
-	derivedCapabilityIds: readonly string[] = []
+	derivedCapabilityIds: readonly string[] = [],
+	reach: Readonly<Record<string, readonly string[]>> = {}
 ): PermissionCoverage {
 	const grantedSystemIds = new Set(
 		draft.permissions
@@ -207,7 +214,9 @@ export function permissionCoverage(
 		draft.permissions.some(
 			(g) =>
 				g.roleId === roleId &&
-				(g.capabilityId === capId || featureOfActionCapability(g.capabilityId) === capId)
+				(g.capabilityId === capId ||
+					featureOfActionCapability(g.capabilityId) === capId ||
+					(reach[g.capabilityId]?.includes(capId) ?? false))
 		);
 	const uncoveredCapabilityIds = capIds.filter(
 		(capId) => !draft.roles.some((r) => holds(r.id, capId))

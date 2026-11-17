@@ -9,6 +9,7 @@ interface DomainRow {
 	icon: string;
 	created_at: string;
 	position: number | null;
+	workspace_id: string | null;
 }
 interface MetaRow {
 	domain_id: string | null;
@@ -19,7 +20,7 @@ interface MetaRow {
 export class PgPortfolioRepository implements PortfolioRepositoryPort {
 	async listDomains(): Promise<Domain[]> {
 		const { rows } = await pgQuery<DomainRow>(
-			'SELECT id, name, description, icon, created_at, position FROM domains ORDER BY created_at ASC'
+			'SELECT id, name, description, icon, created_at, position, workspace_id FROM domains ORDER BY created_at ASC'
 		);
 		return rows.map((r) => ({
 			id: r.id,
@@ -27,19 +28,21 @@ export class PgPortfolioRepository implements PortfolioRepositoryPort {
 			description: r.description,
 			icon: r.icon || 'lucide:building-2',
 			createdAt: r.created_at,
-			position: r.position ?? null
+			position: r.position ?? null,
+			workspaceId: r.workspace_id ?? null
 		}));
 	}
 
+	/** A folder keeps the workspace it was created in: an update never moves it to another one. */
 	async saveDomain(domain: Domain): Promise<void> {
 		await pgQuery(
-			`INSERT INTO domains (id, name, description, icon, created_at)
-			 VALUES ($1, $2, $3, $4, $5)
+			`INSERT INTO domains (id, name, description, icon, created_at, workspace_id)
+			 VALUES ($1, $2, $3, $4, $5, $6)
 			 ON CONFLICT (id) DO UPDATE SET
 			   name = EXCLUDED.name,
 			   description = EXCLUDED.description,
 			   icon = EXCLUDED.icon`,
-			[domain.id, domain.name, domain.description, domain.icon, domain.createdAt]
+			[domain.id, domain.name, domain.description, domain.icon, domain.createdAt, domain.workspaceId ?? null]
 		);
 	}
 

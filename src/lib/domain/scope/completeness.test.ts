@@ -169,6 +169,25 @@ describe('assessProjectCompletion', () => {
 	});
 });
 
+describe('assessProjectCompletion issue order [criterion:4cb3e943]', () => {
+	it('lists every blocker before the warnings, so an answer cut short never hides one', () => {
+		const draft = readyDraft();
+		const current = evidence(draft, {
+			behaviorEntities: [
+				{ name: 'Invoice', featureName: 'Send invoices' },
+				{ name: 'Receipt', featureName: 'Send invoices' }
+			],
+			dataEntityNames: []
+		});
+		// No audit was run: the audit blocker is found after the two warnings.
+		const report = assessProjectCompletion(draft, current);
+		const severities = report.issues.map((issue) => issue.severity);
+		expect(severities).toContain('warning');
+		expect(severities.indexOf('warning')).toBeGreaterThan(severities.lastIndexOf('blocking'));
+		expect(report.issues[0].code).toBe('audit-stale');
+	});
+});
+
 describe('assessProjectCompletion data links', () => {
 	it('counts the checkable fields no state carries in one warning that names the call listing them', () => {
 		const draft = readyDraft();

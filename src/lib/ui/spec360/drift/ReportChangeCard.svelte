@@ -102,7 +102,7 @@
 		</form>
 	{:else if canDecide}
 		<div class="mt-3.5 flex flex-wrap items-center gap-1.5">
-			<button type="button" class="{BTN_MAIN} max-[700px]:min-h-11" disabled={busy} title="It goes into the specification when what is validated is written" onclick={() => onDecide('validated')}>Validate</button>
+			<button type="button" class="{BTN_MAIN} max-[700px]:min-h-11" disabled={busy} title="Records your decision only: it goes into the specification once you click Write the validated changes and your AI writes it" onclick={() => onDecide('validated')}>Validate</button>
 			<button type="button" class="{BTN} max-[700px]:min-h-11" disabled={busy} title="The code is what is wrong: the specification stays as it is and a brief for your AI is copied" onclick={() => onDecide('reverted')}>Revert</button>
 			<button type="button" class="{WARN} max-[700px]:min-h-11" disabled={busy} title="Say what must change before it goes into the specification" onclick={() => (rejecting = true)}>Reject</button>
 		</div>

@@ -1,6 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { callerAllowedDomains } from '$lib/server/domain-scope.server';
-import { callerWorkspaceScope } from '$lib/server/workspace-scope.server';
+import { callerReach } from '$lib/server/domain-scope.server';
 import { mapLimit } from '$lib/shared/map-limit';
 import type { RequestHandler } from './$types';
 
@@ -12,15 +11,7 @@ import type { RequestHandler } from './$types';
  */
 export const GET: RequestHandler = async (event) => {
 	const services = event.locals.services;
-	const [workspaceScope, domainScope] = await Promise.all([
-		callerWorkspaceScope(event),
-		callerAllowedDomains(event)
-	]);
-	const portfolio = await services.buildPortfolio.execute(
-		workspaceScope,
-		domainScope,
-		event.locals.session?.email ?? null
-	);
+	const portfolio = await services.buildPortfolio.execute(await callerReach(event));
 	const projects = [
 		...portfolio.domains.flatMap((domain) => domain.projects),
 		...portfolio.unassigned

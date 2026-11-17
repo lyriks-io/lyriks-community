@@ -11,3 +11,4 @@ export * from './score-history';
 export * from './visit';
 export * from './focus';
 export * from './conformance';
+export * from './origin';

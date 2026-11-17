@@ -1,7 +1,7 @@
 // Per-key write serialization for the section tools.
 //
 // Every section writer (set_section / patch_section / build_screen /
-// wire_element / add_element / import_data_collections) does a read-modify-write
+// wire_element / add_element) does a read-modify-write
 // of a whole section draft: two concurrent calls on the same project+section
 // silently overwrite each other's changes (lost update), and the parallel heavy
 // PUTs contend on the wizard app's save pipeline. Serializing per (projectId, section)

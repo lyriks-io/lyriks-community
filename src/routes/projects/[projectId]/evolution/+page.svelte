@@ -54,7 +54,7 @@
 			{#if wait && !data.roadmap}
 				<SectionWaiting title="Changes" {wait} />
 			{/if}
-			<!-- The Evolution pages carry their own heading (the design's); the roadmap keeps its tabs back to them. -->
+			<!-- The Evolution pages carry their own heading (the design's), with a Roadmap link beside New change; the roadmap keeps its tabs back to them (criterion ff115da8). -->
 			{#if data.roadmap}
 				<PageHeading eyebrow="Evolution" help={CAPABILITY_HELP.evolution} class="mb-6">
 					<PillTabs

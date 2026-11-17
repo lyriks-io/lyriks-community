@@ -458,7 +458,8 @@ function actOn(doc: RetrospecDocument, act: RetrospecAct, ctx: ActContext): ActO
 			return { ok: true, doc: withRun(doc, { ...target, reviewStartedAt: ctx.now, itemTotal: totalOf(act.total, target.itemTotal) }) };
 		}
 		case 'validate': {
-			if (ctx.reviewOnly && ctx.canReview && !ctx.canReview(doc, act.itemId)) return refuse('This question does not require your validation.');
+			// Only someone the element waits on validates it, whatever their rights (criterion d1703bb6).
+			if (ctx.canReview && !ctx.canReview(doc, act.itemId)) return refuse('This question does not require your validation.');
 			const target = started(reviewedRun(doc, ctx), ctx);
 			if (target.publishedAt) return refuse('The specification is already validated.');
 			const before = target.verdicts[act.itemId] ?? emptyVerdict(act.title, act.tab);

@@ -65,6 +65,10 @@ import {
 	updateDataDraftAct,
 	removeDataDraftAct,
 	landingOfData,
+	landRows,
+	requestSourceId,
+	requestSourceRow,
+	sourcesCitedByRequest,
 	dataReportLines,
 	isDataFieldType,
 	DATA_DRAFT_PREFIX,
@@ -859,7 +863,6 @@ export async function applyEvolutionOperations(
 		readonly operations: readonly unknown[];
 		readonly actor: Actor;
 		readonly origin: string | null;
-		readonly activeWorkspaceId?: string;
 	}
 ): Promise<ApplyOutcome> {
 	// The revisions first: the saves below land only on these sections as they were read (criterion d9c67477).
@@ -867,7 +870,7 @@ export async function applyEvolutionOperations(
 		services.draftLock.current(input.projectId, 'features'),
 		services.draftLock.current(input.projectId, 'data')
 	]);
-	const view = await loadEvolutionView(services, input.projectId, { activeWorkspaceId: input.activeWorkspaceId });
+	const view = await loadEvolutionView(services, input.projectId);
 	// The roster a proposal can be handed to; null where one member is alone.
 	const roster = view.members.length > 1 ? new Set(view.members.map((m) => m.id)) : null;
 	const working: Working = {
@@ -987,6 +990,19 @@ export async function applyEvolutionOperations(
 			documentsAtLoad = documents;
 		}
 		return documents;
+	}
+	/** The request as a row of Documents & Sources, registered once: what the tables its landing writes cite. */
+	async function requestSource(request: EvolutionRequest): Promise<string> {
+		const id = requestSourceId(request.id);
+		if (sourceIds.has(id)) return id;
+		const register = await loadDocuments();
+		if (!register.sources.some((s) => s.id === id)) {
+			const row = requestSourceRow(request, requestKeyOf(working.evolution.requests, request.id) ?? request.id);
+			documents = { ...register, sources: [...register.sources, createDocumentSource(row)] };
+			documentsChanged = true;
+		}
+		sourceIds.add(id);
+		return id;
 	}
 	// The click the AI of a live session is on when the batch starts: what it writes is journaled on it.
 	const journaled = ctx.actor.kind === 'ai_client' ? (view.draft.requests.find((r) => currentClickOf(r, ctx.actor.id)) ?? null) : null;
@@ -1127,7 +1143,7 @@ export async function applyEvolutionOperations(
 			working.features = written.features;
 			working.featuresChanged = true;
 		}
-		const data = landData(written.request);
+		const data = await landData(written.request);
 		const sections = await landSections(data.request);
 		if (!sections.ok) return sections;
 		const rules = await landRules(sections.request);
@@ -1228,7 +1244,7 @@ export async function applyEvolutionOperations(
 	 * The data changes, written into the Data section under the ids the request
 	 * gave them, only at the landing (ac-evo-draft-data-landing).
 	 */
-	const landData = (request: EvolutionRequest): { request: EvolutionRequest; lines: string[] } => {
+	const landData = async (request: EvolutionRequest): Promise<{ request: EvolutionRequest; lines: string[] }> => {
 		const live = request.dataDrafts.filter((d) => d.materialisedAt === null);
 		if (live.length === 0) return { request, lines: [] };
 		const landing = landingOfData(working.data, live);
@@ -1236,16 +1252,21 @@ export async function applyEvolutionOperations(
 		const removedFields = new Set(landing.removedFieldIds);
 		const changes = new Map(landing.changedFields.map((c) => [c.fieldId, c]));
 		const renamed = new Map(landing.renamed.map((r) => [r.id, r.name]));
+		// Every table the landing writes says where it comes from: the request itself and what its drafts cite.
+		const cited = [await requestSource(request), ...sourcesCitedByRequest(request).filter((id) => sourceIds.has(id))];
+		const withSources = (held: readonly string[] | undefined) => [...new Set([...(held ?? []), ...cited])];
 		working.data = {
 			...working.data,
-			entities: [
-				...working.data.entities
+			// A table or a field whose id the Data section already holds is merged, never written twice.
+			entities: landRows(
+				working.data.entities
 					.filter((e) => !removedEntities.has(e.id))
 					.map((e) => (renamed.has(e.id) ? { ...e, name: renamed.get(e.id)! } : e)),
-				...landing.model.entities.map((e) => createEntity({ id: e.id, name: e.name, description: e.description, derivedFrom: 'feature' }))
-			],
-			fields: [
-				...working.data.fields
+				landing.model.entities.map((e) => createEntity({ id: e.id, name: e.name, description: e.description, derivedFrom: 'feature', sourceIds: withSources([]) })),
+				(held, landed) => ({ ...held, name: landed.name || held.name, description: landed.description || held.description, sourceIds: withSources(held.sourceIds) })
+			),
+			fields: landRows(
+				working.data.fields
 					.filter((f) => !removedFields.has(f.id) && !removedEntities.has(f.entityId))
 					.map((f) => {
 						const c = changes.get(f.id);
@@ -1259,7 +1280,7 @@ export async function applyEvolutionOperations(
 							...(c.relationTo !== undefined ? { relationTargetEntityId: c.relationTo } : {})
 						};
 					}),
-				...landing.model.fields.map((f) =>
+				landing.model.fields.map((f) =>
 					createField(f.entityId, {
 						id: f.id,
 						name: f.name,
@@ -1269,8 +1290,9 @@ export async function applyEvolutionOperations(
 						isList: f.isList,
 						relationTargetEntityId: f.relationTargetEntityId
 					})
-				)
-			]
+				),
+				(held, landed) => ({ ...held, ...landed, id: held.id })
+			)
 		};
 		working.dataChanged = true;
 		return {
@@ -2271,6 +2293,12 @@ export async function applyEvolutionOperations(
 					outcome = byHand;
 					break;
 				}
+				// Checked before anything lands: a deleted or closed request never writes into the specification again.
+				const closable = closeRequestAct(ctx, request);
+				if (!closable.ok) {
+					outcome = closable;
+					break;
+				}
 				// What the request carries lands first.
 				const landed = await landIfDue(request);
 				if (!landed.ok) {
@@ -2404,6 +2432,12 @@ export async function applyEvolutionOperations(
 				const byHand = declareByHandRefusal(request.code, deploymentBranch(), bringsCode(request));
 				if (!byHand.ok) {
 					outcome = byHand;
+					break;
+				}
+				// Checked before anything lands: a deleted request never writes, a closed one keeps who declared it and when.
+				const declarable = declareDeploymentAct(ctx, request, {});
+				if (!declarable.ok) {
+					outcome = declarable;
 					break;
 				}
 				// Live: the change becomes official now, never before (ac-evo-req-landing).
@@ -2681,7 +2715,7 @@ export async function applyEvolutionOperations(
 
 	// The touched requests as cards, read back off the saved state; the dossier
 	// itself is one get_evolution away, so a batch answer stays small.
-	const after: EvolutionView = await loadEvolutionView(services, input.projectId, { activeWorkspaceId: input.activeWorkspaceId });
+	const after: EvolutionView = await loadEvolutionView(services, input.projectId);
 	const requests = [...working.touched]
 		.map((id) => after.draft.requests.find((r) => r.id === id))
 		.filter((r): r is EvolutionRequest => r !== undefined)

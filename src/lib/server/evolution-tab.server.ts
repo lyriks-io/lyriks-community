@@ -14,6 +14,7 @@ import {
 	suggestionCards
 } from './evolution-view.server';
 import { resolveRole } from './evolution-actor.server';
+import { callerNameForProject } from './caller-workspace.server';
 import { closingReadingOf } from './evolution-closing.server';
 import { concurrentImpactOf } from './evolution-cross.server';
 import { STAGE_ORDER, decisionLog, findRequestByRef, proposalFates, withDraftNames, type Actor } from '$domain/evolution';
@@ -40,13 +41,13 @@ export async function loadEvolutionTab(
 	const session = services.currentSession();
 	const readerId = session.email ?? 'local-operator';
 	const [view, role, actorName] = await Promise.all([
-		loadEvolutionView(services, projectId, { activeWorkspaceId, readerId }),
-		// Who is acting, resolved once server-side: a viewer rules on nothing,
-		// only an admin lifts a waiver, so the role comes from the roster.
-		resolveRole(services, activeWorkspaceId),
-		// The name the whole app gives the person (member, operator profile, then
-		// email), so a local operator reads by that name, never by a technical id (ac-evo-form-names).
-		services.resolveActiveMemberName.execute(activeWorkspaceId ?? null).catch(() => '')
+		loadEvolutionView(services, projectId, { readerId }),
+		// Who is acting, resolved once server-side in the workspace that owns the project, never
+		// the switcher's: a viewer rules on nothing, only an admin lifts a waiver.
+		resolveRole(services, projectId, activeWorkspaceId),
+		// The name the whole app gives the person (member of the project's own workspace, operator profile,
+		// then email), so a local operator reads by that name, never by a technical id (ac-evo-form-names).
+		callerNameForProject(services, projectId, activeWorkspaceId).catch(() => '')
 	]);
 	// The same id the operations stamp (resolveEvolutionActor), or "mine" and
 	// "awaits me" never match what this person did.

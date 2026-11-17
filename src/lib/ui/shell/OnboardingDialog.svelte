@@ -160,6 +160,8 @@
 	});
 
 	const json = (method: string, body: unknown) => ({ method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+	/** The workspace the switcher shows owns the new project, for a member of several (rule fb69bf09). */
+	const switcherWorkspace = () => (typeof page.data.activeWorkspace === 'string' ? { workspaceId: page.data.activeWorkspace } : {});
 
 	async function failed(res: Response, fallback: string): Promise<boolean> {
 		if (res.ok) return false;
@@ -174,7 +176,7 @@
 		try {
 			const res = created
 				? await fetch(`/api/projects/${encodeURIComponent(created.id)}`, json('PATCH', { name: name.trim() }))
-				: await fetch('/api/projects', json('POST', { name: name.trim(), sourceMode: sourceModeOf(w) }));
+				: await fetch('/api/projects', json('POST', { name: name.trim(), sourceMode: sourceModeOf(w), ...switcherWorkspace() }));
 			if (await failed(res, created ? 'The project was not renamed' : 'The project was not created')) return false;
 			created = created ? { ...created, name: styled } : { id: ((await res.json()) as { projectId: string }).projectId, name: styled };
 			return true;

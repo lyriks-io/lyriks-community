@@ -27,7 +27,8 @@ import {
 	type RequirementQuestion,
 	type RequirementsTab,
 	type RetentionRule,
-	type SlaEntry
+	type SlaEntry,
+	withSecurityAnswer
 } from '$domain/foundation';
 import type { CoherenceResult, CustomerSizeCode } from '$domain/foundation';
 import type { Session, ToastNotifierPort } from '$application/ports';
@@ -366,7 +367,7 @@ export class DefinitionStore {
 		this.#touch('definition.security.authentication');
 	};
 	setAuthorization = (value: AuthorizationModel) => {
-		this.draft.security.authorization = value;
+		this.draft.security = withSecurityAnswer({ ...this.draft.security, authorization: value }, 'authorization');
 		this.#touch('definition.security.authorization');
 	};
 	toggleEncryption = (scope: EncryptionScope) => {
@@ -382,7 +383,7 @@ export class DefinitionStore {
 		this.#touch('definition.security.encryption');
 	};
 	setAuditLogs = (level: AuditLogLevel) => {
-		this.draft.security.auditLogs = level;
+		this.draft.security = withSecurityAnswer({ ...this.draft.security, auditLogs: level }, 'auditLogs');
 		this.#touch('definition.security.auditLogs');
 	};
 	toggleCertification = (code: CertificationCode) => {

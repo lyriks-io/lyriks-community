@@ -30,6 +30,6 @@ export const load: PageServerLoad = async (event) => {
 	depends(sectionSyncKey(params.projectId, 'evolution'));
 	depends(retrospecLiveKey(params.projectId));
 	const services = event.locals.services;
-	const [page, canWrite] = await Promise.all([loadRetrospecPage(services, params.projectId, cookies), callerCanWrite(event)]);
+	const [page, canWrite] = await Promise.all([loadRetrospecPage(services, params.projectId, cookies), callerCanWrite(event, params.projectId)]);
 	return { ...page, canWrite, mcpUrl: mcpEndpointFor(url.origin) };
 };

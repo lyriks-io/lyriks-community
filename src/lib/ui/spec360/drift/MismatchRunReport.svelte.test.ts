@@ -53,6 +53,7 @@ describe('each change of a later run is decided on Mismatch, docked on the speci
 		const page = heldBody(heldReport());
 		expect(page).toContain('to decide, of 1');
 		expect(page).toContain('Nothing below is in the specification yet.');
+		expect(page).toContain('Validate only records your decision: once every change is decided, Write the validated changes has your AI write them into the specification.');
 		expect(page).toContain('Today');
 		expect(page).toContain('Found');
 	});
@@ -65,7 +66,7 @@ describe('each change of a later run is decided on Mismatch, docked on the speci
 
 describe('what a person validated on Mismatch is written once, by their AI [criterion:1aaa8316]', () => {
 	it('offers the writing once nothing is left to decide', () => {
-		expect(heldBody(heldReport())).not.toContain('Write the');
+		expect(heldBody(heldReport())).not.toMatch(/Write the \d+ validated/);
 		expect(heldBody(heldReport({ counts: decided }))).toContain('Write the 2 validated changes');
 	});
 
@@ -78,7 +79,7 @@ describe('what a person validated on Mismatch is written once, by their AI [crit
 		const page = heldBody(heldReport({ counts: { total: 3, pending: 0, validated: 2, reverted: 0, rejected: 1 } }));
 		expect(page).toContain('Send the 1 rejected change to your AI');
 		expect(page).toContain('Nothing is written while a change is rejected');
-		expect(page).not.toContain('Write the');
+		expect(page).not.toMatch(/Write the \d+ validated/);
 		expect(page).not.toContain('Close this report');
 		expect(heldBody(heldReport({ counts: { total: 2, pending: 1, validated: 0, reverted: 0, rejected: 1 } }))).toContain('Send the 1 rejected change');
 		expect(heldBody(heldReport({ counts: { total: 2, pending: 0, validated: 1, reverted: 0, rejected: 1 } }), false)).not.toContain('Send the');
@@ -92,6 +93,6 @@ describe('what a person validated on Mismatch is written once, by their AI [crit
 	});
 
 	it('offers a reader no way to write', () => {
-		expect(heldBody(heldReport({ counts: decided }), false)).not.toContain('Write the');
+		expect(heldBody(heldReport({ counts: decided }), false)).not.toMatch(/Write the \d+ validated/);
 	});
 });

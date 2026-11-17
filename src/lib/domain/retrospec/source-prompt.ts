@@ -82,7 +82,7 @@ function complementaryPrompt(mode: RetrospecMode, productName: string, projectId
 			: `Then read only the delta: ${reads.join(', ')}.`,
 		docs ? `${docsWhere(docsAt)} ${docsRegister(docsAt)}` : null,
 		c.held
-			? `Write nothing in the specification: Lyriks refuses it until a person validates it on Mismatch. Register the sources you read as usual, and report each difference with report_retrospec_reading, changes: [{ ${REPORT_FIELDS} }]. A value a person validated that the product now reads otherwise is reported the same way, and leave out what still holds.`
+			? `Write nothing in the specification: Lyriks refuses it until a person validates it on Mismatch and clicks Write the validated changes. Register the sources you read as usual, and report each difference with report_retrospec_reading, changes: [{ ${REPORT_FIELDS} }]. A value a person validated that the product now reads otherwise is reported the same way, and leave out what still holds.`
 			: null,
 		c.held ? null : 'Write what you find through the section tools: add what is new, update what changed, and leave every other element as it is. Erase nothing: an element whose code or document is gone, and a value a person validated that the product now reads otherwise, are written as findings of the run (rules.issues) for a person to decide.',
 		c.handEdits > 0 && code ? 'For each hand edit, report with report_retrospec_reading whether the code says what the specification now says (same) or otherwise (other), with what it reads and where; change neither the edit nor the code.' : null,

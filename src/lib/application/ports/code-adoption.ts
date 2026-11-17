@@ -93,7 +93,8 @@ export interface DisposeCandidateInput {
 export interface FlagConflictInput {
 	readonly featureId: string;
 	readonly summary: string;
-	readonly statements?: readonly { readonly sourceId: string; readonly statement: string }[];
+	/** What each side claims, one stored source per statement; the engine needs at least two. */
+	readonly statements: readonly { readonly sourceId: string; readonly statement: string }[];
 	readonly affectedElements?: readonly string[];
 }
 

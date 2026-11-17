@@ -70,7 +70,7 @@ const TYPE_TITLE: Readonly<Record<string, string>> = {
 	'Unused entity': 'Table no journey step reads',
 	'No journey': 'No journey yet',
 	'Prose in another language': 'Text in another language',
-	'Feature with no user right': 'Feature no user may use',
+	'Feature with no user right': 'Feature no profile is granted',
 	'Ungranted capability': 'Capability nobody is granted',
 	'Matrix not compared': 'Permissions not checked against the rules',
 	'Matrix and behaviour disagree': 'Permissions the rules contradict',

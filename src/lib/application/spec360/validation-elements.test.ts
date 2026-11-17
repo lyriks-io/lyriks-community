@@ -137,7 +137,7 @@ describe('adding and deleting', () => {
 		users.roles.push({ id: 'r1', name: 'A', description: '', userCountMin: 1, userCountMax: null, tone: 'customer', sourceIds: [] });
 		users.permissions.push({ roleId: 'r1', capabilityId: 'c', capabilitySource: 'feature' } as never);
 		expect(deleteUser(users, 'role:r1')).toMatchObject({ roles: [], permissions: [] });
-		expect(coreDeletionRefusal(features(), 'core:c1')).toContain('still holds features');
+		expect(coreDeletionRefusal(features(), 'core:c1')).toBe('It still holds features, and no page moves or deletes a feature: ask your AI to move them to another core feature or remove them (Ask my AI), then delete it here.');
 		expect(coreDeletionRefusal(features(), 'core:c2')).toBeNull();
 	});
 });

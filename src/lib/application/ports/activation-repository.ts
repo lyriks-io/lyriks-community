@@ -24,6 +24,12 @@ export interface ActivationRepositoryPort {
 	save(activation: StoredActivation): Promise<void>;
 	/** The key this install ran on before the current one, if there was one. */
 	loadPrevious(): Promise<StoredActivation | null>;
+	/**
+	 * Remove the key in force and keep the previous one, so going back to it
+	 * stays possible on an installation left with no key.
+	 */
+	removeCurrent(): Promise<void>;
+	/** Remove both the key in force and the previous one. */
 	clear(): Promise<void>;
 	/**
 	 * The highest wall-clock instant (ISO) this install has ever observed — a

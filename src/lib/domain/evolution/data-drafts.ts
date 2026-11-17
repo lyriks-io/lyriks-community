@@ -401,6 +401,63 @@ export function landingOfData(model: DataModelLike, drafts: readonly DataDraft[]
 	return { ...out, removedEntityIds: [...removedEntities], removedFieldIds: [...removedFields], changedFields: changed, renamed, lines };
 }
 
+/**
+ * Rows written by id, the way a landing writes tables and fields: a row whose
+ * id the model already holds is merged into it, never added a second time,
+ * and a second copy of a landed id already there goes. Rows the landing does
+ * not name stay as they are, in place; new ones come last.
+ */
+export function landRows<T extends { readonly id: string }>(rows: readonly T[], landed: readonly T[], merge: (existing: T, landed: T) => T): T[] {
+	const incoming = new Map(landed.map((row) => [row.id, row]));
+	const written = new Set<string>();
+	const out: T[] = [];
+	for (const row of rows) {
+		const next = incoming.get(row.id);
+		if (!next) {
+			out.push(row);
+			continue;
+		}
+		if (written.has(row.id)) continue;
+		written.add(row.id);
+		out.push(merge(row, next));
+	}
+	for (const row of incoming.values()) {
+		if (written.has(row.id)) continue;
+		written.add(row.id);
+		out.push(row);
+	}
+	return out;
+}
+
+/** The row of Documents & Sources that stands for a request: what its landed tables cite. */
+export const requestSourceId = (requestId: string): string => `src-evolution-${requestId}`;
+
+/** The request as a row of the register: reachable through its own words, the way the register asks of every row. */
+export function requestSourceRow(
+	request: { readonly id: string; readonly title: string; readonly need: { readonly description: string } },
+	key: string
+): { id: string; title: string; kind: 'requirement'; url: string; note: string } {
+	const words = request.need.description.trim();
+	return {
+		id: requestSourceId(request.id),
+		title: `Evolution ${key}: ${request.title}`,
+		kind: 'requirement',
+		url: '',
+		note: words ? `${request.title}. ${words}` : request.title
+	};
+}
+
+/** The sources the request's own drafts cite, each once: the evidence its landed tables carry beside the request. */
+export function sourcesCitedByRequest(request: {
+	readonly drafts: readonly { readonly sourceIds?: readonly string[] }[];
+	readonly sectionDrafts?: readonly { readonly sourceIds?: readonly string[] }[];
+	readonly ruleDrafts?: readonly { readonly sourceIds?: readonly string[] }[];
+	readonly findingDrafts?: readonly { readonly sourceIds?: readonly string[] }[];
+}): string[] {
+	const all = [...request.drafts, ...(request.sectionDrafts ?? []), ...(request.ruleDrafts ?? []), ...(request.findingDrafts ?? [])];
+	return [...new Set(all.flatMap((d) => d.sourceIds ?? []))];
+}
+
 /* ----------------------------------------------------------------- report */
 
 /**

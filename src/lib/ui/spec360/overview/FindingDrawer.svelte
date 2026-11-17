@@ -3,6 +3,8 @@
 	import type { NoticedPoint } from '$application/spec360/noticed';
 	import { DrawerSection, SideDrawer } from '$ui/design-system';
 	import FindingDecision from '../FindingDecision.svelte';
+	import FixDecision from '../FixDecision.svelte';
+	import OriginTag from './OriginTag.svelte';
 	import TopicThreads from '../TopicThreads.svelte';
 	import { BTN, KICK, LINK, QUIET } from '../page/look';
 	import { useDiscussions } from '../discussions.svelte';
@@ -13,7 +15,9 @@
 	 * it is, where it applies, where it comes from and what can be done, then
 	 * the decision its row carries (criterion e0f69b3c), the way to its feature
 	 * and Close. An issue keeps its discussion here: Discuss it or ask your AI
-	 * opens its thread, where Ask your AI hands it to the reader's AI.
+	 * opens its thread, where Ask your AI hands it to the reader's AI. The sheet
+	 * opens on where the problem lies (criterion c86ea441); a fix waiting for
+	 * confirmation is confirmed or reopened from here (criterion 2a55c3e7).
 	 */
 	interface Props {
 		point: NoticedPoint | null;
@@ -44,7 +48,8 @@
 	const discussed = $derived(!!anchor && discussions.threads(anchor).length > 0);
 	let talking = $state(false);
 	const standing = $derived(point ? decisions.stateOf(point) : 'pending');
-	const decides = $derived(!!point && (standing !== 'pending' || (writable && (point.canReject || point.canEvolve))));
+	const fix = $derived(!!point?.finding.fix);
+	const decides = $derived(!!point && (fix ? writable : standing !== 'pending' || (writable && (point.canReject || point.canEvolve))));
 
 	$effect(() => {
 		// Each point opens on its own discussion state.
@@ -55,6 +60,11 @@
 
 <SideDrawer open={!!asked} {onClose} alert kicker={sheet?.kicker} title={sheet?.title ?? ''} label="Point Lyriks noticed">
 	{#if point && sheet}
+		{#if point.finding.origin}
+			<p class="m-0 mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 leading-[1.55]">
+				<OriginTag origin={point.finding.origin} /><span class="text-evo-ink-2">{point.finding.originLine}</span>
+			</p>
+		{/if}
 		{#if short}<p class="m-0 mt-1 leading-[1.65]">{short}</p>{/if}
 		{#each sections as s (s.heading)}
 			<DrawerSection title={s.heading}>
@@ -67,7 +77,11 @@
 		{#if decides}
 			<div class="mt-6 mb-2 {KICK}">Decision</div>
 			<div class="flex flex-wrap items-center gap-1.5">
-				<FindingDecision {point} {decisions} {writable} {composing} main />
+				{#if fix}
+					<FixDecision {point} {decisions} {writable} />
+				{:else}
+					<FindingDecision {point} {decisions} {writable} {composing} main />
+				{/if}
 			</div>
 		{/if}
 		{#if anchor && standing === 'pending'}

@@ -30,7 +30,6 @@ const READ = [
   'get_section', 'describe_section', 'get_knowledge_graph',
   'assess_project_completeness',
   'get_design_system', 'check_design',
-  'get_experience_coverage', 'simulate_experience', 'verify_experience', 'generate_acceptance_tests', 'generate_repo_scaffold',
   'get_behavior_context', 'get_behavior_feature', 'get_behavior_project', 'get_behavior_operations',
   'export_behavior_scenarios', 'score_behavior_feature', 'assess_behavior_feature', 'simulate_behavior',
   'what_if', 'what_if_project', 'prove_project_invariants', 'get_data_links', 'find_state_references', 'generate_behavior_types',
@@ -51,7 +50,7 @@ const ADD = [
 
 const CHANGE = [
   'update_wizard_project', 'update_project',
-  'patch_section', 'build_screen', 'wire_element', 'import_data_collections',
+  'patch_section', 'build_screen', 'wire_element',
   'apply_behavior_batch', 'apply_project_behavior_batch', 'link_data_fields',
   'classify_source', 'dispose_candidate', 'resolve_conflict',
   'apply_evolution_batch', 'update_evolution_session', 'apply_roadmap_batch', 'reconcile_roadmap_statuses',

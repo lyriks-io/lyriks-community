@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Gap } from './draft';
-import { auditPoints, codePoints, featureCodeOf, healthReading, projectHealth, type HealthFeatureCode } from './health';
+import { auditPoints, codePoints, featureCodeOf, healthReading, pointsByCost, projectHealth, type HealthFeatureCode } from './health';
 
 const gap = (id: string, fields: Partial<Gap> = {}): Gap => ({
 	id,
@@ -82,6 +82,26 @@ describe('project health (criteria 799e1f5b, 08324382)', () => {
 	});
 });
 
+describe('what weighs on the health and what does not', () => {
+	it('lists a fix waiting for confirmation apart, in no count and weighing nothing [criterion:2a55c3e7]', () => {
+		const open = gap('open', { severity: 'high', checkId: 'rules.open-issues' });
+		const fix = gap('fix', { severity: 'high', checkId: 'rules.open-issues', fixToConfirm: true });
+		const health = projectHealth({ ...empty, gaps: [open, fix] });
+		expect(health.points.map((p) => p.id)).toEqual(['open']);
+		expect(health.toConfirm?.map((p) => p.id)).toEqual(['fix']);
+		expect(health.headline.total).toBe(1);
+		expect(health.headline.score).toBe(projectHealth({ ...empty, gaps: [open] }).headline.score);
+		expect(healthReading(health).fixesToConfirm).toBe(1);
+	});
+
+	it('reads the audit not run since the change as a low point of the records that never blocks [criterion:b0ff6fe6]', () => {
+		const [stale] = auditPoints([{ code: 'audit-stale', severity: 'blocking', message: 'Project changed after its last coverage audit.', path: 'audit' }]);
+		expect(stale).toMatchObject({ checkId: 'audit.audit-stale', severity: 'low', blocking: false, kindLabel: 'Audit out of date' });
+		expect(stale.action).toBe('Ask your AI to run the coverage audit again');
+		expect(projectHealth({ ...empty, audit: [{ code: 'audit-stale', severity: 'blocking', message: 'stale', path: 'audit' }] }).headline.blocking).toBe(0);
+	});
+});
+
 describe('featureCodeOf', () => {
 	const located = { elements: [{ kind: 'action', location: { file: 'a.ts' } }] };
 	it('counts the actions located by themselves and the proven ones', () => {
@@ -112,7 +132,19 @@ describe('healthReading (criterion 7ae9b322)', () => {
 		expect(reading.points).toHaveLength(50);
 		expect(reading.pointsTotal).toBe(60);
 		expect(reading.points[0]).toEqual({ id: 'g0', title: 'Gap g0', severity: 'medium', blocking: false, kindLabel: 'Coherence', featureRef: 'f1' });
-		expect(reading).toMatchObject({ total: 60, codeLinked: false });
+		expect(reading).toMatchObject({ total: 60, codeLinked: false, fixesToConfirm: 0 });
 		expect(typeof reading.score).toBe('number');
+	});
+
+	it('gives the points that cost the health most first, a cause counted once [criteria:96a3bc62,9eef1d63]', () => {
+		const gaps = [
+			gap('a-low', { severity: 'low' }),
+			gap('b-medium', { severity: 'medium' }),
+			gap('c-high-1', { severity: 'high', cause: 'one-root' }),
+			gap('d-high-2', { severity: 'high', cause: 'one-root' }),
+			gap('e-blocking', { severity: 'medium', blocking: true })
+		];
+		expect(pointsByCost(gaps).map((g) => g.id)).toEqual(['e-blocking', 'c-high-1', 'b-medium', 'a-low', 'd-high-2']);
+		expect(healthReading(projectHealth({ ...empty, gaps })).points.map((p) => p.id)).toEqual(['e-blocking', 'c-high-1', 'b-medium', 'a-low', 'd-high-2']);
 	});
 });

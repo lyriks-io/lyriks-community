@@ -30,7 +30,7 @@ export const POST: RequestHandler = async (event) => {
 	if (!parsed.ok) error(400, parsed.refusal);
 
 	const services = event.locals.services;
-	const author = await discussionAuthor(services, event.cookies);
+	const author = await discussionAuthor(services, projectId, event.cookies);
 	let act = parsed.act;
 	if (act.kind === 'open' && act.notify.length > 0) {
 		// Only colleagues of this project can be notified: an address typed into

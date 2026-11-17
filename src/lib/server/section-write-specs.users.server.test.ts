@@ -43,3 +43,33 @@ describe('a Users write that still names a verb is accepted [criterion:464a725a]
 		expect(answer).toEqual({ savedAt: 'now', coherenceScore: 100 });
 	});
 });
+
+describe('a Users write never removes a profile the rest of the spec names [criterion:7ae690d2]', () => {
+	const stored = { ...createEmptyUsersDraft('p1'), roles: [...roles, { id: 'admin', name: 'Admin', description: '', userCountMin: 1, userCountMax: null, tone: 'admin' }] } as unknown as ProjectUsersDraft;
+	function servicesNaming(journeyRoleIds: string[], symptomRoleIds: string[] = []) {
+		const execute = vi.fn(async () => ({ savedAt: 'now', coherenceScore: 100 }));
+		const services = {
+			saveUsersDraft: { execute },
+			loadUsersDraft: { execute: async () => stored },
+			loadFeaturesDraft: { execute: async () => ({ features: [] }) },
+			loadExperienceDraft: { execute: async () => ({ journeys: [{ id: 'j1', name: 'Sign in', actorRoleIds: journeyRoleIds }] }) },
+			loadFoundationDraft: { loadDefinition: async () => ({ businessObjective: { painPointLinks: [{ text: 'Slow', roleIds: symptomRoleIds }] } }) }
+		} as unknown as AppServices;
+		return { services, execute };
+	}
+
+	it('refuses with the reason the page gives when a journey still names the profile left out', async () => {
+		const { services, execute } = servicesNaming(['admin']);
+		await expect(USERS_WRITE.persist(USERS_WRITE.parse({ roles }, 'p1'), services, 'p1')).rejects.toMatchObject({
+			status: 400,
+			body: { message: 'Cannot remove Admin. Used by 1 journey: change those first.' }
+		});
+		expect(execute).not.toHaveBeenCalled();
+	});
+
+	it('removes a profile nothing else names, with its accesses', async () => {
+		const { services, execute } = servicesNaming(['member']);
+		await USERS_WRITE.persist(USERS_WRITE.parse({ roles }, 'p1'), services, 'p1');
+		expect(execute).toHaveBeenCalledWith(expect.objectContaining({ roles: [expect.objectContaining({ id: 'member' })] }));
+	});
+});

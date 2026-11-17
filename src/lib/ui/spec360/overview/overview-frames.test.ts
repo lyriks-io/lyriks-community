@@ -67,7 +67,7 @@ describe("the Overview's validation reads in the band at the top of Knowledge [c
 			'<FeatureValidation anchors={pageAnchors} sectionId="kb-glance" kicker="Validation of this page" />'
 		);
 		const declared = source('../FeatureValidation.svelte');
-		expect(declared).toContain('slot?.hold({ anchors, sectionId, label: kicker.toLowerCase() })');
+		expect(declared).toContain('slot?.hold({ anchors, sectionId, label: kicker.toLowerCase(), path: page.url.pathname');
 		expect(declared).not.toMatch(/<div|<span|<button/);
 	});
 });

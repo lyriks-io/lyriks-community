@@ -84,19 +84,23 @@ describe('what the local checker puts on a card', () => {
 			kind: 'misalignment',
 			kindLabel: 'Contradiction',
 			provenance: 'detected',
-			action: 'Review the decision recorded in its detail, then resolve it or accept the risk.'
+			action: 'Check that the product now does what its note says, then confirm the fix or reopen it.',
+			// Its fix is written: Project health lists it apart (criterion 2a55c3e7).
+			fixToConfirm: true
 		});
 	});
 
-	it('names the unreachable feature first in the permission gap', async () => {
+	it('says the access matrix does not say who may use a feature, never that nobody can reach it [criterion:02a56f3c]', async () => {
 		const features = createEmptyFeaturesDraft('p');
 		features.cores = [createCore({ id: 'core-ui', name: 'UI' })];
 		features.features = [createFeature('core-ui', null, { id: 'feat-dark', name: 'Dark theme' })];
 		const analysis = await localChecker({ features }).analyze('p');
 		const perm = analysis.gaps.find((g) => g.id === 'gap-users-coverage')!;
-		expect(perm.title).toMatch(/^Dark theme has no user right/);
-		expect(perm).toMatchObject({ subject: 'Dark theme', kindLabel: 'Feature with no user right', provenance: 'detected' });
-		expect(perm.action).toMatch(/^Grant it to at least one role/);
+		expect(perm.title).toBe('The access matrix does not say who may use Dark theme');
+		expect(perm).toMatchObject({ subject: 'Dark theme', kindLabel: 'Feature with no user right', provenance: 'detected', severity: 'medium' });
+		expect(perm.detail).not.toMatch(/unreachable|Nobody can reach/);
+		expect(perm.detail).toMatch(/still applies its own access checks/);
+		expect(perm.action).toMatch(/^Grant it to the profiles that use it/);
 	});
 });
 

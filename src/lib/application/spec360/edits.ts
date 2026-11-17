@@ -261,12 +261,20 @@ export function addFeature(draft: ProjectFeaturesDraft, coreId: string, id?: str
 	return { draft: { ...draft, features: [...draft.features, feature] }, anchor: `feature:${feature.id}` };
 }
 
+/**
+ * Why a core feature that holds features is not deleted. No page moves or
+ * deletes a feature, so it names what the person can do today: have their AI
+ * rewrite the feature tree (issues.143).
+ */
+export const CORE_HOLDS_FEATURES =
+	'It still holds features, and no page moves or deletes a feature: ask your AI to move them to another core feature or remove them (Ask my AI), then delete it here.';
+
 /** Why a core feature cannot be deleted from here, or null when it can. */
 export function coreDeletionRefusal(draft: ProjectFeaturesDraft, anchor: string): string | null {
 	const id = refOf(anchor);
 	if (kindOf(anchor) !== 'core' || !draft.cores.some((c) => c.id === id)) return 'This core feature is no longer in the specification.';
 	const held = draft.features.filter((f) => f.coreId === id).length + draft.families.filter((f) => f.coreId === id).length;
-	return held > 0 ? 'It still holds features: move or delete them first, on the Features page.' : null;
+	return held > 0 ? CORE_HOLDS_FEATURES : null;
 }
 
 export function deleteCore(draft: ProjectFeaturesDraft, anchor: string): ProjectFeaturesDraft | null {

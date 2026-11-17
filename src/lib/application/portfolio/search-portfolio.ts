@@ -4,8 +4,13 @@ import type {
 	PortfolioRepositoryPort,
 	ProjectCatalogPort,
 } from '$application/ports';
-import { scopeToWorkspace } from '$application/portfolio/scope-to-workspace';
-import { isProjectVisible, type ProjectVisibility } from '$application/portfolio/project-visibility';
+import { placeInWorkspaces } from '$application/portfolio/scope-to-workspace';
+import {
+	isProjectVisible,
+	visibilityIn,
+	workspaceIdsOf,
+	type CallerReach,
+} from '$application/portfolio/project-visibility';
 import type { LoadFeaturesDraftUseCase } from '../specification/load-features-draft';
 import type { LoadTeamUseCase } from '../collaboration/load-team';
 
@@ -45,31 +50,17 @@ export class SearchPortfolioUseCase {
 	) {}
 
 	/**
-	 * @param allowedWorkspaceIds when non-null, only search projects mirrored to a
-	 *   workspace the caller belongs to (multi-tenant isolation); null searches
-	 *   everything (auth-off / MAP).
-	 * @param allowedDomainIds domain-scope breadth; null = blanket (no restriction).
-	 * @param collaboratorEmail when restricted, also include projects the caller
-	 *   collaborates on (per-project grants) — the same union as the portfolio.
+	 * @param reach what the caller reaches, workspace by workspace; null searches
+	 *   everything (auth-off / single operator). Under a reach, only projects of
+	 *   the caller's workspaces, each judged by their breadth in ITS workspace
+	 *   (domain breadth ∪ collaborations), the same rule as the portfolio.
 	 */
-	async execute(
-		query: string,
-		allowedWorkspaceIds: ReadonlySet<string> | null = null,
-		allowedDomainIds: ReadonlySet<string> | null = null,
-		collaboratorEmail: string | null = null,
-	): Promise<SearchResult[]> {
+	async execute(query: string, reach: CallerReach | null = null): Promise<SearchResult[]> {
 		const q = query.trim().toLowerCase();
 		if (q.length < 2) return [];
 
-		const workspaceScoped = await scopeToWorkspace(
-			await this.catalog.list(),
-			allowedWorkspaceIds,
-			this.backLinks,
-		);
-		const projects = await this.#scopeToVisible(workspaceScoped, {
-			allowedDomainIds,
-			email: collaboratorEmail,
-		});
+		const placed = await placeInWorkspaces(await this.catalog.list(), workspaceIdsOf(reach), this.backLinks);
+		const projects = await this.#scopeToVisible(placed, reach);
 
 		const projectHits: SearchResult[] = projects
 			.filter((p) => p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q))
@@ -109,20 +100,22 @@ export class SearchPortfolioUseCase {
 		return [...dedupe(projectHits).slice(0, 8), ...dedupe(featureHits).slice(0, 12)];
 	}
 
-	/** Keep only projects visible under the caller's domain breadth ∪ collaborations. */
+	/** Keep only projects visible under the caller's breadth in their own workspace ∪ collaborations. */
 	async #scopeToVisible<T extends { readonly id: string }>(
-		items: readonly T[],
-		visibility: ProjectVisibility,
+		placed: readonly { readonly item: T; readonly workspaceId: string | null }[],
+		reach: CallerReach | null,
 	): Promise<T[]> {
-		if (visibility.allowedDomainIds === null) return [...items];
+		if (reach === null) return placed.map((p) => p.item);
 		const keep = await Promise.all(
-			items.map(async (item) => {
+			placed.map(async ({ item, workspaceId }) => {
+				const visibility = visibilityIn(reach, workspaceId);
+				if (visibility.allowedDomainIds === null) return true;
 				const meta = await this.portfolio.getMeta(item.id).catch(() => null);
 				return isProjectVisible(item.id, meta?.domainId ?? null, visibility, (id) =>
 					this.loadTeam.execute(id),
 				);
 			}),
 		);
-		return items.filter((_, i) => keep[i]);
+		return placed.filter((_, i) => keep[i]).map((p) => p.item);
 	}
 }

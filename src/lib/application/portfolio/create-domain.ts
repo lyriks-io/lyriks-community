@@ -9,14 +9,16 @@ export class CreateDomainUseCase {
 		private readonly randomSuffix: () => string = () => crypto.randomUUID().slice(0, 6)
 	) {}
 
-	async execute(name: string, description = '', icon = 'lucide:building-2'): Promise<Domain> {
+	/** `workspaceId` is the workspace the folder belongs to (null without workspaces). */
+	async execute(name: string, description = '', icon = 'lucide:building-2', workspaceId: string | null = null): Promise<Domain> {
 		const clean = name.trim() || 'Untitled domain';
 		const domain: Domain = {
 			id: makeDomainId(clean, this.randomSuffix()),
 			name: clean,
 			description: description.trim(),
 			icon: icon.trim() || 'lucide:building-2',
-			createdAt: this.clock.nowIso()
+			createdAt: this.clock.nowIso(),
+			workspaceId
 		};
 		await this.repo.saveDomain(domain);
 		return domain;

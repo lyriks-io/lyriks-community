@@ -101,3 +101,27 @@ export function surfaceCapabilities(
 ): DerivedCapability[] {
 	return [...screenCapabilities(experience), ...featureSurfaceCapabilities(leaves)];
 }
+
+/**
+ * The features a granted page or surface opens, by the matrix row's id
+ * (criterion 02a56f3c): a surface of a feature opens that feature, a page of
+ * the product opens the features of the Core it is grouped under. The matrix
+ * groups page access by Core, so a role granted a page of a Core reaches the
+ * features the Core holds; reading such a feature as granted to nobody would
+ * blame the matrix for a right it does give.
+ */
+export function featuresReachedByGrants(
+	features: readonly { readonly id: string; readonly coreId: string }[],
+	experience: ProjectExperienceDraft | null,
+	leaves: readonly LeafSnapshot[]
+): Record<string, string[]> {
+	const reach: Record<string, string[]> = {};
+	for (const surface of featureSurfaceCapabilities(leaves)) reach[surface.id] = [surface.sourceRefId];
+	const byCore = new Map<string, string[]>();
+	for (const feature of features) if (feature.coreId) byCore.set(feature.coreId, [...(byCore.get(feature.coreId) ?? []), feature.id]);
+	for (const screen of experience?.screens ?? []) {
+		const opened = screen.category ? byCore.get(screen.category) : undefined;
+		if (opened?.length) reach[screenCapabilityId(screen.id)] = opened;
+	}
+	return reach;
+}

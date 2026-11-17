@@ -5,13 +5,14 @@ import { currentRequestWorkspace } from '$lib/server/request-context.server';
 
 const access = vi.hoisted(() => vi.fn(async () => {}));
 const ownership = vi.hoisted(() => ({
-	resolve: vi.fn(async () => 'new-team'),
+	resolve: vi.fn(async () => ({ id: 'new-team', name: 'New team', role: 'designer' })),
 	own: vi.fn(async () => {})
 }));
 vi.mock('$lib/server/project-access.server', () => ({ requireProjectAccess: access }));
 vi.mock('$lib/server/new-project-ownership.server', () => ({
 	resolveOwningWorkspace: ownership.resolve,
-	ownNewProject: ownership.own
+	ownNewProject: ownership.own,
+	VIEWER_CREATION_REFUSAL: 'Only an owner, admin or designer of the workspace can create a project.'
 }));
 
 const { POST } = await import('./+server');
@@ -79,5 +80,15 @@ describe('project restore access and ownership', () => {
 		expect(h.writes).toEqual(['new-team']);
 		expect(ownership.own).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'target', 'project.import');
 		expect(h.mirror).toHaveBeenCalledWith('target');
+	});
+
+	it('refuses a viewer of the owning workspace a new project, as creating one does [unspa:b07d5221:5583b274:fd240a21]', async () => {
+		ownership.resolve.mockImplementationOnce(async () => ({ id: 'new-team', name: 'New team', role: 'viewer' }));
+		const h = harness({ existing: false });
+		await expect(h.run()).rejects.toSatisfy(
+			(e: unknown) => isHttpError(e) && e.status === 403 && e.body.message === 'Only an owner, admin or designer of the workspace can create a project.'
+		);
+		expect(h.writes).toEqual([]);
+		expect(ownership.own).not.toHaveBeenCalled();
 	});
 });

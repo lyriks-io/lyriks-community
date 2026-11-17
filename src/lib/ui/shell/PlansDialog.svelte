@@ -6,9 +6,10 @@
 	// The four offers of Lyriks (EVO-001), the workspace's own one marked. Their
 	// prices are not settled: a paid plan shows no figure and points to the
 	// plans page, linked only where the installation allows links out
-	// (criterion b4538030). Moving to another plan is a licence change: the
-	// activation page takes the key, told which plan was asked so it can say
-	// where that key comes from.
+	// (criterion b4538030). Moving to another plan takes a key, entered on the
+	// activation page (told which plan was asked so it can say where that key
+	// comes from), and a change of the installation's configuration: the key
+	// alone does not move the plan.
 	let { current, onclose }: { current: Plan; onclose: () => void } = $props();
 	const online = $derived(!!page.data.onlineHelp);
 </script>
@@ -55,5 +56,12 @@
 				</div>
 			{/each}
 		</div>
+		<!-- Plans and keys do not share a vocabulary: four offers, two key editions.
+		     Said here so Switch to <plan> promises nothing a key alone does not do (issues.238, issues.332). -->
+		<p class="m-0 text-[0.8125rem] leading-[1.5] text-ink-2" data-plans-switch-note>
+			Plans are named as on lyriks.io/pricing; a licence key grants one of two editions, Community or Enterprise.
+			Switching plan takes a key for that plan, entered on the activation page, and a change of this
+			installation's configuration by whoever runs it: the key alone does not change which pages it opens.
+		</p>
 	</div>
 </div>

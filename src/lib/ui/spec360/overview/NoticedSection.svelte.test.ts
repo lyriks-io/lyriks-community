@@ -121,3 +121,27 @@ describe("while several points are picked, a point's own Reject and New change c
 		}
 	});
 });
+
+describe('Health tells where each problem lies and lists the fixes to confirm apart [criteria:c86ea441,2a55c3e7]', () => {
+	const render1 = (open: Finding[], toConfirm: Finding[] = []) =>
+		render(NoticedSection, {
+			props: { view: noticedView({ open, kept: [], toConfirm, requests: [], projectId: 'p' }), decisions: new FindingDecisions('p', {} as SpecEdits), writable: true, onOpen: () => {} }
+		}).body;
+
+	it('offers Everywhere and the three origins beside the severity, each with its count', () => {
+		const body = render1([{ ...point('a', 'Missing rule'), origin: 'product' }, { ...point('b', 'Missing rule'), origin: 'records' }, point('c', 'Missing rule')]);
+		expect(body).toContain('aria-label="Narrow the points by where the problem lies"');
+		for (const label of ['Everywhere', 'In the product', 'In the specification', "In Lyriks's records"]) expect(body).toContain(label);
+	});
+
+	it('lists a fix apart under Fix to confirm, with its note, Confirm the fix and Reopen, and counts it nowhere', () => {
+		const fix: Finding = { ...point('f', 'Ambiguity', 'major'), id: 'issue:f', gapIds: undefined, fix: { issueId: 'f', note: 'Fixed: the page now refuses it.' }, origin: 'product' };
+		const body = render1([point('a', 'Missing rule')], [fix]);
+		expect(body).toContain('Fix to confirm');
+		expect(body).toContain('1 fix to confirm');
+		expect(body).toContain('Fixed: the page now refuses it.');
+		expect(body).toContain('>Confirm the fix<');
+		expect(body).toContain('>Reopen<');
+		expect(body).toContain('to review, of 1');
+	});
+});

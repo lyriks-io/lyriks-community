@@ -5,6 +5,7 @@ import NoticedSummary from './NoticedSummary.svelte';
 
 const summary = (over: Partial<Summary> = {}): Summary => ({
 	total: 300,
+	toConfirm: 0,
 	pending: 271,
 	settled: 29,
 	major: 3,
@@ -37,5 +38,14 @@ describe('the Overview sums up What Lyriks noticed, whose list has a page of its
 	it('names the button after what is left: one point, or every point once all are settled', () => {
 		expect(html(summary({ pending: 1, settled: 299 }))).toContain('Review the point<');
 		expect(html(summary({ pending: 0, settled: 300, major: 0, minor: 0 }))).toContain('See the 300 points');
+	});
+});
+
+describe('the fixes waiting for confirmation are counted apart [criterion:e75b8909]', () => {
+	it('reads N fixes to confirm on a line of its own that opens Health on them, and none when there is none', () => {
+		const body = html(summary({ toConfirm: 3 }));
+		expect(body).toContain('3 fixes to confirm');
+		expect(body).toContain('href="/projects/p/spec/noticed?type=fix-to-confirm"');
+		expect(html(summary())).not.toContain('to confirm');
 	});
 });

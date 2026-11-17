@@ -140,6 +140,7 @@
 		onNew={() => (creating = true)}
 		onOpenLine={(href) => goto(href)}
 		onStart={startSuggestion}
+		roadmapHref="{base}?tab=roadmap"
 	/>
 {/if}
 

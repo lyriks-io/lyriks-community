@@ -85,7 +85,7 @@ export const CAPABILITIES: Capability[] = [
 	{
 		id: 'features',
 		title: 'Features',
-		subtitle: 'Tree, roadmap & work queue',
+		subtitle: 'Tree & work queue',
 		icon: 'grid',
 		tier: 'oss',
 		status: 'built',

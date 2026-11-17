@@ -14,6 +14,16 @@ export interface ApprovalItem {
 	status: ApprovalStatus;
 	deadline: string;
 	note: string;
+	/** Who last moved the status, stamped by the server from the session; null while it never moved. */
+	readonly decidedBy: ApprovalDecider | null;
+	/** When the status last moved, stamped by the server. */
+	readonly decidedAt: string | null;
+}
+
+/** The person a status change is recorded against: the session's, never a name the caller typed. */
+export interface ApprovalDecider {
+	readonly id: string;
+	readonly name: string;
 }
 
 export interface ProjectApprovalsDraft {
@@ -35,6 +45,8 @@ export function createApprovalItem(overrides: Partial<ApprovalItem> = {}): Appro
 		status: 'draft',
 		deadline: '',
 		note: '',
+		decidedBy: null,
+		decidedAt: null,
 		...overrides
 	};
 }

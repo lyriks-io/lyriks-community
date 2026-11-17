@@ -16,6 +16,6 @@ export const POST: RequestHandler = async (event) => {
 	const ids = Array.isArray(body?.ids) ? body.ids.filter((id): id is string => typeof id === 'string' && id !== '') : [];
 	if (ids.length === 0) error(400, 'Send { ids: string[] }.');
 	const services = event.locals.services;
-	const reader = await discussionAuthor(services, event.cookies);
+	const reader = await discussionAuthor(services, projectId, event.cookies);
 	return json({ seen: await markSpecSeen(services, projectId, reader.email, ids, new Date().toISOString()) });
 };

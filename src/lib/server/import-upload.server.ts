@@ -14,8 +14,10 @@ export interface UploadOptions {
 }
 
 /**
- * Accept both shapes a client may send: a browser form post (multipart, from the
- * import drop-zone) and a raw zip body (curl, scripts, the appliance CLI).
+ * Accept both shapes a client may send: a form post (multipart, a "file" part)
+ * and a raw zip body (curl, scripts, the appliance CLI). No page uploads an
+ * archive: bringing a project in is a door of the API only, beside the
+ * Duplicate and Export (.zip) of the Projects panel (criterion 16da8252).
  */
 export async function readUpload(
 	request: Request,

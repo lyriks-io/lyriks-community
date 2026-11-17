@@ -33,7 +33,7 @@ export const load: LayoutServerLoad = async (event) => {
 	depends(projectSyncKey(params.projectId));
 	const services = event.locals.services;
 	const frame = readSpecFrame(services, params.projectId);
-	const author = discussionAuthor(services, cookies);
+	const author = discussionAuthor(services, params.projectId, cookies);
 	// The validation needs only the product's name and the reader, what this reader opened since only the
 	// reader: each starts as soon as they are known, beside the other reads rather than after them all.
 	const validationRead = Promise.all([frame, author]).then(([spec, me]) =>
@@ -44,7 +44,7 @@ export const load: LayoutServerLoad = async (event) => {
 		timedPart('spec:frame', frame),
 		timedPart('spec:author', author),
 		timedPart('spec:roster', discussionRoster(services, params.projectId, cookies)),
-		timedPart('spec:canWrite', callerCanWrite(event)),
+		timedPart('spec:canWrite', callerCanWrite(event, params.projectId)),
 		timedPart('spec:features', services.loadFeaturesDraft.execute(params.projectId)),
 		// Each block's own sources; who cites a source is read by the Sources page alone.
 		timedPart('spec:sources', readSpecSources(services, params.projectId).then(sourcesIndex)),

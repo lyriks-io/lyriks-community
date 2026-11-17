@@ -24,6 +24,9 @@ function mcpTool(name) {
 	return cut > 0 ? { server: rest.slice(0, cut), tool: rest.slice(cut + 2) } : null;
 }
 
+/** A Lyriks server holds lyriks anywhere in its name, whatever the case: the one rule both Lyriks hooks use. */
+const isLyriksServer = (server) => /lyriks/i.test(server);
+
 function readStdin() {
 	try {
 		return readFileSync(0, 'utf8');
@@ -41,7 +44,7 @@ function main() {
 		return;
 	}
 	const call = mcpTool(payload.tool_name);
-	if (!call || !/lyriks/i.test(call.server) || ASKED.has(call.tool)) return;
+	if (!call || !isLyriksServer(call.server) || ASKED.has(call.tool)) return;
 	process.stdout.write(
 		JSON.stringify({
 			hookSpecificOutput: {

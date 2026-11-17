@@ -12,6 +12,7 @@ import { parseRulesDraft } from '$application/specification/parse-rules-draft';
 import { parseScopeDraft } from '$application/specification/parse-scope-draft';
 import { parseUsersWrite, type UsersWrite } from '$application/specification/parse-users-draft';
 import { capabilityRegistry, reviewCapabilityReferences, withCarriedGrants } from '$application/specification/capability-registry';
+import { roleUses } from '$application/spec360/role-uses';
 import { assertSectionDraftValid } from '$lib/server/section-authoring-validation.server';
 import type { SectionSaveSpec } from '$lib/server/section-save.server';
 import type { AppServices } from '$composition/container.server';
@@ -94,7 +95,31 @@ async function assertRoleValuesDeclared(draft: UsersWrite['draft'], services: Ap
 	if (issues.length) error(400, `invalid_role_value: ${issues.map((i) => `${i.path} ${i.message}`).join('; ')}`);
 }
 
+/**
+ * A profile the write leaves out goes with its accesses, but never while a
+ * journey or a symptom of the problem still names it: those would point at no
+ * one. Refused with the reason the page's own delete gives (criterion 7ae690d2
+ * of feat-access-matrix). Its accesses are in the part written, so they never
+ * hold it back here.
+ */
+async function assertRemovedProfilesUnused(draft: UsersWrite['draft'], services: AppServices, projectId: string) {
+	const stored = await services.loadUsersDraft.execute(projectId);
+	const kept = new Set(draft.roles.map((role) => role.id));
+	const removed = (stored?.roles ?? []).filter((role) => !kept.has(role.id));
+	if (removed.length === 0) return;
+	const [features, experience, definition] = await Promise.all([
+		services.loadFeaturesDraft.execute(projectId),
+		services.loadExperienceDraft.execute(projectId),
+		services.loadFoundationDraft.loadDefinition(projectId)
+	]);
+	for (const role of removed) {
+		const used = roleUses(role.id, { users: draft, features, experience, definition });
+		if (used.summary) error(400, `Cannot remove ${role.name.trim() || role.id}. ${used.summary}: change those first.`);
+	}
+}
+
 async function persistUsers(draft: UsersWrite['draft'], services: AppServices, projectId: string) {
+	await assertRemovedProfilesUnused(draft, services, projectId);
 	await assertRoleValuesDeclared(draft, services, projectId);
 	if (!draft.permissions.length) return services.saveUsersDraft.execute(draft);
 	const derived = await services.refreshDerivedCapabilities.execute(projectId);

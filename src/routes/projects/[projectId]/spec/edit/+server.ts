@@ -11,8 +11,9 @@ import type { RequestHandler } from './$types';
  * `{ op: 'add_core', id? }` or `{ op: 'delete', anchor }` (`id`: the UUID the page
  * minted to show the new element at once); and, draft or validated, a point Lyriks
  * noticed rejected or put back to review: `{ op: 'keep_finding' | 'reopen_finding',
- * issueId }`. Answers `{ ok, anchor }`, the anchor of what was added; a refused
- * change answers 400 with its reason.
+ * issueId }`, and a fix waiting for confirmation confirmed or reopened:
+ * `{ op: 'confirm_fix' | 'reopen_fix', issueId }`. Answers `{ ok, anchor }`, the
+ * anchor of what was added; a refused change answers 400 with its reason.
  */
 export const POST: RequestHandler = async (event) => {
 	const { projectId } = event.params;
@@ -21,7 +22,7 @@ export const POST: RequestHandler = async (event) => {
 	if (!(await services.projectExists(projectId))) error(404, 'Project not found');
 	const parsed = parseSpecEdit(await event.request.json().catch(() => null));
 	if (!parsed.ok) error(400, parsed.reason);
-	const actor = await retrospecActor(services, event.cookies);
+	const actor = await retrospecActor(services, projectId, event.cookies);
 	const { anchor } = await applySpecEdit(services, projectId, parsed.request, actor, event.request.headers.get('x-lyriks-client'));
 	return json({ ok: true, anchor });
 };

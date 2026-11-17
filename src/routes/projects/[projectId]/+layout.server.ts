@@ -14,6 +14,7 @@ import { requireProjectAccess } from '$lib/server/project-access.server';
 import { callerCanWrite } from '$lib/server/writer-gate.server';
 import { projectSyncKey } from '$lib/shared/section-sync';
 import { rememberCurrentProject } from '$lib/server/app-chrome.server';
+import { callerRoleInProjectWorkspace } from '$lib/server/caller-workspace.server';
 import type { LayoutServerLoad } from './$types';
 
 /**
@@ -34,10 +35,10 @@ export const load: LayoutServerLoad = async (event) => {
 	await requireProjectAccess(event, params.projectId, 'read');
 	// The app bar keeps pointing at this project from Home and Settings.
 	rememberCurrentProject(event.cookies, params.projectId);
-	// Whether the caller may author here (designer and above). The embedded
-	// behavior editor is only offered to writers; the server refuses a reader
-	// on /behavior anyway, this keeps the tab honest instead of framing a 403.
-	const canWrite = await timedPart('project:canWrite', callerCanWrite(event));
+	// Whether the caller may author here: designer and above in the workspace that
+	// owns the project, never the switcher's. The behavior editor is offered to
+	// writers alone; the server refuses a reader, this keeps the tab honest.
+	const canWrite = await timedPart('project:canWrite', callerCanWrite(event, params.projectId));
 	const services = event.locals.services;
 
 	// Read once, shared: the language reading checks its prose without a second read.
@@ -104,12 +105,11 @@ export const load: LayoutServerLoad = async (event) => {
 	});
 
 	// Whether the reader may change the project's options, so the left nav shows
-	// Settings to them alone (ac-proj-settings): their role in the active workspace
-	// (no workspace in the open-source build) or their ownership of the project.
-	const workspaces = await timedPart('project:workspaces', services.workspaces.listForCaller().catch(() => []));
-	const activeWorkspaceId = event.cookies.get('lyriks_active_ws');
-	const activeWorkspace = (activeWorkspaceId && workspaces.find((w) => w.id === activeWorkspaceId)) || workspaces[0];
-	const administers = administersProject(activeWorkspace?.role, team, services.currentSession().email);
+	// Settings to them alone (ac-proj-settings): their role in the workspace that
+	// owns the project, never the one the switcher shows (no workspace in the
+	// open-source build), or their ownership of the project.
+	const projectRole = await timedPart('project:role', callerRoleInProjectWorkspace(services, params.projectId));
+	const administers = administersProject(projectRole, team, services.currentSession().email);
 
 	const featureMaturity = productCoherence.featureMaturity ?? {};
 	const maturityBreakdown = {

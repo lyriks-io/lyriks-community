@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isProjectVisible, seesEverything, type ProjectVisibility } from './project-visibility';
+import { foldersIn, isProjectVisible, seesEverything, type ProjectVisibility } from './project-visibility';
 import { emptyTeam, type Collaborator, type Team } from '$domain/team';
 
 function teamWith(email: string): Team {
@@ -68,5 +68,27 @@ describe('isProjectVisible', () => {
 			throw new Error('back down');
 		};
 		expect(await isProjectVisible('p1', 'd2', v, boom)).toBe(false);
+	});
+});
+
+describe('foldersIn reads breadth in the project\'s own workspace (issue 150)', () => {
+	const reach = {
+		workspaces: new Map([
+			['mine', { role: 'owner', folders: null }],
+			['team', { role: 'designer', folders: new Set(['d1']) }]
+		]),
+		activeId: 'mine',
+		email: 'ada@co.com'
+	};
+
+	it('a limit in the project\'s workspace holds whatever workspace is active [rule:4e30bdda]', () => {
+		expect(foldersIn(reach, 'team')).toEqual(new Set(['d1']));
+		expect(foldersIn(reach, 'mine')).toBeNull();
+	});
+
+	it('a workspace the caller is not in reaches nothing; nothing scoped reaches everything', () => {
+		expect(foldersIn(reach, 'other')).toEqual(new Set());
+		expect(foldersIn(reach, null)).toEqual(new Set());
+		expect(foldersIn(null, 'team')).toBeNull();
 	});
 });

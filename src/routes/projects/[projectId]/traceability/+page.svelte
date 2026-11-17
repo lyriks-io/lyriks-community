@@ -188,9 +188,9 @@
 				{/if}
 			{/if}
 		{:else if activeTab === 'baselines'}
-			<BaselinesBoard store={baselines} current={data.baselines.current} />
+			<BaselinesBoard store={baselines} current={data.baselines.current} canWrite={data.canWrite} validationIds={data.baselines.validationIds} />
 		{:else}
-			<ApprovalsBoard store={approvals} />
+			<ApprovalsBoard store={approvals} canWrite={data.canWrite} />
 		{/if}
 	</div>
 </div>

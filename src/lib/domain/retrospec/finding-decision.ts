@@ -40,3 +40,21 @@ export function noteWithoutKeep(note: string): string {
 		.join('\n')
 		.trim();
 }
+
+/**
+ * A fix that waited for confirmation, confirmed or reopened from Health
+ * (criterion 2a55c3e7): the note gains one signed line saying which, so the
+ * register keeps who settled it and when.
+ */
+export function fixConfirmedLine(by: string, at: string): string {
+	return `Fix confirmed by ${by.trim() || 'a project editor'} on ${at.slice(0, 10)}.`;
+}
+
+export function fixReopenedLine(by: string, at: string): string {
+	return `Reopened by ${by.trim() || 'a project editor'} on ${at.slice(0, 10)}.`;
+}
+
+/** The note with one more line under what it already said. */
+export function noteWithLine(note: string, line: string): string {
+	return note.trim() ? `${note.trim()}\n${line}` : line;
+}

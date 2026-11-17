@@ -8,7 +8,7 @@ describe('editing a validated Specification 360° waits for Code drift [criterio
 	});
 
 	it('keeps decisions on noticed points, the operations target and cancelling an earlier hand edit open', () => {
-		for (const op of ['keep_finding', 'reopen_finding', 'set_operations_target', 'cancel_hand_edit']) expect(validatedSpecRefusal(true, op)).toBeNull();
+		for (const op of ['keep_finding', 'reopen_finding', 'confirm_fix', 'reopen_fix', 'set_operations_target', 'cancel_hand_edit']) expect(validatedSpecRefusal(true, op)).toBeNull();
 	});
 
 	it('changes nothing on a draft', () => {

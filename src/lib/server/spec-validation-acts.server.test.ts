@@ -31,6 +31,14 @@ describe('server question review capability', () => {
 		expect(save).toHaveBeenCalledWith(services.sectionDocuments, 'p', [expect.objectContaining({ op: 'validate', itemId: 'stack:a' })], expect.objectContaining({ reviewOnly: true, actor: reviewer, canReview: expect.any(Function) }), null);
 	});
 
+	it('refuses a writer the element does not wait on, and lets them withdraw [criterion:d1703bb6]', async () => {
+		const writer = { id: 'writer@company.test', name: 'Writer' };
+		await expect(applySpecValidationActs(services as never, 'p', [{ op: 'validate', itemId: 'stack:a' }], writer, null, { canWrite: true })).rejects.toMatchObject({ status: 403, body: { message: 'This question does not require your validation.' } });
+		expect(save).not.toHaveBeenCalled();
+		await applySpecValidationActs(services as never, 'p', [{ op: 'withdraw', itemId: 'stack:a' }], writer, null, { canWrite: true });
+		expect(save).toHaveBeenCalled();
+	});
+
 	it('does not turn a reader into a lead when no run exists [criterion:787a9fec]', async () => {
 		useDoc(emptyRetrospecDocument());
 		await expect(submit([{ op: 'validate', itemId: 'stack:a' }])).rejects.toMatchObject({ status: 403 });

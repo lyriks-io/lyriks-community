@@ -1,5 +1,6 @@
 import { error, json } from '@sveltejs/kit';
-import { ownNewProject, resolveOwningWorkspace } from '$lib/server/new-project-ownership.server';
+import { ownNewProject, resolveOwningWorkspace, VIEWER_CREATION_REFUSAL } from '$lib/server/new-project-ownership.server';
+import { writesIn } from '$application/portfolio/project-visibility';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import {
 	currentRequestSession,
@@ -56,10 +57,14 @@ export const POST: RequestHandler = async (event) => {
 					error(403, 'A restore cannot move an existing project to another workspace.');
 				}
 			} else {
-				owningWorkspaceId = await resolveOwningWorkspace(services, locals, options.workspaceId);
+				const owning = await resolveOwningWorkspace(services, locals, { requested: options.workspaceId });
+				// A new project from an archive is a creation: a viewer is told why
+				// before anything is written, as creating a project does (rule fd240a21).
+				if (owning && !writesIn(owning.role)) error(403, VIEWER_CREATION_REFUSAL);
+				owningWorkspaceId = owning?.id ?? null;
 			}
 			const importOwned = async () => {
-				const imported = await write();
+				const imported = await write(owningWorkspaceId);
 				if (!imported.ok) return imported;
 				// An overwrite replaces content, never the existing team or owners.
 				// New ownership is established before another importer gets this lock.

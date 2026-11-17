@@ -28,7 +28,7 @@ export const GET: RequestHandler = async (event) => {
 	await requireProjectAccess(event, projectId, 'read');
 
 	const services = event.locals.services;
-	const view = await loadEvolutionView(services, projectId, { activeWorkspaceId: event.cookies.get('lyriks_active_ws') });
+	const view = await loadEvolutionView(services, projectId);
 	const lookup = findRequestByRef(view.draft.requests.filter((r) => r.status !== 'deleted'), requestRef);
 	if (lookup.kind !== 'found') error(404, `No request "${requestRef}" on this project.`);
 	const request = lookup.request;

@@ -70,11 +70,14 @@ export const actions: Actions = {
 		redirect(303, '/');
 	},
 
+	/** Remove the key in force once the person confirmed; the previous key stays unless they remove it too. */
 	deactivate: async (event) => {
 		requireAdmin(event);
 		const { locals } = event;
 		const actor = locals.session?.email ?? 'operator';
-		await event.locals.services.deactivateLicense.execute(actor);
+		const form = await event.request.formData();
+		const previousToo = form.get('previousToo') === 'on';
+		await event.locals.services.deactivateLicense.execute(actor, { previousToo });
 		return { deactivated: true };
 	}
 };

@@ -24,8 +24,10 @@
 	 * withdrawal (criterion f2eabcd9). What a card still carries (its sources, a hand edit's
 	 * mark, the speech mark of a discussion it held before) sits in its bottom
 	 * right corner. In the Edit mode its text and its list are fields
-	 * (criterion 41514698). On a narrow screen they stack and the arrow turns
-	 * downwards.
+	 * (criterion 41514698), and a card with nothing written yet shows there as
+	 * empty fields, with no validation nor comments until something is saved in
+	 * it (criteria 0bd4f393, ec2b4807). On a narrow screen they stack and the
+	 * arrow turns downwards.
 	 */
 	interface Props {
 		problem: { readonly text: string; readonly tags?: readonly string[] } | null;
@@ -42,6 +44,8 @@
 	// A card is discussed in its frame; a thread it already holds keeps its speech mark, so it stays in reach.
 	const heldThread = (anchor: string) => discussions.tally(anchor).total > 0;
 	const both = $derived(!!problem && !!target);
+	/** A card holds something to validate and discuss once a text or an item of its list is written. */
+	const written = (card: { readonly text: string; readonly tags?: readonly string[] } | null) => !!card && (!!card.text || !!card.tags?.length);
 	// The results the card reads: the names shown (a saved edit at once), each with the values the spec gives it.
 	const results = $derived(resultsOf(target?.tags ?? outcomes.map((o) => o.label), outcomes));
 	const CARD = 'flex h-full min-w-0 scroll-mt-36 flex-col gap-3.5 border border-line px-6 pt-[22px] pb-4 max-[760px]:px-4';
@@ -68,7 +72,7 @@
 			{#if edits.editing === 'problem'}
 				<InlineEditor anchor="problem" />
 			{:else}
-				<StagedText anchor="problem" read={problem} field="text" multiline label="Problem" {editable} class={TEXT}>
+				<StagedText anchor="problem" read={problem} field="text" multiline label="Problem" placeholder="What gap does the product close?" {editable} class={TEXT}>
 					{#if problem.text}<p class={TEXT}><GlossaryText text={problem.text} /></p>{/if}
 				</StagedText>
 				<div class="flex flex-col gap-1.5">
@@ -87,8 +91,10 @@
 					</StagedTags>
 				</div>
 			{/if}
-			{@render marks('problem', 'Problems', problem)}
-			<BlockFoot anchor="problem" title="Problems" />
+			{#if written(problem)}
+				{@render marks('problem', 'Problems', problem)}
+				<BlockFoot anchor="problem" title="Problems" />
+			{/if}
 		</article>
 	{/if}
 	{#if both}
@@ -102,7 +108,7 @@
 			{#if edits.editing === 'target'}
 				<InlineEditor anchor="target" />
 			{:else}
-				<StagedText anchor="target" read={target} field="text" multiline label="Target" {editable} class={TEXT}>
+				<StagedText anchor="target" read={target} field="text" multiline label="Target" placeholder="What must the product achieve?" {editable} class={TEXT}>
 					{#if target.text}<p class={TEXT}><GlossaryText text={target.text} /></p>{/if}
 				</StagedText>
 				<div class="flex flex-col gap-1.5">
@@ -125,8 +131,10 @@
 					</StagedTags>
 				</div>
 			{/if}
-			{@render marks('target', 'Objectives', target)}
-			<BlockFoot anchor="target" title="Objectives" />
+			{#if written(target)}
+				{@render marks('target', 'Objectives', target)}
+				<BlockFoot anchor="target" title="Objectives" />
+			{/if}
 		</article>
 	{/if}
 </div>

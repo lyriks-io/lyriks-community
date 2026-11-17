@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createEvolutionRequest, type FindingDraft } from '$domain/evolution';
 import type { Finding } from '$domain/retrospec';
-import { noticedGroups, noticedSummary, noticedTypeKey, noticedView } from './noticed';
+import { ORIGIN_FILTERS, noticedGroups, noticedSummary, noticedTypeKey, noticedView, showsUnder } from './noticed';
 
 const sheet = { kicker: 'PROBLEM SHEET', title: 't', sections: [] };
 const kind = (label: string) => ({ label, meaning: `What ${label} means` });
@@ -139,5 +139,25 @@ describe('several points are composed into one evolution [criterion:3f977777]', 
 			['r-1', 'Settle the findings']
 		]);
 		expect(view.targets.every((t) => t.key.startsWith('EVO-') && t.href.includes('/projects/p/'))).toBe(true);
+	});
+});
+
+describe('a fix waiting for confirmation is no point to review [criterion:2a55c3e7]', () => {
+	it('reads apart, in no count of the list nor of the summary, with neither Reject nor a change', () => {
+		const fix: Finding = { ...issue('f'), decision: undefined, gapIds: undefined, fix: { issueId: 'f', note: 'Fixed.' } };
+		const view = noticedView({ open: [issue('a'), issue('c', 'minor')], kept: [], toConfirm: [fix], requests: [], projectId: 'p' });
+		expect([view.total, view.pending, view.major, view.minor]).toEqual([2, 2, 1, 1]);
+		expect(view.toConfirm.map((p) => [p.finding.id, p.canReject, p.canEvolve])).toEqual([['issue:f', false, false]]);
+		expect(noticedSummary(view)).toMatchObject({ total: 2, pending: 2, toConfirm: 1 });
+	});
+});
+
+describe('the list narrows by where the problem lies [criterion:c86ea441]', () => {
+	it('offers Everywhere and the three origins, a point naming none reading as the specification', () => {
+		expect(ORIGIN_FILTERS.map((o) => o.label)).toEqual(['Everywhere', 'In the product', 'In the specification', "In Lyriks's records"]);
+		const view = noticedView({ open: [{ ...issue('a'), origin: 'product' }, issue('b')], kept: [], requests: [], projectId: 'p' });
+		const [a, b] = view.points;
+		expect([showsUnder(a, 'product'), showsUnder(a, 'specification'), showsUnder(a, 'all')]).toEqual([true, false, true]);
+		expect([showsUnder(b, 'specification'), showsUnder(b, 'records')]).toEqual([true, false]);
 	});
 });

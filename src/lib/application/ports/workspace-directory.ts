@@ -26,8 +26,11 @@ export interface WorkspaceDirectoryPort {
 	/** Workspaces the current caller is a member of (empty if none / disabled). */
 	listForCaller(): Promise<WorkspaceSummary[]>;
 	/**
-	 * Create a workspace owned by the current caller (self-provision). Used only
-	 * for the opt-in auto-workspace bootstrap; returns null on failure / disabled.
+	 * Create a workspace owned by the current caller: founded from Home, or the
+	 * opt-in auto-workspace bootstrap. Returns null on failure / disabled, and
+	 * throws a BackHttpError with status 403 when the team server refuses the
+	 * founder (only an administrator founds one, no seat left), its message
+	 * saying why.
 	 */
 	createForCaller(name: string): Promise<WorkspaceSummary | null>;
 	/**

@@ -225,6 +225,7 @@ export class SpecValidation {
 		for (const act of acts) {
 			if (['validate', 'withdraw', 'reject', 'publish'].includes(act.op) && !this.draft) return 'The specification is already validated.';
 			if ('itemId' in act && !this.element(act.itemId)) return 'This element is no longer in the specification. Reload the page.';
+			if (act.op === 'validate' && !this.canReview(act.itemId)) return 'This question does not require your validation.';
 			if (act.op === 'publish' && !this.board.complete) return 'Validate every element before validating the specification definitively.';
 			if (act.op === 'remind' && !this.standing(act.itemId)?.missing.some((person) => samePersonRef(person, act.to))) return 'This person no longer has to validate this element.';
 		}

@@ -21,8 +21,15 @@ export const REORDER_OUTSIDE_LIST = 'A folder is dropped among the folders';
 export class ReorderDomainsUseCase {
 	constructor(private readonly repo: PortfolioRepositoryPort) {}
 
-	async execute(ids: readonly string[]): Promise<ReorderDomainsResult> {
-		const known = new Set((await this.repo.listDomains()).map((d) => d.id));
+	/**
+	 * @param workspaceIds the caller's workspaces, whose folders the order names
+	 *   (another team's folders are never theirs to place, issue 156); null names
+	 *   every folder (an installation with nothing to scope).
+	 */
+	async execute(ids: readonly string[], workspaceIds: ReadonlySet<string> | null = null): Promise<ReorderDomainsResult> {
+		const domains = await this.repo.listDomains();
+		const theirs = workspaceIds === null ? domains : domains.filter((d) => !!d.workspaceId && workspaceIds.has(d.workspaceId));
+		const known = new Set(theirs.map((d) => d.id));
 		const sent = new Set(ids);
 		const sameFolders = sent.size === ids.length && sent.size === known.size && ids.every((id) => known.has(id));
 		if (!sameFolders) return { reordered: false, reason: REORDER_OUTSIDE_LIST };

@@ -102,13 +102,14 @@ export const POST: RequestHandler = async (event) => {
 		case 'flag_conflict': {
 			const summary = typeof body.summary === 'string' ? body.summary : '';
 			if (!summary) error(400, 'summary is required');
+			// A disagreement has two sides at least; the engine refuses fewer, so say it here in Lyriks' words.
+			const statements = Array.isArray(body.statements) ? (body.statements as FlagConflictInput['statements']) : [];
+			if (statements.length < 2) error(400, 'statements must name at least two sources, each with what it claims');
 			return adoptionJson(
 				await adoption.flagConflict({
 					featureId,
 					summary,
-					...(Array.isArray(body.statements)
-						? { statements: body.statements as FlagConflictInput['statements'] }
-						: {}),
+					statements,
 					...(Array.isArray(body.affectedElements)
 						? { affectedElements: body.affectedElements as string[] }
 						: {})

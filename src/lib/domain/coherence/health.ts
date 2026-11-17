@@ -1,6 +1,7 @@
 import type { Gap } from './draft';
 import type { GapSeverity } from './enums';
 import { coherenceHeadline, type CoherenceHeadline } from './headline';
+import { effectivePenalties } from './incoherence';
 
 /**
  * Project health (feat-health-scores, criteria 799e1f5b and 08324382): ONE
@@ -58,6 +59,12 @@ export interface ProjectHealth {
 	readonly headline: CoherenceHeadline;
 	/** Every open point, the coherence gaps first, then the audit and the code. */
 	readonly points: readonly Gap[];
+	/**
+	 * The issues of the rules register whose fix waits for confirmation: listed
+	 * apart, in no count of the headline and weighing nothing (criterion
+	 * 2a55c3e7). Absent on a reading kept from before they were told apart.
+	 */
+	readonly toConfirm?: readonly Gap[];
 	readonly codeLinked: boolean;
 	/** The reading was taken before the formal proof of the current specification landed (criterion 5785c1fb). */
 	readonly proofPending?: boolean;
@@ -69,6 +76,16 @@ export interface ProjectHealth {
  * their own.
  */
 const RESTATED_AUDIT_CODES = new Set(['coherence-not-ready']);
+
+/**
+ * The audit issue that is Lyriks's bookkeeping, not a gap of the project: the
+ * coverage audit was last run before the project changed. It still blocks the
+ * finish (the completion gate wants a fresh audit), but on the health it is a
+ * low point that never blocks: nothing is known to be wrong in the product.
+ */
+const AUDIT_STALE = 'audit-stale';
+export const AUDIT_STALE_MEANING =
+	"The coverage audit was last run before the project changed, so its verdict no longer speaks for the project as it stands. Nothing is known to be wrong in the product: Lyriks's own records are behind. It never blocks the health; finishing the project still needs a fresh audit.";
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
@@ -87,15 +104,17 @@ export function auditPoints(issues: readonly HealthAuditIssue[]): Gap[] {
 	return issues
 		.filter((issue) => !RESTATED_AUDIT_CODES.has(issue.code))
 		.map((issue, i) => {
-			const severity: GapSeverity = issue.severity === 'blocking' ? 'high' : 'medium';
+			const stale = issue.code === AUDIT_STALE;
+			const severity: GapSeverity = stale ? 'low' : issue.severity === 'blocking' ? 'high' : 'medium';
 			return point({
 				id: `audit:${issue.code}:${issue.path}:${i}`,
 				severity,
-				blocking: issue.severity === 'blocking',
+				blocking: !stale && issue.severity === 'blocking',
 				title: issue.message,
 				detail: issue.message,
-				kindLabel: 'Completeness',
-				kindMeaning: COMPLETENESS_MEANING,
+				...(stale
+					? { kindLabel: 'Audit out of date', kindMeaning: AUDIT_STALE_MEANING, action: 'Ask your AI to run the coverage audit again' }
+					: { kindLabel: 'Completeness', kindMeaning: COMPLETENESS_MEANING }),
 				sourceStep: issue.path.split('.')[0] || 'scope',
 				checkId: `audit.${issue.code}`,
 				cause: `audit:${issue.code}:${issue.path}`
@@ -203,10 +222,27 @@ export function codePoints(facts: Pick<HealthFacts, 'codeLinked' | 'features' | 
 	return out;
 }
 
-/** The one health score and every point it is computed from. */
+/**
+ * The one health score and every point it is computed from. An issue whose fix
+ * waits for confirmation is no point: it reads apart and weighs nothing until
+ * someone confirms or reopens it (criterion 2a55c3e7).
+ */
 export function projectHealth(facts: HealthFacts): ProjectHealth {
-	const points = [...facts.gaps, ...auditPoints(facts.audit), ...codePoints(facts)];
-	return { headline: coherenceHeadline(points), points, codeLinked: facts.codeLinked };
+	const toConfirm = facts.gaps.filter((g) => g.fixToConfirm);
+	const points = [...facts.gaps.filter((g) => !g.fixToConfirm), ...auditPoints(facts.audit), ...codePoints(facts)];
+	return { headline: coherenceHeadline(points), points, toConfirm, codeLinked: facts.codeLinked };
+}
+
+/**
+ * The points in the order they cost the health: what blocks first, then the
+ * heaviest, a cause counted once (its other gaps cost nothing and come after).
+ */
+export function pointsByCost(points: readonly Gap[]): Gap[] {
+	const penalties = effectivePenalties(points);
+	return points
+		.map((gap, i) => ({ gap, cost: penalties[i] }))
+		.sort((a, b) => Number(b.gap.blocking) - Number(a.gap.blocking) || b.cost - a.cost || a.gap.id.localeCompare(b.gap.id))
+		.map((p) => p.gap);
 }
 
 /** The coverage row of one feature, as the implementation-coverage read keeps it. */
@@ -241,8 +277,9 @@ const READ_POINTS = 50;
 
 /**
  * The project health as an AI client reads it (criterion 7ae9b322): the same
- * score, word and counts the Overview shows, with the first points and how
- * many there are in all.
+ * score, word and counts the Overview shows, with the first points (the ones
+ * that cost the health most first, criteria 96a3bc62 and 9eef1d63), how many
+ * there are in all and how many fixes wait for confirmation.
  */
 export function healthReading(health: ProjectHealth) {
 	const { score, verdict, blocking, total } = health.headline;
@@ -252,7 +289,7 @@ export function healthReading(health: ProjectHealth) {
 		blocking,
 		total,
 		codeLinked: health.codeLinked,
-		points: health.points.slice(0, READ_POINTS).map((p) => ({
+		points: pointsByCost(health.points).slice(0, READ_POINTS).map((p) => ({
 			id: p.id,
 			title: p.title,
 			severity: p.severity,
@@ -260,6 +297,7 @@ export function healthReading(health: ProjectHealth) {
 			kindLabel: p.kindLabel ?? 'Coherence',
 			...(p.featureRef ? { featureRef: p.featureRef } : {})
 		})),
-		pointsTotal: health.points.length
+		pointsTotal: health.points.length,
+		fixesToConfirm: health.toConfirm?.length ?? 0
 	};
 }

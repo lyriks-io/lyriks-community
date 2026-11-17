@@ -36,11 +36,15 @@ vi.mock('./evolution-actor.server', () => ({ resolveRole: async () => 'admin' })
 
 const { loadEvolutionTab } = await import('./evolution-tab.server');
 
+/** The team server's record of where a project is registered; `backLinks` registers it nowhere. */
+const owned = (workspaceId: string | null) => ({ find: async () => (workspaceId ? { backWorkspaceId: workspaceId } : null) });
+const backLinks = owned(null);
+
 describe('loadEvolutionTab', () => {
 	beforeEach(() => impactPart.mockClear());
 
 	it('writes the three impact readings in the language the spec is written in', async () => {
-		const services = { currentSession: () => ({ email: 'a@b.c' }), resolveActiveMemberName: { execute: async () => 'Ana' } } as never;
+		const services = { currentSession: () => ({ email: 'a@b.c' }), backLinks, resolveActiveMemberName: { execute: async () => 'Ana' } } as never;
 		const cookies = { get: () => undefined } as never;
 		const tab = await loadEvolutionTab(services, 'p', new URL('http://x/?tab=evolution&request=r1'), cookies);
 		expect(impactPart).toHaveBeenCalledTimes(3);
@@ -49,8 +53,25 @@ describe('loadEvolutionTab', () => {
 	});
 
 	it('names the person acting the way the whole app names them, never by a technical id (ac-evo-form-names)', async () => {
-		const services = { currentSession: () => ({}), resolveActiveMemberName: { execute: async () => 'Alexis' } } as never;
+		const services = { currentSession: () => ({}), backLinks, resolveActiveMemberName: { execute: async () => 'Alexis' } } as never;
 		const tab = await loadEvolutionTab(services, 'p', new URL('http://x/?tab=evolution'), { get: () => undefined } as never);
 		expect(tab.members).toEqual([{ id: 'local-operator', name: 'Alexis', role: 'admin' }]);
+	});
+
+	it('names the person acting as the workspace that owns the project names them, never the switcher\'s', async () => {
+		const execute = vi.fn(async (workspaceId: string | null) => (workspaceId === 'owning' ? 'Alexis' : 'Alex'));
+		const services = { currentSession: () => ({ email: 'a@b.c' }), backLinks: owned('owning'), resolveActiveMemberName: { execute } } as never;
+		const cookies = { get: (name: string) => (name === 'lyriks_active_ws' ? 'active' : undefined) } as never;
+		const tab = await loadEvolutionTab(services, 'p', new URL('http://x/?tab=evolution'), cookies);
+		expect(execute).toHaveBeenCalledWith('owning');
+		expect(tab.members).toEqual([{ id: 'a@b.c', name: 'Alexis', role: 'admin' }]);
+	});
+
+	it('names the person as the active workspace does for a project that belongs to none', async () => {
+		const execute = vi.fn(async (_workspaceId: string | null) => 'Alex');
+		const services = { currentSession: () => ({ email: 'a@b.c' }), backLinks, resolveActiveMemberName: { execute } } as never;
+		const cookies = { get: (name: string) => (name === 'lyriks_active_ws' ? 'active' : undefined) } as never;
+		await loadEvolutionTab(services, 'p', new URL('http://x/?tab=evolution'), cookies);
+		expect(execute).toHaveBeenCalledWith('active');
 	});
 });

@@ -1,4 +1,5 @@
 import type { AppServices } from '$composition/container.server';
+import type { WorkspaceSummary } from '$application/ports';
 import { error } from '@sveltejs/kit';
 import { seedOwnerCollaborator } from './seed-owner-collaborator.server';
 
@@ -13,15 +14,31 @@ import { seedOwnerCollaborator } from './seed-owner-collaborator.server';
  * sequence that must not be re-derived per route.
  */
 
+/** Refusal of rules 029ff8b4 and 9c7b8a91: only a writer of a workspace adds a project to it. */
+export const VIEWER_CREATION_REFUSAL = 'Only an owner, admin or designer of the workspace can create a project.';
+
+/** What names the workspace a new project belongs to, strongest first. */
+export interface OwningWorkspaceHints {
+	/** The workspace the request names (an AI client, the dialog, an import). */
+	readonly requested: string | null;
+	/** The workspace of the folder the project is filed in (the panel's + Project). */
+	readonly folderWorkspaceId?: string | null;
+	/** The workspace the browser pinned with the switcher (issue 108); an AI client pins none. */
+	readonly pinned?: string | null;
+}
+
 /**
  * Resolve the workspace a new project belongs to, validating membership so a
- * caller can never register a project into a team they are not in. Returns null
- * on a standalone (auth-off) install: single trusted tenant, no team to pin.
+ * caller can never register a project into a team they are not in: the one the
+ * request names, else the one of the folder it is filed in, else the one the
+ * switcher pinned, else their only one. Returns null on a standalone (auth-off)
+ * install: single trusted tenant, no team to pin. The caller's role comes with
+ * it, read in that workspace.
  */
 export async function resolveOwningWorkspace(
 	services: AppServices, locals: App.Locals,
-	requestedWorkspaceId: string | null
-): Promise<string | null> {
+	hints: OwningWorkspaceHints
+): Promise<WorkspaceSummary | null> {
 	if (!locals.authRequired) return null;
 	// A single-operator install (auth on, no Back) has no team to pin either.
 	if (!services.identity.multiUser) return null;
@@ -30,13 +47,14 @@ export async function resolveOwningWorkspace(
 	if (teams.length === 0) {
 		error(409, 'You are not a member of any workspace yet. Ask your administrator to invite you to one.');
 	}
-	if (requestedWorkspaceId) {
-		if (!teams.some((t) => t.id === requestedWorkspaceId)) {
-			error(403, 'You are not a member of that workspace.');
-		}
-		return requestedWorkspaceId;
+	const member = (id: string | null | undefined) => (id ? teams.find((t) => t.id === id) : undefined);
+	if (hints.requested) {
+		const requested = member(hints.requested);
+		if (!requested) error(403, 'You are not a member of that workspace.');
+		return requested;
 	}
-	if (teams.length === 1) return teams[0].id;
+	const implied = member(hints.folderWorkspaceId) ?? member(hints.pinned) ?? (teams.length === 1 ? teams[0] : undefined);
+	if (implied) return implied;
 	error(400, 'workspaceId is required when you belong to more than one workspace.');
 }
 

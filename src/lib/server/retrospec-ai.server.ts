@@ -128,16 +128,13 @@ async function peekBody(request: Request, limit = PEEK_LIMIT_BYTES): Promise<{ p
 }
 
 /** Sentence the AI reads when the run under way holds what it finds (criterion 50b00229). */
-export const WRITES_HELD = 'This Reverse-Specification writes nothing until a person validates it on Mismatch: report each difference with report_retrospec_reading (changes).';
-
-/** Computed on the way, never written. */
-const COMPUTED_UNDER_DRAFT = ['/simulate', '/repo-scaffold', '/acceptance-tests'];
+export const WRITES_HELD = 'This Reverse-Specification writes nothing until a person validates its changes on Mismatch and clicks Write the validated changes: report each difference with report_retrospec_reading (changes).';
 
 /** What writes the specification itself: the sources an AI registers and the implementation index are not it. */
 export function writesTheSpecification(url: URL): boolean {
 	const path = url.pathname;
 	if (path === '/api/behavior/apply' || path === '/api/behavior/project') return true;
-	return path.startsWith('/api/draft/') && !path.startsWith('/api/draft/documents') && !COMPUTED_UNDER_DRAFT.some((end) => path.endsWith(end));
+	return path.startsWith('/api/draft/') && !path.startsWith('/api/draft/documents');
 }
 
 async function runHoldsWrites(services: AppServices, projectId: string): Promise<boolean> {

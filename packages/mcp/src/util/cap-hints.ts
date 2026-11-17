@@ -32,10 +32,6 @@ export const CAP_HINTS = {
     text: 'Response capped. Lower limit:<n>, filter with contexts:["behavior"] or kinds:["feature"], search with q:"<label>", or expand one node with focus_node:"<id>" and depth:1, one way only with direction:"in" (what points at it) or direction:"out".',
     args: ['limit', 'contexts', 'kinds', 'q', 'focus_node', 'depth', 'direction'],
   },
-  verify_experience: {
-    text: 'Response capped. The detailed spec-gap list is the usual weight: page it with gap_limit:<n> and gap_offset:<n>, or keep one severity with gap_severity:"critical".',
-    args: ['gap_limit', 'gap_offset', 'gap_severity'],
-  },
   get_behavior_feature: {
     text: 'Response capped. Re-read with summary:true for the table of contents, then surface_id:"<id>" or action_id:"<id>" for one element whole, or paths:["snapshot.feature.events"] for an exact branch. For the index keys of the feature alone, index_keys:true, paged with limit:<n> and offset:<nextOffset> when the feature is huge.',
     args: ['summary', 'surface_id', 'action_id', 'paths', 'index_keys', 'limit', 'offset'],

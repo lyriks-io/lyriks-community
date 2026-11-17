@@ -6,10 +6,10 @@ import { resolveRole } from './evolution-actor.server';
 
 type Caller = Pick<RequestEvent, 'locals' | 'cookies'>;
 
-/** An administrator of the instance, or an owner or admin of the active workspace. */
-async function callerAdministers(event: Caller): Promise<boolean> {
+/** An administrator of the instance, or an owner or admin of the workspace that owns the project. */
+async function callerAdministers(event: Caller, projectId: string): Promise<boolean> {
 	if (isAdmin(event)) return true;
-	const role = await resolveRole(event.locals.services, event.cookies.get('lyriks_active_ws'));
+	const role = await resolveRole(event.locals.services, projectId, event.cookies.get('lyriks_active_ws'));
 	return role === 'owner' || role === 'admin';
 }
 
@@ -19,7 +19,7 @@ async function callerAdministers(event: Caller): Promise<boolean> {
  * leaves the server for them, hidden or not.
  */
 export async function readActionHistory(event: Caller, projectId: string): Promise<HistoryLine[] | null> {
-	if (!(await callerAdministers(event))) return null;
+	if (!(await callerAdministers(event, projectId))) return null;
 	const { doc } = await loadRetrospecDocument(event.locals.services.sectionDocuments, projectId);
 	return historyLines(doc);
 }

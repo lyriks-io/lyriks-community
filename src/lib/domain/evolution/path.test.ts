@@ -226,6 +226,12 @@ describe('the deployment ends the path', () => {
 		expect(live.deployment).toMatchObject({ releaseId: '2026.10-64', declaredBy: 'ana' });
 		expect(readPath(live, { questionsOwed: 0, pendingProposals: 0 }).find((s) => s.current)?.step).toBe('deployment');
 	});
+
+	it('is declared once: a closed request keeps who declared it and when, a deleted one never goes live (issue 85)', () => {
+		const live = ok(declareDeploymentAct(ctxFor(ana), open({ stage: 'delivered' }), { releaseId: '2026.10-64' }));
+		expect(reasonOf(declareDeploymentAct(ctxFor(ana), live, { releaseId: '2026.10-65' }))).toBe('This request is closed.');
+		expect(reasonOf(declareDeploymentAct(ctxFor(ana), open({ stage: 'delivered', status: 'deleted' }), {}))).toBe('This request is deleted.');
+	});
 });
 
 describe('the path opens on the first step not done', () => {

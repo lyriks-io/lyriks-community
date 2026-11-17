@@ -26,9 +26,25 @@ describe('the targets of Operations set in place [criterion:970aca7c]', () => {
 		const operations = createEmptyOperationsDraft(P);
 		operations.quality = { ...operations.quality, availabilityPct: '99.9' };
 		const t = operationsTargets(definition, operations);
-		expect(t.auditLogs).toBe('partial');
+		expect(t.auditLogs).toBeNull();
 		expect(t.performance.actions).toEqual([{ action: 'Search a room', target: '300', unit: 'ms' }]);
 		expect(t.availability.availabilityPct).toBe('99.9');
+	});
+
+	it('reads the audit level once someone answered that very question [issues.232]', () => {
+		const definition = saved();
+		definition.security = { ...definition.security, answered: ['auditLogs'] };
+		expect(operationsTargets(definition, createEmptyOperationsDraft(P)).auditLogs).toBe('partial');
+		const picked = withOperationsTarget(saved(), createEmptyOperationsDraft(P), { target: 'audit-logs', level: 'partial' });
+		expect(operationsTargets(picked.definition!, createEmptyOperationsDraft(P)).auditLogs).toBe('partial');
+	});
+
+	it('answers no audit level by setting a performance or availability target [issues.232]', () => {
+		const perfEdit = withOperationsTarget(saved(), createEmptyOperationsDraft(P), { target: 'performance', values: perf({ latencyP95Ms: '250' }) });
+		expect(perfEdit.definition?.security.answered).toBeUndefined();
+		expect(operationsTargets(perfEdit.definition!, perfEdit.operations!).auditLogs).toBeNull();
+		const availability = withOperationsTarget(saved(), createEmptyOperationsDraft(P), { target: 'availability', values: { availabilityPct: '99.9', errorBudgetPct: '', notes: '' } });
+		expect(operationsTargets(availability.definition!, availability.operations!).auditLogs).toBeNull();
 	});
 
 	it('picks an audit level, None included, and Health reads None instead of hiding the row', () => {

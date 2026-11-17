@@ -123,11 +123,18 @@ export function preservesTeamOwners(current: Team, replacement: Team): boolean {
 
 /**
  * Whether `email` may delete the project. Once an owner is specified on the
- * team, deletion is reserved to the owner(s) — matched by email. A team with
- * no owner yet (empty team, or owner seeding failed) leaves deletion open so
- * a project can never become undeletable.
+ * team, deletion is reserved to the owner(s), matched by email, and to an owner
+ * or admin of the workspace that holds the project (`workspaceRole`), so a
+ * project whose creator left can still be removed (issue 262). A team with no
+ * owner yet (empty team, or owner seeding failed) leaves deletion open so a
+ * project can never become undeletable.
  */
-export function canDeleteProject(team: Team, email: string | null | undefined): boolean {
+export function canDeleteProject(
+	team: Team,
+	email: string | null | undefined,
+	workspaceRole: string | null = null
+): boolean {
+	if (workspaceRole === 'owner' || workspaceRole === 'admin') return true;
 	const owners = team.collaborators.filter((c) => c.role === 'owner');
 	if (owners.length === 0) return true;
 	return owners.some((c) => sameEmail(c.email, email));

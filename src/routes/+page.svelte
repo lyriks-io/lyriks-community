@@ -95,7 +95,12 @@
 	{/if}
 
 	<section class="fd" aria-label="Feed">
-		{#if !data.hasWorkspace}
+		{#if !data.hasWorkspace && !data.mayFoundWorkspace}
+			<!-- An administrator provisions workspaces: say who to ask instead of offering a form that is refused. -->
+			<div class="mb-7 flex flex-col gap-3 border-l-[6px] border-blue bg-blue-tint p-5">
+				<p class="m-0 text-sm text-ink-2">You are not a member of any workspace yet. Ask your administrator to invite you to one.</p>
+			</div>
+		{:else if !data.hasWorkspace}
 			<!-- Bootstrap: no workspace yet, create one (become owner) instead of the 409 dead end. -->
 			<div class="mb-7 flex flex-col gap-3 border-l-[6px] border-blue bg-blue-tint p-5">
 				<h2 class="m-0 text-[0.9375rem] font-bold tracking-[-0.01em] text-ink">Create your workspace to get started</h2>
@@ -108,7 +113,7 @@
 					<p class="m-0 text-xs font-medium text-red-ink">{form.message}</p>
 				{/if}
 			</div>
-		{:else if !data.hasProjects}
+		{:else if !data.hasProjects && data.mayCreateProjects !== false}
 			<!-- The welcome opens once per visit: a reader who skipped it, with no project yet, finds the way back here. -->
 			<div class="mb-7 flex flex-wrap items-center justify-between gap-4 border-t-4 border-blue bg-paper px-6 py-5">
 				<span class="flex flex-col gap-1.5">

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addDataDraftAct, removeDataDraftAct, updateDataDraftAct, type ActContext, type ActOutcome } from './acts';
 import { createEvolutionRequest, type Actor, type EvolutionRequest } from './draft';
-import { dataChangeNodes, dataChangeView, dataReportLines, landingOfData, toChangeErDiagram, type DataModelLike } from './data-drafts';
+import { dataChangeNodes, dataChangeView, dataReportLines, landingOfData, landRows, requestSourceId, requestSourceRow, sourcesCitedByRequest, toChangeErDiagram, type DataModelLike } from './data-drafts';
 import { snapshotOf, versionDiff } from './versions';
 import { parseEvolutionDraft } from '$lib/application/evolution/parse-evolution-draft';
 import { withSolutionValidated } from './solution-validated.fixture';
@@ -163,5 +163,33 @@ describe('the data changes in the Build report', () => {
 		]);
 		expect(lines[0].id).toBe(`data-line:${r.dataDrafts[0].id}`);
 		expect(lines.every((l) => l.scope === 'request' && l.specVersion === 2 && l.decision === 'undecided')).toBe(true);
+	});
+});
+
+describe('the landing writes a table once, and says where it comes from', () => {
+	const merge = (held: { id: string; name: string }, landed: { id: string; name: string }) => ({ ...held, name: landed.name });
+
+	it('merges a row whose id the model already holds, never adds it twice, and drops a second copy already there (EVO-001)', () => {
+		const model = [
+			{ id: 'orders', name: 'Orders' },
+			{ id: 'active', name: 'Active project' },
+			{ id: 'active', name: 'Active project' }
+		];
+		const out = landRows(model, [{ id: 'active', name: 'Active project' }, { id: 'carts', name: 'Carts' }], merge);
+		expect(out.map((r) => r.id)).toEqual(['orders', 'active', 'carts']);
+	});
+
+	it('lands the same rows twice to the same model', () => {
+		const landed = [{ id: 'carts', name: 'Carts' }];
+		const once = landRows([{ id: 'orders', name: 'Orders' }], landed, merge);
+		expect(landRows(once, landed, merge)).toEqual(once);
+	});
+
+	it('names the request as a source reachable through its own words, and the sources its drafts cite once each', () => {
+		const row = requestSourceRow({ id: 'r1', title: 'One active project', need: { description: 'Community works on one project.' } }, 'EVO-001');
+		expect(row).toEqual({ id: requestSourceId('r1'), title: 'Evolution EVO-001: One active project', kind: 'requirement', url: '', note: 'One active project. Community works on one project.' });
+		expect(
+			sourcesCitedByRequest({ drafts: [{ sourceIds: ['src-a'] }, { sourceIds: [] }], sectionDrafts: [{ sourceIds: ['src-a', 'src-b'] }], ruleDrafts: [], findingDrafts: [{ sourceIds: ['src-c'] }] })
+		).toEqual(['src-a', 'src-b', 'src-c']);
 	});
 });

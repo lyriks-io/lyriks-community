@@ -121,7 +121,7 @@ export async function loadRetrospecFigures(services: AppServices, projectId: str
 }
 
 export async function loadRetrospecPage(services: AppServices, projectId: string, cookies: Cookies) {
-	const [{ store, spec, productName, facts, coverage, reading }, me] = await Promise.all([loadRetrospecSpec(services, projectId), retrospecActor(services, cookies)]);
+	const [{ store, spec, productName, facts, coverage, reading }, me] = await Promise.all([loadRetrospecSpec(services, projectId), retrospecActor(services, projectId, cookies)]);
 	const { scope, users, features, data, experience, rules, documents, behavior } = spec;
 	const members = await shareableMembers(services, projectId, cookies, me);
 	const run = currentRun(store.doc);

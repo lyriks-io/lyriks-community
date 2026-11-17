@@ -26,6 +26,7 @@ import { text } from '$application/spec360/labels';
 import { readBehavior } from './behavior-read.server';
 import { aiLastSeenOf } from './retrospec-ai.server';
 import { currentPersonId } from './evolution-actor.server';
+import { ACTIVE_WORKSPACE_COOKIE, callerNameForProject } from './caller-workspace.server';
 
 /**
  * The retrospecification as the whole app reads it, cheaply: the status the
@@ -127,15 +128,18 @@ export const retrospecUnderWay = (doc: RetrospecDocument): boolean => {
 	return !!run && !run.publishedAt && !run.reviewStartedAt && !run.analysisEndedAt;
 };
 
-/** The person acting, as an act records them: the session's id, the name the whole app gives them. */
 /** What the next run reads unless the person chooses otherwise: the whole product when the last run stopped short or no delta can be read (criterion 98612117). */
 export async function nextRunScope(services: AppServices, projectId: string): Promise<RetrospecScope> {
 	const [{ doc }, scopeDraft, register] = await Promise.all([loadRetrospecDocument(services.sectionDocuments, projectId), services.loadScopeDraft.execute(projectId), services.loadDocumentRegister.execute(projectId)]);
 	return defaultScope(doc, scopeDraft.auditLog.map((e) => e.performedAt), register.sources.some((s) => !!s.stored));
 }
 
-export async function retrospecActor(services: AppServices, cookies: Pick<Cookies, 'get'>): Promise<PersonRef> {
+/**
+ * The person acting on a project, as an act records them: the session's id,
+ * the name the whole app gives them in the workspace that owns the project.
+ */
+export async function retrospecActor(services: AppServices, projectId: string, cookies: Pick<Cookies, 'get'>): Promise<PersonRef> {
 	const id = currentPersonId(services);
-	const name = await services.resolveActiveMemberName.execute(cookies.get('lyriks_active_ws') ?? null).catch(() => '');
+	const name = await callerNameForProject(services, projectId, cookies.get(ACTIVE_WORKSPACE_COOKIE)).catch(() => '');
 	return { id, name: name.trim() || (id === 'local-operator' ? 'Local operator' : id) };
 }

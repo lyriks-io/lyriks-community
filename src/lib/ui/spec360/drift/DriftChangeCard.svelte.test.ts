@@ -45,14 +45,15 @@ describe('the decisions on a code change [criterion:53e7e3da]', () => {
 	it('offers the impact, the acceptance and the rejection while it waits', () => {
 		const body = view(change());
 		expect(body).toMatch(/>Impact analysis</);
-		expect(body).toMatch(/>Accept into the spec</);
+		expect(body).toMatch(/>Accept the code change</);
 		expect(body).toMatch(/>Reject and restore…</);
 	});
 
 	it('reads accepted with the version it captured, rejected as waiting for the code to follow', () => {
 		const kept = view(change({ decision: { decision: 'kept', by: 'Ana P.', at: new Date().toISOString(), version: 'v1.1' } }));
 		expect(kept).toContain('Accepted');
-		expect(kept).toContain('The spec now follows the code (version v1.1)');
+		expect(kept).toContain('Accepted as it is in the code (version v1.1 captured)');
+		expect(kept).toContain("The spec's words are unchanged.");
 		expect(kept).toMatch(/>Undo</);
 		const back = view(change({ decision: { decision: 'sent_back', by: 'Ana P.', at: new Date().toISOString(), version: null } }));
 		expect(back).toContain('Rejected · restore requested');
@@ -62,7 +63,7 @@ describe('the decisions on a code change [criterion:53e7e3da]', () => {
 
 	it('shows a reader the changes without the decisions', () => {
 		const body = view(change(), false);
-		expect(body).not.toMatch(/>Accept into the spec</);
+		expect(body).not.toMatch(/>Accept the code change</);
 		expect(body).toContain('A project editor accepts or rejects it.');
 		const decided = view(change({ decision: { decision: 'sent_back', by: 'Ana P.', at: new Date().toISOString(), version: null } }), false);
 		expect(decided).not.toMatch(/>Undo</);

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { NoticedSummary } from '$application/spec360/noticed';
+	import { FIX_TO_CONFIRM_KEY, FIX_TO_CONFIRM_MEANING, fixesWord, type NoticedSummary } from '$application/spec360/noticed';
 	import Gauge from '$ui/design-system/Gauge.svelte';
 	import { PRESS_LINE, TAG } from '../page/look';
 
@@ -9,7 +9,9 @@
 	 * settled ones (the app's Gauge, criterion b663dee4), its legend, one line
 	 * per type, the heaviest first, with its count and its major points in a
 	 * red tag; then Review the N points. The list itself is a page of its own:
-	 * the button opens it, a type's line opens it on that type.
+	 * the button opens it, a type's line opens it on that type. The fixes
+	 * waiting for confirmation are counted apart, on a line of their own that
+	 * opens Health on them (criterion e75b8909).
 	 */
 	interface Props {
 		summary: NoticedSummary;
@@ -19,7 +21,13 @@
 	let { summary, href }: Props = $props();
 	const pointsWord = (n: number) => `${n} ${n === 1 ? 'point' : 'points'}`;
 	const review = $derived(
-		summary.pending === 0 ? `See the ${pointsWord(summary.total)}` : summary.pending === 1 ? 'Review the point' : `Review the ${summary.pending} points`
+		summary.pending === 0
+			? summary.total > 0
+				? `See the ${pointsWord(summary.total)}`
+				: `See the ${fixesWord(summary.toConfirm)}`
+			: summary.pending === 1
+				? 'Review the point'
+				: `Review the ${summary.pending} points`
 	);
 	const legend = $derived([
 		{ value: summary.major, label: 'major', tone: 'bg-red' },
@@ -30,6 +38,7 @@
 </script>
 
 <div class="border border-line bg-toner px-4 pt-0.5 pb-2">
+	{#if summary.total > 0}
 	<div class="grid gap-2 pt-3.5 pb-3">
 		<Gauge
 			parts={legend.map((l) => ({ value: l.value, tone: l.tone }))}
@@ -44,7 +53,8 @@
 			{/each}
 		</div>
 	</div>
-	<ul class="m-0 list-none border-t border-line p-0" aria-label="Points by type">
+	{/if}
+	<ul class="m-0 list-none border-line p-0 {summary.total > 0 ? 'border-t' : ''}" aria-label="Points by type">
 		{#each summary.types as t (t.key)}
 			<li class="border-b border-line last:border-b-0">
 				<a
@@ -60,6 +70,18 @@
 				</a>
 			</li>
 		{/each}
+		{#if summary.toConfirm > 0}
+			<li class="border-b border-line last:border-b-0">
+				<a
+					href={typeHref(FIX_TO_CONFIRM_KEY)}
+					title={FIX_TO_CONFIRM_MEANING}
+					class="-mx-1 flex min-h-11 items-center gap-3 px-1 py-1.5 text-ink-2 no-underline transition-colors duration-150 hover:bg-toner-1 hover:text-ink"
+				>
+					<span class="min-w-0 flex-1 text-[0.84375rem] leading-snug">{fixesWord(summary.toConfirm)}</span>
+					<span class="w-[76px] flex-none text-right font-evo-mono text-[0.6875rem] whitespace-nowrap text-ink-3">apart</span>
+				</a>
+			</li>
+		{/if}
 	</ul>
 </div>
 <div class="mt-3.5"><a {href} class="{PRESS_LINE} inline-flex h-8 items-center px-3.5 text-[0.625rem] no-underline">{review}</a></div>

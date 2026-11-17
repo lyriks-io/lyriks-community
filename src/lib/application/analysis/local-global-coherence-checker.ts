@@ -29,7 +29,7 @@ import {
 } from '$domain/experience';
 import { derivedCapabilityIds } from '../specification/derived-capability-ids';
 import { matrixGuardGaps } from './matrix-guard-gaps';
-import { featureSurfaceCapabilities, type LeafSnapshot } from '../projection/surface-capabilities';
+import { featureSurfaceCapabilities, featuresReachedByGrants, type LeafSnapshot } from '../projection/surface-capabilities';
 import {
 	computeRulesCoherence,
 	ISSUE_KINDS,
@@ -127,6 +127,8 @@ export class LocalGlobalCoherenceChecker implements GlobalCoherenceCheckerPort {
 					}))
 				: [];
 		const kernelSurfaceIds = featureSurfaceCapabilities(leafSnapshots).map((c) => c.id);
+		// A feature reached through a granted page or surface is granted (criterion 02a56f3c).
+		const grantReach = featuresReachedByGrants(leaves, experience, leafSnapshots);
 
 		// Every text below reads in the spec's language (its declared primary
 		// locale; English when none is declared or it has no template).
@@ -152,6 +154,7 @@ export class LocalGlobalCoherenceChecker implements GlobalCoherenceCheckerPort {
 			architecture,
 			glossary,
 			kernelSurfaceIds,
+			grantReach,
 			planCoverage.readinessScore,
 			lang
 		);
@@ -164,6 +167,7 @@ export class LocalGlobalCoherenceChecker implements GlobalCoherenceCheckerPort {
 			architecture,
 			glossary,
 			kernelSurfaceIds,
+			grantReach,
 			leafSnapshots,
 			lang
 		);
@@ -481,6 +485,7 @@ function buildDimensions(
 	architecture: ProjectArchitectureDraft,
 	glossary: ProjectGlossaryDraft,
 	kernelSurfaceIds: readonly string[],
+	grantReach: Readonly<Record<string, readonly string[]>>,
 	planCoverageScore: number,
 	lang: SpecLanguage = 'en'
 ): Dimension[] {
@@ -523,7 +528,9 @@ function buildDimensions(
 			sourceStep: 'users',
 			score: computeUsersCoherence(
 				users,
-				derivedCapabilityIds(features, experience, kernelSurfaceIds)
+				derivedCapabilityIds(features, experience, kernelSurfaceIds),
+				lang,
+				grantReach
 			).score,
 			// Accesses, never stored lines (criterion 8554bd0d).
 			summary: usersCountsLine(users, lang)
@@ -600,6 +607,7 @@ function detectGaps(
 	architecture: ProjectArchitectureDraft,
 	glossary: ProjectGlossaryDraft,
 	kernelSurfaceIds: readonly string[],
+	grantReach: Readonly<Record<string, readonly string[]>>,
 	leafSnapshots: readonly LeafSnapshot[],
 	lang: SpecLanguage = 'en'
 ): Gap[] {
@@ -669,14 +677,16 @@ function detectGaps(
 				(fr
 					? `Signalé dans les règles déclarées${NBSP}: corrigez les règles concernées, ou couvrez-le par un scénario de cas limite.`
 					: 'Flagged across the declared rules: fix the rules it concerns, or cover it with an edge-case scenario.'),
-			// An issue parked in review already carries a recorded decision: the next
-			// step is to settle it, not to author more.
+			// An issue in review has its fix written: the next step is to confirm it
+			// or reopen it, not to author more. Project health lists it apart and
+			// weighs nothing on it; the coherence reading still counts it unsettled.
 			action:
 				issue.status === 'in_review'
 					? fr
-						? 'Relisez la décision consignée dans son détail, puis résolvez le problème ou acceptez le risque.'
-						: 'Review the decision recorded in its detail, then resolve it or accept the risk.'
+						? 'Vérifiez que le produit fait maintenant ce que dit sa note, puis confirmez la correction ou rouvrez-la.'
+						: 'Check that the product now does what its note says, then confirm the fix or reopen it.'
 					: ISSUE_ACTION[lang][issue.kind],
+			...(issue.status === 'in_review' ? { fixToConfirm: true as const } : {}),
 			sourceStep: 'rules',
 			// Same gate as before: a critical contradiction blocks the push.
 			blocking: isBlockingIssue(issue),
@@ -714,14 +724,18 @@ function detectGaps(
 	}
 
 	// Permission matrix coverage (Step 03) — the same metric the Users score
-	// weighs heaviest, so the card and the dimension agree. The matrix's purpose
-	// is that every feature is reachable by someone, so the headline gap is a
-	// FEATURE with no user right (named); ungranted system/journey caps and roles
-	// with no access at all are secondary clauses. Not the unreachable "every
-	// role holds every capability" of cell density.
+	// weighs heaviest, so the card and the dimension agree. A feature no profile
+	// is granted (no action of it, no surface of it, no page of its Core) is a
+	// gap of the specification: the matrix does not say who may use it. It is
+	// never read as a feature nobody can reach, since the product enforces its
+	// own access checks whatever the matrix says (criterion 02a56f3c).
+	// Ungranted system/journey caps and roles with no access at all are
+	// secondary clauses. Not the unreachable "every role holds every capability"
+	// of cell density.
 	const coverage = permissionCoverage(
 		users,
-		derivedCapabilityIds(features, experience, kernelSurfaceIds)
+		derivedCapabilityIds(features, experience, kernelSurfaceIds),
+		grantReach
 	);
 	const uncoveredFeatures = coverage.uncoveredCapabilityIds.filter((id) => featureName.has(id));
 	const uncoveredOther = coverage.uncoveredCapabilityIds.length - uncoveredFeatures.length;
@@ -731,8 +745,8 @@ function detectGaps(
 		if (uncoveredFeatures.length > 0)
 			parts.push(
 				fr
-					? `${countOf(lang, uncoveredFeatures.length, 'fonctionnalité', 'fonctionnalités')} sans droit utilisateur`
-					: `${uncoveredFeatures.length} feature${uncoveredFeatures.length === 1 ? '' : 's'} with no user right`
+					? `${countOf(lang, uncoveredFeatures.length, 'fonctionnalité', 'fonctionnalités')} sans profil autorisé`
+					: `${uncoveredFeatures.length} feature${uncoveredFeatures.length === 1 ? '' : 's'} no profile is granted`
 			);
 		if (uncoveredOther > 0)
 			parts.push(
@@ -748,20 +762,21 @@ function detectGaps(
 			);
 		const named = uncoveredFeatures.map((id) => featureName.get(id)).join(', ');
 		const trail = parts.length > 1 ? ` (${parts.slice(1).join(', ')})` : '';
-		// Subject first: ONE unreachable feature is named in the title, several are
-		// counted there and named in the subject; the other clauses trail.
+		const many = uncoveredFeatures.length > 1;
+		// Subject first: ONE feature is named in the title, several are counted
+		// there and named in the subject; the other clauses trail.
 		const title = fr
 			? uncoveredFeatures.length === 1
-				? `${quoteName(lang, named)} n'a aucun droit utilisateur${trail}`
-				: uncoveredFeatures.length > 1
-					? `${uncoveredFeatures.length} fonctionnalités n'ont aucun droit utilisateur${trail}`
+				? `La matrice d'accès ne dit pas qui peut utiliser ${quoteName(lang, named)}${trail}`
+				: many
+					? `La matrice d'accès ne dit pas qui peut utiliser ${uncoveredFeatures.length} fonctionnalités${trail}`
 					: orphanRoles > 0 && uncoveredOther === 0
 						? `${countOf(lang, orphanRoles, 'rôle', 'rôles')} ne ${frPlural(orphanRoles, 'peut', 'peuvent')} encore rien faire`
 						: `${countOf(lang, uncoveredOther, 'capacité', 'capacités')} ${frPlural(uncoveredOther, "n'est accordée", "ne sont accordées")} à personne${orphanRoles > 0 ? trail : ''}`
 			: uncoveredFeatures.length === 1
-				? `${named} has no user right${parts.length > 1 ? ` (${parts.slice(1).join(', ')})` : ''}`
-				: uncoveredFeatures.length > 1
-					? `${uncoveredFeatures.length} features have no user right${parts.length > 1 ? ` (${parts.slice(1).join(', ')})` : ''}`
+				? `The access matrix does not say who may use ${named}${trail}`
+				: many
+					? `The access matrix does not say who may use ${uncoveredFeatures.length} features${trail}`
 					: orphanRoles > 0 && uncoveredOther === 0
 					? `${count(orphanRoles, 'role')} can do nothing yet`
 					: `${count(uncoveredOther, 'capability is', 'capabilities are')} granted to nobody${orphanRoles > 0 ? ` (${parts.slice(1).join(', ')})` : ''}`;
@@ -778,22 +793,23 @@ function detectGaps(
 				: uncoveredFeatures.length > 0 ? 'Feature with no user right' : orphanRoles > 0 ? 'Role with no access' : 'Ungranted capability',
 			provenance: 'detected',
 			...(named ? { subject: named } : {}),
-			// A feature nobody can use is the real failure; weight it hardest.
-			severity: uncoveredFeatures.length > 0 ? 'high' : 'medium',
+			// A gap of the specification, not a defect of the product: it weighs
+			// like the other gaps in the description (criterion 1eb37948).
+			severity: 'medium',
 			title,
 			detail: fr
 				? uncoveredFeatures.length
-					? `Personne ne peut atteindre ${uncoveredFeatures.map((id) => quoteName(lang, featureName.get(id) ?? id)).join(', ')}${NBSP}: aucun rôle de la matrice d'accès n'y détient de droit, donc ${frPlural(uncoveredFeatures.length, 'cette fonctionnalité est inatteignable', 'ces fonctionnalités sont inatteignables')} dans le produit.`
+					? `Aucun profil de la matrice d'accès ne détient une action de ${uncoveredFeatures.map((id) => quoteName(lang, featureName.get(id) ?? id)).join(', ')}, une de ${frPlural(uncoveredFeatures.length, 'ses', 'leurs')} surfaces ni une page de ${frPlural(uncoveredFeatures.length, 'son', 'leur')} cœur. Le produit applique toujours ses propres contrôles d'accès${NBSP}: la spécification ne dit pas encore qui peut utiliser ${frPlural(uncoveredFeatures.length, 'cette fonctionnalité', 'ces fonctionnalités')}.`
 					: 'Chaque capacité devrait être accordée à au moins un rôle, et chaque rôle devrait détenir au moins une capacité.'
 				: uncoveredFeatures.length
-					? `Nobody can reach ${named}: no role in the access matrix holds a right on it, so the feature is unreachable in the product.`
+					? `No profile of the access matrix holds an action of ${named}, one of ${many ? 'their' : 'its'} surfaces or a page of ${many ? 'their' : 'its'} Core. The product still applies its own access checks: the specification does not say who may use ${many ? 'these features' : 'this feature'} yet.`
 					: 'Every capability should be granted to at least one role, and every role should hold at least one capability.',
 			action: fr
 				? uncoveredFeatures.length
-					? `Accordez ${frPlural(uncoveredFeatures.length, 'cette fonctionnalité', 'chacune de ces fonctionnalités')} à au moins un rôle dans la matrice d'accès.`
+					? `Dans la matrice d'accès, accordez ${frPlural(uncoveredFeatures.length, 'cette fonctionnalité', 'chacune de ces fonctionnalités')} aux profils qui s'en servent.`
 					: 'Accordez chaque capacité à au moins un rôle, et donnez à chaque rôle au moins une capacité.'
 				: uncoveredFeatures.length
-					? `Grant ${uncoveredFeatures.length === 1 ? 'it' : 'each of them'} to at least one role in the access matrix.`
+					? `Grant ${many ? 'each of them' : 'it'} to the profiles that use ${many ? 'them' : 'it'} in the access matrix.`
 					: 'Grant every capability to at least one role, and give every role at least one capability.',
 			sourceStep: 'users',
 			blocking: false
@@ -868,9 +884,11 @@ function detectGaps(
 			detail: fr
 				? `Un terme en brouillon n'est pas encore la langue du produit${NBSP}; il peut encore changer pour tout le monde.`
 				: 'A term in draft is not yet the product language; it can still change under everyone.',
+			// The Glossary page corrects a term but never approves it (criterion 6cc78061):
+			// the advice names what a person can actually do (criterion bd26ee01).
 			action: fr
-				? 'Approuvez les termes dans le Glossaire pour figer la langue du produit.'
-				: 'Approve the terms in Glossary to lock the product language.',
+				? `Demandez à votre IA d'approuver les termes arrêtés${NBSP}: la page Glossaire corrige un terme mais ne l'approuve pas.`
+				: 'Ask your AI to approve the terms that are settled: the Glossary page corrects a term but does not approve it.',
 			sourceStep: 'glossary',
 			blocking: false
 		});

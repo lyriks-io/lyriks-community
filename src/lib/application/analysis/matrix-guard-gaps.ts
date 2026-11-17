@@ -5,6 +5,13 @@ import type { LeafSnapshot } from '../projection/surface-capabilities';
 
 export const MATRIX_GUARDS_CHECK_ID = 'users.matrix-guards';
 
+/**
+ * The one root of every disagreement on an action the matrix grants to no
+ * role: a matrix that grants actions sparingly. Its points weigh once on the
+ * project health, however many actions it touches.
+ */
+export const MATRIX_GRANTS_NOBODY_CAUSE = 'users.matrix-grants-nobody';
+
 const names = (lang: SpecLanguage, list: readonly string[]): string => {
 	const quoted = list.map((name) => quoteName(lang, name));
 	if (quoted.length < 2) return quoted.join('');
@@ -61,7 +68,15 @@ export function matrixGuardGaps(
 				? `La matrice l'accorde à ${quoteName(lang, r.roleName)}, mais sa règle ${quoteName(lang, r.rule)} refuse ce rôle.`
 				: `The matrix grants it to ${quoteName(lang, r.roleName)}, but its rule ${quoteName(lang, r.rule)} refuses that role.`
 		);
-		const letIn = action.letInButNotGranted.length
+		// Granted to nobody, the matrix keeps no one out on purpose: it says nothing about the action.
+		const silent = action.grantedToNobody && action.refusedButGranted.length === 0;
+		const letIn = silent
+			? [
+					fr
+						? `La matrice d'accès n'accorde cette action à aucun profil, alors que ses règles laissent entrer ${names(lang, action.letInButNotGranted.map((r) => r.roleName))}.`
+						: `The access matrix grants this action to no profile, while its rules let ${names(lang, action.letInButNotGranted.map((r) => r.roleName))} in.`
+				]
+			: action.letInButNotGranted.length
 			? [
 					fr
 						? `La matrice en écarte ${names(lang, action.letInButNotGranted.map((r) => r.roleName))}, mais aucune règle de l'action ne ${action.letInButNotGranted.length > 1 ? 'les' : 'le'} refuse, alors qu'elle lit ce rôle.`
@@ -85,7 +100,8 @@ export function matrixGuardGaps(
 				: 'Decide which one is right: change the access in the matrix, or the rule of the action in its behaviour.',
 			sourceStep: 'users',
 			blocking: false,
-			featureRef: action.featureId
+			featureRef: action.featureId,
+			...(silent ? { cause: MATRIX_GRANTS_NOBODY_CAUSE } : {})
 		});
 	}
 	for (const feature of reading.features) {

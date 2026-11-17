@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createDraftLeaf, createEvolutionRequest, type EvolutionRequest } from './draft';
 import { askedWalks, dueReadings } from './automatic-readings';
+import { removeDraftLeafAct, updateDraftLeafAct, type ActContext } from './acts';
 
 /**
  * What the platform computes on its own, so nobody clicks for a reading with
@@ -47,6 +48,24 @@ describe('the readings the platform computes on its own', () => {
 		const line = { id: 'l1', iteration: 1, specVersion: 2, verdict: 'missing', decision: 'undecided' } as unknown as EvolutionRequest['implementationFindings'][number];
 		expect(dueReadings(at('implementation', { specVersion: 3, iteration: 1, implementationFindings: [line] })).report).toBe(true);
 		expect(dueReadings(at('implementation', { specVersion: 2, iteration: 1, implementationFindings: [line] })).report).toBe(false);
+	});
+
+	it('runs them again once a drafted feature is reworked or taken out after they ran (issue 63)', () => {
+		const text = createDraftLeaf({ id: 'draft:text', kind: 'add', name: 'Text' });
+		const note = createDraftLeaf({ id: 'draft:note', kind: 'add', name: 'Note' });
+		const read = at('coherence', {
+			drafts: [text, note],
+			leafIds: [text.id, note.id],
+			history: [change('2026-10-08T09:00:00.000Z')],
+			impactReport: { status: 'ready' as const, hypothesis: 'add' as const, depth: 2, ranAt: '2026-10-08T10:00:00.000Z' },
+			coherenceReport: { status: 'ready' as const, projectScore: 70, requestDelta: 0, ranAt: '2026-10-08T10:00:00.000Z' }
+		});
+		expect(dueReadings(read).impact).toEqual([]);
+		const ctx: ActContext = { actor: { id: 'ana', kind: 'person', role: 'member', channel: 'page' }, at: '2026-10-08T11:00:00.000Z', newId: () => 'h1', soloWorkspace: true };
+		const reworked = updateDraftLeafAct(ctx, read, text.id, { name: 'Long text' }, new Set());
+		expect(reworked.ok && dueReadings(reworked.request).impact).toEqual(['add']);
+		const takenOut = removeDraftLeafAct(ctx, read, note.id);
+		expect(takenOut.ok && dueReadings(takenOut.request).impact).toEqual(['add']);
 	});
 
 	it('asks for a change walk when the request drafts nothing', () => {

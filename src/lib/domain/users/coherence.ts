@@ -22,7 +22,9 @@ import { foldGrants } from './fold-grants';
 export function computeUsersCoherence(
 	draft: ProjectUsersDraft,
 	derivedCapabilityIds: readonly string[] = [],
-	lang: SpecLanguage = 'en'
+	lang: SpecLanguage = 'en',
+	/** The features a granted capability opens beyond its own row (see permissionCoverage). */
+	reach: Readonly<Record<string, readonly string[]>> = {}
 ): CoherenceResult {
 	const fr = lang === 'fr';
 	// No role ⇒ nothing downstream works; floor the score so it can't read healthy.
@@ -43,7 +45,7 @@ export function computeUsersCoherence(
 
 	const issues: CoherenceIssue[] = [];
 	let score = 0;
-	const cov = permissionCoverage(draft, derivedCapabilityIds);
+	const cov = permissionCoverage(draft, derivedCapabilityIds, reach);
 
 	// 1. Capability coverage — DOMINANT (70 pts). Every capability (System,
 	//    off-structure, feature, journey) must be granted to at least one role.

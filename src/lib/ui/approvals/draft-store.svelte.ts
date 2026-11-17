@@ -33,7 +33,10 @@ export class ApprovalsStore {
 			notifier,
 			getDraft: () => this.draft,
 			applyRemote: (draft) => (this.draft = draft),
-			onSaved: (savedAt) => (this.draft.lastSavedAt = savedAt),
+			onSaved: (savedAt, response) => {
+				this.draft.lastSavedAt = savedAt;
+				this.#adoptDecisions(response.decisions);
+			},
 			revision
 		});
 	}
@@ -56,6 +59,16 @@ export class ApprovalsStore {
 				i.reviewer.toLowerCase().includes(q)
 		);
 	});
+
+	/** The server stamps who moved a status and when: its answer, laid on the items still held, local edits kept. */
+	#adoptDecisions(decisions: unknown) {
+		if (!decisions || typeof decisions !== 'object') return;
+		const stamps = decisions as Record<string, Pick<ApprovalItem, 'decidedBy' | 'decidedAt'> | undefined>;
+		this.draft.items = this.draft.items.map((i) => {
+			const stamp = stamps[i.id];
+			return stamp ? { ...i, decidedBy: stamp.decidedBy ?? null, decidedAt: stamp.decidedAt ?? null } : i;
+		});
+	}
 
 	hydrate = (incoming: ProjectApprovalsDraft, revision = 0) =>
 		this.#autosave.hydrate(incoming, revision);

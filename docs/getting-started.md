@@ -88,9 +88,10 @@ changing its status.
    and the edge cases. Compare them with the application and its code.
 3. Open **Coherence** and inspect the reported gaps. Check the issue details,
    rather than relying only on the score.
-4. Open **Roadmap** to see the recorded implementation coverage. Ask the client
-   to show the source evidence for your chosen feature. A code link records
-   evidence; it does not prove that the running application behaves correctly.
+4. Ask the client for the recorded implementation coverage of your chosen
+   feature (`get_implementation_status`) and the source evidence behind it. A
+   code link records evidence; it does not prove that the running application
+   behaves correctly.
 
 If you find a mismatch, describe it to the client with a concrete example:
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { usePageScope } from './page-scope.svelte';
 
 	/**
@@ -20,5 +21,6 @@
 	let { anchors, sectionId, kicker = 'Validation of this feature' }: Props = $props();
 	const slot = usePageScope();
 
-	$effect(() => slot?.hold({ anchors, sectionId, label: kicker.toLowerCase() }));
+	// Held with the path it was shown on, so the band never reads it once another page is on screen (criterion c509fa9c).
+	$effect(() => slot?.hold({ anchors, sectionId, label: kicker.toLowerCase(), path: page.url.pathname.replace(/\/+$/, '') }));
 </script>

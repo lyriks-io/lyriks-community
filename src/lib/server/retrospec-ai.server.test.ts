@@ -117,7 +117,7 @@ describe('what a later run that holds its changes may not write [criterion:50b00
 		for (const path of ['/api/draft/features', '/api/draft/users', '/api/draft/data/links', '/api/behavior/apply', '/api/behavior/project']) expect(writes(path), path).toBe(true);
 	});
 
-	it('leaves open the sources, the index, the report and what is only computed', () => {
-		for (const path of ['/api/draft/documents', '/api/behavior/sources', '/api/behavior/implementation/index', '/api/projects/p/retrospec/reading', '/api/draft/experience/simulate', '/api/draft/experience/repo-scaffold']) expect(writes(path), path).toBe(false);
+	it('leaves open the sources, the index and the report', () => {
+		for (const path of ['/api/draft/documents', '/api/behavior/sources', '/api/behavior/implementation/index', '/api/projects/p/retrospec/reading']) expect(writes(path), path).toBe(false);
 	});
 });

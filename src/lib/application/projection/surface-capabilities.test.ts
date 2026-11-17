@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { createEmptyExperienceDraft, createScreen } from '$domain/experience';
 import {
 	featureSurfaceCapabilities,
+	featuresReachedByGrants,
 	screenCapabilities,
 	surfaceCapabilityId
 } from './surface-capabilities';
+import { permissionCoverage, createEmptyUsersDraft } from '$domain/users';
 import type { UnspaFeatureSnapshot } from '$lib/unspa-schema';
 
 const snapshot = (surfaces: unknown[]): UnspaFeatureSnapshot =>
@@ -91,5 +93,42 @@ describe('featureSurfaceCapabilities', () => {
 		expect(featureSurfaceCapabilities([{ id: 'feat-a', name: 'Refunds', snapshot: null }])).toEqual(
 			[]
 		);
+	});
+});
+
+describe('featuresReachedByGrants [criterion:02a56f3c]', () => {
+	const experience = createEmptyExperienceDraft('p1');
+	experience.screens = [
+		createScreen({ id: 'scr-bill', name: 'Invoices', category: 'core-bill' }),
+		createScreen({ id: 'scr-loose', name: 'Login', category: null })
+	];
+	const features = [
+		{ id: 'f-send', coreId: 'core-bill' },
+		{ id: 'f-pay', coreId: 'core-bill' },
+		{ id: 'f-chat', coreId: 'core-help' }
+	];
+	const leaves = [{ id: 'f-chat', name: 'Chat', snapshot: snapshot([{ id: 'srf-panel', name: 'Chat panel', type: 'panel' }]) }];
+
+	it('opens the features of its Core from a page, and its feature from a surface', () => {
+		expect(featuresReachedByGrants(features, experience, leaves)).toEqual({
+			[surfaceCapabilityId('f-chat', 'srf-panel')]: ['f-chat'],
+			'screen:scr-bill': ['f-send', 'f-pay']
+		});
+	});
+
+	it('counts a feature reached through a granted page or surface as granted', () => {
+		const users = {
+			...createEmptyUsersDraft('p1'),
+			roles: [{ id: 'r1', name: 'Clerk', description: '', userCountMin: 1, userCountMax: null, tone: 'admin' as const, sourceIds: [] }],
+			permissions: [
+				{ roleId: 'r1', capabilityId: 'screen:scr-bill', capabilitySource: 'surface' as const },
+				{ roleId: 'r1', capabilityId: surfaceCapabilityId('f-chat', 'srf-panel'), capabilitySource: 'surface' as const }
+			]
+		};
+		const ids = ['f-send', 'f-pay', 'f-chat', 'f-alone'];
+		expect(permissionCoverage(users, ids).uncoveredCapabilityIds).toEqual(ids);
+		expect(permissionCoverage(users, ids, featuresReachedByGrants([...features, { id: 'f-alone', coreId: 'core-x' }], experience, leaves)).uncoveredCapabilityIds).toEqual([
+			'f-alone'
+		]);
 	});
 });

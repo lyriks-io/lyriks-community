@@ -132,7 +132,8 @@ export class McpCodeAdoption implements CodeAdoptionPort {
 		return this.#call('flag_conflict', {
 			featureId: input.featureId,
 			summary: input.summary,
-			...(input.statements ? { statements: input.statements } : {}),
+			// The engine names each side of a disagreement a claim; Lyriks calls them statements.
+			claims: input.statements.map((s) => ({ sourceId: s.sourceId, statement: s.statement })),
 			...(input.affectedElements ? { affectedElements: input.affectedElements } : {})
 		});
 	}

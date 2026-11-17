@@ -70,3 +70,21 @@ describe('the Editions section lists the four plans in the words of the Plans di
 		expect(html).toContain('href="https://lyriks.io/pricing"');
 	});
 });
+
+describe('the Documentation says what the product does today', () => {
+	it('says a validated specification changes through an evolution [criterion:71c9c06b]', () => {
+		expect(text).toContain('A validated specification is no longer changed in place: a change to it goes through an evolution, in Changes. In place it still takes a decision on a point Lyriks noticed, an operations target, and cancelling a hand edit made earlier.');
+		expect(text).not.toContain('A validated specification stays editable');
+	});
+
+	it('names the plans that open Changes and writes the change when it goes live [criterion:7af1087d]', () => {
+		expect(text).toContain('Changes Solo Builder, Team and Enterprise. An evolution carries one change');
+		expect(text).toContain('the change is then frozen as a numbered version the code is built and checked against, and written into the specification when it goes live, never before.');
+		expect(text).toContain('and the hand edits a validated specification took before editing it in place was put on hold.');
+	});
+
+	it('points to the design system the Experience tab and the MCP offer [criterion:14ea2e54]', () => {
+		expect(text).toContain('Your AI reads the same design system through the Lyriks MCP (get_design_system) to build the interface on-brand, and holds a design against it (check_design).');
+		expect(text).not.toContain('the Design: the design.md');
+	});
+});

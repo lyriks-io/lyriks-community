@@ -295,7 +295,7 @@ export interface FlagConflictArgs {
   project_id: string
   feature_id: string
   summary: string
-  statements?: Array<{ source_id: string; statement: string }>
+  statements: Array<{ source_id: string; statement: string }>
   affected_elements?: string[]
 }
 
@@ -306,14 +306,10 @@ export async function flagConflictHandler(args: FlagConflictArgs, lyriks: Lyriks
     projectId: args.project_id,
     featureId: args.feature_id,
     summary: args.summary,
-    ...(args.statements
-      ? {
-          statements: args.statements.map((s) => ({
-            sourceId: s.source_id,
-            statement: s.statement,
-          })),
-        }
-      : {}),
+    statements: args.statements.map((s) => ({
+      sourceId: s.source_id,
+      statement: s.statement,
+    })),
     ...(args.affected_elements ? { affectedElements: args.affected_elements } : {}),
   })
 }

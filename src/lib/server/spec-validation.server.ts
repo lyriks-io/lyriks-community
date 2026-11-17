@@ -3,8 +3,8 @@ import { shortMemo } from './short-memo.server';
 import { error } from '@sveltejs/kit';
 import type { AppServices } from '$composition/container.server';
 import { loadRetrospecDocument } from '$application/retrospec/retrospec-store';
-import type { PersonRef, RetrospecDocument } from '$domain/retrospec';
-import { specValidationBoard, type SpecElement, type SpecValidationBoard, type SpecValidationSummary } from '$domain/retrospec';
+import type { ActContext, PersonRef, RetrospecDocument } from '$domain/retrospec';
+import { canReviewElement, specValidationBoard, type SpecElement, type SpecValidationBoard, type SpecValidationSummary } from '$domain/retrospec';
 import type { TeamMember } from '$domain/retrospec';
 import { shortName } from '$domain/activity';
 import type { Baseline } from '$domain/baselines';
@@ -99,4 +99,19 @@ export async function readSpecValidationBoard(services: AppServices, projectId: 
 /** The Specification 360°'s status: DRAFT or VALIDATED, its counts and its version. */
 export async function readSpecValidation(services: AppServices, projectId: string, viewer: PersonRef | null): Promise<SpecValidationSummary> {
 	return (await readSpecValidationBoard(services, projectId, viewer)).board.summary;
+}
+
+/**
+ * Knowledge's validation guards, for a door that applies the run's acts itself
+ * (the run's own API): a validation only from someone the element waits on, a
+ * publication only once every element is validated by everyone it waits on.
+ * Both are read again on every optimistic-save rebase. The caller may write.
+ */
+export async function readValidationGuards(services: AppServices, projectId: string, actor: PersonRef): Promise<Pick<ActContext, 'canReview' | 'canPublish'>> {
+	const read = await readSpecValidationBoard(services, projectId, actor, { requireTeam: true });
+	const byId = new Map(read.elements.map((e) => [e.id, e]));
+	return {
+		canReview: (current, itemId) => canReviewElement(current, byId.get(itemId), read.team, actor, true),
+		canPublish: (current) => specValidationBoard({ doc: current, elements: read.elements, team: read.team, viewer: actor, baselines: read.baselines }).complete
+	};
 }

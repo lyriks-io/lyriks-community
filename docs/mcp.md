@@ -26,9 +26,8 @@ shows.
 ## What Community answers
 
 Every section tool (`get_section`, `patch_section`, `set_section`,
-`build_screen`, `apply_behavior_batch`, `simulate_experience`,
-`assess_project_completeness`, `audit_project_scope`, ...) runs on the
-platform. The portfolio tools (`list_projects`, `create_project`,
+`apply_behavior_batch`, `simulate_behavior`, `assess_project_completeness`,
+`audit_project_scope`, ...) runs on the platform. The portfolio tools (`list_projects`, `create_project`,
 `get_project`) answer from the platform as well; `list_workspaces` is empty
 because Community does not group projects into workspaces. The five formal
 graph tools (`get_model`, `get_view`, `find_inconsistencies`, `apply_rule`,
@@ -90,10 +89,13 @@ editions. `pnpm test:mcp` runs the suite and `scripts/oss-boundary.test.mjs`.
 After signing in, approve the client name and callback only if you started the
 connection. MCP gets a separate one-hour credential, never your browser session
 JWT. Strict mode no longer accepts browser JWTs as MCP bearer tokens. The client
-also receives a refresh token, bound to your platform session (seven days) and
-rotated on every use, so an expired credential or a gateway restart renews
-silently instead of reopening the browser. Client registrations are signed
-rather than stored, so they survive restarts and upgrades too. A client whose
+also receives a refresh token, bound to your platform session and rotated on
+every use, so an expired credential or a gateway restart renews silently
+instead of reopening the browser. Each renewal extends that session to thirty
+days from then: a client used at least once every thirty days stays signed in
+with no fixed end, while thirty days without use, a sign-out or a password
+change ends it. Client registrations are signed rather than stored, so they
+survive restarts and upgrades too. A client whose
 registration this install does not recognise (one from before signed
 registrations, for instance) is not turned away: with a callback on your own
 computer it signs in and asks for consent like any other client, whatever it

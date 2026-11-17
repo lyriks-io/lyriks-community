@@ -64,6 +64,9 @@
 	}
 	// A stored-but-unusable key (expired/invalid) can be replaced or removed.
 	let hasStoredKey = $derived(data.license.status !== 'unlicensed');
+	// Removing walls the whole installation, so the page asks first; the
+	// previous key stays unless the person ticks it away too (issues.198).
+	let confirmingRemoval = $state(false);
 
 	// Drop-to-activate: the key arrives by email as a small text/`.lyrkey` attachment.
 	// We read it in the browser, pull the `lyk_…` token out (extraction is pure domain,
@@ -111,7 +114,15 @@
 			<p class="mt-1 text-ink-700">
 				A {asked.name} key comes from the plans page:
 				{#if page.data.onlineHelp}<a class="font-semibold text-blue-ink hover:underline" href={PRICING_URL} target="_blank" rel="noopener noreferrer">{PRICING_URL.replace(/^https?:\/\//, '')}</a>{:else}<span class="font-semibold">{PRICING_URL.replace(/^https?:\/\//, '')}</span>{/if}.
-				Enter it below: it switches this installation to {asked.name}.
+				Entering it below activates it on this installation: the licence card then shows the edition it
+				grants (Community or Enterprise), its seats and its expiry.
+			</p>
+			<!-- The key does not move the plan: the edition this install accepts and
+			     the plan that locks its pages come from its configuration, so the
+			     page says who changes them rather than promising a switch (issues.238). -->
+			<p class="mt-1 text-ink-700">
+				The plan this installation runs, which sets the pages it opens and the edition Settings names,
+				is set in its configuration by whoever runs it: ask them to switch it to {asked.name} as well.
 			</p>
 		</section>
 	{/if}
@@ -318,14 +329,62 @@
 			</a>
 		{/if}
 
-		{#if hasStoredKey}
-			<form method="POST" action="?/deactivate" use:enhance class="border-t border-line pt-4">
-				<button
-					type="submit"
-					class="text-xs font-medium text-ink-400 hover:text-danger-500"
-				>
-					Remove the stored key from this install
-				</button>
+		{#if hasStoredKey || data.hasPreviousKey}
+			<form
+				method="POST"
+				action="?/deactivate"
+				use:enhance={() =>
+					async ({ update }) => {
+						confirmingRemoval = false;
+						await update();
+					}}
+				class="border-t border-line pt-4"
+				data-remove-key
+			>
+				{#if !confirmingRemoval}
+					<button
+						type="button"
+						onclick={() => (confirmingRemoval = true)}
+						class="text-xs font-medium text-ink-400 hover:text-danger-500"
+					>
+						{hasStoredKey ? 'Remove the stored key from this install' : 'Remove the previous key from this install'}
+					</button>
+				{:else}
+					<div class="space-y-2 rounded-card border border-line bg-canvas p-4" role="group" aria-label="Confirm the removal">
+						{#if hasStoredKey}
+							<p class="text-sm font-semibold text-ink-900">Remove the stored key?</p>
+							<p class="text-xs text-ink-600">This installation is no longer licensed from the next request.</p>
+							{#if data.hasPreviousKey}
+								<p class="text-xs text-ink-600">
+									The previous key stays on this install: Go back to the previous key puts it back.
+								</p>
+								<label class="flex items-center gap-2 text-xs text-ink-600">
+									<input type="checkbox" name="previousToo" />
+									Also remove the previous key
+								</label>
+							{/if}
+						{:else}
+							<p class="text-sm font-semibold text-ink-900">Remove the previous key?</p>
+							<p class="text-xs text-ink-600">Go back to the previous key will no longer be offered.</p>
+							<input type="hidden" name="previousToo" value="on" />
+						{/if}
+						<div class="flex items-center gap-3 pt-1">
+							<button
+								type="submit"
+								class="rounded-field bg-danger-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-danger-700"
+							>
+								{hasStoredKey ? 'Remove the key' : 'Remove the previous key'}
+							</button>
+							<button
+								type="button"
+								onclick={() => (confirmingRemoval = false)}
+								class="text-xs font-medium text-ink-500 hover:text-ink-700"
+							>
+								Cancel
+							</button>
+						</div>
+					</div>
+				{/if}
 			</form>
 		{/if}
 	</section>

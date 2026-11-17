@@ -102,6 +102,19 @@ describe('canDeleteProject', () => {
 		const ownerless = teamOf(collaborator({ role: 'contributor', email: 'grace@company.com' }));
 		expect(canDeleteProject(ownerless, 'someone-else@company.com')).toBe(true);
 	});
+
+	it('lets an owner or admin of the project workspace delete a project whose owner left [unspa:039deda8:0e12f1fb:f99d9cb8] [unspa:039deda8:0e12f1fb:ef25cd8f]', () => {
+		const team = teamOf(collaborator({ role: 'owner', email: 'gone@company.com' }));
+		expect(canDeleteProject(team, 'admin@company.com', 'admin')).toBe(true);
+		expect(canDeleteProject(team, 'boss@company.com', 'owner')).toBe(true);
+	});
+
+	it('still refuses a designer or viewer who is not among the owners [unspa:039deda8:0e12f1fb:2961d9f6]', () => {
+		const team = teamOf(collaborator({ role: 'owner', email: 'ada@company.com' }));
+		expect(canDeleteProject(team, 'grace@company.com', 'designer')).toBe(false);
+		expect(canDeleteProject(team, 'grace@company.com', 'viewer')).toBe(false);
+		expect(canDeleteProject(team, 'grace@company.com', null)).toBe(false);
+	});
 });
 
 describe('who administers a project [criterion:ac-leaf-ac-proj-settings]', () => {

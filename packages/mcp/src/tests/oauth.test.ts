@@ -204,17 +204,24 @@ describe('OAuth consent and restricted credentials', () => {
     const first = await (await exchange(f)).json()
     const refresh = (token: string, on = app, overrides = {}) =>
       on.request('/mcp/oauth/token', post({ grant_type: 'refresh_token', refresh_token: token, client_id: f.clientId, ...overrides }))
+    // A refresh that must succeed names the server's answer when it does not:
+    // this test failed once on CI with nothing but "undefined" to go on.
+    const granted = async (res: Response) => {
+      const body = await res.json()
+      expect(res.status, JSON.stringify(body)).toBe(200)
+      return body
+    }
     for (const overrides of [{ client_id: 'another-client' }, { resource: 'https://another.example/mcp' }, { refresh_token: 'lyriks_mcp_refresh_forged' }, { refresh_token: first.access_token }]) {
       expect((await refresh(first.refresh_token, app, overrides)).status).toBe(400)
     }
-    const second = await (await refresh(first.refresh_token)).json()
+    const second = await granted(await refresh(first.refresh_token))
     expect(second.access_token).toMatch(/^lyriks_mcp_/)
     expect(second.access_token).not.toBe(first.access_token)
     expect(second.refresh_token).not.toBe(first.refresh_token)
     expect((await app.request('/probe', { headers: { authorization: `Bearer ${second.access_token}` } })).status).toBe(200)
     // Presented again at once, it is another process of the same client on the same token store.
     vi.useFakeTimers()
-    const sibling = await (await refresh(first.refresh_token)).json()
+    const sibling = await granted(await refresh(first.refresh_token))
     expect((await app.request('/probe', { headers: { authorization: `Bearer ${sibling.access_token}` } })).status).toBe(200)
     expect((await refresh(first.refresh_token, app, { client_id: 'another-client' })).status).toBe(400)
     // Past the grace, a reused token is refused.
@@ -224,13 +231,13 @@ describe('OAuth consent and restricted credentials', () => {
     // After the access token expires, the client renews without any browser.
     vi.useFakeTimers(); vi.advanceTimersByTime(3600_001)
     expect((await app.request('/probe', { headers: { authorization: `Bearer ${second.access_token}` } })).status).toBe(401)
-    const third = await (await refresh(second.refresh_token)).json()
+    const third = await granted(await refresh(second.refresh_token))
     expect((await app.request('/probe', { headers: { authorization: `Bearer ${third.access_token}` } })).status).toBe(200)
     vi.useRealTimers()
     // A restarted gateway forgot every access token, and still honours the refresh token.
     const restarted = new Hono<{ Variables: HonoVariables }>()
     registerOAuthRoutes(restarted)
-    const fourth = await (await refresh(third.refresh_token, restarted)).json()
+    const fourth = await granted(await refresh(third.refresh_token, restarted))
     expect(fourth.access_token).toMatch(/^lyriks_mcp_/)
     // Revocation and a dead platform session both end the chain.
     await app.request('/mcp/oauth/revoke', post({ token: fourth.refresh_token }))
@@ -243,10 +250,10 @@ describe('OAuth consent and restricted credentials', () => {
     // re-arms the window. Idle past thirty days, the sign-in has expired.
     vi.useFakeTimers()
     vi.advanceTimersByTime(29 * 24 * 3600_000)
-    const rolled = await (await refresh(fresh.refresh_token)).json()
+    const rolled = await granted(await refresh(fresh.refresh_token))
     expect(rolled.access_token).toMatch(/^lyriks_mcp_/)
     vi.advanceTimersByTime(29 * 24 * 3600_000)
-    const again = await (await refresh(rolled.refresh_token)).json()
+    const again = await granted(await refresh(rolled.refresh_token))
     expect(again.access_token).toMatch(/^lyriks_mcp_/)
     vi.advanceTimersByTime(30 * 24 * 3600_000 + 1)
     expect((await refresh(again.refresh_token)).status).toBe(400)

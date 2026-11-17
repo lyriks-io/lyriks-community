@@ -39,7 +39,7 @@ export const GET: RequestHandler = async (event) => {
 		const draft = await loadSection(s, section, projectId);
 		if (section === 'evolution') {
 			// The raw dossiers too are read without the private exchanges of others with their AI (ac-evo-live-ask).
-			const reader = await resolveEvolutionActor(s, event);
+			const reader = await resolveEvolutionActor(s, event, projectId);
 			const evolution = draft as ProjectEvolutionDraft;
 			return json({ section, projectId, revision, draft: { ...evolution, requests: evolution.requests.map((r) => requestSeenBy(r, reader.id)) } });
 		}

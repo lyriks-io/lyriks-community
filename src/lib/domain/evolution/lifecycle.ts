@@ -149,6 +149,16 @@ export function canRebrief(request: EvolutionRequest): Guarded {
 export function canCloseRequest(request: EvolutionRequest): Guarded {
 	return firstRefusal(
 		guard(
+			request.status === 'deleted',
+			'This request is deleted.',
+			'A deleted dossier is out of the run: closing it would bring it back as closed and write what it carries into the specification.'
+		),
+		guard(
+			request.status === 'closed',
+			'This request is closed.',
+			'A closed request has finished its run: closing it again, or declaring it live again, would rewrite how it ended.'
+		),
+		guard(
 			request.status === 'cancelled',
 			'This request is cancelled: reopen it first.',
 			'Closing is the end of a delivered change, not of a cancelled one.'

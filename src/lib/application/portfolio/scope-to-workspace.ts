@@ -30,3 +30,19 @@ export async function scopeToWorkspace<T extends { readonly id: string }>(
 		return link !== null && allowedWorkspaceIds.has(link.backWorkspaceId);
 	});
 }
+
+/**
+ * The same filter, keeping the workspace each item belongs to, so a caller's
+ * breadth can be read in that workspace (issue 150). `allowedWorkspaceIds` null
+ * keeps everything, with the workspace known from the link when there is one.
+ */
+export async function placeInWorkspaces<T extends { readonly id: string }>(
+	items: readonly T[],
+	allowedWorkspaceIds: ReadonlySet<string> | null,
+	backLinks: BackLinkRepositoryPort
+): Promise<{ readonly item: T; readonly workspaceId: string | null }[]> {
+	const links = await Promise.all(items.map((item) => backLinks.find(item.id)));
+	return items
+		.map((item, i) => ({ item, workspaceId: links[i]?.backWorkspaceId ?? null }))
+		.filter(({ workspaceId }) => allowedWorkspaceIds === null || (workspaceId !== null && allowedWorkspaceIds.has(workspaceId)));
+}

@@ -3,12 +3,17 @@ import { RETROSPEC_SECTION } from '$domain/retrospec';
 import { fail, redirect } from '@sveltejs/kit';
 import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
-import { callerAllowedDomains } from '$lib/server/domain-scope.server';
+import { callerAllowedDomains, callerReach } from '$lib/server/domain-scope.server';
+import { callerRoleInProjectWorkspace, pickActiveWorkspace, pinnedWorkspace, projectWorkspaceId } from '$lib/server/caller-workspace.server';
+import { foldersIn, writesIn } from '$application/portfolio/project-visibility';
+import { folderChange, folderCreation, folderForProject } from '$application/portfolio/folder-policy';
+import type { ProjectPlacement } from '$application/portfolio/create-project';
 import { seedOwnerCollaborator } from '$lib/server/seed-owner-collaborator.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
-import { ownNewProject } from '$lib/server/new-project-ownership.server';
-import { refusedCreation } from '$lib/server/project-creation-refusal.server';
+import { ownNewProject, VIEWER_CREATION_REFUSAL } from '$lib/server/new-project-ownership.server';
+import { refusedCreation, refusedFolder } from '$lib/server/project-creation-refusal.server';
 import { readHome } from '$lib/server/home.server';
+import { ASK_YOUR_ADMINISTRATOR, foundWorkspace, mayFoundWorkspace } from '$lib/server/workspace-founding.server';
 import { projectSyncKey, sectionSyncKey } from '$lib/shared/section-sync';
 import { NOTIFICATIONS_DEPENDENCY } from '$ui/shell/notifications-client';
 import type { Actions, PageServerLoad } from './$types';
@@ -32,27 +37,55 @@ export const load: PageServerLoad = async (event) => {
 		event.depends(sectionSyncKey(id, 'baselines'));
 		event.depends(sectionSyncKey(id, 'evolution'));
 	}
-	return home;
+	return { ...home, mayFoundWorkspace: mayFoundWorkspace(event) };
 };
+
+/** A refusal as the Home forms word it: a sentence. */
+const sentence = (reason: string) => (reason.endsWith('.') ? reason : `${reason}.`);
+
+/**
+ * The folder checks of the Home forms that change a folder, the same as the
+ * projects panel's (rules a924fdc0, 61faf699): a folder out of reach reads as
+ * absent and a viewer of its workspace changes nothing. A folder that is gone
+ * keeps the forms' own answers, after the scope check they always made.
+ */
+async function homeFolderRefusal(event: Parameters<Actions[string]>[0], id: string) {
+	const existing = (await event.locals.services.listDomains.execute()).find((domain) => domain.id === id);
+	if (!existing) {
+		return (await callerAllowedDomains(event)) === null ? null : fail(404, { scope: 'domain', message: 'Domain not found.' });
+	}
+	const verdict = folderChange(await callerReach(event), existing);
+	return verdict.ok ? null : fail(verdict.status, { scope: 'domain', message: sentence(verdict.reason) });
+}
 
 export const actions: Actions = {
 	/**
-	 * Bootstrap the caller's first workspace (they become its owner) and pin it as
-	 * the active team. Self-service replacement for the "not a member of any team"
-	 * dead-end — no admin/SSH round-trip needed to get started.
+	 * Found a workspace from Home (the caller becomes its owner) and pin it as the
+	 * active team. For an administrator of the installation, or for anyone where
+	 * the operator allowed self-provisioning; everyone else is invited by an
+	 * administrator, as the deployment guide promises.
 	 */
 	createWorkspace: async ({ request, cookies, locals }) => {
 		if (!locals.authRequired) return { created: 'workspace' };
+		if (!mayFoundWorkspace({ locals })) {
+			locals.services.audit.record({ action: 'workspace.create', actor: actorOf(locals), outcome: 'failure', detail: 'not allowed to provision' });
+			return fail(403, { scope: 'workspace', message: ASK_YOUR_ADMINISTRATOR });
+		}
 		const data = await request.formData();
 		const name = String(data.get('name') ?? '').trim();
 		if (!name) return fail(400, { scope: 'workspace', message: 'Give your workspace a name.' });
 
-		const created = await locals.services.workspaces.createForCaller(name);
-		if (!created) {
+		const founding = await foundWorkspace(locals.services, name);
+		if (founding === null) {
 			locals.services.audit.record({ action: 'workspace.create', actor: actorOf(locals), outcome: 'failure' });
 			return fail(502, { scope: 'workspace', message: 'Could not create your workspace. Please try again.' });
 		}
-		cookies.set('lyriks_active_ws', created.id, {
+		if ('refused' in founding) {
+			// The team server's own reason: an administrator of the installation it refuses reads why (rule 02adbadd).
+			locals.services.audit.record({ action: 'workspace.create', actor: actorOf(locals), outcome: 'failure', detail: founding.refused });
+			return fail(403, { scope: 'workspace', message: founding.refused });
+		}
+		cookies.set('lyriks_active_ws', founding.created.id, {
 			path: '/',
 			httpOnly: true,
 			sameSite: 'lax',
@@ -63,28 +96,27 @@ export const actions: Actions = {
 		return { created: 'workspace' };
 	},
 
-	// Same boundary as POST /api/domains: creating a board is a full-portfolio right.
+	// Same boundary as POST /api/domains: a writer who sees every folder of the
+	// workspace the switcher shows adds one to it (rules 509fa7a1, b0e92772).
 	createDomain: async (event) => {
-		if ((await callerAllowedDomains(event)) !== null) {
-			return fail(403, { scope: 'domain', message: 'Only members with full portfolio access can create domains.' });
-		}
+		const verdict = folderCreation(await callerReach(event));
+		if (!verdict.ok) return fail(verdict.status, { scope: 'domain', message: sentence(verdict.reason) });
 		const data = await event.request.formData();
 		const name = String(data.get('name') ?? '').trim();
 		if (!name) return fail(400, { scope: 'domain', message: 'Give the domain a name.' });
 		const description = String(data.get('description') ?? '');
 		const icon = String(data.get('icon') ?? '');
-		await event.locals.services.createDomain.execute(name, description, icon);
+		await event.locals.services.createDomain.execute(name, description, icon, verdict.workspaceId ?? null);
 		return { created: 'domain' };
 	},
 
 	updateDomain: async (event) => {
 		const data = await event.request.formData();
 		const id = String(data.get('id') ?? '');
-		// Same boundary as PATCH /api/domains/[id]: an out-of-scope domain reads as absent.
-		const allowedDomains = await callerAllowedDomains(event);
-		if (allowedDomains !== null && !allowedDomains.has(id)) {
-			return fail(404, { scope: 'domain', message: 'Domain not found.' });
-		}
+		// Same boundary as PATCH /api/domains/[id]: a folder out of reach reads as absent,
+		// and a viewer of its workspace changes nothing (rule a924fdc0).
+		const refusal = await homeFolderRefusal(event, id);
+		if (refusal) return refusal;
 		const name = String(data.get('name') ?? '').trim();
 		const description = String(data.get('description') ?? '');
 		const icon = String(data.get('icon') ?? '');
@@ -96,16 +128,15 @@ export const actions: Actions = {
 	removeDomain: async (event) => {
 		const data = await event.request.formData();
 		const id = String(data.get('id') ?? '');
-		const allowedDomains = await callerAllowedDomains(event);
-		if (allowedDomains !== null && !allowedDomains.has(id)) {
-			return fail(404, { scope: 'domain', message: 'Domain not found.' });
-		}
+		const refusal = await homeFolderRefusal(event, id);
+		if (refusal) return refusal;
 		const res = await event.locals.services.removeDomain.execute(id);
 		if (!res.removed) return fail(400, { scope: 'domain', message: res.reason });
 		return { removed: 'domain' };
 	},
 
-	createProject: async ({ request, locals, cookies }) => {
+	createProject: async (event) => {
+		const { request, locals, cookies } = event;
 		const data = await request.formData();
 		const name = String(data.get('name') ?? '').trim();
 		if (!name) return fail(400, { scope: 'project', message: 'Give the product a name.' });
@@ -122,8 +153,14 @@ export const actions: Actions = {
 		// centrally (SSO/admin), so a user with none gets a clear, actionable message
 		// rather than a silently-created workspace. Small/pilot installs can opt into
 		// self-provisioning with LYRIKS_AUTO_WORKSPACE=1 (mirrors LYRIKS_ALLOW_SIGNUP).
+		let placement: ProjectPlacement | null = null;
 		if (locals.authRequired && services.identity.multiUser) {
 			const teams = await services.workspaces.listForCaller();
+			// The workspace the switcher shows owns the project, as the team server will register it;
+			// a viewer there is told why before anything is written (rule 9c7b8a91).
+			const owning = pickActiveWorkspace(teams, pinnedWorkspace(event));
+			if (owning && !writesIn(owning.role)) return fail(403, { scope: 'project', message: VIEWER_CREATION_REFUSAL });
+			if (owning) placement = { workspaceId: owning.id, folders: foldersIn(await callerReach(event), owning.id) };
 			if (teams.length === 0) {
 				if (env.LYRIKS_AUTO_WORKSPACE !== '1') {
 					return fail(409, {
@@ -132,7 +169,9 @@ export const actions: Actions = {
 							'You are not a member of any workspace yet. Ask your administrator to invite you to one.'
 					});
 				}
-				const created = await services.workspaces.createForCaller(`${name} workspace`);
+				// The bootstrap keeps one failure message, the team server's refusal included.
+				const founding = await foundWorkspace(services, `${name} workspace`);
+				const created = founding && 'created' in founding ? founding.created : null;
 				if (!created) {
 					services.audit.record({ action: 'project.create', actor: actorOf(locals), outcome: 'failure', detail: 'workspace provisioning failed' });
 					return fail(502, { scope: 'project', message: 'Could not provision your workspace. Please try again.' });
@@ -146,17 +185,23 @@ export const actions: Actions = {
 					secure: !dev,
 					maxAge: 60 * 60 * 24 * 365
 				});
+				// The caller founded it: every folder there is theirs.
+				placement = { workspaceId: created.id, folders: null };
 			}
 		}
 
-		const creation = await refusedCreation(() =>
+		const filed = await refusedFolder(() => refusedCreation(() =>
 			services.createProject.execute({
 				name,
 				description: String(data.get('description') ?? ''),
 				domainId: String(data.get('domainId') ?? '') || null,
-				sourceMode
+				sourceMode,
+				placement
 			})
-		);
+		));
+		// The shared creation's folder checks (rules a8664b7b, ed4ab638), before anything is written.
+		if ('folderRefused' in filed) return fail(403, { scope: 'project', message: filed.folderRefused });
+		const creation = filed.created;
 		// Community holds one project: the offer of the plan that opens several (EVO-001).
 		if ('refused' in creation) {
 			return fail(403, { scope: 'project', message: creation.refused.reason, detail: creation.refused.detail, plan: creation.refused.plan });
@@ -198,13 +243,11 @@ export const actions: Actions = {
 		const description = String(data.get('description') ?? '');
 		const domainId = String(data.get('domainId') ?? '') || null;
 		if (domainId) {
-			if (!(await event.locals.services.listDomains.execute()).some((domain) => domain.id === domainId)) {
-				return fail(400, { scope: 'project', message: 'The destination domain does not exist.' });
-			}
-			const allowedDomains = await callerAllowedDomains(event);
-			if (allowedDomains !== null && !allowedDomains.has(domainId)) {
-				return fail(403, { scope: 'project', message: 'The target domain is outside your portfolio scope.' });
-			}
+			// Same checks as PATCH /api/projects/[id], read in the project's own workspace.
+			const target = (await event.locals.services.listDomains.execute()).find((domain) => domain.id === domainId);
+			const filing = folderForProject(await callerReach(event), await projectWorkspaceId(event.locals.services, projectId), target);
+			if (filing === 'missing') return fail(400, { scope: 'project', message: 'The destination domain does not exist.' });
+			if (filing === 'outside') return fail(403, { scope: 'project', message: 'The target domain is outside your portfolio scope.' });
 		}
 		const res = await event.locals.services.updateProject.execute({
 			projectId,
@@ -228,11 +271,13 @@ export const actions: Actions = {
 		// Both halves of the one-step flow keep their own boundary: writing the
 		// project, and the full-portfolio right that domain creation requires.
 		await requireProjectAccess(event, projectId, 'write');
-		if ((await callerAllowedDomains(event)) !== null) {
+		const services = event.locals.services;
+		// The folder is made in the project's own workspace, by a member who sees every folder there.
+		const workspaceId = await projectWorkspaceId(services, projectId);
+		if ((await callerAllowedDomains(event, workspaceId)) !== null) {
 			return fail(403, { scope: 'domain', message: 'Only members with full portfolio access can create domains.' });
 		}
-		const services = event.locals.services;
-		const domain = await services.createDomain.execute(domainName);
+		const domain = await services.createDomain.execute(domainName, '', 'lucide:building-2', workspaceId);
 		const res = await services.updateProject.execute({
 			projectId,
 			name: String(data.get('name') ?? ''),
@@ -244,7 +289,7 @@ export const actions: Actions = {
 	},
 
 	/**
-	 * Duplicate a project from the card menu.
+	 * Duplicate a project from the menu of its row in the Projects panel (criterion 54b86d96).
 	 *
 	 * Deliberately the SAME pair the download/upload path uses, run in process:
 	 * `exportProject` reads the whole project at storage level (rows + behavior
@@ -270,11 +315,14 @@ export const actions: Actions = {
 
 		// No domain is passed on purpose: the bundle carries the source's own, and
 		// the import matches it by name, so the copy lands beside its original.
+		// The copy is registered in the workspace the switcher shows: its folders are the ones it may land in.
+		const workspaceId = (await callerReach(event))?.activeId ?? null;
 		const copy = await refusedCreation(() =>
 			services.importProject.execute({
 				bytes: bundle.bytes,
 				mode: 'copy',
-				name: `${bundle.projectName} (copy)`
+				name: `${bundle.projectName} (copy)`,
+				workspaceId
 			})
 		);
 		if ('refused' in copy) {
@@ -328,6 +376,7 @@ export const actions: Actions = {
 			projectId: id,
 			confirmName,
 			requesterEmail: locals.session?.email ?? null,
+			requesterWorkspaceRole: locals.authRequired ? await callerRoleInProjectWorkspace(services, id) : null,
 			enforceOwner: locals.authRequired
 		});
 		if (!res.deleted) {
@@ -335,7 +384,7 @@ export const actions: Actions = {
 			const message = {
 				not_found: 'Project not found.',
 				name_mismatch: 'The name you typed does not match the project name.',
-				not_owner: 'Only the project owner can delete this project.'
+				not_owner: 'Only a project owner or a workspace owner or admin can delete this project.'
 			}[res.reason];
 			const status = res.reason === 'not_owner' ? 403 : res.reason === 'not_found' ? 404 : 400;
 			return fail(status, { scope: 'project', message });

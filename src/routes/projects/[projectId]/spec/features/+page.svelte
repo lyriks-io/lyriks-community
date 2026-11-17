@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { anchorDomId, anchorOf, onFeaturesPages } from '$domain/discussions';
+	import { anchorDomId, anchorOf } from '$domain/discussions';
 	import { addedLast } from '$application/spec360/edits';
 	import { productRuleAnchor } from '$application/spec360/product-rules';
 	import EarsText from '$ui/glossary/EarsText.svelte';
@@ -8,7 +8,6 @@
 	import { useSpecNews } from '$ui/spec360/spec-news.svelte';
 	import SectionValidateAll from '$ui/spec360/SectionValidateAll.svelte';
 	import SpecControls from '$ui/spec360/SpecControls.svelte';
-	import ValidateAllCheck from '$ui/spec360/ValidateAllCheck.svelte';
 	import AskAiTool from '$ui/spec360/page/AskAiTool.svelte';
 	import { PRODUCT_CITE } from '$ui/spec360/page/head-cite';
 	import OpenRow from '$ui/spec360/page/OpenRow.svelte';
@@ -31,9 +30,9 @@
 	 * Each row carries its own validation beside its navigation link (criteria
 	 * 74f14936, 89d4c960); what entered or changed in it lately reads New
 	 * or Changed until the reader opens it (criteria 2a6bff42, b0950115).
-	 * "Validate all" in the head validates, in the reader's name and in one
-	 * act, every element of every feature still waiting on them; a rejection
-	 * stays an explicit decision.
+	 * Every element of every feature still waiting on the reader is validated
+	 * from the band's Validate all section, which no check in the head repeats
+	 * (criterion d7cd4e43).
 	 */
 	let { data }: { data: PageData } = $props();
 	const base = $derived(`/projects/${encodeURIComponent(data.projectId)}/spec`);
@@ -56,15 +55,12 @@
 		)
 	);
 	const ruleAnchors = $derived(data.list.productRules.map((r) => productRuleAnchor(r.id)));
-	const featureAnchors = $derived(validation.source.elements.map((e) => e.id).filter(onFeaturesPages));
-	const waiting = $derived(validation.source.canWrite ? validation.waitingOnMe(featureAnchors).length : 0);
 
 </script>
 
 <div id="spec-features-list" class="flex animate-lk-in flex-col">
 	<PageHead title="Features" lead="Everything {data.spec.productName} does, grouped into {cores.length} {cores.length === 1 ? 'area' : 'areas'}." cite={PRODUCT_CITE}>
 		{#snippet tools()}
-			<ValidateAllCheck always count={waiting} what="elements" of="of all the features" onclick={() => void validation.validateAllInSpec(featureAnchors, 'spec-features-list', 'features')} />
 			<!-- The one way the page asks the reader's AI, posted in About the product's thread (criterion 44aa7b4f). -->
 			<AskAiTool anchor="product" title="Features" subject="the features of {data.spec.productName}" />
 		{/snippet}

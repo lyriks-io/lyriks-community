@@ -1,7 +1,7 @@
 import { createCore, createFeature, leafFeatures } from '$domain/features';
 import {
 	REUSE_LIBRARY_SECTION,
-	WORKSPACE_LIBRARY_ID,
+	libraryKeyFor,
 	createEmptyReuseLibrary,
 	type ReuseLibraryDraft,
 	type RequirementTemplate
@@ -16,27 +16,30 @@ import type {
 
 const IMPORTED_CORE_NAME = 'Imported requirements';
 
-async function loadLibrary(residue: ProjectResidueRepositoryPort): Promise<ReuseLibraryDraft> {
-	const raw = await residue.load(WORKSPACE_LIBRARY_ID, REUSE_LIBRARY_SECTION);
-	return raw == null ? createEmptyReuseLibrary() : parseReuseLibrary(raw);
+/** The library of one workspace (null: the installation without workspaces). */
+async function loadLibrary(residue: ProjectResidueRepositoryPort, workspaceId: string | null): Promise<ReuseLibraryDraft> {
+	const key = libraryKeyFor(workspaceId);
+	const raw = await residue.load(key, REUSE_LIBRARY_SECTION);
+	return raw == null ? createEmptyReuseLibrary(key) : { ...parseReuseLibrary(raw), projectId: key };
 }
 
 async function saveLibrary(
 	residue: ProjectResidueRepositoryPort,
-	draft: ReuseLibraryDraft
+	draft: ReuseLibraryDraft,
+	workspaceId: string | null
 ): Promise<void> {
-	await residue.save(WORKSPACE_LIBRARY_ID, REUSE_LIBRARY_SECTION, draft);
+	await residue.save(libraryKeyFor(workspaceId), REUSE_LIBRARY_SECTION, draft);
 }
 
-/** Read the workspace-shared reuse library. */
+/** Read the reuse library a workspace keeps (null: the installation without workspaces). */
 export class LoadReuseLibraryUseCase {
 	constructor(private readonly residue: ProjectResidueRepositoryPort) {}
-	execute(): Promise<ReuseLibraryDraft> {
-		return loadLibrary(this.residue);
+	execute(workspaceId: string | null = null): Promise<ReuseLibraryDraft> {
+		return loadLibrary(this.residue, workspaceId);
 	}
 }
 
-/** Lift one leaf feature into the shared library as a reusable template. */
+/** Lift one leaf feature into the library of the project's workspace as a reusable template. */
 export class ExportRequirementUseCase {
 	constructor(
 		private readonly residue: ProjectResidueRepositoryPort,
@@ -45,7 +48,7 @@ export class ExportRequirementUseCase {
 		private readonly clock: ClockPort
 	) {}
 
-	async execute(projectId: string, featureId: string): Promise<ReuseLibraryDraft> {
+	async execute(projectId: string, featureId: string, workspaceId: string | null = null): Promise<ReuseLibraryDraft> {
 		const [features, identity] = await Promise.all([
 			this.loadFeatures.execute(projectId),
 			this.loadFoundation.loadIdentity(projectId)
@@ -64,13 +67,13 @@ export class ExportRequirementUseCase {
 			sourceProjectName: identity.productName.trim() || 'Untitled project',
 			createdAt: now
 		};
-		const lib = await loadLibrary(this.residue);
+		const lib = await loadLibrary(this.residue, workspaceId);
 		const updated: ReuseLibraryDraft = {
 			...lib,
 			templates: [template, ...lib.templates],
 			lastSavedAt: now
 		};
-		await saveLibrary(this.residue, updated);
+		await saveLibrary(this.residue, updated, workspaceId);
 		return updated;
 	}
 }
@@ -88,8 +91,8 @@ export class ImportRequirementUseCase {
 		private readonly saveFeatures: SaveFeaturesDraftUseCase
 	) {}
 
-	async execute(projectId: string, templateId: string): Promise<{ featureId: string }> {
-		const lib = await loadLibrary(this.residue);
+	async execute(projectId: string, templateId: string, workspaceId: string | null = null): Promise<{ featureId: string }> {
+		const lib = await loadLibrary(this.residue, workspaceId);
 		const template = lib.templates.find((t) => t.id === templateId);
 		if (!template) throw new Error('template not found');
 
@@ -122,16 +125,16 @@ export class ImportRequirementUseCase {
 	}
 }
 
-/** Remove a template from the shared library. */
+/** Remove a template from the library of the project's workspace. */
 export class RemoveReuseTemplateUseCase {
 	constructor(private readonly residue: ProjectResidueRepositoryPort) {}
-	async execute(templateId: string): Promise<ReuseLibraryDraft> {
-		const lib = await loadLibrary(this.residue);
+	async execute(templateId: string, workspaceId: string | null = null): Promise<ReuseLibraryDraft> {
+		const lib = await loadLibrary(this.residue, workspaceId);
 		const updated: ReuseLibraryDraft = {
 			...lib,
 			templates: lib.templates.filter((t) => t.id !== templateId)
 		};
-		await saveLibrary(this.residue, updated);
+		await saveLibrary(this.residue, updated, workspaceId);
 		return updated;
 	}
 }

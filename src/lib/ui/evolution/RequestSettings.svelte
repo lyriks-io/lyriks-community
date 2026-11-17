@@ -55,7 +55,10 @@
 		const reason = await promptDialog({
 			title: 'Cancel this request?',
 			message: `It leaves the columns of the board and stays readable; you can reopen it. ${
-				frozen ? 'What its frozen version wrote into the specification stays.' : 'What it wrote into the specification stays.'
+				// A freeze records the version on the request and writes nothing; only the landing writes the drafts.
+				frozen
+					? 'Its frozen version was recorded on the request alone, never written into the specification; what the request wrote there directly stays.'
+					: 'What it wrote into the specification stays.'
 			}`,
 			confirmLabel: 'Cancel the request',
 			cancelLabel: 'Keep it',

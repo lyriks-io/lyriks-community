@@ -38,7 +38,7 @@ const answer = (outcome: ChatOutcome<object>) => (outcome.ok ? json(outcome) : j
 export const GET: RequestHandler = async (event) => {
 	const { projectId } = event.params;
 	await requireProjectAccess(event, projectId, 'read');
-	const actor = await resolveEvolutionActor(event.locals.services, event);
+	const actor = await resolveEvolutionActor(event.locals.services, event, projectId);
 	return json({ conversations: await readMyConversations(event.locals.services, projectId, actor.id) });
 };
 
@@ -46,7 +46,7 @@ export const POST: RequestHandler = async (event) => {
 	const { projectId } = event.params;
 	await requireProjectAccess(event, projectId, 'read');
 	const services = event.locals.services;
-	const actor = await resolveEvolutionActor(services, event);
+	const actor = await resolveEvolutionActor(services, event, projectId);
 	if (actor.kind !== 'person') error(403, 'Only the person writes in their conversations.');
 	const canEdit = await requireProjectAccess(event, projectId, 'write').then(
 		() => true,
@@ -64,7 +64,7 @@ export const POST: RequestHandler = async (event) => {
 		case 'withdraw':
 			return answer(await withdrawChat(services, projectId, actor.id, conversationId, messageId, origin));
 		case 'publish': {
-			const author = await discussionAuthor(services, event.cookies);
+			const author = await discussionAuthor(services, projectId, event.cookies);
 			return answer(
 				await publishChat(services, projectId, actor.id, author, { conversationId, messageId, anchor: str(body.anchor), title: str(body.title), text: str(body.text) }, origin)
 			);

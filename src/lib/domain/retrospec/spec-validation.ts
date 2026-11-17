@@ -84,12 +84,22 @@ export function validationLead(doc: RetrospecDocument, viewer: PersonRef | null)
 	return run && 'validationLead' in run ? run.validationLead ?? null : run?.startedBy ?? viewer;
 }
 
-/** Review authority uses an established lead, never the person merely viewing a page. */
+/**
+ * Whether the actor may give, or take back, their own validation of an element:
+ * the element waits on them (they lead the validation, hold the job that owns
+ * it, or were asked); a writer also when it waits on nobody named, or to take
+ * back a validation of theirs that stands on it. A writer leads while no run names a lead;
+ * a reader never does, so merely viewing a page never makes one the lead. Any
+ * other validation would read as an approval and count for nothing, so the
+ * server refuses it on every door (criterion d1703bb6).
+ */
 export function canReviewElement(doc: RetrospecDocument, element: SpecElement | undefined, team: readonly TeamMember[], actor: PersonRef, canWrite: boolean): boolean {
 	if (!element) return false;
-	if (canWrite) return true;
 	const requested = doc.validationRequests?.[element.id]?.map((request) => request.to) ?? [];
-	return requiredValidators(element.owner, validationLead(doc, null), team, requested, element.id).some((person) => samePersonRef(person, actor));
+	const required = requiredValidators(element.owner, validationLead(doc, canWrite ? actor : null), team, requested, element.id);
+	if (required.some((person) => samePersonRef(person, actor))) return true;
+	if (!canWrite) return false;
+	return required.length === 0 || !!currentRun(doc)?.verdicts[element.id]?.validatedBy.some((v) => samePersonRef(v.person, actor));
 }
 
 /** DRAFT until the current run is published; a new run under way reads DRAFT again, unless it holds what it found: nothing moved yet (criterion 50b00229). */
@@ -101,6 +111,11 @@ export function specState(doc: RetrospecDocument): 'draft' | 'validated' {
 /** The baseline the first validation captured: version 1.0. */
 export function validationBaselineId(doc: RetrospecDocument): string | null {
 	return doc.runs.find((r) => r.publishedAt && r.baselineId)?.baselineId ?? null;
+}
+
+/** Every baseline a validation of the specification stands on: none of them may be deleted. */
+export function validationBaselineIds(doc: RetrospecDocument): Set<string> {
+	return new Set(doc.runs.flatMap((r) => (r.publishedAt && r.baselineId ? [r.baselineId] : [])));
 }
 
 /**

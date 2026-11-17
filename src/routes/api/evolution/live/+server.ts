@@ -89,7 +89,7 @@ export const GET: RequestHandler = async (event) => {
 	if (!projectId) error(400, 'projectId is required');
 	await requireProjectAccess(event, projectId, 'read');
 	const services = event.locals.services;
-	const actor = await resolveEvolutionActor(services, event);
+	const actor = await resolveEvolutionActor(services, event, projectId);
 	// A session its AI left never reads in session: it ends here when it is over (ac-ai-session-end).
 	await settleProjectSession(services, projectId, actor.id);
 	const draft = await services.loadEvolutionDraft.execute(projectId);
@@ -171,7 +171,7 @@ async function projectAct(
 	startsOn: { readonly id: string; readonly href: string } | null = null
 ): Promise<Response> {
 	const services = event.locals.services;
-	const actor = await resolveEvolutionActor(services, event);
+	const actor = await resolveEvolutionActor(services, event, projectId);
 	const draft = await services.loadEvolutionDraft.execute(projectId);
 	const open = openProjectSessionOf(draft, actor.id);
 	const mine = (sessionId: string) => {
@@ -269,7 +269,7 @@ export const POST: RequestHandler = async (event) => {
 	if (!(await services.projectExists(projectId))) error(404, `Project "${projectId}" does not exist.`);
 	if (!ref) return projectAct(event, projectId, act, body);
 	requireEvolutionAccess(services);
-	const actor = await resolveEvolutionActor(services, event);
+	const actor = await resolveEvolutionActor(services, event, projectId);
 	const request = await requestOf(services, projectId, ref);
 	const base = { projectId, requestId: request.id, personId: actor.id };
 	// One session per person and project: a session opened on a request is the project's, started there.
@@ -286,7 +286,7 @@ export const POST: RequestHandler = async (event) => {
 		case 'end': {
 			const op = { op: 'end_session', requestId: request.id, sessionId: str(body.sessionId) || undefined };
 			const outcome = await guardSectionWrite('evolution', () =>
-				applyEvolutionOperations(services, { projectId, operations: [op], actor, origin: event.request.headers.get('x-lyriks-client'), activeWorkspaceId: event.cookies.get('lyriks_active_ws') })
+				applyEvolutionOperations(services, { projectId, operations: [op], actor, origin: event.request.headers.get('x-lyriks-client') })
 			);
 			if (!outcome.ok) return json({ ok: false, results: outcome.results }, { status: outcome.status });
 			const ended = lastSessionOf(await requestOf(services, projectId, request.id), actor.id)!;
@@ -351,8 +351,7 @@ export const POST: RequestHandler = async (event) => {
 					projectId,
 					operations: [{ op: 'cancel_click', requestId: request.id, ...(str(body.clickId) ? { clickId: str(body.clickId) } : {}) }],
 					actor,
-					origin: event.request.headers.get('x-lyriks-client'),
-					activeWorkspaceId: event.cookies.get('lyriks_active_ws')
+					origin: event.request.headers.get('x-lyriks-client')
 				})
 			);
 			if (!outcome.ok) return json({ ok: false, results: outcome.results }, { status: outcome.status });

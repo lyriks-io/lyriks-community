@@ -55,7 +55,9 @@ export const POST: RequestHandler = async (event) => {
 		outcome: 'success',
 		detail: 'self-service'
 	});
-	if (!services.identity.multiUser && event.locals.session?.email) {
+	// The change ended every session the old password opened, this browser's
+	// included, on both editions: sign this browser in again with the new one.
+	if (event.locals.session?.email) {
 		const login = await services.identity.login(event.locals.session.email, body.newPassword);
 		if ('token' in login) setSessionCookie(event.cookies, login.token);
 	}

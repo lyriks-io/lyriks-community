@@ -193,7 +193,7 @@ export async function setSectionHandler(
   }
   // Guard against the classic full-replace trap: warn (post-write) when the
   // stored draft holds non-empty sub-trees the incoming document omits — e.g.
-  // `collections` seeded by import_data_collections, or `builder`. Read errors
+  // `collections` seeded by the retired prototype, or `builder`. Read errors
   // block writes: without the current revision, a replacement is unsafe.
   const warnings: string[] = []
   const retained: Record<string, unknown> = {}

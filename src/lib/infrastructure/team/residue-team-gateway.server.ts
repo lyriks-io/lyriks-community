@@ -40,11 +40,12 @@ export class ResidueTeamGateway implements TeamGatewayPort {
 		return collaborator;
 	}
 
-	async removeCollaborator(projectId: string, collaboratorId: string): Promise<void> {
+	async removeCollaborator(projectId: string, collaboratorId: string): Promise<boolean> {
 		const team = (await this.getTeam(projectId)) ?? emptyTeam();
 		const next: Team = {
 			collaborators: team.collaborators.filter((c) => c.id !== collaboratorId)
 		};
 		await this.residue.save(projectId, SECTION, next);
+		return true;
 	}
 }

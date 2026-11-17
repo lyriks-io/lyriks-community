@@ -12,6 +12,8 @@ export interface PageScope {
 	readonly anchors: readonly string[];
 	readonly sectionId: string;
 	readonly label: string;
+	/** The path of the page that holds it: while the next page loads, the band never reads the page being left's (criterion c509fa9c). */
+	readonly path?: string;
 }
 
 export class PageScopeSlot {

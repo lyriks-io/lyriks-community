@@ -35,9 +35,11 @@ export const POST: RequestHandler = async (event) => {
 	return json(result, { status: result.ok ? 200 : 400 });
 };
 
+/** Remove the key in force; the previous key stays unless `?previousToo=1` removes it too. */
 export const DELETE: RequestHandler = async (event) => {
 	requireAdmin(event);
-	const { locals } = event;
-	await event.locals.services.deactivateLicense.execute(locals.session?.email ?? 'api');
+	const { locals, url } = event;
+	const previousToo = ['1', 'true'].includes(url.searchParams.get('previousToo') ?? '');
+	await event.locals.services.deactivateLicense.execute(locals.session?.email ?? 'api', { previousToo });
 	return json({ ok: true });
 };

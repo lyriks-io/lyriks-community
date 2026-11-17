@@ -12,7 +12,7 @@
 	 * One code change made outside Lyriks (criteria 4903ceb0, 53e7e3da,
 	 * 537e1684): its type, where it belongs and where the code is, what the spec
 	 * says beside what the code reads now, then the impact analysis, the
-	 * acceptance into the spec, the rejection with the brief that restores the
+	 * acceptance of the code as it is (the spec's words unchanged), the rejection with the brief that restores the
 	 * code, and once decided, the decision with its Undo. A rejected change stays
 	 * here, waiting for the code to follow the spec.
 	 */
@@ -53,7 +53,7 @@
 
 	async function accept() {
 		open = null;
-		await run(() => review.accept(change), 'Accepted into the spec: a new version of the spec is captured');
+		await run(() => review.accept(change), 'Code change accepted as it is: a new version of the spec records the decision, its words are unchanged');
 	}
 
 	function reject() {
@@ -115,7 +115,7 @@
 		<div class="mt-3.5 flex flex-wrap items-center gap-1.5">
 			<button type="button" class="{open === 'impact' ? BTN_MAIN : BTN} max-[700px]:min-h-11" aria-expanded={open === 'impact'} onclick={toggleImpact}>Impact analysis</button>
 			{#if review.canWrite}
-				<button type="button" class="{BTN} max-[700px]:min-h-11" disabled={busy} onclick={() => void accept()}>Accept into the spec</button>
+				<button type="button" class="{BTN} max-[700px]:min-h-11" disabled={busy} onclick={() => void accept()}>Accept the code change</button>
 				<button
 					type="button"
 					class="{open === 'restore' ? WARN_ON : WARN} max-[700px]:min-h-11"
@@ -131,7 +131,7 @@
 		<div class="animate-lk-in-fast mt-3">
 			<p class="m-0 text-sm text-ink-2 [overflow-wrap:anywhere]">
 				{#if decision.decision === 'kept'}
-					The spec now follows the code{decision.version ? ` (version ${decision.version})` : ''}: {codeNow}
+					Accepted as it is in the code{decision.version ? ` (version ${decision.version} captured)` : ''}: {codeNow}. The spec's words are unchanged.
 				{:else}
 					Waiting for the code to follow the spec: this change leaves the list once the code reads as the spec again.
 				{/if}

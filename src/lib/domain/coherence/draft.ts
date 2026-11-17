@@ -101,6 +101,13 @@ export interface Gap {
 	 * A defect weighs more than a question, both less than a detection.
 	 */
 	nature?: 'defect' | 'question';
+	/**
+	 * An issue of the rules register whose fix is written and waits for someone
+	 * to confirm it (status In review): Project health lists it apart under Fix
+	 * to confirm and weighs nothing on it, while the coherence reading and the
+	 * completion gate still count it as unsettled (criterion 2a55c3e7).
+	 */
+	fixToConfirm?: true;
 }
 
 export interface GapProof {

@@ -5,7 +5,7 @@ import type { ProjectExperienceDraft } from '../experience';
 import type { ProjectFeaturesDraft } from '../features';
 import type { ProjectRulesDraft } from '../rules';
 import { earsOfDetectedEdge, readsAsEars } from '../rules';
-import type { Gap } from '../coherence';
+import { citesCode, gapOrigin, originLine, type Gap, type PointOrigin } from '../coherence';
 import { effectivePenalties } from '../coherence/incoherence';
 import { isBlockingIssue, issueGapId } from '../coherence/issue-gap';
 import { unconfirmedReason } from './summary';
@@ -62,6 +62,19 @@ export interface Finding {
 	readonly featureId?: string;
 	/** It holds the build gate (a critical contradiction): fixed through an evolution, never rejected. */
 	readonly blocking?: true;
+	/**
+	 * Where the problem lies (criterion c86ea441): in the product, in the
+	 * specification or in Lyriks's records, and the first line of its sheet
+	 * saying what that means and what settles it.
+	 */
+	readonly origin?: PointOrigin;
+	readonly originLine?: string;
+	/**
+	 * An issue whose fix is written and waits for someone to confirm it
+	 * (criterion 2a55c3e7): listed apart under Fix to confirm, confirmed or
+	 * reopened, never rejected nor sent to a change.
+	 */
+	readonly fix?: { readonly issueId: string; readonly note: string };
 }
 
 export interface FindingsInput {
@@ -101,7 +114,20 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 type IssueInput = Pick<FindingsInput, 'rules' | 'features' | 'experience' | 'sources'>;
 type Issue = ProjectRulesDraft['issues'][number];
 
-function issueFindings(input: IssueInput, keep: (issue: Issue) => boolean): Finding[] {
+/** An issue read from the code (its detail cites it, or a code source backs it) is about the product as it ships. */
+function issueOrigin(issue: Issue, cited: readonly DocumentSource[]): PointOrigin {
+	return citesCode(issue.detail) || cited.some((s) => s.kind === 'code') ? 'product' : 'specification';
+}
+
+/** What a person does with a fix that waits for confirmation. */
+const CONFIRM_OR_REOPEN =
+	'Check that the product now does what the note says, then Confirm the fix: the issue is resolved. If it does not, Reopen it: it waits for review again.';
+const FIND_THE_FIX_AGAIN: FindingSheetSection = {
+	heading: 'WHERE YOU FIND IT AGAIN',
+	text: 'It stays under Fix to confirm in Health until someone confirms or reopens it.'
+};
+
+function issueFindings(input: IssueInput, keep: (issue: Issue) => boolean, asFix = false): Finding[] {
 	const featureName = new Map(input.features.features.map((f) => [f.id, clean(f.name)]));
 	const journeyName = new Map(input.experience.journeys.map((j) => [j.id, clean(j.name)]));
 	const source = new Map(input.sources.map((s) => [s.id, s]));
@@ -118,14 +144,15 @@ function issueFindings(input: IssueInput, keep: (issue: Issue) => boolean): Find
 				...input.rules.inventory.filter((r) => issue.relatedRuleIds.includes(r.id)).map((r) => ({ k: 'Rule', v: clean(r.statement) || clean(r.label) }))
 			];
 			const cited = issue.sourceIds.map((id) => source.get(id)).filter((s): s is DocumentSource => !!s);
+			const origin = issueOrigin(issue, cited);
 			const sections: FindingSheetSection[] = [
 				{ heading: 'IN SHORT', text: clean(issue.detail) || clean(issue.title) },
 				...(where.length > 0 ? [{ heading: 'WHERE IT APPLIES', list: where }] : []),
 				...(cited.length > 0 ? [{ heading: 'WHERE IT COMES FROM', list: cited.map((s) => ({ k: s.kind === 'code' ? 'Code' : 'Source', v: clean(s.title) || clean(s.url) })) }] : []),
 				...(clean(issue.resolutionNote) ? [{ heading: 'NOTE', text: clean(issue.resolutionNote) }] : []),
-				FIND_IT_AGAIN
+				...(asFix ? [{ heading: 'WHAT YOU CAN DO', text: CONFIRM_OR_REOPEN }, FIND_THE_FIX_AGAIN] : [FIND_IT_AGAIN])
 			];
-			return {
+			const common = {
 				id: `issue:${issue.id}`,
 				tone,
 				text: clean(issue.title),
@@ -134,16 +161,40 @@ function issueFindings(input: IssueInput, keep: (issue: Issue) => boolean): Find
 				...(clean(issue.detail) ? { hint: clean(issue.detail) } : {}),
 				where: feature || kind.label,
 				kind,
+				...(feature && issue.relatedFeatureId ? { featureId: issue.relatedFeatureId } : {}),
+				origin,
+				originLine: originLine(origin)
+			};
+			if (asFix) {
+				return {
+					...common,
+					sheet: { kicker: `FIX TO CONFIRM · ${kind.label.toUpperCase()}`, title: clean(issue.title), sections },
+					fix: { issueId: issue.id, note: clean(issue.resolutionNote) }
+				};
+			}
+			return {
+				...common,
 				sheet: { kicker: `PROBLEM SHEET · ${kind.label.toUpperCase()} · ${tone === 'major' ? 'MAJOR' : 'MINOR'} IMPACT`, title: clean(issue.title), sections },
 				decision: { issueId: issue.id, question: questionOf(issue.kind) },
 				gapIds: [issueGapId(issue.kind, issue.id)],
-				...(feature && issue.relatedFeatureId ? { featureId: issue.relatedFeatureId } : {}),
 				...(isBlockingIssue(issue) ? { blocking: true as const } : {})
 			};
 		});
 }
 
-const stillOpen = (issue: Issue) => issue.status === 'open' || issue.status === 'in_review';
+/** Still to review: an issue in review has its fix written, and waits for confirmation instead (criterion 2a55c3e7). */
+const stillOpen = (issue: Issue) => issue.status === 'open';
+const fixWaits = (issue: Issue) => issue.status === 'in_review';
+
+/**
+ * The issues whose fix is written and waits for someone to confirm it
+ * (criterion 2a55c3e7), as Health lists them apart under Fix to confirm:
+ * major first, each with its note and where the problem lies.
+ */
+export function fixToConfirmFindings(input: IssueInput): Finding[] {
+	const all = issueFindings(input, fixWaits, true);
+	return [...all.filter((f) => f.tone === 'major'), ...all.filter((f) => f.tone === 'minor')];
+}
 
 /**
  * The issues a person rejected from the Overview, kept as they are (criterion
@@ -155,12 +206,16 @@ export function keptIssueFindings(input: IssueInput): Finding[] {
 	return [...all.filter((f) => f.tone === 'major'), ...all.filter((f) => f.tone === 'minor')];
 }
 
+/** A gap Lyriks computes on the specification itself: nothing is known to be wrong in the product. */
+const SPEC_ORIGIN = { origin: 'specification', originLine: originLine('specification') } as const;
+
 function computedFindings(input: FindingsInput): Finding[] {
 	const out: Finding[] = [];
 	const orphans = unrelatedEntities(input.data);
 	if (orphans.length > 0) {
 		out.push({
 			id: 'computed:orphan-tables',
+			...SPEC_ORIGIN,
 			tone: 'minor',
 			text: `${plural(orphans.length, 'table')} related to nothing: possibly dead code`,
 			where: 'Data',
@@ -183,6 +238,7 @@ function computedFindings(input: FindingsInput): Finding[] {
 		const journeyName = new Map(input.experience.journeys.map((j) => [j.id, clean(j.name)]));
 		out.push({
 			id: 'computed:steps-off-screen',
+			...SPEC_ORIGIN,
 			tone: 'minor',
 			text: `${plural(loose.length, 'journey step')} on no screen`,
 			where: 'Experience',
@@ -205,6 +261,7 @@ function computedFindings(input: FindingsInput): Finding[] {
 	if (input.features.features.length > 0 && bare.length > 0) {
 		out.push({
 			id: 'computed:features-without-behavior',
+			...SPEC_ORIGIN,
 			tone: bare.length === input.features.features.length ? 'major' : 'minor',
 			text: `${plural(bare.length, 'feature')} with no action described`,
 			where: 'Features',
@@ -289,6 +346,7 @@ export function finalCheckFindings(gaps: readonly Gap[]): Finding[] {
 			id: `check:${rule}`,
 			tone: 'major',
 			unconfirmed: true,
+			...SPEC_ORIGIN,
 			gapIds: list.map((g) => g.id),
 			text: `${title} (${reach})`,
 			// The requirement the check holds, as the engine wrote it (criterion ad34b2f4).
@@ -320,6 +378,8 @@ export function finalCheckFindings(gaps: readonly Gap[]): Finding[] {
 			id: `check:${gap.id}`,
 			tone: 'major',
 			unconfirmed: true,
+			origin: gapOrigin(gap),
+			originLine: originLine(gapOrigin(gap), gap.action),
 			gapIds: [gap.id],
 			text: `Not confirmed: ${clean(gap.title)}`,
 			...(readsAsEars(gap.title) ? { ears: clean(gap.title) } : {}),
@@ -352,6 +412,7 @@ export function failedCheckFindings(failedChecks: readonly string[]): Finding[] 
 			id: `check:${key}`,
 			tone: 'major',
 			unconfirmed: true,
+			...SPEC_ORIGIN,
 			text: `Not confirmed: ${unconfirmedReason(key).charAt(0).toLowerCase()}${unconfirmedReason(key).slice(1)}`,
 			where: FINAL_CHECK_KIND.label,
 			kind: FINAL_CHECK_KIND,
@@ -437,9 +498,12 @@ function pointFinding(gap: Gap, cost: number): Finding {
 			: gap.weighs === 'unverified'
 				? 'Costs nothing: the engine could not reach it, which proves no fault.'
 				: 'Costs nothing: it follows from a point already counted.';
+	const origin = gapOrigin(gap);
 	return {
 		id: `point:${gap.id}`,
 		tone: gap.blocking || gap.severity === 'high' ? 'major' : 'minor',
+		origin,
+		originLine: originLine(origin, gap.action),
 		gapIds: [gap.id],
 		text: title,
 		...(readsAsEars(gap.title) ? { ears: title } : {}),

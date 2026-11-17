@@ -117,11 +117,12 @@ export interface ReaderActivity {
 export async function readerActivity(services: AppServices, event: Pick<RequestEvent, 'locals' | 'cookies'>): Promise<ReaderActivity> {
 	const me = currentPersonId(services);
 	const activeWs = event.cookies.get('lyriks_active_ws');
-	const [projects, roster, myName] = await Promise.all([
+	const [projects, myName] = await Promise.all([
 		visibleProjects(services, event),
-		workspaceRoster(services, activeWs),
 		services.resolveActiveMemberName.execute(activeWs ?? null).catch(() => '')
 	]);
+	// The people of each visible project's own workspace, not of the one the switcher shows.
+	const roster = await workspaceRoster(services, projects, activeWs);
 	const perProject = await mapLimit(projects, 6, async (project) => {
 		const [evolution, discussions, retrospec, team, reads] = await Promise.all([
 			projectEvolution(services, project.id, roster),

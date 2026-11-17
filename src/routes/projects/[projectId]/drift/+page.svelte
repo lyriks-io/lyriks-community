@@ -39,7 +39,7 @@
 	const wait = $derived(sectionWait('mismatch', data.chrome.tabs, data.projectId));
 	// Mismatch is an entry of its own in the navigation (criterion 097c4079).
 	const lead = $derived(
-		drift.state === 'report' ? `What the last Reverse-Specification of ${drift.productName} found, compared with its specification.` : `Changes found in the code of ${drift.productName} that went through neither the spec nor an evolution. For each one: look at the gap, ask for an impact analysis, then accept it into the spec or reject it and restore the previous behaviour.`
+		drift.state === 'report' ? `What the last Reverse-Specification of ${drift.productName} found, compared with its specification.` : `Changes found in the code of ${drift.productName} that went through neither the spec nor an evolution. For each one: look at the gap, ask for an impact analysis, then accept it as it is or reject it and restore the previous behaviour.`
 	);
 	const offer = $derived(data.canWrite ? drift.next : null);
 	let launching = $state(false);
@@ -106,7 +106,7 @@
 					<SummaryBar
 						total={counts.total}
 						segments={[
-							{ value: counts.accepted, color: 'var(--color-green)', label: 'accepted into the spec' },
+							{ value: counts.accepted, color: 'var(--color-green)', label: 'accepted as it is' },
 							{ value: counts.rejected, color: 'var(--color-ink-3)', label: 'rejected' }
 						]}
 						rest={{ value: counts.pending, label: 'to review' }}

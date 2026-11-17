@@ -15,7 +15,7 @@ function fixture(initial = emptyRetrospecDocument()) {
 	const services = {
 		projectAccess: { authorize: vi.fn().mockResolvedValue({ ok: true }) },
 		installEdition: () => undefined, resolveActiveProject: { execute: async () => null }, projectExists: vi.fn().mockResolvedValue(true),
-		currentSession: () => ({ email: writer.id }), resolveActiveMemberName: { execute: async () => writer.name },
+		currentSession: () => ({ email: writer.id }), resolveActiveMemberName: { execute: async () => writer.name }, backLinks: { find: async () => null },
 		sectionDocuments: { load: async () => doc, currentRevision: async () => revision, save: vi.fn(async (_p: string, _section: string, next: RetrospecDocument) => { doc = next; return ++revision; }) },
 		loadFeaturesDraft: { execute: vi.fn().mockResolvedValue({ features: [{ id: 'f' }] }) },
 		detectFeatureIdCollision: { execute: vi.fn().mockResolvedValue([]) }, behaviorPort: { readFeature: vi.fn().mockResolvedValue(snapshot) },

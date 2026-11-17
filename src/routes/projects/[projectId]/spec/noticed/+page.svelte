@@ -34,7 +34,7 @@
 
 	// The drawer follows its point by id, so the page's next read (a decision landed) shows in it.
 	let pointId = $state<string | null>(null);
-	const openPoint = $derived(pointId ? (data.noticed.points.find((p) => p.finding.id === pointId) ?? null) : null);
+	const openPoint = $derived(pointId ? ([...data.noticed.points, ...data.noticed.toConfirm].find((p) => p.finding.id === pointId) ?? null) : null);
 	const featureHref = (id: string) => `${base}/${corePath(encodeURIComponent(id))}`;
 
 </script>
@@ -68,7 +68,7 @@
 		{/if}
 		{#if data.noticed.waitsForFeature}
 			<!-- Said above: nothing is listed before the first feature (criterion 01761816). -->
-		{:else if data.noticed.total > 0}
+		{:else if data.noticed.total > 0 || data.noticed.toConfirm.length > 0}
 			<NoticedSection view={data.noticed} {decisions} writable={data.canWrite} onOpen={(id) => (pointId = id)} {focus} />
 		{:else if !data.healthReading}
 			<div class={LIST}><p class="{META} m-0 px-5 py-[18px]">Nothing waits: Lyriks noticed no open point.</p></div>

@@ -322,6 +322,22 @@ export class SpecEdits {
 		return written.ok;
 	}
 
+	/** A fix waiting for confirmation, confirmed: the issue is resolved (criterion 2a55c3e7); answers whether it is. */
+	async confirmFix(issueId: string): Promise<boolean> {
+		if (!this.#writable()) return false;
+		const written = await this.#queue.run(() => this.#write({ op: 'confirm_fix', issueId }));
+		if (!written.ok) pushToast({ level: 'error', message: `The fix was not confirmed. ${written.reason ?? ''}`.trim() });
+		return written.ok;
+	}
+
+	/** A fix waiting for confirmation, reopened: the issue waits for review again (criterion 2a55c3e7); answers whether it does. */
+	async reopenFix(issueId: string): Promise<boolean> {
+		if (!this.#writable()) return false;
+		const written = await this.#queue.run(() => this.#write({ op: 'reopen_fix', issueId }));
+		if (!written.ok) pushToast({ level: 'error', message: `The fix was not reopened. ${written.reason ?? ''}`.trim() });
+		return written.ok;
+	}
+
 	/** Tick a cell of who can do what: on grants the user the action, off takes it back (criterion eba33558). */
 	async tickPermission(roleId: string, capabilityId: string, on: boolean): Promise<boolean> {
 		if (!this.#writable()) return false;

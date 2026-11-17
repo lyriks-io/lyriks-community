@@ -19,6 +19,12 @@ export const KNOWLEDGE_TABS: readonly { readonly id: KnowledgeTab; readonly labe
 	{ id: 'glossary', label: 'Glossary', path: '/glossary' }
 ];
 
+/** The view of a tab a path shows, the segment after the tab (a profile, Who can do what, a view of Technology & data), or null on the tab's own page. */
+export function tabView(pathname: string): string | null {
+	const view = pathname.replace(/\/+$/, '').split('/')[5];
+	return view ? decodeURIComponent(view) : null;
+}
+
 /** Why Experience reads Beta (criterion b0d81efd): the least mastered chapter of a specification. */
 export const BETA_TIP = 'Beta: the journeys, the screens and the design are still being shaped, read them with care.';
 

@@ -60,7 +60,7 @@
 				<div class="text-[1.75rem] leading-[1.1] font-bold tracking-[-0.03em] text-ink">{held.counts.pending}</div>
 				<div class="font-evo-mono text-xs tracking-[0.06em] text-ink-3 uppercase">to decide, of {held.counts.total}</div>
 			</div>
-			<p class="m-0 flex-[1_1_260px] text-sm text-ink-2">{held.counts.total === 0 ? 'This run found nothing that differs from the specification.' : 'Nothing below is in the specification yet. Each change sits beside what the specification says today.'}</p>
+			<p class="m-0 flex-[1_1_260px] text-sm text-ink-2">{held.counts.total === 0 ? 'This run found nothing that differs from the specification.' : 'Nothing below is in the specification yet. Each change sits beside what the specification says today. Validate only records your decision: once every change is decided, Write the validated changes has your AI write them into the specification.'}</p>
 			{#if canWrite && !held.writing && held.counts.pending > 1}
 				<button type="button" class={BTN} disabled={busy} onclick={validateAll}>Validate all</button>
 			{/if}

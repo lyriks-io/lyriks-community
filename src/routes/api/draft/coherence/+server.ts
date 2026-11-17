@@ -24,9 +24,9 @@ export const GET: RequestHandler = async (event) => {
 };
 
 /**
- * Step 09 autosave target — persists the authored state (threshold,
- * acknowledgements, generated artifacts), then best-effort mirrors the whole
- * wizard envelope to Lyriks-back.
+ * Step 09 autosave target. It persists the authored state (the threshold and
+ * the prepared decisions; decisions and generated documents stay server-owned),
+ * then best-effort mirrors the whole wizard envelope to Lyriks-back.
  */
 export const PUT: RequestHandler = (event) =>
 	saveSectionDraft(event, {

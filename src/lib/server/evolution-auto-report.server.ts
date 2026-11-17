@@ -16,17 +16,16 @@ export async function rebuildReportsAfterSync(
 	event: Pick<RequestEvent, 'request' | 'cookies'>,
 	projectId: string
 ): Promise<void> {
-	const view = await loadEvolutionView(services, projectId, { activeWorkspaceId: event.cookies.get('lyriks_active_ws') });
+	const view = await loadEvolutionView(services, projectId);
 	const atBuild = view.draft.requests.filter((r) => r.status === 'open' && r.stage === 'implementation');
 	if (atBuild.length === 0) return;
-	const actor = await resolveEvolutionActor(services, event);
+	const actor = await resolveEvolutionActor(services, event, projectId);
 	for (const request of atBuild) {
 		await applyEvolutionOperations(services, {
 			projectId,
 			operations: [{ op: 'build_implementation_report', requestId: request.id }],
 			actor,
-			origin: event.request.headers.get('x-lyriks-client'),
-			activeWorkspaceId: event.cookies.get('lyriks_active_ws')
+			origin: event.request.headers.get('x-lyriks-client')
 		}).catch(() => null);
 	}
 }

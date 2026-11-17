@@ -53,7 +53,7 @@ describe('the Health page [criterion:8a696e52]', () => {
 
 	it('says what a level of audit logs means', () => {
 		const definition = { ...createEmptyDefinitionDraft(P), lastSavedAt: '2026-11-03T00:00:00.000Z' };
-		definition.security = { ...definition.security, auditLogs: 'partial' };
+		definition.security = { ...definition.security, auditLogs: 'partial', answered: ['auditLogs'] };
 		const items = healthItems({ data: createEmptyDataDraft(P), definition, operations: createEmptyOperationsDraft(P), coverage: [] });
 		expect(items.find((i) => i.key === 'audit-logs')).toEqual({
 			key: 'audit-logs',

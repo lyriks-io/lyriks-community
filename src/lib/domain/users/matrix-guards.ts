@@ -30,6 +30,12 @@ export interface ActionDisagreement {
 	readonly refusedButGranted: readonly { readonly roleId: string; readonly roleName: string; readonly rule: string }[];
 	/** Roles the matrix keeps out of the action while it reads their state and no rule refuses them. */
 	readonly letInButNotGranted: readonly { readonly roleId: string; readonly roleName: string }[];
+	/**
+	 * The matrix grants the action (and its feature) to no role at all: it says
+	 * nothing about it rather than keeping anyone out. Every such disagreement
+	 * comes from one choice, a matrix that grants actions sparingly.
+	 */
+	readonly grantedToNobody: boolean;
 }
 
 /** A feature whose actions read no role at all while the matrix keeps roles out of some of them. */
@@ -257,7 +263,8 @@ export function readMatrixAgainstGuards(
 					actionId: action.id,
 					actionName: action.name,
 					refusedButGranted,
-					letInButNotGranted
+					letInButNotGranted,
+					grantedToNobody: !users.roles.some((role) => granted(users.permissions, role.id, leaf.id, action.id))
 				});
 			}
 		}

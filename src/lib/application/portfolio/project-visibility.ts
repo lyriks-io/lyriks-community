@@ -45,3 +45,56 @@ export async function isProjectVisible(
 	const team = await getTeam(projectId).catch(() => null);
 	return team ? canSeeProjectAsCollaborator(team, v.email) : false;
 }
+
+/** What the caller reaches in one workspace they are a member of. */
+export interface WorkspaceReach {
+	/** Their role there: owner, admin, designer, viewer, or a service role. */
+	readonly role: string;
+	/** The folders they reach there: null = every folder (owner, admin, or a member set to every project). */
+	readonly folders: ReadonlySet<string> | null;
+}
+
+/**
+ * Everything the caller reaches, workspace by workspace (issue 150): what a
+ * member may see or do with a project or a folder is read in the workspace it
+ * belongs to, never in the one the switcher shows. `null` stands for an
+ * installation with nothing to scope (sign-in off, the one operator account,
+ * Community), where every folder and every project is the caller's.
+ */
+export interface CallerReach {
+	/** Every workspace the caller is a member of, by id. */
+	readonly workspaces: ReadonlyMap<string, WorkspaceReach>;
+	/** The workspace the switcher shows: where a new folder or project lands. Null when they belong to none. */
+	readonly activeId: string | null;
+	/** Their email, for the per-project grants of the Team dialog. */
+	readonly email: string | null;
+}
+
+/** The roles that may write in a workspace, as the team server knows them. */
+const WRITER_ROLES: ReadonlySet<string> = new Set(['owner', 'admin', 'designer']);
+
+/** Whether `role` may write in its workspace (a viewer, or a service role, may not). */
+export function writesIn(role: string | undefined): boolean {
+	return role !== undefined && WRITER_ROLES.has(role);
+}
+
+/**
+ * The folders the caller reaches in one workspace: null = every folder. Nothing
+ * scoped (`reach` null) reaches everything; a workspace they are not a member
+ * of, or no workspace at all under a reach, reaches nothing (fail closed).
+ */
+export function foldersIn(reach: CallerReach | null, workspaceId: string | null): ReadonlySet<string> | null {
+	if (reach === null) return null;
+	const inWorkspace = workspaceId ? reach.workspaces.get(workspaceId) : undefined;
+	return inWorkspace ? inWorkspace.folders : new Set<string>();
+}
+
+/** The caller's visibility over the projects of one workspace (see `isProjectVisible`). */
+export function visibilityIn(reach: CallerReach | null, workspaceId: string | null): ProjectVisibility {
+	return { allowedDomainIds: foldersIn(reach, workspaceId), email: reach?.email ?? null };
+}
+
+/** The workspace ids the caller may list projects of: null = every project (nothing scoped). */
+export function workspaceIdsOf(reach: CallerReach | null): ReadonlySet<string> | null {
+	return reach === null ? null : new Set(reach.workspaces.keys());
+}

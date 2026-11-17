@@ -16,10 +16,11 @@ export interface RequirementTemplate {
 }
 
 /**
- * The workspace-global reuse library. Stored in the residue table under a
- * reserved project key (see WORKSPACE_LIBRARY_ID), so every project in the
- * appliance shares one library without a new table. `projectId` is that reserved
- * key, kept only to satisfy the residue-draft shape.
+ * A workspace's reuse library. Stored in the residue table under a reserved
+ * project key (see `libraryKeyFor`), one per workspace (issue 267), so a team
+ * never reads another team's templates; an installation without workspaces
+ * keeps one under WORKSPACE_LIBRARY_ID. `projectId` is that reserved key, kept
+ * only to satisfy the residue-draft shape.
  */
 export interface ReuseLibraryDraft {
 	projectId: string;
@@ -27,10 +28,15 @@ export interface ReuseLibraryDraft {
 	lastSavedAt: string | null;
 }
 
-/** Reserved residue key for the shared library (no real project uses it). */
+/** Reserved residue key for the library of an installation without workspaces (no real project uses it). */
 export const WORKSPACE_LIBRARY_ID = '__workspace__';
 export const REUSE_LIBRARY_SECTION = 'reuse-library';
 
-export function createEmptyReuseLibrary(): ReuseLibraryDraft {
-	return { projectId: WORKSPACE_LIBRARY_ID, templates: [], lastSavedAt: null };
+/** The residue key of the library a workspace keeps; null is the installation without workspaces. */
+export function libraryKeyFor(workspaceId: string | null): string {
+	return workspaceId ? `${WORKSPACE_LIBRARY_ID}:${workspaceId}` : WORKSPACE_LIBRARY_ID;
+}
+
+export function createEmptyReuseLibrary(key: string = WORKSPACE_LIBRARY_ID): ReuseLibraryDraft {
+	return { projectId: key, templates: [], lastSavedAt: null };
 }

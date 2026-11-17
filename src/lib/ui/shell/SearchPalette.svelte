@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import type { ProjectTabs } from '$domain/portfolio/project-tabs';
 	import type { PortfolioView } from '$domain/portfolio';
 	import { pageEntries, type SearchEntry } from './app-search';
@@ -47,7 +48,8 @@
 	// New evolution where the project takes evolutions (its Evolutions tab is open).
 	const actions = $derived<PaletteRow[]>([
 		...(base && tabs?.tabs.includes('evolutions') ? [{ g: 'Action', t: 'New change', p: '', href: `${base}/evolution?new=1` }] : []),
-		{ g: 'Action', t: 'New project', p: '', act: 'new-project' as const }
+		// A viewer of the workspace the switcher shows is offered no project creation (rule 029ff8b4).
+		...(page.data.mayCreateProjects === false ? [] : [{ g: 'Action', t: 'New project', p: '', act: 'new-project' as const }])
 	]);
 	const projects = $derived<PaletteRow[]>(others.filter((p) => p.id !== project?.id).map((p) => ({ g: 'Project', t: p.name, p: 'Switch project', href: `/projects/${encodeURIComponent(p.id)}` })));
 	// What was added or changed lately, each opening its page (criterion e11bf80b).

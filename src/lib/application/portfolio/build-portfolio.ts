@@ -15,8 +15,15 @@ import type {
 	ProjectCatalogPort,
 } from '$application/ports';
 import type { ProjectSummary } from '$domain/catalog';
-import { scopeToWorkspace } from '$application/portfolio/scope-to-workspace';
-import { canSeeProjectAsCollaborator } from '$domain/team';
+import { placeInWorkspaces } from '$application/portfolio/scope-to-workspace';
+import {
+	isProjectVisible,
+	visibilityIn,
+	workspaceIdsOf,
+	type CallerReach,
+	type ProjectVisibility,
+} from '$application/portfolio/project-visibility';
+import { folderVisibleTo, foldersOfWorkspaces } from '$application/portfolio/folder-policy';
 import { mapLimit } from '$lib/shared/map-limit';
 
 /**
@@ -57,52 +64,40 @@ export class BuildPortfolioUseCase {
 	) {}
 
 	/**
-	 * @param allowedWorkspaceIds when non-null, restrict the portfolio to projects
-	 *   mirrored to a workspace the caller belongs to (multi-tenant isolation). Pass
-	 *   null in the single-tenant / auth-off appliance to list everything (unchanged).
-	 * @param allowedDomainIds the domain-scope breadth. Null = blanket (owner/admin,
-	 *   "all projects", or auth-off) — every project. A Set restricts to those domains.
-	 * @param collaboratorEmail when the caller is restricted, projects whose team
-	 *   carries this email are ALSO shown (per-project grants) — visibility is the
-	 *   union of domain breadth and collaborations. Ignored when blanket.
+	 * @param reach what the caller reaches, workspace by workspace; null lists
+	 *   everything (the single-tenant / auth-off appliance, unchanged). Under a
+	 *   reach, only projects of the caller's workspaces are kept (multi-tenant
+	 *   isolation), each judged by the caller's breadth in ITS workspace (domain
+	 *   breadth ∪ collaborations), and only the folders of those workspaces are
+	 *   listed: never another team's (issue 156).
 	 */
-	async execute(
-		allowedWorkspaceIds: ReadonlySet<string> | null = null,
-		allowedDomainIds: ReadonlySet<string> | null = null,
-		collaboratorEmail: string | null = null,
-	): Promise<PortfolioView> {
+	async execute(reach: CallerReach | null = null): Promise<PortfolioView> {
 		const [domains, listed] = await Promise.all([
 			this.portfolio.listDomains(),
 			this.catalog.list(),
 		]);
-		const summaries = await scopeToWorkspace(listed, allowedWorkspaceIds, this.backLinks);
-		const cards = await mapLimit(summaries, CARD_CONCURRENCY, (s) => this.#card(s));
-
-		// Blanket: every workspace project. Restricted: domain breadth ∪ collaborations.
-		if (allowedDomainIds === null) return assemblePortfolio(domains, cards);
-		const keep = await mapLimit(cards, CARD_CONCURRENCY, (c) =>
-			this.#visibleWhenRestricted(c, allowedDomainIds, collaboratorEmail),
+		if (reach === null) {
+			const cards = await mapLimit(listed, CARD_CONCURRENCY, (s) => this.#card(s));
+			return assemblePortfolio(domains, cards);
+		}
+		const placed = await placeInWorkspaces(listed, workspaceIdsOf(reach), this.backLinks);
+		const cards = await mapLimit(placed, CARD_CONCURRENCY, ({ item }) => this.#card(item));
+		const keep = await mapLimit(cards, CARD_CONCURRENCY, (c, i) =>
+			this.#visible(c, visibilityIn(reach, placed[i].workspaceId)),
 		);
 		const visibleCards = cards.filter((_, i) => keep[i]);
 		const visibleDomainIds = new Set(
 			visibleCards.map((c) => c.domainId).filter((d): d is string => d !== null),
 		);
-		const scopedDomains = domains.filter(
-			(d) => visibleDomainIds.has(d.id) || allowedDomainIds.has(d.id),
+		const scopedDomains = foldersOfWorkspaces(reach, domains).filter(
+			(d) => visibleDomainIds.has(d.id) || folderVisibleTo(reach, d),
 		);
 		return assemblePortfolio(scopedDomains, visibleCards);
 	}
 
-	/** A restricted caller keeps a card when its domain is in breadth or they collaborate on it. */
-	async #visibleWhenRestricted(
-		card: ProjectCard,
-		allowedDomainIds: ReadonlySet<string>,
-		collaboratorEmail: string | null,
-	): Promise<boolean> {
-		if (card.domainId !== null && allowedDomainIds.has(card.domainId)) return true;
-		if (!collaboratorEmail) return false;
-		const team = await this.loadTeam.execute(card.id).catch(() => null);
-		return team ? canSeeProjectAsCollaborator(team, collaboratorEmail) : false;
+	/** A card stays when its domain is in the breadth of its workspace or the caller collaborates on it. */
+	async #visible(card: ProjectCard, visibility: ProjectVisibility): Promise<boolean> {
+		return isProjectVisible(card.id, card.domainId, visibility, (id) => this.loadTeam.execute(id));
 	}
 
 	async #card(s: ProjectSummary): Promise<ProjectCard> {

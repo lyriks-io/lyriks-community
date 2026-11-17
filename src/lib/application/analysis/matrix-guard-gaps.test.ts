@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { matrixGuardGaps } from './matrix-guard-gaps';
+import { MATRIX_GRANTS_NOBODY_CAUSE, matrixGuardGaps } from './matrix-guard-gaps';
+import { effectivePenalties } from '$domain/coherence/incoherence';
 import type { Role } from '$domain/users';
 
 const role = (id: string, name: string, value?: string): Role => ({
@@ -54,5 +55,31 @@ describe('matrixGuardGaps [criterion:26262450]', () => {
 		expect(gap).toMatchObject({ id: 'gap-users-matrix-blind-t', kind: 'misalignment', severity: 'medium', featureRef: 't' });
 		expect(gap.detail).toContain('Install Teams app');
 		expect(gap.detail).toContain('Member');
+	});
+
+	it('gives the actions the matrix grants to nobody one cause, so they weigh once [criterion:43a4becb]', () => {
+		const guarded = (id: string) => ({
+			id,
+			name: `Action ${id}`,
+			rules: [{ condition: { left: 'session.workspaceRole', operator: 'equals', right: 'viewer' }, effect: { type: 'block_action', reason: 'viewers read only' } }]
+		});
+		const reads = {
+			id: 'r',
+			name: 'Reports',
+			snapshot: { format: 'unspaghettit-feature', version: 1, feature: { surfaces: [{ stateDefinitions: [], rules: [], actions: [guarded('a1'), guarded('a2'), guarded('a3')] }] } }
+		} as never;
+		const users = {
+			roles: [role('a', 'Admin', 'admin'), role('m', 'Member', 'member')],
+			permissions: [{ roleId: 'a', capabilityId: 'action:r:a3', capabilitySource: 'feature' as const }]
+		};
+		const gaps = matrixGuardGaps(users, [reads]);
+		const [a1, a2, a3] = ['a1', 'a2', 'a3'].map((id) => gaps.find((g) => g.id === `gap-users-matrix-guards-r-${id}`)!);
+		expect(a1.cause).toBe(MATRIX_GRANTS_NOBODY_CAUSE);
+		expect(a2.cause).toBe(MATRIX_GRANTS_NOBODY_CAUSE);
+		expect(a1.detail).toBe('The access matrix grants this action to no profile, while its rules let "Admin" and "Member" in.');
+		// Granted to a profile, the disagreement is its own decision and weighs on its own.
+		expect(a3.cause).toBeUndefined();
+		const penalties = effectivePenalties([a1, a2, a3]);
+		expect(penalties.filter((p) => p > 0)).toHaveLength(2);
 	});
 });

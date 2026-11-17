@@ -54,8 +54,14 @@ export class SaveCoherenceDraftUseCase {
 	) {}
 
 	/**
-	 * Save the AUTHORED state of the section: the threshold, the generated
-	 * artifacts, the generation flags.
+	 * Save the AUTHORED state of the section: the threshold and the prepared
+	 * decisions.
+	 *
+	 * The generated documents and the generated flag are server-owned for the
+	 * same reason: generating them is refused on a specification that is not
+	 * green, and a save that took them from the body would mark any content
+	 * generated around that gate. Only `GenerateSpecsUseCase` writes them; a
+	 * save keeps the stored ones whatever its payload says.
 	 *
 	 * Decisions and acknowledgements are deliberately NOT authored state. They
 	 * take findings out of every score, so they are appended only by the
@@ -86,6 +92,9 @@ export class SaveCoherenceDraftUseCase {
 				...draft,
 				decisions: stored?.decisions ?? [],
 				acknowledgedGapIds: stored?.acknowledgedGapIds ?? [],
+				artifacts: stored?.artifacts ?? [],
+				specsGenerated: stored?.specsGenerated ?? false,
+				generatedAt: stored?.generatedAt ?? null,
 				prepared: keepActionablePreparations(
 					stamp(draft.prepared, stored?.prepared ?? [], by, this.clock.nowIso()),
 					analysis

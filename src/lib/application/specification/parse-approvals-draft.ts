@@ -22,7 +22,10 @@ export function parseApprovalsDraft(input: unknown, projectId: string): ProjectA
 				reviewer: str(value.reviewer),
 				status: isApprovalStatus(value.status) ? value.status : 'draft',
 				deadline: str(value.deadline),
-				note: str(value.note)
+				note: str(value.note),
+				// Stamped by the server on save (stampDecisions), never taken from the caller.
+				decidedBy: null,
+				decidedAt: null
 			});
 		}
 	}

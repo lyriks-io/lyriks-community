@@ -4,8 +4,9 @@ import { INSTALL_ID_LENGTH, installIdFromBytes } from '$domain/licensing';
 import { pgQuery } from './pg-database.server';
 
 interface Row {
-	license_key: string;
-	activated_at: string;
+	/** Empty once the key in force was removed while the previous one is kept. */
+	license_key: string | null;
+	activated_at: string | null;
 }
 
 /** Postgres mirror of the single-row install activation record. */
@@ -24,7 +25,7 @@ export class PgActivationRepository implements ActivationRepositoryPort {
 			[ROW_ID]
 		);
 		const row = rows[0];
-		return row ? { key: row.license_key, activatedAt: row.activated_at } : null;
+		return row?.license_key ? { key: row.license_key, activatedAt: row.activated_at ?? '' } : null;
 	}
 
 	async save(activation: StoredActivation): Promise<void> {
@@ -38,11 +39,15 @@ export class PgActivationRepository implements ActivationRepositoryPort {
 			 VALUES ($1, $2, $3)
 			 ON CONFLICT(id) DO UPDATE SET
 			   previous_key = CASE
+			     WHEN product_activation.license_key IS NULL
+			       THEN NULLIF(product_activation.previous_key, excluded.license_key)
 			     WHEN product_activation.license_key = excluded.license_key
 			       THEN product_activation.previous_key
 			     ELSE product_activation.license_key
 			   END,
 			   previous_activated_at = CASE
+			     WHEN product_activation.license_key IS NULL
+			       THEN CASE WHEN product_activation.previous_key = excluded.license_key THEN NULL ELSE product_activation.previous_activated_at END
 			     WHEN product_activation.license_key = excluded.license_key
 			       THEN product_activation.previous_activated_at
 			     ELSE product_activation.activated_at
@@ -61,6 +66,12 @@ export class PgActivationRepository implements ActivationRepositoryPort {
 		const row = rows[0];
 		if (!row?.previous_key) return null;
 		return { key: row.previous_key, activatedAt: row.previous_activated_at ?? '' };
+	}
+
+	async removeCurrent(): Promise<void> {
+		// With no key in force, a later save keeps the previous key as its
+		// rollback target, or drops it when that very key is put back.
+		await pgQuery('UPDATE product_activation SET license_key = NULL, activated_at = NULL WHERE id = $1', [ROW_ID]);
 	}
 
 	async clear(): Promise<void> {

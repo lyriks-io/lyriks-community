@@ -113,20 +113,27 @@ The client reads your checkout and writes the spec through MCP. Open the
 project in Lyriks to review it. [Getting started](docs/getting-started.md)
 walks through this first pass and how to check the result against the product.
 
-## Community and Enterprise
+## Community and the paid plans
 
-Community provides the specification workspace with one operator account.
-Enterprise adds team access and formal verification.
+Lyriks is offered in four plans, the ones the Plans entry of the app's
+account menu lists; their prices are on
+[lyriks.io/pricing](https://lyriks.io/pricing). This repository is the free
+one, Community Edition: discover Lyriks on one project.
 
-| | Community | Enterprise |
-|---|---|---|
-| Accounts and access | one operator account, password-protected | workspaces, members, invitations, roles, per-project grants |
-| The workspace | all of it: foundation, users, features and behaviour, journeys and screens, rules, data, architecture, coherence, roadmap | the same, shared across a team |
-| Checking the spec | coherence checks, behaviour checks and scores | plus formal verification of the whole spec |
-| Hosting | self-hosted | self-hosted |
-| Licence | AGPL-3.0-only, open source | commercial |
+| | Community Edition | Solo Builder | Team | Enterprise |
+|---|---|---|---|---|
+| Price | free | paid | paid | specific contract terms |
+| Projects | 1 active project (unlimited inactive) | 1 active project per project bought | 1 active project per project bought | as per contract |
+| Users | 1 user, the operator account | 1 user | 5 users per project bought | as per contract |
+| Reverse (reverse specification) and Knowledge (knowledge base) | yes | yes | yes | yes |
+| Changes: evolutions, impact simulation and verification | no | yes | yes | yes |
 
-See [Editions](docs/editions.md) for the full comparison.
+Community also carries the behaviour engine with its coherence checks and
+scores, and the MCP gateway for AI clients. Proving a rule for every value is
+part of Enterprise. Every plan is self-hosted; Community is AGPL-3.0-only open
+source, the paid plans are commercial. On a Community installation, each
+locked capability names the plan that opens it. See
+[Editions](docs/editions.md).
 
 ## Other ways to run it
 

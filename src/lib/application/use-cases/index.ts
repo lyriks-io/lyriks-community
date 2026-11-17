@@ -152,8 +152,6 @@ export { TieDataFieldUseCase, type TieDataFieldResult, type LinkDataFieldsResult
 export { ReadDataLinksUseCase, type DataLinkRow, type DataLinksReading } from '../specification/read-data-links';
 export { ReadDataRulesUseCase, type DataRuleReading, type DataRulesReading, type DataRuleVerdict } from '../specification/read-data-rules';
 export { experienceFeatureId } from '$application/projection/aux-feature-ids';
-export { AnalyzeExperienceCoverageUseCase } from '../analysis/analyze-experience-coverage';
-export { SimulateExperienceUseCase, UnknownPersonaError } from '../analysis/simulate-experience';
 export {
 	VerifyExperienceUseCase,
 	DEFAULT_ENGINE_READ_BUDGETS,
@@ -163,12 +161,6 @@ export {
 	type VerifyExperienceOptions,
 	type JourneyVerification
 } from '../specification/verify-experience';
-export {
-	ImportDataCollectionsUseCase,
-	type ImportDataCollectionsResult
-} from '../specification/import-data-collections';
-export { GenerateAcceptanceTestsUseCase } from '../specification/generate-acceptance-tests';
-export { GenerateRepoScaffoldUseCase } from '../specification/generate-repo-scaffold';
 export { LoadArchitectureDraftUseCase } from '../specification/load-architecture-draft';
 export { LoadDocumentRegisterUseCase, foldLegacyReferenceDocs } from '../specification/load-document-register';
 export { LoadCoherenceDraftUseCase, type CoherenceView } from '../analysis/load-coherence-draft';

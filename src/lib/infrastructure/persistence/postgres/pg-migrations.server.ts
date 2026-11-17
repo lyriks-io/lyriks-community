@@ -331,6 +331,81 @@ CREATE TABLE IF NOT EXISTS project_member_jobs (project_id TEXT NOT NULL, user_e
 		// reads A to Z after the placed ones.
 		id: '0017-domain-position',
 		sql: `ALTER TABLE domains ADD COLUMN IF NOT EXISTS position INTEGER;`
+	},
+	{
+		// A folder belongs to the workspace it was created in (issue 156): only
+		// that workspace's members see it and file projects in it. NULL is a
+		// folder of an installation without workspaces (Community, sign-in off,
+		// the one operator account), which every caller there sees.
+		//
+		// Existing folders were installation-wide. Each one goes to the workspace
+		// holding most of its projects (ties: the smallest id). A folder that also
+		// holds projects of other workspaces is copied once into each of them
+		// (same name, icon and place), its projects there move to the copy, and a
+		// member limited to the original folder in that workspace keeps reaching
+		// the copy. An empty folder goes to the installation's only workspace when
+		// there is just one; with several it stays unassigned, seen by nobody
+		// until an operator assigns it. Community holds no project link, so every
+		// folder stays NULL and nothing changes there.
+		id: '0018-domain-workspace',
+		sql: `
+ALTER TABLE domains ADD COLUMN IF NOT EXISTS workspace_id TEXT;
+CREATE INDEX IF NOT EXISTS domains_workspace_id_idx ON domains (workspace_id);
+
+UPDATE domains d SET workspace_id = pick.ws
+FROM (
+  SELECT DISTINCT ON (m.domain_id) m.domain_id, l.back_workspace_id AS ws
+  FROM project_meta m
+  JOIN back_project_links l ON l.local_project_id = m.project_id
+  WHERE m.domain_id IS NOT NULL
+  GROUP BY m.domain_id, l.back_workspace_id
+  ORDER BY m.domain_id, COUNT(*) DESC, l.back_workspace_id
+) pick
+WHERE d.id = pick.domain_id AND d.workspace_id IS NULL;
+
+CREATE TEMP TABLE domain_workspace_split ON COMMIT DROP AS
+SELECT DISTINCT d.id AS old_id, l.back_workspace_id AS ws, d.id || '-' || substr(md5(l.back_workspace_id), 1, 6) AS new_id
+FROM project_meta m
+JOIN domains d ON d.id = m.domain_id
+JOIN back_project_links l ON l.local_project_id = m.project_id
+WHERE d.workspace_id IS NOT NULL AND d.workspace_id <> l.back_workspace_id;
+
+INSERT INTO domains (id, name, description, icon, created_at, position, workspace_id)
+SELECT s.new_id, d.name, d.description, d.icon, d.created_at, d.position, s.ws
+FROM domain_workspace_split s JOIN domains d ON d.id = s.old_id
+ON CONFLICT (id) DO NOTHING;
+
+UPDATE project_meta m SET domain_id = s.new_id
+FROM domain_workspace_split s, back_project_links l
+WHERE m.domain_id = s.old_id AND l.local_project_id = m.project_id AND l.back_workspace_id = s.ws;
+
+UPDATE domain_access a SET domain_ids = (
+  SELECT COALESCE(jsonb_agg(DISTINCT x), '[]'::jsonb)::text FROM (
+    SELECT jsonb_array_elements_text(CASE WHEN ltrim(a.domain_ids) LIKE '[%' THEN a.domain_ids::jsonb ELSE '[]'::jsonb END) AS x
+    UNION
+    SELECT s.new_id FROM domain_workspace_split s
+    WHERE s.ws = a.workspace_id AND strpos(a.domain_ids, '"' || s.old_id || '"') > 0
+  ) granted
+)
+WHERE EXISTS (
+  SELECT 1 FROM domain_workspace_split s
+  WHERE s.ws = a.workspace_id AND strpos(a.domain_ids, '"' || s.old_id || '"') > 0
+);
+
+UPDATE domains SET workspace_id = (SELECT MIN(back_workspace_id) FROM back_project_links)
+WHERE workspace_id IS NULL AND (SELECT COUNT(DISTINCT back_workspace_id) FROM back_project_links) = 1;
+`
+	},
+	{
+		// Removing the stored key used to delete the whole row, the previous key
+		// with it, so the one way back from a key change vanished in the same
+		// click. The key in force can now be removed alone: its columns go empty
+		// and the previous key stays until the person removes it too.
+		id: '0019-activation-current-key-removable',
+		sql: `
+ALTER TABLE IF EXISTS product_activation ALTER COLUMN license_key DROP NOT NULL;
+ALTER TABLE IF EXISTS product_activation ALTER COLUMN activated_at DROP NOT NULL;
+`
 	}
 ];
 

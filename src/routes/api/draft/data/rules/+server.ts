@@ -1,5 +1,6 @@
 import { error, json } from '@sveltejs/kit';
 import { requireProjectAccess } from '$lib/server/project-access.server';
+import { callerKind } from '$lib/server/caller.server';
 import type { RequestHandler } from './$types';
 
 /**
@@ -23,6 +24,8 @@ export const GET: RequestHandler = async (event) => {
  * statePath }`, `{ projectId, action: "untie", fieldId }` or `{ projectId,
  * action: "existence", entityId, statePath | null }`. It changes what the solver
  * checks, so it needs a writing role. The answer says how the rules moved.
+ * Who ties is read from the request, never from the endpoint: an AI client
+ * calling it is not a person, and cannot undo a person's unlink.
  */
 export const POST: RequestHandler = async (event) => {
 	const body = (await event.request.json().catch(() => null)) as Record<string, unknown> | null;
@@ -31,11 +34,12 @@ export const POST: RequestHandler = async (event) => {
 	await requireProjectAccess(event, projectId, 'write');
 	const str = (key: string) => (typeof body?.[key] === 'string' ? (body[key] as string) : '');
 	const tie = event.locals.services.tieDataField;
+	const author = callerKind(event.request) === 'ai_client' ? 'ai-client' : 'person';
 	const result =
 		body?.action === 'tie' && str('fieldId') && str('statePath')
-			? await tie.tie(projectId, str('fieldId'), str('statePath'))
+			? await tie.tie(projectId, str('fieldId'), str('statePath'), author)
 			: body?.action === 'untie' && str('fieldId')
-				? await tie.untie(projectId, str('fieldId'))
+				? await tie.untie(projectId, str('fieldId'), author)
 				: body?.action === 'existence' && str('entityId')
 					? await tie.nameExistence(projectId, str('entityId'), str('statePath') || null)
 					: null;

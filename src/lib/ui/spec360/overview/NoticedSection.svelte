@@ -1,10 +1,24 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
-	import { noticedGroups, noticedTypeKey, type NoticedPoint, type NoticedView } from '$application/spec360/noticed';
+	import {
+		FIX_TO_CONFIRM_KEY,
+		FIX_TO_CONFIRM_LABEL,
+		FIX_TO_CONFIRM_MEANING,
+		ORIGIN_FILTERS,
+		fixesWord,
+		noticedGroups,
+		noticedTypeKey,
+		showsUnder,
+		type NoticedPoint,
+		type NoticedView,
+		type OriginFilter
+	} from '$application/spec360/noticed';
 	import { Icon, ScoreCount, floatInView, portalWhile } from '$ui/design-system';
 	import { scrollMotion } from '$ui/shell/scroll-motion';
 	import EarsText from '$ui/glossary/EarsText.svelte';
 	import FindingDecision from '../FindingDecision.svelte';
+	import FixDecision from '../FixDecision.svelte';
+	import OriginTag from './OriginTag.svelte';
 	import SummaryBar from '../page/SummaryBar.svelte';
 	import { BIG, LIST, META, MORE, POINT, POP, QUIET } from '../page/look';
 	import { PRIMARY } from '../page/tools';
@@ -26,7 +40,9 @@
 	 * A type named by the page's address (`?type=dead-end`, the Overview's summary) opens unfolded,
 	 * brought into view. Points are ticked to compose one evolution (criterion 3f977777): a bar at the
 	 * foot of the screen counts them in like a game score, opens a new request on them all or, while one is still open
-	 * to changes, adds them to it.
+	 * to changes, adds them to it. Each point says where its problem lies (criterion c86ea441), a filter beside the
+	 * severity narrows to it; the fixes waiting for confirmation read apart under Fix to confirm, after the types, in
+	 * none of the counts (criterion 2a55c3e7).
 	 */
 	interface Props {
 		view: NoticedView;
@@ -57,7 +73,10 @@
 		{ key: 'major', label: 'Major' },
 		{ key: 'minor', label: 'Minor' }
 	];
-	const filtered = $derived(severity === 'all' ? view.points : view.points.filter((p) => p.finding.tone === severity));
+	/** Where the problem lies (criterion c86ea441): the second narrowing, combined with the severity. */
+	let origin = $state<OriginFilter>('all');
+	const ofSeverity = (p: NoticedPoint, key: Severity) => key === 'all' || p.finding.tone === key;
+	const filtered = $derived(view.points.filter((p) => ofSeverity(p, severity) && showsUnder(p, origin)));
 	const typeDomId = (label: string) => `noticed-type-${noticedTypeKey(label)}`;
 
 	// The type the address names opens, every severity shown, and comes into view under the page's head.
@@ -65,9 +84,14 @@
 		const key = focus;
 		if (!key) return;
 		untrack(() => {
+			if (key === FIX_TO_CONFIRM_KEY) {
+				void tick().then(() => document.getElementById(FIXES_DOM_ID)?.scrollIntoView({ behavior: scrollMotion(), block: 'start' }));
+				return;
+			}
 			const group = noticedGroups(view.points).find((g) => noticedTypeKey(g.kind.label) === key);
 			if (!group) return;
 			severity = 'all';
+			origin = 'all';
 			opened = new Set([...opened, group.kind.label]);
 			void tick().then(() => document.getElementById(typeDomId(group.kind.label))?.scrollIntoView({ behavior: scrollMotion(), block: 'start' }));
 		});
@@ -78,7 +102,10 @@
 	const allPicked = $derived(pickable.length > 0 && pickable.every((p) => decisions.isPicked(p)));
 	/** A list of one type has nothing to fold it against: it reads open. */
 	const isOpen = (label: string) => groups.length === 1 || opened.has(label);
-	const countOf = (key: Severity) => (key === 'all' ? view.points.length : view.points.filter((p) => p.finding.tone === key).length);
+	const countOf = (key: Severity) => view.points.filter((p) => ofSeverity(p, key) && showsUnder(p, origin)).length;
+	const originCount = (key: OriginFilter) => view.points.filter((p) => ofSeverity(p, severity) && showsUnder(p, key)).length;
+	const FIXES_DOM_ID = `noticed-type-${FIX_TO_CONFIRM_KEY}`;
+	const toFixes = () => document.getElementById(FIXES_DOM_ID)?.scrollIntoView({ behavior: scrollMotion(), block: 'start' });
 	// Read live from the page, so a decision taken in the drawer reads there at once.
 	const pending = $derived(view.points.filter((p) => decisions.stateOf(p) === 'pending'));
 	const settled = $derived(view.points.length - pending.length);
@@ -107,6 +134,12 @@
 		<div class="min-w-[150px]">
 			<div class={BIG}>{pending.length}</div>
 			<div class={META}>to review, of {view.total}</div>
+			{#if view.toConfirm.length > 0}
+				<!-- Counted apart: a fix waiting for confirmation is not a point to review (criterion 2a55c3e7). -->
+				<button type="button" class="mt-0.5 cursor-pointer border-0 bg-transparent p-0 text-left {META} underline decoration-dotted underline-offset-4 hover:text-evo-ink" onclick={toFixes}
+					>{fixesWord(view.toConfirm.length)}</button
+				>
+			{/if}
 		</div>
 		<SummaryBar
 			total={view.total}
@@ -132,6 +165,22 @@
 				<span class={on ? 'text-paper/70' : 'text-evo-muted'}>{countOf(option.key)}</span>
 			</button>
 		{/each}
+		<!-- Where the problem lies, beside the severity (criterion c86ea441). -->
+		<span class="mx-1.5 h-6 w-px flex-none bg-evo-line-soft max-[700px]:hidden" aria-hidden="true"></span>
+		<span class="contents" role="group" aria-label="Narrow the points by where the problem lies">
+			{#each ORIGIN_FILTERS as option (option.key)}
+				{@const on = origin === option.key}
+				<button
+					type="button"
+					aria-pressed={on}
+					class="inline-flex min-h-8 cursor-pointer items-center gap-1.5 border-[1.5px] px-2.5 font-evo-mono text-[0.75rem] font-semibold transition-colors duration-150 {on ? 'border-ink bg-ink text-paper' : 'border-line bg-paper text-ink hover:border-ink'}"
+					onclick={() => (origin = option.key)}
+				>
+					{option.label}
+					<span class={on ? 'text-paper/70' : 'text-evo-muted'}>{originCount(option.key)}</span>
+				</button>
+			{/each}
+		</span>
 		{#if pickable.length > 0}
 			<button
 				type="button"
@@ -197,6 +246,7 @@
 									>
 									<div class="mt-2 flex flex-wrap items-center gap-1.5">
 										<FindingDecision point={p} {decisions} {writable} {composing} />
+										{#if p.finding.origin}<OriginTag origin={p.finding.origin} means={p.finding.originLine} />{/if}
 										{#if where(p)}<span class="ml-1 {META}">· {where(p)}</span>{/if}
 									</div>
 								</div>
@@ -217,7 +267,40 @@
 				{/if}
 			</li>
 		{/each}
+		{#if groups.length === 0 && view.points.length > 0}
+			<li class="px-[18px] py-3.5 {META}">No point matches what is picked above.</li>
+		{/if}
 	</ul>
+	{#if view.toConfirm.length > 0}
+		<!-- Apart from the points and in none of their counts: each fix is confirmed or reopened (criterion 2a55c3e7). -->
+		<section id={FIXES_DOM_ID} class="scroll-mt-36 border-t-[1.5px] border-ink" aria-label={FIX_TO_CONFIRM_LABEL}>
+			<h3 class="m-0 flex min-h-12 items-center gap-2.5 px-[18px] py-2.5" title={FIX_TO_CONFIRM_MEANING}>
+				<span class="min-w-0 flex-1 {POINT}">{FIX_TO_CONFIRM_LABEL}</span>
+				<span class="{META} min-w-[5.5rem] text-right">{pointsWord(view.toConfirm.length)}</span>
+			</h3>
+			<ul class="m-0 list-none border-t border-evo-line-soft bg-paper/40 p-0">
+				{#each view.toConfirm as p (p.finding.id)}
+					<li class="flex items-start gap-3 border-t border-evo-line-soft py-3 pr-[18px] pl-11 first:border-t-0">
+						<div class="min-w-0 flex-1">
+							<button
+								type="button"
+								class="cursor-pointer border-0 bg-transparent p-0 text-left {POINT} text-evo-ink hover:text-evo-violet"
+								title={p.finding.hint}
+								aria-haspopup="dialog"
+								onclick={() => onOpen(p.finding.id)}>{p.finding.text}</button
+							>
+							{#if p.finding.fix?.note}<p class="m-0 mt-1 line-clamp-2 text-[0.875rem] leading-snug whitespace-pre-line text-evo-ink-2">{p.finding.fix.note}</p>{/if}
+							<div class="mt-2 flex flex-wrap items-center gap-1.5">
+								<FixDecision point={p} {decisions} {writable} />
+								{#if p.finding.origin}<OriginTag origin={p.finding.origin} means={p.finding.originLine} />{/if}
+								<span class="ml-1 {META}">· {p.finding.where}</span>
+							</div>
+						</div>
+					</li>
+				{/each}
+			</ul>
+		</section>
+	{/if}
 </div>
 
 {#if pickedPoints.length > 0}

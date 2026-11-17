@@ -6,6 +6,8 @@ import {
 import { buildTraceability } from '$application/analysis/build-traceability';
 import { coherenceScoreOf } from '$domain/coherence/incoherence';
 import { leafFeatures } from '$domain/features';
+import { validationBaselineIds } from '$domain/retrospec';
+import { loadRetrospecDocument } from '$application/retrospec/retrospec-store';
 import { projectSyncKey, sectionSyncKey } from '$lib/shared/section-sync';
 import type { PageServerLoad } from './$types';
 
@@ -34,6 +36,7 @@ export const load: PageServerLoad = async ({ params, depends, locals }) => {
 	depends(sectionSyncKey(params.projectId, 'baselines'));
 	depends(sectionSyncKey(params.projectId, 'approvals'));
 	depends(sectionSyncKey(params.projectId, 'documents'));
+	depends(sectionSyncKey(params.projectId, 'retrospec'));
 	const services = locals.services;
 	const behaviorPort = services.behaviorPort;
 
@@ -62,7 +65,8 @@ export const load: PageServerLoad = async ({ params, depends, locals }) => {
 		baselinesRevision,
 		approvalsDraft,
 		approvalsRevision,
-		documentsDraft
+		documentsDraft,
+		retrospec
 	] = await Promise.all([
 		services.loadFeaturesDraft.execute(params.projectId),
 		services.loadFoundationDraft.loadIdentity(params.projectId),
@@ -71,7 +75,8 @@ export const load: PageServerLoad = async ({ params, depends, locals }) => {
 		services.sectionDocuments.currentRevision(params.projectId, 'baselines'),
 		services.loadApprovalsDraft.execute(params.projectId),
 		services.sectionDocuments.currentRevision(params.projectId, 'approvals'),
-		services.loadDocumentRegister.execute(params.projectId)
+		services.loadDocumentRegister.execute(params.projectId),
+		loadRetrospecDocument(services.sectionDocuments, params.projectId)
 	]);
 
 	const session = services.currentSession();
@@ -83,6 +88,8 @@ export const load: PageServerLoad = async ({ params, depends, locals }) => {
 		baselines: {
 			draft: baselinesDraft,
 			revision: baselinesRevision,
+			// The baselines a validation of the specification stands on: never deleted (its version is counted from them).
+			validationIds: [...validationBaselineIds(retrospec.doc)],
 			// The CURRENT scores/count to diff every saved baseline against.
 			current: {
 				readiness: coherence.analysis.readinessScore,

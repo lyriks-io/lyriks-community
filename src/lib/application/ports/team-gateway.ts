@@ -14,9 +14,10 @@ export interface NewCollaboratorInput {
 /**
  * Outbound port to the project-collaborators API. Speaks v3 project ids; the
  * adapter resolves the back project and translates the REST envelope into
- * domain types. Best-effort, like the rest of the back integration: returns
- * `null` (read/write) / no-op when the mirror is disabled, the back is
- * unreachable, or the project isn't mirrored yet.
+ * domain types. Reads and grants are best-effort, like the rest of the back
+ * integration: they return `null` when the mirror is disabled, the back is
+ * unreachable, or the project isn't mirrored yet. Removal reports its outcome
+ * (see `removeCollaborator`).
  */
 export interface TeamGatewayPort {
 	/** False when the back mirror is disabled (LYRIKS_BACK_URL unset). */
@@ -24,5 +25,12 @@ export interface TeamGatewayPort {
 
 	getTeam(localProjectId: string): Promise<Team | null>;
 	addCollaborator(localProjectId: string, input: NewCollaboratorInput): Promise<Collaborator | null>;
-	removeCollaborator(localProjectId: string, collaboratorId: string): Promise<void>;
+	/**
+	 * Take a place off the project's team. True once it is off; false when the
+	 * team service could not be asked, so nothing was taken back. A refusal of
+	 * the team service (an owner's place, a place of another project) is thrown
+	 * as a `BackHttpError`, never swallowed: access must not read as withdrawn
+	 * while it is kept (issue 151).
+	 */
+	removeCollaborator(localProjectId: string, collaboratorId: string): Promise<boolean>;
 }

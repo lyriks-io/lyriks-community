@@ -810,7 +810,10 @@ export function assessProjectCompletion(
 			totalSections: assessableSections.length
 		},
 		checks,
-		issues
+		// Every blocker first, then the warnings, each group in the order it was
+		// found: an answer cut short never hides a blocker behind warnings
+		// (criterion 4cb3e943).
+		issues: [...blocking, ...issues.filter((issue) => issue.severity !== 'blocking')]
 	};
 }
 

@@ -46,13 +46,12 @@ export const POST: RequestHandler = async (event) => {
 	const services = event.locals.services;
 	if (!(await services.projectExists(projectId))) error(404, `Project "${projectId}" does not exist.`);
 
-	const person = await resolveEvolutionActor(services, event);
+	const person = await resolveEvolutionActor(services, event, projectId);
 	if (person.kind !== 'person' || person.channel !== 'page')
 		error(403, 'The built-in assistant is asked from the page. An AI client redraws the diagram itself, with redraw_diagram.');
 	const actor = { ...person, channel: 'assistant' as const };
-	const activeWorkspaceId = event.cookies.get('lyriks_active_ws');
 
-	const view = await loadEvolutionView(services, projectId, { activeWorkspaceId });
+	const view = await loadEvolutionView(services, projectId);
 	const request = requestOf(view.draft.requests, requestId);
 	const apply = (operation: Record<string, unknown>) =>
 		guardSectionWrite('evolution', () =>
@@ -60,8 +59,7 @@ export const POST: RequestHandler = async (event) => {
 				projectId,
 				operations: [{ requestId: request.id, ...operation }],
 				actor,
-				origin: event.request.headers.get('x-lyriks-client'),
-				activeWorkspaceId
+				origin: event.request.headers.get('x-lyriks-client')
 			})
 		);
 
@@ -94,7 +92,7 @@ export const POST: RequestHandler = async (event) => {
 		});
 		if (!writing.ok) return json({ ok: false, reason: writing.reason }, { status: writing.kind === 'unavailable' ? 409 : 502 });
 		// The diagram may have moved while the assistant was writing: the text would then follow a diagram that is gone.
-		const now = requestOf((await loadEvolutionView(services, projectId, { activeWorkspaceId })).draft.requests, requestId);
+		const now = requestOf((await loadEvolutionView(services, projectId)).draft.requests, requestId);
 		if ((now.stepAnswers[step][FUNCTIONAL_DIAGRAM_KEY] ?? '') !== diagram)
 			return json({ ok: false, reason: 'The diagram changed while the assistant was writing, so nothing was written: ask it again.' }, { status: 409 });
 		const written = await apply({ op: 'write_text_from_diagram', step, question: textKey, answer: writing.text });
@@ -130,7 +128,7 @@ export const POST: RequestHandler = async (event) => {
 	if (!drawing.ok) return json({ ok: false, reason: drawing.reason }, { status: drawing.kind === 'unavailable' ? 409 : 502 });
 
 	// The texts may have moved while the assistant was drawing: the drawing would then follow texts that are gone.
-	const now = requestOf((await loadEvolutionView(services, projectId, { activeWorkspaceId })).draft.requests, requestId);
+	const now = requestOf((await loadEvolutionView(services, projectId)).draft.requests, requestId);
 	if (JSON.stringify(pairedTexts(now, step)) !== JSON.stringify(texts))
 		return json({ ok: false, reason: 'The texts changed while the assistant was drawing, so nothing was written: ask it again.' }, { status: 409 });
 

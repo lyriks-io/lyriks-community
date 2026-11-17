@@ -17,13 +17,12 @@ import type { FeedCard, HomeFeedData } from '$lib/shared/home-feed';
 import { timeAgo } from '$lib/shared/time-ago';
 import { mapLimit } from '$lib/shared/map-limit';
 import { bellId, bellOf, parseBellId, readerActivity, type ReaderActivity } from './app-chrome-data.server';
-import { callerAllowedDomains } from './domain-scope.server';
+import { callerReach } from './domain-scope.server';
 import { aiLastSeenOf } from './retrospec-ai.server';
 import { readRetrospecStanding } from './retrospec-status.server';
 import { readDriftChanges } from './spec-code-drift.server';
 import { readSpecValidation } from './spec-validation.server';
-import { callerWorkspaceScope } from './workspace-scope.server';
-import { callerCanWrite } from './writer-gate.server';
+import { callerCanWriteEach } from './writer-gate.server';
 
 /**
  * Home (feat-home): the feed of the reader's notifications across every
@@ -125,6 +124,13 @@ async function readProject(
 	return { ...base, run: runOf(base.id, base.name, rebuiltFrom, standing), drift, mayEdit };
 }
 
+/**
+ * The projects of the reader's feed, each judged for editing in the workspace
+ * that owns it: Home lists the projects of every workspace of the reader, so
+ * the role the switcher shows answers for none of them but its own.
+ */
+const activityProjectIds = (activity: ReaderActivity): string[] => activity.projects.map(({ project }) => project.id);
+
 /** A code change waiting for a decision, as a card of the feed, read with the bell's read marks. */
 function driftCard(project: Pick<HomeSource, 'id' | 'name'>, d: DriftNotice): BellNotification {
 	const n = d.notice;
@@ -164,38 +170,33 @@ function feedCards(activity: ReaderActivity, sources: readonly HomeSource[]): Fe
  * the runs Home alone shows.
  */
 export async function readHomeFeedPage(event: Pick<RequestEvent, 'locals' | 'cookies'>, query: FeedQuery): Promise<FeedPage<FeedCard>> {
-	const [activity, mayEdit] = await Promise.all([readerActivity(event.locals.services, event), callerCanWrite(event)]);
-	const sources = await mapLimit(activity.projects, 6, async ({ project, requests, keys, reads }) => ({
-		id: project.id,
-		name: project.name,
-		requests,
-		keys,
-		reads,
-		run: null,
-		drift: await readDecidableDrift(event.locals.services, project.id, mayEdit),
-		mayEdit
-	}));
+	const activity = await readerActivity(event.locals.services, event);
+	const mayEdit = await callerCanWriteEach(event, activityProjectIds(activity));
+	const sources = await mapLimit(activity.projects, 6, async ({ project, requests, keys, reads }) => {
+		const editable = mayEdit.get(project.id) ?? false;
+		return { id: project.id, name: project.name, requests, keys, reads, run: null, drift: await readDecidableDrift(event.locals.services, project.id, editable), mayEdit: editable };
+	});
 	return feedPage(feedCards(activity, sources), query);
 }
 
 export async function readHome(event: Pick<RequestEvent, 'locals' | 'cookies'>): Promise<HomeData> {
 	const services = event.locals.services;
-	const scope = await callerWorkspaceScope(event);
-	const allowedDomains = await callerAllowedDomains(event);
+	const reach = await callerReach(event);
+	const reading = readerActivity(services, event);
 	const [portfolio, activity, mayEdit] = await Promise.all([
-		services.buildPortfolio.execute(scope, allowedDomains, event.locals.session?.email ?? null),
-		readerActivity(services, event),
-		callerCanWrite(event)
+		services.buildPortfolio.execute(reach),
+		reading,
+		reading.then((read) => callerCanWriteEach(event, activityProjectIds(read)))
 	]);
 	const cards = [...portfolio.domains.flatMap((d) => d.projects), ...portfolio.unassigned];
 	const sources = await mapLimit(activity.projects, 6, ({ project, requests, keys, reads }) =>
-		readProject(services, { id: project.id, name: project.name, requests, keys, reads }, rebuiltFromSourceMode(cards.find((c) => c.id === project.id)?.sourceMode), mayEdit)
+		readProject(services, { id: project.id, name: project.name, requests, keys, reads }, rebuiltFromSourceMode(cards.find((c) => c.id === project.id)?.sourceMode), mayEdit.get(project.id) ?? false)
 	);
 	const allCards = feedCards(activity, sources);
 	const first = feedPage(allCards, FIRST_FEED_QUERY);
 	const empty = new Set(cards.filter((c) => isEmptyProject(c)).map((c) => c.id));
 	return {
-		hasWorkspace: scope === null || scope.size > 0,
+		hasWorkspace: reach === null || reach.workspaces.size > 0,
 		myName: activity.myName,
 		hasProjects: sources.length > 0,
 		feed: first.cards,

@@ -30,7 +30,7 @@ export const POST: RequestHandler = async (event) => {
 		if (!isHttpError(cause, 403)) throw cause;
 		canWrite = false;
 	}
-	const actor = await retrospecActor(services, event.cookies);
+	const actor = await retrospecActor(services, projectId, event.cookies);
 	const { revision } = await applySpecValidationActs(services, projectId, parsed.acts, actor, event.request.headers.get('x-lyriks-client'), { canWrite });
 	return json({ ok: true, revision });
 };

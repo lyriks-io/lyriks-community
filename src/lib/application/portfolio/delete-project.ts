@@ -18,6 +18,12 @@ export interface ConfirmedDeleteRequest {
 	confirmName: string;
 	/** Caller identity for the owner gate; null when there is no session. */
 	requesterEmail: string | null;
+	/**
+	 * The caller's role in the workspace that holds the project (owner, admin,
+	 * designer, viewer), or null where the project belongs to no workspace: a
+	 * workspace owner or admin passes the owner gate.
+	 */
+	requesterWorkspaceRole: string | null;
 	/** Owner gate applies only when auth is on (identity exists to check against). */
 	enforceOwner: boolean;
 }
@@ -43,7 +49,8 @@ export class DeleteProjectUseCase {
 	/**
 	 * User-initiated delete, guarded twice: the caller must retype the exact
 	 * project name (protects against misclicks and stale UI), and once an owner
-	 * is specified on the team only the owner may delete (see `canDeleteProject`).
+	 * is specified on the team only the owner, or an owner or admin of the
+	 * project's workspace, may delete (see `canDeleteProject`).
 	 */
 	async executeConfirmed(req: ConfirmedDeleteRequest): Promise<DeleteProjectResult> {
 		const summary = (await this.catalog.list()).find((p) => p.id === req.projectId);
@@ -54,7 +61,7 @@ export class DeleteProjectUseCase {
 		}
 		if (req.enforceOwner) {
 			const team = (await this.team.getTeam(req.projectId)) ?? emptyTeam();
-			if (!canDeleteProject(team, req.requesterEmail)) {
+			if (!canDeleteProject(team, req.requesterEmail, req.requesterWorkspaceRole)) {
 				return { deleted: false, reason: 'not_owner' };
 			}
 		}

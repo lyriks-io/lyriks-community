@@ -4,7 +4,9 @@ import {
 	type AuditLogLevel,
 	type FoundationDefinitionDraft,
 	type FoundationOperationsDraft,
-	type PerformanceUnit
+	type PerformanceUnit,
+	isSecurityAnswered,
+	withSecurityAnswer
 } from '$domain/foundation';
 import { list, text } from './labels';
 
@@ -47,7 +49,7 @@ export interface AvailabilityForm {
 }
 
 export interface OperationsTargets {
-	/** Null until someone answers: a definition never saved holds the form's default, not an answer. */
+	/** Null until someone answers this very question: the form's default is not an answer, whatever else was saved. */
 	readonly auditLogs: AuditLogLevel | null;
 	readonly performance: PerformanceForm;
 	readonly availability: AvailabilityForm;
@@ -71,7 +73,7 @@ export const isPerformanceUnit = (v: unknown): v is PerformanceUnit => PERFORMAN
 export function operationsTargets(definition: FoundationDefinitionDraft, operations: FoundationOperationsDraft): OperationsTargets {
 	const q = operations.quality;
 	return {
-		auditLogs: definition.lastSavedAt !== null ? definition.security.auditLogs : null,
+		auditLogs: isSecurityAnswered(definition, 'auditLogs') ? definition.security.auditLogs : null,
 		performance: {
 			actions: list(definition.technical.performance).map((p) => ({ action: text(p.action), target: String(p.target ?? ''), unit: p.unit })),
 			latencyP95Ms: text(q.latencyP95Ms),
@@ -134,7 +136,7 @@ export function withOperationsTarget(
 	operations: FoundationOperationsDraft,
 	edit: OperationsTargetEdit
 ): { definition: FoundationDefinitionDraft | null; operations: FoundationOperationsDraft | null } {
-	if (edit.target === 'audit-logs') return { definition: { ...definition, security: { ...definition.security, auditLogs: edit.level } }, operations: null };
+	if (edit.target === 'audit-logs') return { definition: { ...definition, security: withSecurityAnswer({ ...definition.security, auditLogs: edit.level }, 'auditLogs') }, operations: null };
 	if (edit.target === 'availability') {
 		const v = edit.values;
 		return {

@@ -276,6 +276,8 @@ const HISTORY_TEXTS = {
 		opened: 'Request opened in specification',
 		deferredNeed: (key: string, statement: string) => `Deferred from ${key} at its Verification. ${statement}`,
 		drafted: (kind: DraftLeafKind, name: string) => `Drafted: ${kind} "${name}"`,
+		redrafted: (name: string) => `Draft "${name}" reworked`,
+		undrafted: (name: string) => `Draft "${name}" taken out of the change`,
 		modelSet: (label: string, count: number) => `Behaviour model of "${label}": ${count} operations`,
 		modelCleared: (label: string) => `Behaviour model of "${label}" cleared`,
 		validated: (field: string, given: number, of: number) =>
@@ -306,6 +308,8 @@ const HISTORY_TEXTS = {
 		deferredNeed: (key: string, statement: string) => `Reporté depuis ${key} à sa vérification. ${statement}`,
 		drafted: (kind: DraftLeafKind, name: string) =>
 			`Brouillon${NBSP}: ${kind === 'add' ? 'ajout' : kind === 'amend' ? 'modification' : 'retrait'} de ${quoteName('fr', name)}`,
+		redrafted: (name: string) => `Brouillon ${quoteName('fr', name)} retravaillé`,
+		undrafted: (name: string) => `Brouillon ${quoteName('fr', name)} retiré de l'évolution`,
 		modelSet: (label: string, count: number) =>
 			`Modèle de comportement de ${quoteName('fr', label)}${NBSP}: ${count} ${count === 1 ? 'opération' : 'opérations'}`,
 		modelCleared: (label: string) => `Modèle de comportement de ${quoteName('fr', label)} effacé`,
@@ -475,8 +479,13 @@ export function updateRequestAct(
 	memberCount = 1
 ): ActOutcome {
 	const wanted = patch.validationsPerAnswer;
+	// Who asked and where it comes from are answers of the Briefing; renaming the request is not.
+	const movesBriefing =
+		(patch.origin !== undefined && patch.origin !== request.origin) ||
+		(patch.requester !== undefined && patch.requester.trim() !== request.requester);
 	const allowed = firstRefusal(
 		notFinished(request),
+		movesBriefing ? briefingIsOpen(request) : ALLOW,
 		guard(
 			patch.title !== undefined && patch.title.trim() === '',
 			'A request needs a title before it can be opened.',
@@ -552,6 +561,14 @@ const draftsAreOpen = (request: EvolutionRequest): Guarded =>
 		request.frozen,
 		`The specification is frozen as version ${request.specVersion}. Rebrief the request before changing what it proposes.`,
 		'What a frozen version proposes is part of what was frozen; the code is being written against it.'
+	);
+
+/** The Briefing reads locked from the freeze on, and the server keeps it so: the build is compared to the version frozen (issue 45). */
+const briefingIsOpen = (request: EvolutionRequest): Guarded =>
+	guard(
+		request.frozen,
+		`The specification is frozen as version ${request.specVersion}. Rebrief the request before changing its Briefing.`,
+		'The Briefing is part of the version frozen; the code is being written against it.'
 	);
 
 export interface DraftLeafInput {
@@ -898,12 +915,18 @@ function updateDraftLeafActCore(
 	const touched = new Set(request.leafIds);
 	if (next.baseLeafId) touched.add(next.baseLeafId);
 
+	// A rework is a draft change like the others: the readings of the Impact analysis run again on it (issue 63).
 	return done(
-		{
-			...request,
-			drafts: request.drafts.map((d) => (d.id === draftId ? next : d)),
-			leafIds: [...touched]
-		},
+		stamp(
+			ctx,
+			{
+				...request,
+				drafts: request.drafts.map((d) => (d.id === draftId ? next : d)),
+				leafIds: [...touched]
+			},
+			'draft_change',
+			said(ctx).redrafted(String(next.name || next.baseLeafId))
+		),
 		`Draft "${next.name || next.baseLeafId}" updated`
 	);
 }
@@ -971,17 +994,19 @@ function removeDraftLeafActCore(
 		);
 	const allowed = firstRefusal(notFinished(request), draftsAreOpen(request));
 	if (!allowed.ok) return allowed;
+	// Taking a feature out is a draft change too: the readings must stop describing it (issue 63).
+	const without: EvolutionRequest = {
+		...request,
+		drafts: request.drafts.filter((d) => d.id !== draftId),
+		leafIds: request.leafIds.filter((id) => id !== draftId),
+		// Dropping the draft drops what was proposed on it. The sections were
+		// never touched, so there is nothing else to undo.
+		proposals: request.proposals.filter(
+			(proposal) => !proposal.targetField.endsWith(`@${draftId}`)
+		)
+	};
 	return done(
-		{
-			...request,
-			drafts: request.drafts.filter((d) => d.id !== draftId),
-			leafIds: request.leafIds.filter((id) => id !== draftId),
-			// Dropping the draft drops what was proposed on it. The sections were
-			// never touched, so there is nothing else to undo.
-			proposals: request.proposals.filter(
-				(proposal) => !proposal.targetField.endsWith(`@${draftId}`)
-			)
-		},
+		stamp(ctx, without, 'draft_change', said(ctx).undrafted(String(current.name || current.baseLeafId))),
 		`Draft "${current.name || current.baseLeafId}" dropped; the specification is untouched`
 	);
 }
@@ -1284,6 +1309,10 @@ export function decideProposalAct(
 	);
 
 	if (input.decision === 'accept') {
+		// A question of the need, and who asked and where it comes from, belong to
+		// the request: there is no section to write through to, the value lands on the request itself.
+		const needKey = needKeyOf(proposal.targetField);
+		const ownedByRequest = !!needKey || isOriginField(proposal.targetField);
 		const allowed = firstRefusal(
 			canAcceptProposal(ctx.actor, proposal, { soloWorkspace: ctx.soloWorkspace || ctx.aiDelegated }),
 			guard(
@@ -1291,15 +1320,13 @@ export function decideProposalAct(
 				'This proposal has already been decided.',
 				'A decided proposal is a signed decision; propose again for a new value.'
 			),
-			notAViewer
+			notAViewer,
+			// Accepting a Briefing value writes the Briefing: frozen, it refuses as update_need and update_request do.
+			ownedByRequest ? briefingIsOpen(request) : ALLOW
 		);
 		if (!allowed.ok) return allowed;
 		if (reviewed) proposal = withVerdict(proposal, { by: ctx.actor.id, verdict: 'validated', comment: '', at: ctx.at });
 		const leafId = leafOf(proposal);
-		// A question of the need, and who asked and where it comes from, belong to
-		// the request: there is no section to write through to, the value lands on the request itself.
-		const needKey = needKeyOf(proposal.targetField);
-		const ownedByRequest = !!needKey || isOriginField(proposal.targetField);
 		const written = ownedByRequest ? ALLOW : writeThrough(proposal, leafId);
 		if (!written.ok) return written;
 		const key = fieldKey(proposal.targetField, leafId);
@@ -1420,7 +1447,9 @@ export function decideProposalLineAct(
 			'This proposal has already been decided.',
 			'A decided proposal is a signed decision; propose again for a new value.'
 		),
-		guard(!canEdit(ctx.actor), 'A viewer reads and comments, but does not decide a proposal.', 'Deciding a proposal writes the specification.')
+		guard(!canEdit(ctx.actor), 'A viewer reads and comments, but does not decide a proposal.', 'Deciding a proposal writes the specification.'),
+		// Accepting a line of the need writes the Briefing: frozen, it refuses as update_need does.
+		input.decision === 'accept' && (!!needKeyOf(proposal.targetField) || isOriginField(proposal.targetField)) ? briefingIsOpen(request) : ALLOW
 	);
 	if (!allowed.ok) return allowed;
 	if (side === null)
@@ -2399,6 +2428,7 @@ export function updateNeedAct(
 		notFinished(request),
 		carriesForward(ctx, 'write the need of a request'),
 		guard(!canEdit(ctx.actor), 'A viewer cannot write the need of a request.', 'The need is a write on the request.'),
+		briefingIsOpen(request),
 		guard(
 			keys.length === 0,
 			`Name at least one question of the need: ${NEED_KEYS.join(', ')}.`,

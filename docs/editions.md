@@ -1,22 +1,41 @@
 # Editions
 
-## Community
+Lyriks is offered in four plans, in the words of the Plans entry of the app's
+account menu. Their prices are on <https://lyriks.io/pricing>.
 
-One operator account, held by the platform. The whole specification
-workspace: foundation, users and permissions, features and behaviour, journeys
-and screens with the Experience simulator, rules and edge cases, data,
-architecture, coherence, roadmap and delivery. The behaviour engine and every
-score. The MCP gateway for AI clients. Offline, self-hosted, PostgreSQL only.
+## Community Edition
+
+Free: discover Lyriks on one project. It holds 1 active project (as many
+inactive ones as you want), 1 user (the operator account, held by the
+platform), Reverse (the reverse specification of a product) and Knowledge
+(its knowledge base). The behaviour engine and every score come with it, and
+the MCP gateway for AI clients. Offline, self-hosted, PostgreSQL only.
+
+Community does not open Changes (evolutions, impact simulation and
+verification) nor a second active project: Solo Builder opens them. Sharing
+the project with a team opens with Team, and proving a rule for every value
+with Enterprise. Each locked capability names the plan that opens it, on the
+page and to an AI client alike.
 
 The Community licence key is issued to an email address on
 <https://get.lyriks.io>. Activation is verified locally.
 
-## Enterprise
+## Solo Builder, Team and Enterprise
 
-Everything above, plus what a team needs: workspaces, members, invitations,
-roles and per-project grants, the `lyriks-back` companion API that carries
-them, SSO, and the formal DPO coherence engine that turns the heuristic
-verdict into a machine-checked one. Enterprise is a commercial edition.
+The paid plans, all commercial and self-hosted:
+
+- **Solo Builder**: every feature, on your own, on as many projects as you
+  buy. 1 active project per project bought, 1 user, Reverse and Knowledge,
+  and Changes.
+- **Team**: collaborative, end-to-end SDLC. 1 active project and 5 users per
+  project bought, Reverse and Knowledge, and Changes.
+- **Enterprise**: specific contract terms, built with us. Projects and users
+  as per contract, everything in Team, and a dedicated CSM.
+
+Enterprise carries what a team needs: workspaces, members, invitations, roles
+and per-project grants, the `lyriks-back` companion API that carries them,
+SSO, and the formal DPO coherence engine that turns the heuristic verdict into
+a machine-checked one.
 
 ## Where the seam is
 

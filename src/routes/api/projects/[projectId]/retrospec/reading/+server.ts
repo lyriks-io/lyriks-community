@@ -75,7 +75,7 @@ export const POST: RequestHandler = async (event) => {
 		...(finished ? [{ op: 'end_reading' as const }] : [])
 	];
 	if (acts.length === 0) return json({ ok: true, recorded: [], ...readingOf(before) });
-	const actor = await retrospecActor(services, event.cookies);
+	const actor = await retrospecActor(services, projectId, event.cookies);
 	const outcome = await saveRetrospecActs(services.sectionDocuments, projectId, acts, { actor, now: new Date().toISOString() }, event.request.headers.get('x-lyriks-client'));
 	if (!outcome.ok) error(outcome.conflict ? 409 : 400, outcome.reason);
 	const { doc } = await loadRetrospecDocument(services.sectionDocuments, projectId);

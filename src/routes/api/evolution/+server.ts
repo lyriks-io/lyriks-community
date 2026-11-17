@@ -2,7 +2,8 @@ import { error, json } from '@sveltejs/kit';
 import { readSectionDrafts } from '$lib/server/evolution-section-drafts.server';
 import { readRuleDrafts } from '$lib/server/evolution-rule-drafts.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
-import { requireEvolutionAccess } from '$lib/server/community-locks.server';
+import { requireEvolutionAccess, requireEvolutionBatchAccess } from '$lib/server/community-locks.server';
+import { accessNeededFor } from '$lib/server/evolution-door.server';
 import { guardSectionWrite } from '$lib/server/section-save.server';
 import { currentPersonId, resolveEvolutionActor } from '$lib/server/evolution-actor.server';
 import { loadDockingGraph, loadLocalGraph } from '$lib/server/evolution-graph.server';
@@ -54,11 +55,11 @@ export const GET: RequestHandler = async (event) => {
 	const services = event.locals.services;
 	if (!(await services.projectExists(projectId))) error(404, `Project "${projectId}" does not exist.`);
 	const [view, actor] = await Promise.all([
+		// Read for this reader: the private exchanges of others stay out of what is sent.
 		loadEvolutionView(services, projectId, {
-			activeWorkspaceId: event.cookies.get('lyriks_active_ws'),
 			readerId: currentPersonId(services)
 		}),
-		resolveEvolutionActor(services, event)
+		resolveEvolutionActor(services, event, projectId)
 	]);
 	const requestId = event.url.searchParams.get('requestId') ?? undefined;
 	const part = event.url.searchParams.get('part') ?? undefined;
@@ -142,7 +143,6 @@ function retriableConflict(outcome: { ok: boolean; status?: number; results?: re
 }
 
 export const POST: RequestHandler = async (event) => {
-	requireEvolutionAccess(event.locals.services);
 	const body = (await event.request.json().catch(() => null)) as {
 		projectId?: unknown;
 		operations?: unknown;
@@ -153,19 +153,26 @@ export const POST: RequestHandler = async (event) => {
 	if (!Array.isArray(body?.operations) || body.operations.length === 0) {
 		error(400, 'operations must be a non-empty array of { op, ... }');
 	}
-	await requireProjectAccess(event, projectId, 'write');
+	const operations = body.operations as unknown[];
+	// Community locks every Evolution act, never the answer to a click of Ask my AI (EVO-001).
+	requireEvolutionBatchAccess(event.locals.services, operations);
+	// A batch of what a viewer may make (a comment, an ask, a ruling...) needs the right to read; anything else, to write (issue 38).
+	const access = accessNeededFor(operations);
+	await requireProjectAccess(event, projectId, access);
 	const services = event.locals.services;
 	if (!(await services.projectExists(projectId))) error(404, `Project "${projectId}" does not exist.`);
 
-	const actor = await resolveEvolutionActor(services, event, { asPerson: body?.as_person === true });
+	const resolved = await resolveEvolutionActor(services, event, projectId, { asPerson: body?.as_person === true });
+	// Let in on the right to read alone, the caller acts as a viewer whatever its workspace role, so each act applies the viewer's rules.
+	const writes = access === 'write' || (await requireProjectAccess(event, projectId, 'write').then(() => true, () => false));
+	const actor = writes ? resolved : { ...resolved, role: 'viewer' as const };
 	const apply = () =>
 		guardSectionWrite('evolution', () =>
 			applyEvolutionOperations(services, {
 				projectId,
-				operations: body!.operations as unknown[],
+				operations,
 				actor,
-				origin: event.request.headers.get('x-lyriks-client'),
-				activeWorkspaceId: event.cookies.get('lyriks_active_ws')
+				origin: event.request.headers.get('x-lyriks-client')
 			})
 		);
 	// A batch says what to do, not what the dossier looked like: when another write

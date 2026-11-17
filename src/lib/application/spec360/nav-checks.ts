@@ -12,7 +12,7 @@ import type { ElementStanding, SpecElement } from '$domain/retrospec';
  *  - `core:<id>`: a core feature's own element, which the navigation reads with
  *    each of its features (it holds the outline that ties them);
  *  - `features`: every core feature and feature with the product's rules;
- *  - `role:<id>`, then `users` with the permissions;
+ *  - `role:<id>`, `users:permissions` (Who can do what), then `users` with both;
  *  - `experience:journeys`, `experience:design` (the branding, the components), `experience`;
  *  - `tech:data-map`, `tech:architecture`, `tech:health`, `tech:requirements` (with the constraints), `tech`;
  *  - `glossary`: its terms.
@@ -30,6 +30,23 @@ export function navChecks(elements: readonly SpecElement[], standings: Readonly<
 /** The elements a tab of Knowledge shows (`features`, `users`, `experience`, `tech`, `glossary`, `overview`). */
 export function tabAnchors(elements: readonly SpecElement[], tab: string): string[] {
 	return elements.filter((e) => entriesOf(e.id).includes(tab)).map((e) => e.id);
+}
+
+/**
+ * The elements a page of Knowledge shows when it hands no scope of its own (criterion c509fa9c), read from its tab
+ * and the view under it (the path's segment after the tab): what the band counts and its Validate all section
+ * validates. A tab's own page shows the whole tab; one profile shows itself, Who can do what the permissions, a view
+ * of Technology & data its own elements (Operations shows the health items), Sources none.
+ */
+export function viewAnchors(elements: readonly SpecElement[], tab: string, view: string | null): string[] {
+	return tabAnchors(elements, viewEntry(tab, view));
+}
+
+function viewEntry(tab: string, view: string | null): string {
+	if (!view) return tab;
+	if (tab === 'users') return view === 'matrix' ? 'users:permissions' : `role:${view}`;
+	if (tab === 'tech') return `tech:${view === 'operations' ? 'health' : view}`;
+	return tab;
 }
 
 /** The entries an element counts in: its own, then the fold it sits under. */
@@ -52,7 +69,7 @@ function entriesOf(id: string): string[] {
 		case 'role':
 			return [`role:${first}`, 'users'];
 		case 'permissions':
-			return ['users'];
+			return ['users:permissions', 'users'];
 		case 'journey':
 			return ['experience:journeys', 'experience'];
 		case 'branding':

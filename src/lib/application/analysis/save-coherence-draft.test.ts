@@ -237,3 +237,34 @@ describe('a decision prepared for somebody to take', () => {
 		});
 	});
 });
+
+describe('the section write is not a way around the green gate [issues.160]', () => {
+	const generated = (projectId: string): ProjectCoherenceDraft => ({
+		...createEmptyCoherenceDraft(projectId),
+		artifacts: [{ id: 'a1', kind: 'functional_doc', title: 'Functional', content: 'generated', generatedAt: '2026-09-22T08:00:00.000Z' }],
+		specsGenerated: true,
+		generatedAt: '2026-09-22T08:00:00.000Z'
+	});
+
+	it('never marks documents generated from a payload', async () => {
+		const { repo, useCase } = useCaseOver(createEmptyCoherenceDraft('p1'));
+		const payload = parseCoherenceDraft(
+			{ specsGenerated: true, generatedAt: '2026-09-22T09:00:00.000Z', artifacts: [{ id: 'x', kind: 'functional_doc', title: 'Forged', content: 'anything' }] },
+			'p1'
+		);
+		await useCase.execute(payload, anySave, { id: 'ai', kind: 'ai_client' });
+		expect(repo.saved?.specsGenerated).toBe(false);
+		expect(repo.saved?.artifacts).toEqual([]);
+		expect(repo.saved?.generatedAt).toBeNull();
+	});
+
+	it('keeps the documents the generation wrote when a save carries none', async () => {
+		const stored = generated('p1');
+		const { repo, useCase } = useCaseOver(stored);
+		await useCase.execute({ ...createEmptyCoherenceDraft('p1'), threshold: 90 }, anySave, aPerson);
+		expect(repo.saved?.threshold).toBe(90);
+		expect(repo.saved?.specsGenerated).toBe(true);
+		expect(repo.saved?.artifacts).toEqual(stored.artifacts);
+		expect(repo.saved?.generatedAt).toBe(stored.generatedAt);
+	});
+});

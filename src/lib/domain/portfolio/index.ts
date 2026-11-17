@@ -23,6 +23,13 @@ export interface Domain {
 	 * the domain's name or description never touches it.
 	 */
 	position?: number | null;
+	/**
+	 * The workspace the folder belongs to: the one it was created in (issue 156).
+	 * Only the members of that workspace see it, and only its projects are filed
+	 * in it. Null where the installation has no workspaces (Community, sign-in
+	 * off, the one operator account), where every folder is the operator's.
+	 */
+	workspaceId?: string | null;
 }
 
 /** URL-safe domain id from its name, with a caller-supplied uniqueness suffix. */

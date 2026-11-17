@@ -18,8 +18,6 @@ const row = (i: number) => ({ key: `rule:${i}`, featureId: `feat-${i % 7}`, stat
 type Sampled = { total: number; returned: number; items: Array<Record<string, unknown>> }
 type Capped = { _capped: true; kind: string; bytes: number; hint: string; shape?: unknown; partial: Record<string, unknown> }
 
-const RETIRED_PROTOTYPE_TOOLS = ['verify_experience']
-
 describe('capResult on an object', () => {
   it('passes a small result through untouched', () => {
     const result = { ok: true, rows: [1, 2, 3] }
@@ -128,11 +126,6 @@ describe('recovery hints name only arguments their tool accepts', () => {
       // Proof by the solver is Enterprise only: the Community gateway does not offer it at all.
       if (!ee && PROOF_TOOLS.includes(tool)) {
         expect(tools[tool], `${tool} is not offered on Community`).toBeUndefined()
-        continue
-      }
-      // The screen prototype is retired: its tools keep their hints in the tree, unregistered.
-      if (RETIRED_PROTOTYPE_TOOLS.includes(tool)) {
-        expect(tools[tool], `${tool} is retired`).toBeUndefined()
         continue
       }
       expect(tools[tool], `${tool} is a registered tool`).toBeDefined()

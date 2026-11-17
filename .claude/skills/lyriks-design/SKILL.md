@@ -6,14 +6,16 @@ description: "Write a product's design.md through the Lyriks MCP: the one file a
 # /lyriks-design
 
 The Experience capability no longer draws screens: there is no screen prototype,
-no builder and no simulator. What it keeps of design is the **design.md**, the
-file a coding agent reads to build the product's UI. Lyriks writes it live from
-the `brand` sub-tree of the experience section; your job is to make those
-sources precise, true to the product and distinct.
+no builder and no simulator. What it keeps of design is the **design.md**: the
+`brand` sub-tree of the experience section, which a coding agent reads through
+`get_design_system` to build the product's UI and which Knowledge shows on its
+Experience page. Your job is to make those sources precise, true to the
+product and distinct.
 
 The design.md is only as good as its sources. An empty source leaves its part out
 (nothing is invented for it), so a thin brand gives a thin file. Read the
-current one in the app (Experience, Design tab) or rebuild it in your head from
+current one with `get_design_system`, in the app (Knowledge, Experience: Colors,
+Typography, Corners and spacing, Shadows and breakpoints), or from
 `get_section experience paths:["brand"]`.
 
 ## What to author, and where
@@ -105,5 +107,6 @@ skill exists to prevent.
 - Identity, colors (tokens and semantic), typography and markers are filled,
   every token with its usage.
 - At least three examples, each with its why.
-- The design.md in the Design tab reads as this product and no other, and your
-  report lists any source you could not find.
+- The design system `get_design_system` answers, and the Experience page of
+  Knowledge shows, reads as this product and no other, and your report lists
+  any source you could not find.

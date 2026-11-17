@@ -110,13 +110,8 @@ import {
 	SuggestFromSectionUseCase,
 	SuggestPersonasUseCase,
 	SyncBehaviorProjectUseCase,
-	AnalyzeExperienceCoverageUseCase,
-	SimulateExperienceUseCase,
 	VerifyExperienceUseCase,
 	DEFAULT_ENGINE_READ_BUDGETS,
-	ImportDataCollectionsUseCase,
-	GenerateAcceptanceTestsUseCase,
-	GenerateRepoScaffoldUseCase,
 	LoadTeamUseCase,
 	AddCollaboratorUseCase,
 	RemoveCollaboratorUseCase
@@ -361,18 +356,6 @@ export interface AppServices {
 	loadEngineKnowledgeGraph: LoadKnowledgeGraphUseCase;
 	/** DEFAULT graph: local projection + unspa behavior + DPO verdict overlay. */
 	loadMergedKnowledgeGraph: LoadKnowledgeGraphUseCase;
-	/** Step-05 plan-coverage / readiness analysis (same report the UI shows). */
-	analyzeExperienceCoverage: AnalyzeExperienceCoverageUseCase;
-	/** Headless run of a prototype — drive a scripted flow, read back the trace. */
-	simulateExperience: SimulateExperienceUseCase;
-	/** Build-readiness verdict: coverage + per-journey simulation + acceptance spec. */
-	verifyExperience: VerifyExperienceUseCase;
-	/** Seed simulator collections from the real Step-07 data model (bulk import). */
-	importDataCollections: ImportDataCollectionsUseCase;
-	/** Generate runnable acceptance tests (Gherkin + Playwright) from the prototype. */
-	generateAcceptanceTests: GenerateAcceptanceTestsUseCase;
-	/** Generate a drop-in repo bundle (tests + config + CI + map) for any codebase. */
-	generateRepoScaffold: GenerateRepoScaffoldUseCase;
 	scoreFeatures: ScoreFeaturesUseCase;
 	/** Cached per-leaf maturity advice for the Features tree — instant read, engine
 	 *  scoring refreshed in the background (see CachedFeatureAdvisor). */
@@ -1272,13 +1255,6 @@ export function getServices(): AppServices {
 			DEFAULT_ENGINE_READ_BUDGETS.explorationWork
 		)
 	};
-	const verifyExperience = new VerifyExperienceUseCase(
-		loadExperienceDraft,
-		loadUsersDraft,
-		loadDataDraft,
-		advisor,
-		engineReadBudgets
-	);
 	// The gate, the audit and the finish all read the SAME evidence; a caller that
 	// retries reads it again. Memoizing it on the model's own fingerprints is what
 	// turns closing a project into one computation instead of one per call.
@@ -1552,21 +1528,6 @@ export function getServices(): AppServices {
 		loadKnowledgeGraph: new LoadKnowledgeGraphUseCase(knowledgeGraph),
 		loadEngineKnowledgeGraph: new LoadKnowledgeGraphUseCase(engineKnowledgeGraph),
 		loadMergedKnowledgeGraph: new LoadKnowledgeGraphUseCase(mergedKnowledgeGraph),
-		analyzeExperienceCoverage: new AnalyzeExperienceCoverageUseCase(
-			loadExperienceDraft,
-			loadUsersDraft,
-			loadDataDraft
-		),
-		simulateExperience: new SimulateExperienceUseCase(loadExperienceDraft, loadUsersDraft),
-		verifyExperience,
-		importDataCollections: new ImportDataCollectionsUseCase(
-			loadExperienceDraft,
-			loadDataDraft,
-			saveExperienceDraft,
-			pushEnvelopeToBack
-		),
-		generateAcceptanceTests: new GenerateAcceptanceTestsUseCase(loadExperienceDraft),
-		generateRepoScaffold: new GenerateRepoScaffoldUseCase(loadExperienceDraft),
 		scoreFeatures: new ScoreFeaturesUseCase(featuresDrafts, advisor, behavior),
 		featureAdvice,
 		assessFeature: new AssessFeatureUseCase(advisor, behavior, loadSpecLanguage),

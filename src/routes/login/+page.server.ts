@@ -34,6 +34,17 @@ function installUnclaimed(services: AppServices): Promise<boolean> {
 }
 
 /**
+ * Whether the installation waits for its claim: sign-in enforced, a licence
+ * required, and the identity source answering that no account exists yet. All
+ * three matter: auth off is a dev boot with an implicit session, and without
+ * enforcement there is no key to prove anything with.
+ */
+async function awaitingClaim(locals: App.Locals): Promise<boolean> {
+	const services = locals.services;
+	return locals.authRequired && services.licenseRequired() && (await installUnclaimed(services));
+}
+
+/**
  * Post-login destination — see postLoginRedirect for the rule and its refusals.
  */
 function safeRedirect(url: URL): string {
@@ -66,7 +77,6 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const { token: inviteToken, invitation } = await invitationBehind(locals.services, redirectTo);
 	const invitedToJoin = inviteToken !== null;
 	const viaInvite = invitation !== null;
-	const allowSignup = viaInvite || (signupAllowed() && (await registrationOpen(locals.services)));
 	// First run: the appliance installs with NO account and NO credentials, so the
 	// very first visitor claims it here, with the licence key as the credential.
 	// All three conditions matter. Auth off is a dev boot with an implicit
@@ -74,8 +84,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	// enforcement there is no key to prove anything with, which would leave a
 	// bare "create the admin account" form on an open port.
 	const services = locals.services;
-	const firstRun =
-		locals.authRequired && services.licenseRequired() && (await installUnclaimed(services));
+	const firstRun = await awaitingClaim(locals);
+	// Sign-up never offers the seat the claim is for (the register action refuses it too).
+	const allowSignup = viaInvite || (!firstRun && signupAllowed() && (await registrationOpen(locals.services)));
 	return {
 		authConfigured: services.identity.configured,
 		authRequired: locals.authRequired,
@@ -267,6 +278,13 @@ export const actions: Actions = {
 	register: async ({ request, cookies, getClientAddress, url, locals }) => {
 		const limited = rateLimited(getClientAddress, 'register');
 		if (limited) return limited;
+		// The first account of an installation that waits for its claim is its
+		// administrator, and only firstRunCreate makes it, against the licence key
+		// issued to that address. Same window as the claim screen: sign-up, even
+		// where the operator allowed it, never takes that seat without the key.
+		if (await awaitingClaim(locals)) {
+			return fail(403, { mode: 'register', message: 'This installation is not claimed yet. Claim it with its licence key first.' });
+		}
 		// The one bypass of the instance-wide signup switch is a still-open
 		// invitation. It is re-read from the back here, so the bypass costs a real
 		// token and not a hand-written ?redirect= query.

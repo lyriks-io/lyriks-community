@@ -401,9 +401,10 @@
 			<div>
 				<p class="text-sm font-semibold text-ink-900">Choose your own password to unlock the app</p>
 				<p class="text-xs text-ink-600">
-					You are signed in with the temporary password generated at install time. Every page
-					stays locked until you replace it in the highlighted form below, using the temporary
-					password as the current one.
+					You are signed in with the temporary password generated at install time. The other pages
+					of the app stay locked until you replace it in the highlighted form below, using the
+					temporary password as the current one. The lock holds pages only: calls to the APIs,
+					those of an AI client included, still go through.
 				</p>
 			</div>
 		</div>

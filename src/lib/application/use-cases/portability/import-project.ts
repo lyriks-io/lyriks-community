@@ -28,6 +28,13 @@ export interface ImportProjectRequest {
 	readonly name?: string;
 	/** File the import under this Domain. Omit to keep the bundle's own. */
 	readonly domainId?: string | null;
+	/**
+	 * The workspace that will own the project, when the installation has
+	 * workspaces: only its folders file the import, and a folder made for it
+	 * belongs to it (issue 156). A policy that resolves it later passes it to
+	 * `write` instead.
+	 */
+	readonly workspaceId?: string | null;
 }
 
 /** How many random suffixes a copy tries before giving up on a free id. */
@@ -46,7 +53,7 @@ export type ImportProjectResult =
 export interface ImportProjectPolicy {
 	withTarget(
 		target: { readonly projectId: string; readonly existing: boolean },
-		write: () => Promise<ImportProjectResult>
+		write: (workspaceId?: string | null) => Promise<ImportProjectResult>
 	): Promise<ImportProjectResult>;
 }
 
@@ -122,14 +129,14 @@ export class ImportProjectUseCase {
 			// A copy, or a restore of a project this installation does not hold, is a
 			// new project: the edition decides whether it may exist (EVO-001).
 			if (!existing) await assertProjectCreation(this.scope);
-			const write = async (): Promise<ImportProjectResult> => {
+			const write = async (workspaceId?: string | null): Promise<ImportProjectResult> => {
 				if (existing) {
 					if (!request.overwrite) {
 						return { ok: false, error: `A project with id "${projectId}" already exists here. Import it as a copy, or confirm the overwrite.` };
 					}
 					warnings.push(`Overwrote the existing project "${projectId}".`);
 				}
-				const domainId = await this.resolveDomain(parsed.snapshot, request, warnings);
+				const domainId = await this.resolveDomain(parsed.snapshot, request, warnings, workspaceId ?? request.workspaceId ?? null);
 				const snapshot = rehomeSnapshot(parsed.snapshot, { projectId, name, domainId });
 				return this.write(snapshot, warnings, request.mode, existing);
 			};
@@ -207,9 +214,12 @@ export class ImportProjectUseCase {
 	private async resolveDomain(
 		snapshot: ProjectSnapshot,
 		request: ImportProjectRequest,
-		warnings: string[]
+		warnings: string[],
+		workspaceId: string | null
 	): Promise<string | null> {
-		const domains = await this.portfolio.listDomains();
+		const all = await this.portfolio.listDomains();
+		// Ids stay unique across the installation; names and filing stay within the owning workspace.
+		const domains = workspaceId === null ? all : all.filter((d) => (d.workspaceId ?? null) === workspaceId);
 
 		if (request.domainId !== undefined) {
 			if (request.domainId === null) return null;
@@ -224,13 +234,14 @@ export class ImportProjectUseCase {
 		const byName = domains.find((d) => d.name.trim().toLowerCase() === source.name.trim().toLowerCase());
 		if (byName) return byName.id;
 
-		const id = domains.some((d) => d.id === source.id) ? `${source.id}-${this.randomSuffix()}` : source.id;
+		const id = all.some((d) => d.id === source.id) ? `${source.id}-${this.randomSuffix()}` : source.id;
 		await this.portfolio.saveDomain({
 			id,
 			name: source.name || humanizeDomainName(id),
 			description: source.description,
 			icon: source.icon,
-			createdAt: this.clock.nowIso()
+			createdAt: this.clock.nowIso(),
+			workspaceId
 		});
 		warnings.push(`Created domain "${source.name}" for the import.`);
 		return id;

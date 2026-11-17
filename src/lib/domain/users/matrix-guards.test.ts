@@ -95,7 +95,8 @@ describe('readMatrixAgainstGuards [criterion:26262450]', () => {
 				actionId: 'lock',
 				actionName: 'Lock period',
 				refusedButGranted: [{ roleId: 'member', roleName: 'Member', rule: 'Only admins lock a period' }],
-				letInButNotGranted: [{ roleId: 'admin', roleName: 'Workspace Admin' }]
+				letInButNotGranted: [{ roleId: 'admin', roleName: 'Workspace Admin' }],
+				grantedToNobody: false
 			}
 		]);
 	});

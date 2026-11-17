@@ -4,7 +4,7 @@ import { emptyRetrospecDocument } from '$domain/retrospec';
 import type { TeamJobsPort } from '$application/ports';
 vi.mock('$application/retrospec/retrospec-store', () => ({ loadRetrospecDocument: async () => ({ doc: emptyRetrospecDocument(), revision: 1 }) }));
 vi.mock('./spec-elements.server', () => ({ readSpecElements: async () => [{ id: 'stack:a', title: 'Stack', owner: 'tech' }] }));
-const { readSpecValidationBoard, readValidationTeam } = await import('./spec-validation.server');
+const { readSpecValidationBoard, readValidationGuards, readValidationTeam } = await import('./spec-validation.server');
 
 function services(participants: NonNullable<TeamJobsPort['participantsForProject']> = async () => [{ email: 'tech@company.test', name: 'Tech Person', jobIds: ['tech'], names: ['Tech'] }]) {
 	return {
@@ -38,5 +38,17 @@ describe('the project validation roster', () => {
 		const page = await readSpecValidationBoard(local as never, 'project', null, { requireTeam: true });
 		expect(page.teamAvailable).toBe(true);
 		expect(page.team).toEqual([]);
+	});
+});
+
+describe('the guards the run door shares with Knowledge', () => {
+	beforeEach(() => forgetShortMemos());
+	it('lets the lead validate, refuses an unknown element and a publication with an element waiting [criterion:6972f3ea]', async () => {
+		const operator = { id: 'local-operator', name: 'You' };
+		const guards = await readValidationGuards({ ...services(), identity: { multiUser: false } } as never, 'project', operator);
+		const doc = emptyRetrospecDocument();
+		expect(guards.canReview?.(doc, 'stack:a')).toBe(true);
+		expect(guards.canReview?.(doc, 'gone')).toBe(false);
+		expect(guards.canPublish?.(doc)).toBe(false);
 	});
 });

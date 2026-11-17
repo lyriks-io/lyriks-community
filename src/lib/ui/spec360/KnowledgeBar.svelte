@@ -10,10 +10,10 @@
 	import { TAG_DRAFT } from './page/look';
 	import { useEditMode } from './edit-mode.svelte';
 	import { useEdits } from './edits.svelte';
-	import { BETA_TIP, KNOWLEDGE_TABS, specTip, standingBand, versionLine } from './knowledge-bar';
+	import { BETA_TIP, KNOWLEDGE_TABS, specTip, standingBand, tabView, versionLine } from './knowledge-bar';
 	import { TAG_BETA } from './page/look';
 	import { usePageScope, type PageScope } from './page-scope.svelte';
-	import { tabAnchors } from '$application/spec360/nav-checks';
+	import { viewAnchors } from '$application/spec360/nav-checks';
 	import { pageAsk, standingTip } from './page-validation';
 	import { useValidation } from './validation.svelte';
 	import './knowledge-rows.css';
@@ -27,9 +27,9 @@
 	 * checked green while a draft; then the band of where the specification
 	 * stands, VALIDATED with + New change, or DRAFT with what the page on
 	 * screen asks of the reader (criterion f480783f: the page hands its scope
-	 * through FeatureValidation), the reader's own validations and the whole
-	 * specification's count; the version line closes the name's row. On a phone
-	 * they scroll with the page.
+	 * through FeatureValidation) and its Validate all section (criterion
+	 * d7cd4e43), with no count of the whole specification; the version line
+	 * closes the name's row. On a phone they scroll with the page.
 	 */
 	interface Props {
 		projectId: string;
@@ -50,25 +50,39 @@
 	const band = $derived(standingBand(summary.state, summary));
 	const line = $derived(versionLine(standing));
 	const base = $derived(`/projects/${encodeURIComponent(projectId)}`);
-	const place = $derived(sidePlace(shownPath()));
+	const path = $derived(shownPath().replace(/\/+$/, ''));
+	const place = $derived(sidePlace(path));
 	const tab = $derived(place.tab);
 	// The product's name is the Overview's title; on any other page the page names itself under the rows.
 	const overview = $derived(tab === 'overview' && !place.item);
 	const checked = $derived(new Set(checks ?? []));
 
-	// What the page on screen is validated on, and what it asks of the reader (criterion f480783f); a page that hands
-	// none is counted on what its tab shows, so the count changes with the tab at once (criterion c509fa9c).
-	const tabScope = $derived.by((): PageScope | null => {
-		if (!tab || tab === 'overview') return null;
-		const anchors = tabAnchors(validation.source.elements, tab);
-		return anchors.length ? { anchors, sectionId: 'app-scroll', label: 'validation of this tab' } : null;
+	// What the page on screen is validated on, and what it asks of the reader (criterion f480783f). The Overview, a core
+	// feature and a feature hand their own scope, read only once that page shows; any other page is counted on what it
+	// shows (a view of Technology & data, one profile, Who can do what, a whole tab), so the count follows the page at
+	// once and never reads the page being left while the next one loads (criterion c509fa9c).
+	const handsOwn = $derived(tab === 'overview' || (tab === 'features' && !!place.item));
+	const held = $derived(slot?.scope && slot.scope.path === path ? slot.scope : null);
+	const features = $derived(tab === 'features' && !place.item);
+	const viewScope = $derived.by((): PageScope | null => {
+		if (!tab || handsOwn) return null;
+		const anchors = viewAnchors(validation.source.elements, tab, tabView(path));
+		return { anchors, sectionId: features ? 'spec-features-list' : 'app-scroll', label: 'validation of this page', path };
 	});
-	const scope = $derived(slot?.scope ?? tabScope);
+	const scope = $derived(held ?? viewScope);
 	const p = $derived(scope ? validation.progressOf(scope.anchors, validation.shownBoard) : null);
 	// The element being edited is left out of the one-click validations until Cancel or Save (criterion 42cb9176).
 	const open = $derived(scope ? edits.notEditing(scope.anchors) : []);
-	const mine = $derived(scope && validation.source.canWrite ? validation.waitingOnMe(open).length : 0);
+	// One's own validation needs no editing right (criterion 43bef20d): the server checks the assignment when it is sent.
+	const mine = $derived(scope ? validation.waitingOnMe(open).length : 0);
 	const ask = $derived(p ? pageAsk(p, mine) : null);
+
+	// Every element of every feature on the Features page: the server picks them itself, so the request stays one act
+	// however large the specification is, unless one is being edited, which is left out (criterion 9079b6e5).
+	function validateSection(on: PageScope) {
+		if (features && open.length === on.anchors.length) void validation.validateAllInSpec(open, on.sectionId, 'features');
+		else void validation.validateAll(open, on.sectionId);
+	}
 
 	let strip = $state<HTMLElement>();
 	let placed = $state(false);
@@ -113,20 +127,16 @@
 					<span class="num">{p.ok} / {p.total}</span>
 				</span>
 			{/if}
-		{:else}
+		{:else if !draft || !handsOwn}
+			<!-- A page that hands its own scope says nothing until it shows: never the page being left's (criterion c509fa9c). -->
 			<span class="txt">{band.text}</span>
 		{/if}
 		{#if draft && mine > 0 && scope}
 			<span class="acts">
-				<button type="button" class="act fill" onclick={() => void validation.validateAll(open, scope.sectionId)}>Validate my {mine}</button>
+				<button type="button" class="act fill" title="Validate the {mine} {mine === 1 ? 'element' : 'elements'} of this section still waiting on you" onclick={() => validateSection(scope)}
+					>Validate all section</button
+				>
 			</span>
-		{/if}
-		{#if draft && scope}
-			<span class="whole" title="{summary.validated} of {summary.total} elements of the specification validated"
-				>Spec <span class="num">{summary.validated} / {summary.total}</span><span class="bar" aria-hidden="true"><i style:width="{band.pct}%"></i></span></span
-			>
-		{:else if draft}
-			<span class="bar" aria-hidden="true"><i style:width="{band.pct}%"></i></span>
 		{/if}
 		{#if !draft}<a class="newc" href="{base}/evolution?new">+ New change</a>{/if}
 	</div>
@@ -134,18 +144,6 @@
 
 <style>
 	/* The band's own parts; the rows themselves are in knowledge-rows.css, shared with a change request. */
-	.bar {
-		display: block;
-		flex: none;
-		width: 120px;
-		height: 6px;
-		background: var(--color-toner-2);
-	}
-	.bar i {
-		display: block;
-		height: 100%;
-		background: var(--color-green);
-	}
 	.ver {
 		display: flex;
 		flex: none;
@@ -238,18 +236,5 @@
 	.act:disabled {
 		cursor: default;
 		opacity: 0.4;
-	}
-	.whole {
-		display: inline-flex;
-		flex: none;
-		align-items: center;
-		gap: 8px;
-		color: var(--color-ink-3);
-		font: 400 0.6875rem/1.3 var(--font-evo-mono);
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
-	}
-	.whole .bar {
-		width: 64px;
 	}
 </style>

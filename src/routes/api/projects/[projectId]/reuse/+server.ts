@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { requireProjectAccess } from '$lib/server/project-access.server';
+import { projectWorkspaceId } from '$lib/server/caller-workspace.server';
 import type { RequestHandler } from './$types';
 
 /**
@@ -17,17 +18,19 @@ export const POST: RequestHandler = async (event) => {
 		templateId?: unknown;
 	};
 	const services = event.locals.services;
+	// Each workspace keeps its own library (issue 267): the one of the project's workspace.
+	const workspaceId = await projectWorkspaceId(services, projectId);
 
 	if (body.action === 'export' && typeof body.featureId === 'string') {
-		const library = await services.exportRequirement.execute(projectId, body.featureId);
+		const library = await services.exportRequirement.execute(projectId, body.featureId, workspaceId);
 		return json({ library });
 	}
 	if (body.action === 'import' && typeof body.templateId === 'string') {
-		const result = await services.importRequirement.execute(projectId, body.templateId);
+		const result = await services.importRequirement.execute(projectId, body.templateId, workspaceId);
 		return json(result);
 	}
 	if (body.action === 'remove' && typeof body.templateId === 'string') {
-		const library = await services.removeReuseTemplate.execute(body.templateId);
+		const library = await services.removeReuseTemplate.execute(body.templateId, workspaceId);
 		return json({ library });
 	}
 	error(400, 'invalid reuse action');

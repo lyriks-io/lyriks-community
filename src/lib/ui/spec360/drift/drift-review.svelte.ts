@@ -8,7 +8,7 @@ import type { DriftChangeView, DriftDecisionView } from '$lib/shared/code-drift-
 
 /**
  * The decisions of the Code drift page (criteria 53e7e3da, 537e1684): accept a
- * change into the spec, reject it and ask for the code to be restored, or take
+ * change as it is (a version records it, the spec's words unchanged), reject it and ask for the code to be restored, or take
  * the decision back. Each click reads at once and is saved behind, in the
  * order it was made, through the validation of the Specification 360° (only
  * the change's key travels: the server reads the code and captures the

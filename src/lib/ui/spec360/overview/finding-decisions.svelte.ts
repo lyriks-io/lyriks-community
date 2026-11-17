@@ -18,8 +18,12 @@ const without = <T>(record: Record<string, T>, key: string): Record<string, T> =
  * stood and says why. The page's next read is the truth: what is shown at
  * once only lasts until it lands.
  */
+/** Where a fix waiting for confirmation stands while its decision is saved (criterion 2a55c3e7). */
+export type FixState = 'waiting' | 'confirmed' | 'reopened';
+
 export class FindingDecisions {
 	#shown = $state<Record<string, NoticedState>>({});
+	#fixes = $state<Record<string, FixState>>({});
 	#busy = $state<Record<string, true>>({});
 	/** The points picked to compose one evolution, by finding id. */
 	picked = $state<ReadonlySet<string>>(new Set());
@@ -146,6 +150,27 @@ export class FindingDecisions {
 			if (ok) pushToast({ level: 'success', message: 'Point rejected: kept as it is' });
 			return ok;
 		});
+	}
+
+	fixStateOf(point: NoticedPoint): FixState {
+		return this.#fixes[point.finding.id] ?? 'waiting';
+	}
+
+	/**
+	 * A fix confirmed (the issue resolved) or reopened (back to review), read at
+	 * once and saved behind; a refusal puts it back under Fix to confirm and says
+	 * why (criterion 2a55c3e7). Once saved, the page's next read moves it.
+	 */
+	async settleFix(point: NoticedPoint, to: 'confirmed' | 'reopened'): Promise<void> {
+		const id = point.finding.id;
+		const issueId = point.finding.fix?.issueId;
+		if (!issueId || this.#busy[id]) return;
+		this.#busy = { ...this.#busy, [id]: true };
+		this.#fixes = { ...this.#fixes, [id]: to };
+		const ok = await (to === 'confirmed' ? this.edits.confirmFix(issueId) : this.edits.reopenFix(issueId)).catch(() => false);
+		if (ok) pushToast({ level: 'success', message: to === 'confirmed' ? 'Fix confirmed: the issue is resolved' : 'Fix reopened: the point is back to review' });
+		this.#fixes = without(this.#fixes, id);
+		this.#busy = without(this.#busy, id);
 	}
 
 	evolve(point: NoticedPoint): Promise<void> {

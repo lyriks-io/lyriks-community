@@ -123,7 +123,7 @@ const setup = () => {
 describe('tying a field to the state that carries it', () => {
 	it('registers a state a feature only declares, links it, and gives the solver the rules it now can check', async () => {
 		const t = setup();
-		const result = await t.tie.tie('shop', t.status.id, 'order.status');
+		const result = await t.tie.tie('shop', t.status.id, 'order.status', 'person');
 		expect(result.ok).toBe(true);
 		const linked = t.engine.states.find((s) => s.path === 'order.status')!;
 		expect(t.engine.registered.has(String(linked.id))).toBe(true);
@@ -141,12 +141,12 @@ describe('tying a field to the state that carries it', () => {
 
 	it('refuses another kind of value, and a state that already carries another field', async () => {
 		const t = setup();
-		const wrong = await t.tie.tie('shop', t.total.id, 'order.label');
+		const wrong = await t.tie.tie('shop', t.total.id, 'order.label', 'person');
 		expect(wrong).toMatchObject({ ok: false, status: 400, error: 'That state holds a string, the field a number.' });
-		await t.tie.tie('shop', t.status.id, 'order.status');
+		await t.tie.tie('shop', t.status.id, 'order.status', 'person');
 		const other = createField(t.order.id, { name: 'phase', type: 'enum', enumValues: ['draft', 'paid', 'shipped'] });
 		t.drafts.draft.fields.push(other);
-		const taken = await t.tie.tie('shop', other.id, 'order.status');
+		const taken = await t.tie.tie('shop', other.id, 'order.status', 'person');
 		expect(taken).toMatchObject({ ok: false, status: 409 });
 	});
 
@@ -177,7 +177,7 @@ describe('the rules the solver is given follow the model', () => {
 		const automatic = t.sync.execute('shop');
 		await entered;
 		const before = reads.mock.calls.length;
-		const explicit = t.tie.tie('shop', t.status.id, 'order.status');
+		const explicit = t.tie.tie('shop', t.status.id, 'order.status', 'person');
 		try {
 			await new Promise((resolve) => setImmediate(resolve));
 			expect(reads).toHaveBeenCalledTimes(before);
@@ -199,7 +199,7 @@ describe('the rules the solver is given follow the model', () => {
 
 	it('adds the required rule once the table names its existence, rewrites nothing unchanged, removes an untied one', async () => {
 		const t = setup();
-		await t.tie.tie('shop', t.status.id, 'order.status');
+		await t.tie.tie('shop', t.status.id, 'order.status', 'person');
 		await t.tie.nameExistence('shop', t.order.id, 'order.placed');
 		expect(t.engine.invariants.map((i) => i.name).sort()).toEqual([
 			'The system shall restrict the status of an Order to draft, paid or shipped.',
@@ -209,7 +209,7 @@ describe('the rules the solver is given follow the model', () => {
 		expect(await t.sync.execute('shop')).toEqual({ ok: true, added: 0, updated: 0, removed: 0 });
 		expect(t.engine.batches.length).toBe(batchesBefore);
 
-		await t.tie.untie('shop', t.status.id);
+		await t.tie.untie('shop', t.status.id, 'person');
 		expect(t.engine.invariants).toEqual([]);
 		expect(t.drafts.draft.rules!.generated).toEqual({});
 	});
@@ -217,8 +217,8 @@ describe('the rules the solver is given follow the model', () => {
 	it('never touches a rule a person wrote', async () => {
 		const t = setup();
 		t.engine.invariants.push({ id: 'hand', name: 'Written by a person', condition: {}, message: 'x' });
-		await t.tie.tie('shop', t.status.id, 'order.status');
-		await t.tie.untie('shop', t.status.id);
+		await t.tie.tie('shop', t.status.id, 'order.status', 'person');
+		await t.tie.untie('shop', t.status.id, 'person');
 		expect(t.engine.invariants.map((i) => i.id)).toEqual(['hand']);
 	});
 
@@ -236,7 +236,7 @@ describe('the rules the solver is given follow the model', () => {
 describe('the Rules reading', () => {
 	it('says per rule what it is tied to, what it waits for, and where it opens', async () => {
 		const t = setup();
-		await t.tie.tie('shop', t.status.id, 'order.status');
+		await t.tie.tie('shop', t.status.id, 'order.status', 'person');
 		const reading = (await t.read.read('shop'))!;
 		const required = reading.rules.find((r) => r.shape === 'required' && r.fieldId === t.status.id)!;
 		expect(required).toMatchObject({ tiedTo: 'order.status', missing: 'existence', invariantId: null });
@@ -279,14 +279,32 @@ describe('links made as the product is captured', () => {
 	it('never makes again a link a person took back; only a person makes it again', async () => {
 		const t = setup();
 		await t.sync.execute('shop');
-		await t.tie.untie('shop', t.status.id);
+		await t.tie.untie('shop', t.status.id, 'person');
 		expect(t.drafts.draft.rules!.declined).toEqual([t.status.id]);
 		await t.sync.execute('shop');
 		expect(t.engine.states.find((s) => s.path === 'order.status')!.links).toEqual({});
 		const byClient = await t.tie.linkByNames('shop', { links: [{ table: 'Order', field: 'status', statePath: 'order.status' }] }, 'ai-client');
 		expect(byClient.ok && byClient.outcomes[0]).toMatchObject({ ok: false, status: 409, error: 'A person unlinked "status": only a person links it again.' });
-		expect((await t.tie.tie('shop', t.status.id, 'order.status')).ok).toBe(true);
+		expect((await t.tie.tie('shop', t.status.id, 'order.status', 'person')).ok).toBe(true);
 		expect(t.drafts.draft.rules).toMatchObject({ linkedBy: { [t.status.id]: 'person' }, declined: [] });
+	});
+
+	it('takes an AI client calling the tie endpoint for what it is, never for a person [issues.119]', async () => {
+		const t = setup();
+		await t.sync.execute('shop');
+		await t.tie.untie('shop', t.status.id, 'person');
+		const byClient = await t.tie.tie('shop', t.status.id, 'order.status', 'ai-client');
+		expect(byClient).toMatchObject({ ok: false, status: 409, error: 'A person unlinked "status": only a person links it again.' });
+		expect(t.drafts.draft.rules!.declined).toEqual([t.status.id]);
+	});
+
+	it('keeps no refusal when an AI client takes a link back [issues.119]', async () => {
+		const t = setup();
+		await t.sync.execute('shop');
+		await t.tie.untie('shop', t.status.id, 'ai-client');
+		expect(t.drafts.draft.rules!.declined ?? []).toEqual([]);
+		expect((await t.tie.tie('shop', t.status.id, 'order.status', 'ai-client')).ok).toBe(true);
+		expect(t.drafts.draft.rules!.linkedBy?.[t.status.id]).not.toBe('person');
 	});
 
 	it('lets an AI client link many fields and name existence by names, each refusal on its own line', async () => {
@@ -376,7 +394,7 @@ describe('a field carried by further states [criterion:3238573b]', () => {
 		expect(t.drafts.draft.rules!.alsoCarriedBy).toEqual({});
 		expect(t.engine.states.find((s) => s.path === 'order.status')!.links).toMatchObject({ dataField: { fieldId: `fld-${t.status.id}` } });
 		await link([{ table: 'Order', field: 'status', statePath: 'shipping.order.status', also: true }]);
-		await t.tie.untie('shop', t.status.id);
+		await t.tie.untie('shop', t.status.id, 'person');
 		expect(t.drafts.draft.rules!.alsoCarriedBy).toEqual({});
 	});
 });

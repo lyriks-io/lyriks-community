@@ -75,6 +75,8 @@ export async function authenticate(
   // With the Enterprise overlay, forward its dev-user token (the project owner)
   // so the Back-backed tools work; best-effort, since the section tools reach
   // the platform without it, so a failed dev login must not block the request.
+  // The overlay lends that owner only on a development machine (MCP_DEV_AUTH=1)
+  // and answers an empty token everywhere else.
   // Without the overlay there is no Back to log in to: an empty token.
   c.set('user_id', 'dev')
   try {

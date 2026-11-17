@@ -100,7 +100,7 @@ export async function applyBatchToDraft(event: RequestEvent, input: DraftBatchIn
 	const stored = target.model?.operations ?? [];
 
 	if (!dryRun) {
-		const actor = await resolveEvolutionActor(services, event);
+		const actor = await resolveEvolutionActor(services, event, projectId);
 		const outcome = await guardSectionWrite('evolution', () =>
 			applyEvolutionOperations(services, {
 				projectId,
@@ -115,8 +115,7 @@ export async function applyBatchToDraft(event: RequestEvent, input: DraftBatchIn
 					}
 				],
 				actor,
-				origin: event.request.headers.get('x-lyriks-client'),
-				activeWorkspaceId: event.cookies.get('lyriks_active_ws')
+				origin: event.request.headers.get('x-lyriks-client')
 			})
 		);
 		if (!outcome.ok) {

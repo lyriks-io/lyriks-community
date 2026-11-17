@@ -36,7 +36,26 @@ function transcriptLines(path) {
 	}
 }
 
-const isLyriksTool = (name) => typeof name === 'string' && (name.startsWith('mcp__lyriks') || name.startsWith('mcp__unspa'));
+/** The server and the tool of an MCP tool name (`mcp__<server>__<tool>`), or null for any other tool. */
+function mcpTool(name) {
+	if (typeof name !== 'string' || !name.startsWith('mcp__')) return null;
+	const rest = name.slice('mcp__'.length);
+	// A tool name never holds a double underscore; a server name may.
+	const cut = rest.lastIndexOf('__');
+	return cut > 0 ? { server: rest.slice(0, cut), tool: rest.slice(cut + 2) } : null;
+}
+
+/** A Lyriks server holds lyriks anywhere in its name, whatever the case: the one rule both Lyriks hooks use. */
+const isLyriksServer = (server) => /lyriks/i.test(server);
+
+/** Whether a tool belongs to a Lyriks server, a claude.ai connector named Lyriks included. */
+function isLyriksTool(name) {
+	const call = mcpTool(name);
+	return call !== null && isLyriksServer(call.server);
+}
+
+/** A cheap first look at a transcript line: could it hold a call to a Lyriks server? */
+const MAY_CALL_LYRIKS = /mcp__[^"]*lyriks/i;
 
 /** The content items of an assistant transcript line, or none. */
 function assistantItems(line) {
@@ -51,11 +70,11 @@ function assistantItems(line) {
 	return Array.isArray(content) ? content : [];
 }
 
-/** The last project_id handed to a Lyriks/unspa MCP tool in this session, from the transcript. */
+/** The last project_id handed to a Lyriks MCP tool in this session, from the transcript. */
 function projectFromTranscript(lines) {
 	let project = null;
 	for (const line of lines) {
-		if (!line.includes('mcp__lyriks') && !line.includes('mcp__unspa')) continue;
+		if (!MAY_CALL_LYRIKS.test(line)) continue;
 		for (const item of assistantItems(line)) {
 			if (!item || item.type !== 'tool_use' || !isLyriksTool(item.name)) continue;
 			const args = item.input;
@@ -95,7 +114,7 @@ function mcpOutage(lines) {
 	const calls = new Set();
 	let outage = null;
 	for (const line of lines) {
-		if (line.includes('mcp__lyriks') || line.includes('mcp__unspa')) {
+		if (MAY_CALL_LYRIKS.test(line)) {
 			for (const item of assistantItems(line)) {
 				if (item && item.type === 'tool_use' && isLyriksTool(item.name) && typeof item.id === 'string') calls.add(item.id);
 			}
@@ -138,7 +157,7 @@ function liveSessionState(lines) {
 	const starts = new Set();
 	let state = { kind: 'none' };
 	for (const line of lines) {
-		if (line.includes('mcp__lyriks') || line.includes('mcp__unspa')) {
+		if (MAY_CALL_LYRIKS.test(line)) {
 			for (const item of assistantItems(line)) {
 				if (!item || item.type !== 'tool_use' || !isLyriksTool(item.name)) continue;
 				if (item.name.endsWith('__start_evolution_session')) {

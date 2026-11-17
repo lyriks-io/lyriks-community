@@ -49,3 +49,19 @@ describe('a deferred omission reads in the list as a suggestion [criterion:35991
 		expect(shown({ suggestions: [] })).not.toContain('Suggested ·');
 	});
 });
+
+describe('the roadmap is reached from the Requests view [criterion:ff115da8]', () => {
+	const head = (props: Record<string, unknown>) =>
+		render(BoardReading, { props: { cards: [card('1', 'open')], canEdit: false, productName: 'P', actorId: 'a', members: [], hasProduct: true, specHref: '/s', retroHref: '/r', onOpen: () => {}, onConcurrent: () => {}, onNew: () => {}, ...props } }).body;
+
+	it('links to the roadmap beside New change, for a reader too', () => {
+		const html = head({ roadmapHref: '/projects/p/evolution?tab=roadmap' });
+		expect(html).toContain('href="/projects/p/evolution?tab=roadmap"');
+		expect(html).toContain('>Roadmap</a>');
+		expect(html).not.toContain('New change');
+	});
+
+	it('shows no link where the page names no roadmap', () => {
+		expect(head({})).not.toContain('>Roadmap</a>');
+	});
+});

@@ -6,6 +6,59 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.44] - 2026-11-17
+
+Health says where each problem lies and keeps the fixes to confirm apart,
+Knowledge validates a whole page from its band, and the guards of validation,
+Evolution and projects hold on every door.
+
+### Added
+
+- Each point Lyriks noticed says where the problem lies: in the product, in
+  the specification or in Lyriks's records. A point fixed but not confirmed
+  yet reads Fix to confirm, apart from the others, with Confirm the fix and
+  Reopen, and the points are listed by what they cost.
+
+### Changed
+
+- The band at the top of Knowledge offers one Validate all section, counted
+  on what the page on screen shows: a view of Technology & data, one profile,
+  Who can do what, or a whole tab. It is offered to every reviewer the page
+  waits on, editing rights or not. The check with a count in the head of
+  Features, which repeated it, and the band's count of the whole
+  specification are gone.
+- The help, the dialogs and the public texts say what the product does today.
+- Mismatch names the step that writes what is validated, and accepting a code
+  change says what it really does.
+- Refusing to delete a core feature that still holds features says what can
+  be done instead.
+- The roadmap is reached from Changes, and Why it exists starts in the Edit
+  mode.
+- Entering a licence key says truthfully what it changes; removing the stored
+  key asks first and keeps the previous one.
+- MCP: `flag_conflict` takes the two sides of a disagreement, and
+  `finalize_analysis` says what it checks.
+
+### Fixed
+
+- The guards of Knowledge's validation also hold on the door a run validates
+  through.
+- An Evolution request keeps its lifecycle guards on every door, and accepting
+  a Briefing suggestion respects the freeze.
+- Saving a section never writes the generated documents.
+- Each security question keeps its own answered mark.
+- Tying a data field to the behavior records who really did it.
+- Sign-offs read honestly and baselines cannot be changed once captured.
+- Writing the users as a whole keeps a profile another part still names.
+- Importing a project is refused to a viewer, as creating one is.
+- A disagreement's two sides reach the engine as the claims it reads.
+- Both Claude Code hooks recognise a Lyriks server by the same rule.
+- The kit's preflight checks every port the stack publishes.
+
+### Removed
+
+- The six API routes and the MCP tools of the retired screen prototype.
+
 ## [0.9.43] - 2026-11-17
 
 The Community edition gets its own scope and the four plans of lyriks.io, a

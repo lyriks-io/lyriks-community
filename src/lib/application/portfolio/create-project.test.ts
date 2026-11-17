@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CreateProjectUseCase } from './create-project';
+import { CreateProjectUseCase, ProjectFolderRefusedError } from './create-project';
 import type { ClockPort, FoundationIdentityRepositoryPort, PortfolioRepositoryPort } from '$application/ports';
 import type { Domain } from '$domain/portfolio';
 import type { ProjectMeta } from '$application/ports';
@@ -119,5 +119,62 @@ describe('CreateProjectUseCase: source mode', () => {
 
 		expect(saved[0]?.sourceMode).toBe('code_to_spec');
 		expect(saved[0]?.productName).toBe('Legacy');
+	});
+});
+
+describe('CreateProjectUseCase, the folder a new project is filed in (issue 157)', () => {
+	const folder = (id: string, workspaceId: string): Domain => ({
+		id,
+		name: id,
+		description: '',
+		icon: 'lucide:building-2',
+		createdAt: '2026-01-01T00:00:00.000Z',
+		workspaceId
+	});
+
+	function setup() {
+		const drafts = recordingDrafts();
+		const portfolio = fakePortfolio([folder('dom-ours', 'ws-a'), folder('dom-theirs', 'ws-b')]);
+		const uc = new CreateProjectUseCase(drafts.repo, clock, portfolio.repo, undefined, () => 'abc123');
+		return { ...portfolio, saved: drafts.saved, uc };
+	}
+
+	it('refuses another workspace\'s folder before anything is written [rule:a8664b7b]', async () => {
+		const { uc, saved, meta } = setup();
+		const create = uc.execute({ name: 'Ledger', domainId: 'dom-theirs', placement: { workspaceId: 'ws-a', folders: null } });
+		await expect(create).rejects.toBeInstanceOf(ProjectFolderRefusedError);
+		await expect(create).rejects.toThrow('The target domain is outside your portfolio scope');
+		expect(saved).toHaveLength(0);
+		expect(meta.size).toBe(0);
+	});
+
+	it('refuses a folder outside a limited member\'s folders [rule:a8664b7b]', async () => {
+		const { uc, saved } = setup();
+		await expect(
+			uc.execute({ name: 'Ledger', domainId: 'dom-ours', placement: { workspaceId: 'ws-a', folders: new Set(['dom-other']) } })
+		).rejects.toThrow('The target domain is outside your portfolio scope');
+		expect(saved).toHaveLength(0);
+	});
+
+	it('makes no folder for a limited member [rule:ed4ab638]', async () => {
+		const { uc, saved, domains } = setup();
+		await expect(
+			uc.execute({ name: 'Ledger', domainId: 'dom-new', placement: { workspaceId: 'ws-a', folders: new Set(['dom-ours']) } })
+		).rejects.toThrow('Only members with full portfolio access can create domains');
+		expect(saved).toHaveLength(0);
+		expect(domains.has('dom-new')).toBe(false);
+	});
+
+	it('files in a folder of the owning workspace the creator reaches', async () => {
+		const { uc, meta } = setup();
+		const id = await uc.execute({ name: 'Ledger', domainId: 'dom-ours', placement: { workspaceId: 'ws-a', folders: new Set(['dom-ours']) } });
+		expect(meta.get(id)?.domainId).toBe('dom-ours');
+	});
+
+	it('makes a named folder in the owning workspace for a member who reaches every folder [rule:38cafaca]', async () => {
+		const { uc, domains, meta } = setup();
+		const id = await uc.execute({ name: 'Ledger', domainId: 'dom-new', placement: { workspaceId: 'ws-a', folders: null } });
+		expect(domains.get('dom-new')?.workspaceId).toBe('ws-a');
+		expect(meta.get(id)?.domainId).toBe('dom-new');
 	});
 });

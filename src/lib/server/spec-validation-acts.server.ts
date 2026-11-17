@@ -63,7 +63,8 @@ export async function applySpecValidationActs(
 			case 'withdraw': {
 				if (board.summary.state === 'validated') error(400, 'The specification is already validated.');
 				const e = element(act.itemId);
-				if (!canReviewElement(projected, e, team, actor, access.canWrite)) {
+				// A validation only from someone the element waits on (criterion d1703bb6); a writer withdraws freely, nothing stands to withdraw otherwise.
+				if (!(act.op === 'withdraw' && access.canWrite) && !canReviewElement(projected, e, team, actor, access.canWrite)) {
 					error(403, 'This question does not require your validation.');
 				}
 				// Validating an element the former review rejected restores it: the click is the explicit decision.

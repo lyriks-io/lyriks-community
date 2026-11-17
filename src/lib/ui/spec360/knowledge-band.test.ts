@@ -54,15 +54,36 @@ describe('the band reads the page\'s validation, the reader\'s own and the whole
 		expect(band).toContain('title={standingTip(p)}');
 	});
 
-	it('offers the blue page approval without a whole-specification shortcut [criterion:d7cd4e43]', () => {
+	it('offers Validate all section on the page, never a whole-specification shortcut [criterion:d7cd4e43]', () => {
 		expect(band).toContain('{#if draft && mine > 0 && scope}');
-		expect(band).toContain('class="act fill" onclick={() => void validation.validateAll(open, scope.sectionId)}');
-		expect(band).not.toContain('validateAllInSpec');
+		expect(band).toMatch(/class="act fill" title="Validate the \{mine\} [^"]+ of this section still waiting on you" onclick=\{\(\) => validateSection\(scope\)\}\s*>Validate all section</);
+		expect(band).not.toContain('Validate my');
+		// Only the Features page's own scope goes to the server whole; nothing reaches the whole specification.
+		expect(band).toContain("validation.validateAllInSpec(open, on.sectionId, 'features')");
+		expect(band.match(/validateAllInSpec\(/g)).toHaveLength(1);
 	});
 
-	it('names where the whole specification stands beside the page, and alone on a page with no validation of its own', () => {
-		expect(band).toContain('>Spec <span class="num">{summary.validated} / {summary.total}</span>');
-		expect(band).toMatch(/\{:else\}\s*<span class="txt">\{band\.text\}<\/span>/);
+	it('offers it to every reviewer the page waits on, editing rights or not [criterion:43bef20d]', () => {
+		expect(band).toContain('const mine = $derived(scope ? validation.waitingOnMe(open).length : 0);');
+	});
+
+	it('carries no count and no bar of the whole specification [criterion:d7cd4e43]', () => {
+		expect(band).not.toContain('>Spec <span');
+		expect(band).not.toContain('class="whole"');
+		expect(band).not.toContain('class="bar"');
+		expect(band).toMatch(/\{:else if !draft \|\| !handsOwn\}[\s\S]*?<span class="txt">\{band\.text\}<\/span>/);
+	});
+
+	it('never reads the scope of the page being left, and says nothing of a page that hands its own until it shows [criterion:c509fa9c]', () => {
+		expect(band).toContain('const held = $derived(slot?.scope && slot.scope.path === path ? slot.scope : null);');
+		expect(band).toContain('const scope = $derived(held ?? viewScope);');
+		expect(source('./FeatureValidation.svelte')).toContain("path: page.url.pathname.replace(/\\/+$/, '')");
+	});
+
+	it('no page repeats it as a check with a count in its head [criterion:d7cd4e43]', () => {
+		const features = readFileSync(new URL('../../../routes/projects/[projectId]/spec/features/+page.svelte', import.meta.url), 'utf8');
+		expect(features).not.toContain('ValidateAllCheck');
+		expect(features).not.toContain('validateAllInSpec');
 	});
 
 	it('no page draws a validation bar of its own any more', () => {

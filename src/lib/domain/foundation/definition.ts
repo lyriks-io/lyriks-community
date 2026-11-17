@@ -193,6 +193,9 @@ export interface ConstraintsDefinition {
 export const emptyQuestionSources = (): Record<RequirementQuestion, string[]> =>
 	Object.fromEntries(REQUIREMENT_QUESTIONS.map((q) => [q, [] as string[]])) as Record<RequirementQuestion, string[]>;
 
+/** The security questions the form opens on a default for: the default is not an answer. */
+export type SecurityQuestion = 'auditLogs' | 'authorization';
+
 /** Trust & compliance the product must earn — product/market-level security choices. */
 export interface SecurityDefinition {
 	authentication: AuthMechanism[];
@@ -203,6 +206,13 @@ export interface SecurityDefinition {
 	dataRetention: RetentionRule[];
 	/** Ids from the project Documents & Sources register that evidence this section. */
 	sourceIds: string[];
+	/**
+	 * The questions someone answered, each on its own: the definition also keeps
+	 * the response times and the availability notes, so its save stamp says
+	 * nothing about them. Absent on a definition saved before it was kept (see
+	 * `answeredSecurityQuestions`).
+	 */
+	answered?: SecurityQuestion[];
 }
 
 /**

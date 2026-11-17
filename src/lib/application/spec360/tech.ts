@@ -14,7 +14,8 @@ import {
 	type FormFactorCode,
 	type FoundationDefinitionDraft,
 	type FoundationIdentityDraft,
-	type FoundationOperationsDraft
+	type FoundationOperationsDraft,
+	isSecurityAnswered
 } from '$domain/foundation';
 import { languageOwnName } from '$domain/language';
 import { compareNames, sortByName } from '$domain/shared';
@@ -290,7 +291,7 @@ export function healthItems(input: {
 		items.push({ key: 'availability', title: 'Availability', description: AVAILABILITY_MEANING, chips: availability });
 	}
 
-	// A definition never saved holds the form's defaults ('partial' audit logs), not answers; None is an answer (criterion 970aca7c).
+	// The form's default ('partial' audit logs) is not an answer until someone gives it; None is an answer (criterion 970aca7c).
 	const audit = operationsTargets(definition, operations).auditLogs;
 	if (audit) {
 		items.push({ key: 'audit-logs', title: 'Audit logs', description: AUDIT_LOG_MEANING[audit] ?? '', chips: [labelOf(AUDIT_LOG_LEVELS, audit)] });
@@ -324,7 +325,6 @@ export function requirementGroups(input: {
 	operations: FoundationOperationsDraft;
 }): RequirementGroup[] {
 	const { identity, definition, operations } = input;
-	const answered = definition.lastSavedAt !== null;
 	const i18n = operations.i18n;
 	const localeLabel = new Map(list(i18n.locales).map((l) => [l.code, l.label]));
 	const languages = list(definition.market.languages).map((code) => localeLabel.get(code) || labelOf(LANGUAGES, code));
@@ -360,7 +360,7 @@ export function requirementGroups(input: {
 				{ label: 'Authentication', values: aToZ(labelsOf(AUTH_MECHANISMS, list(definition.security.authentication))) },
 				{
 					label: 'Authorization',
-					values: answered && definition.security.authorization ? [labelOf(AUTHORIZATION_MODELS, definition.security.authorization)] : []
+					values: isSecurityAnswered(definition, 'authorization') && definition.security.authorization ? [labelOf(AUTHORIZATION_MODELS, definition.security.authorization)] : []
 				},
 				{ label: 'Encryption', values: aToZ(labelsOf(ENCRYPTION_SCOPES, list(definition.security.encryption))) }
 			]

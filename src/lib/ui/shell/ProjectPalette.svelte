@@ -31,6 +31,8 @@
 	let { current }: { current: { id: string; name: string } | null } = $props();
 
 	const open = $derived(shell.panel === 'projects');
+	/** A viewer of the workspace the switcher shows is offered no project creation (rule 029ff8b4). */
+	const mayCreate = $derived(page.data.mayCreateProjects !== false);
 	let folders = $state<ProjectFolder[] | null>(null);
 	/** Whether the reader sees every folder, so may put them in order (rule 8f68eccd); the server says so with the portfolio. */
 	let canOrder = $state(false);
@@ -178,7 +180,9 @@
 		if (!n || creating) return n ? undefined : pushToast({ level: 'info', message: 'Name the project first' });
 		creating = true;
 		try {
-			const res = await fetch('/api/projects', json('POST', { name: n, domainId: folder }));
+			// A folder's workspace owns the project; filed nowhere, the workspace the switcher shows does (rule fb69bf09).
+			const owner = folder === null && typeof page.data.activeWorkspace === 'string' ? { workspaceId: page.data.activeWorkspace } : {};
+			const res = await fetch('/api/projects', json('POST', { name: n, domainId: folder, ...owner }));
 			if (!res.ok) return pushToast({ level: 'error', message: (await res.text().catch(() => '')) || 'The project was not created' });
 			const { projectId } = (await res.json()) as { projectId: string };
 			pushToast({ level: 'success', message: `Project “${n}” created` });
@@ -486,7 +490,7 @@
 							<button type="button" class="pic" aria-label="Rename folder {f.name}" title="Rename" onclick={() => startRename(f)}><SideIcon name="pencil" size={15} /></button>
 						{/if}
 						{#if !f.pending}
-							<button type="button" class="quiet qa blue" onclick={() => { reset(); adding = { folder: f.id }; }}>+ Project</button>
+							{#if mayCreate}<button type="button" class="quiet qa blue" onclick={() => { reset(); adding = { folder: f.id }; }}>+ Project</button>{/if}
 						{/if}
 						{#if real && !f.pending}
 							<button
@@ -575,7 +579,7 @@
 	</div>
 	{#snippet foot()}
 		<button type="button" class="quiet qa blue ml-auto" onclick={() => { reset(); adding = 'folder'; }}>+ Folder</button>
-		<button type="button" class="pressable newp" onclick={() => { shell.close(); openOnboarding(); }}>+ New project</button>
+		{#if mayCreate}<button type="button" class="pressable newp" onclick={() => { shell.close(); openOnboarding(); }}>+ New project</button>{/if}
 	{/snippet}
 </SidePanel>
 

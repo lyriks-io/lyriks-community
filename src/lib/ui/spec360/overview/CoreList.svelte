@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { anchorDomId, anchorOf } from '$domain/discussions';
+	import { CORE_HOLDS_FEATURES } from '$application/spec360/edits';
 	import BlockFoot from '../BlockFoot.svelte';
 	import CardGrid from '../CardGrid.svelte';
 	import InlineEditor from '../InlineEditor.svelte';
@@ -36,7 +37,7 @@
 	const edits = useEdits();
 	const validation = useValidation();
 	const sources = useSources();
-	const refusal = (features: number) => (features > 0 ? 'It still holds features: move or delete them first, on the Features page.' : null);
+	const refusal = (features: number) => (features > 0 ? CORE_HOLDS_FEATURES : null);
 	/** What opens under a card (its sources) stays inside it. */
 	const footOpen = (anchor: string) => sources?.openAnchor === anchor;
 	const CARD = 'relative flex min-w-0 scroll-mt-36 flex-col gap-1.5 border border-line bg-toner px-4 py-3.5';

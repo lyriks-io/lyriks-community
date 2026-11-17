@@ -71,6 +71,19 @@ describe('McpCodeAdoption', () => {
 		expect(calls[0].args.entries).toBeUndefined();
 	});
 
+	it('sends the sides of a disagreement as the claims the engine reads', async () => {
+		// Sent as `statements`, every disagreement was refused by the engine's schema.
+		const { engine, calls } = fakeEngine();
+		const statements = [
+			{ sourceId: 's-doc', statement: '3 retries' },
+			{ sourceId: 's-code', statement: '5 retries' }
+		];
+
+		await new McpCodeAdoption(engine).flagConflict({ featureId: 'feat-1', summary: 'retries', statements });
+
+		expect(calls[0]).toEqual({ name: 'flag_conflict', args: { featureId: 'feat-1', summary: 'retries', claims: statements } });
+	});
+
 	it('carries a refusal through instead of flattening it to null', async () => {
 		// A refused finalize NAMES the untraced elements — that is the answer the
 		// agent must act on, and an opaque null would deny it.

@@ -26,8 +26,12 @@ function repository() {
 			stored = activation;
 		},
 		loadPrevious: async () => previous,
+		removeCurrent: async () => {
+			stored = null;
+		},
 		clear: async () => {
 			stored = null;
+			previous = null;
 		},
 		readClockFloor: async () => null,
 		advanceClockFloor: async () => {},

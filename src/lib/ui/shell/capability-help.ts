@@ -23,14 +23,13 @@ export const PORTFOLIO_HELP: HelpEntry = {
 export const CAPABILITY_HELP: Record<string, HelpEntry> = {
 	evolution: {
 		title: 'Evolution',
-		what: 'One dossier per change request, carrying it through four stages: the specification on a single progressive page, the coherence and impact reports that challenge it before any code, the five-verdict confrontation between what was asked and what was built, and the acceptance walkthrough whose validated remarks are folded back into the spec.',
+		what: 'One request per change to the product, read in six steps: Briefing, Solution, Specification, Simulation, Implementation and Verification. Nothing a request changes is written into the specification before the change is declared live. The Roadmap view plans the releases its features ship in.',
 		how: [
-			'Open a request with a title, an origin and the single leaf feature answerable for the change.',
-			'Fill the ten specification blocks in any order. Every field is written into the section that owns it, so nothing is duplicated here.',
-			'Run the coherence check over the whole project, then read the impact under each of the three hypotheses separately: adding does not break what removing breaks.',
-			'Cross a stage gate when its threshold is met, or waive it with a stated reason that stays visible until an admin lifts it.',
-			'Decide every line of the implementation report, then rebrief from the refusals or amend the spec.',
-			'Walk the product, log anchored observations, and fold the validated ones back before closing.'
+			'Open a request with New change, then answer the Briefing and the Solution in your own words, or let your AI suggest the answers: accept or reject each suggestion, and answer the question it asks there.',
+			'Validate each answer, then each element of the Specification: a step opens once a person has validated what the step before holds.',
+			'Read the Simulation, the impact of the change on the product as it would be and the evolutions in progress it meets, then freeze the version and move to the Implementation.',
+			'Read the Verification of what was built against the frozen version, decide each line of its report, then close the evolution.',
+			'Some acts have no control on this page: waiving a gate with a stated reason and lifting a waiver, rewording a suggestion or asking members to look at it, skipping, postponing or taking back a question, naming who validates and how many validations an answer needs, marking a step not applicable, and logging the remarks of the acceptance walkthrough and writing them back into the spec. They go through the API, or through your AI over the Lyriks MCP where you work alone: in a workspace of several members most of them are a decision a person takes, and an AI is refused them.'
 		],
 		value:
 			'It is the difference between a change that was agreed and a change that merely happened. The reports are derived from the spec crossed with the code, never from what the model says it did, so the omissions and the unrequested additions surface before they become the product. And because every decision is recorded with its author and whether that author was a person or a model, a sentence questioned six months later can be traced to the decision that put it there.'
@@ -70,7 +69,7 @@ export const CAPABILITY_HELP: Record<string, HelpEntry> = {
 	},
 	features: {
 		title: 'Features',
-		what: 'The feature tree: the product broken into families and leaf features, with MVP scope and a release roadmap.',
+		what: 'The feature tree: the product broken into families and leaf features, with MVP scope. The release roadmap is a view of Evolution.',
 		how: [
 			'Build the tree of families and features.',
 			'Mark what is in the MVP versus later releases.',

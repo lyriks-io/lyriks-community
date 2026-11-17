@@ -87,3 +87,32 @@ describe('the binding hook leaves the code to the code tools [criterion:4cfd9e34
 		expect(context).toContain('without a Lyriks call');
 	});
 });
+
+describe('both hooks recognise a Lyriks server by one rule [scenario:176d1671] [scenario:c1366831]', () => {
+	const allowHook = fileURLToPath(new URL('./lyriks-allow-tools.hook.mjs', import.meta.url));
+	const allowed = (toolName: string): boolean =>
+		execFileSync('node', [allowHook], {
+			input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: toolName, tool_input: {} }),
+			encoding: 'utf8',
+			env: { ...process.env, LYRIKS_ASK_EVERY_TOOL: '' }
+		}).trim() !== '';
+	const callTo = (id: string, toolName: string, input: Record<string, unknown>) =>
+		JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name: toolName, input }] } });
+	const quiet = { env: { LYRIKS_NO_AUTO_SESSION: '1' } };
+
+	it('follows exactly the servers the allow hook lets run, a claude.ai connector named Lyriks included', () => {
+		const servers = { mcp__lyriks: true, 'mcp__lyriks-lab': true, mcp__claude_ai_Lyriks: true, mcp__claude_ai_Lyriks_vmtest: true, mcp__unspa: false, mcp__github: false };
+		for (const [server, lyriks] of Object.entries(servers)) {
+			const tool = `${server}__get_section`;
+			const named = contextFor([callTo('c1', tool, { project_id: 'kutt-c76982' })], quiet).includes('(project kutt-c76982)');
+			expect(allowed(tool), tool).toBe(lyriks);
+			expect(named, tool).toBe(lyriks);
+		}
+	});
+
+	it('tells the outage of a connector named Lyriks, never that of another server', () => {
+		const failing = (tool: string) => [callTo('c1', tool, { project_id: 'kutt-c76982' }), result('c1', 'MCP error -32000: Connection closed', true)];
+		expect(contextFor(failing('mcp__claude_ai_Lyriks__get_section'), quiet)).toContain('The Lyriks MCP failed');
+		expect(contextFor(failing('mcp__unspa__get_feature'), quiet)).not.toContain('The Lyriks MCP failed');
+	});
+});

@@ -1,6 +1,8 @@
 import { error, json } from '@sveltejs/kit';
 import { projectNameStyled } from '$domain/foundation';
-import { callerAllowedDomains } from '$lib/server/domain-scope.server';
+import { callerReach } from '$lib/server/domain-scope.server';
+import { callerRoleInProjectWorkspace, projectWorkspaceId } from '$lib/server/caller-workspace.server';
+import { FOLDER_OUT_OF_SCOPE, folderForProject } from '$application/portfolio/folder-policy';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import type { RequestHandler } from './$types';
 
@@ -26,21 +28,13 @@ export const PATCH: RequestHandler = async (event) => {
 	if ('domainId' in body && body.domainId !== null && typeof body.domainId !== 'string') {
 		error(400, 'domainId must be a string or null');
 	}
-	if (
-		typeof body.domainId === 'string' &&
-		body.domainId.length > 0 &&
-		!(await services.listDomains.execute()).some((domain) => domain.id === body.domainId)
-	) {
-		error(400, 'domainId does not identify an existing domain');
-	}
-	const allowedDomains = await callerAllowedDomains(event);
-	if (
-		allowedDomains !== null &&
-		typeof body.domainId === 'string' &&
-		body.domainId.length > 0 &&
-		!allowedDomains.has(body.domainId)
-	) {
-		error(403, 'The target domain is outside your portfolio scope');
+	if (typeof body.domainId === 'string' && body.domainId.length > 0) {
+		// The folder must be one of the project's own workspace (rule 2dba3d12), and in
+		// the caller's folders there (rule 3872a8b7), read in that workspace (issue 150).
+		const target = (await services.listDomains.execute()).find((domain) => domain.id === body.domainId);
+		const filing = folderForProject(await callerReach(event), await projectWorkspaceId(services, projectId), target);
+		if (filing === 'missing') error(400, 'domainId does not identify an existing domain');
+		if (filing === 'outside') error(403, FOLDER_OUT_OF_SCOPE);
 	}
 
 	const result = await services.updateProject.execute({
@@ -74,15 +68,17 @@ export const DELETE: RequestHandler = async (event) => {
 	const body = (await event.request.json().catch(() => null)) as { confirmName?: unknown } | null;
 	const confirmName = typeof body?.confirmName === 'string' ? body.confirmName : '';
 	if (!confirmName) error(400, 'confirmName is required');
-	const result = await event.locals.services.deleteProject.executeConfirmed({
+	const services = event.locals.services;
+	const result = await services.deleteProject.executeConfirmed({
 		projectId,
 		confirmName,
 		requesterEmail: event.locals.session?.email ?? null,
+		requesterWorkspaceRole: event.locals.authRequired ? await callerRoleInProjectWorkspace(services, projectId) : null,
 		enforceOwner: event.locals.authRequired
 	});
 	if (!result.deleted) {
 		if (result.reason === 'not_found') error(404, 'Project not found');
-		if (result.reason === 'not_owner') error(403, 'Only the project owner can delete it');
+		if (result.reason === 'not_owner') error(403, 'Only a project owner or a workspace owner or admin can delete it');
 		error(400, 'confirmName does not match the project name');
 	}
 	event.locals.services.audit.record({

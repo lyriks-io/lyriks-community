@@ -26,7 +26,7 @@
 	import { classificationChips } from '$application/spec360/glance';
 	import { paragraphsOf } from '$application/spec360/labels';
 	import { LIMITS } from '$domain/foundation';
-	import { NOTICED_WAITS_FOR_FEATURE, noticedTypeKey } from '$application/spec360/noticed';
+	import { NOTICED_WAITS_FOR_FEATURE, fixesWord, noticedTypeKey } from '$application/spec360/noticed';
 	import { FINAL_CHECK_KIND } from '$domain/retrospec';
 	import { overviewFigures } from '$application/spec360/overview';
 	import type { PageData } from './$types';
@@ -97,6 +97,9 @@
 	const hasProblem = $derived(!!(g.problem || g.symptoms.length));
 	const hasTarget = $derived(!!(g.target || g.outcomes.length));
 	const hasWhy = $derived(hasProblem || hasTarget);
+	// In the Edit mode Why it exists shows even empty, its two cards fields to write the first one, as What it does
+	// shows with no core feature (criterion 0bd4f393).
+	const showWhy = $derived(hasWhy || editable);
 	const why = $derived([hasProblem && 'problem', hasTarget && 'target'].filter(Boolean) as string[]);
 	const coreAnchors = $derived(cores.map((c) => anchorOf('core', c.id)));
 	// Who uses it validates its profiles as a whole while a draft, as Users validates them (criterion 90232fe6).
@@ -108,16 +111,18 @@
 	const plural = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 	const userHref = (id: string) => `${base}/users/${encodeURIComponent(id)}`;
 	const coreHref = (id: string) => `${base}/${corePath(encodeURIComponent(id))}`;
+	// The fixes waiting for confirmation are counted apart from the points (criterion e75b8909).
+	const fixesLine = $derived(data.noticed.toConfirm > 0 ? ` ${fixesWord(data.noticed.toConfirm)}.` : '');
 	const noticedIntro = $derived(
 		data.noticed.waitsForFeature
 			? NOTICED_WAITS_FOR_FEATURE
 			: g.healthReading && data.noticed.total === 0
 			? 'Lyriks is reading the project health…'
-			: data.noticed.pending > 0
+			: (data.noticed.pending > 0
 				? `${plural(data.noticed.pending, 'point')} to review, the heaviest first.`
 				: data.noticed.total > 0
 					? 'Every point is settled.'
-					: 'Nothing waits: Lyriks noticed no open point.'
+					: 'Nothing waits: Lyriks noticed no open point.') + fixesLine
 	);
 </script>
 
@@ -195,11 +200,11 @@
 	<FeatureValidation anchors={pageAnchors} sectionId="kb-glance" kicker="Validation of this page" />
 
 	<div class="flex flex-col gap-6">
-		{#if hasWhy}
+		{#if showWhy}
 			<SectionBox id="kb-why" title="Why it exists" intro="The gap the product closes, in one picture.">
 				<!-- The frame is where its cards are validated on the Overview, so Validate all shows at rest (criterion 416e4885). -->
 				{#snippet actions()}<SectionValidateAll anchors={why} what="elements" sectionId="kb-why" always />{@render frameComments(FRAME.why, 'Why it exists')}{/snippet}
-				<ProblemTarget problem={hasProblem ? problem : null} target={hasTarget ? target : null} outcomes={g.outcomes} {editable} />
+				<ProblemTarget problem={hasProblem || editable ? problem : null} target={hasTarget || editable ? target : null} outcomes={g.outcomes} {editable} />
 				{@render frameFoot(FRAME.why, 'Why it exists')}
 			</SectionBox>
 		{/if}
@@ -229,7 +234,7 @@
 			<!-- The summary of every point the project health is computed from; the list is its own page (criterion 55a7fe86). -->
 			<SectionBox id="kb-noticed" title="What Lyriks noticed" intro={noticedIntro}>
 				{#snippet actions()}{@render frameComments(FRAME.noticed, 'What Lyriks noticed')}{/snippet}
-				{#if data.noticed.total > 0}
+				{#if data.noticed.total > 0 || data.noticed.toConfirm > 0}
 					<NoticedSummary summary={data.noticed} href="{base}/noticed" />
 				{:else if g.healthReading}
 					<!-- The project's first reading is taken behind; its points land here in place (ac-score-shown-at-once). -->

@@ -5,6 +5,7 @@ import { disciplineLabel, shortName } from '$domain/team';
 import type { DiscussionAuthor, DiscussionsDocument } from '$domain/discussions';
 import type { PersonJobs } from '$application/ports/team-jobs';
 import { currentPersonId } from './evolution-actor.server';
+import { ACTIVE_WORKSPACE_COOKIE, callerNameForProject, projectWorkspaceId } from './caller-workspace.server';
 
 /**
  * The server side of the Specification 360° discussions: the reader the Home
@@ -21,15 +22,13 @@ export async function loadDiscussions(
 }
 
 /**
- * Who is posting: the session's identity (the one operator's id with auth
- * off) under the name the whole app gives them, so a thread reads by name
- * the way the Evolution comments do.
+ * Who is posting on a project: the session's identity (the one operator's id
+ * with auth off) under the name the whole app gives them in the workspace that
+ * owns the project, so a thread reads by name the way the Evolution comments do.
  */
-export async function discussionAuthor(services: AppServices, cookies: Cookies): Promise<DiscussionAuthor> {
+export async function discussionAuthor(services: AppServices, projectId: string, cookies: Pick<Cookies, 'get'>): Promise<DiscussionAuthor> {
 	const email = currentPersonId(services);
-	const name = await services.resolveActiveMemberName
-		.execute(cookies.get('lyriks_active_ws') ?? null)
-		.catch(() => '');
+	const name = await callerNameForProject(services, projectId, cookies.get(ACTIVE_WORKSPACE_COOKIE)).catch(() => '');
 	return { email, name: name.trim() || (email === 'local-operator' ? 'Local operator' : email) };
 }
 
@@ -78,9 +77,11 @@ async function readDiscussionRoster(services: AppServices, projectId: string, co
 	}
 
 	try {
+		// The people of the workspace that owns the project, never the one the
+		// switcher shows; a project that belongs to no workspace reads the active one.
 		const activeId = cookies.get('lyriks_active_ws');
-		const workspaces = await services.workspaces.listForCaller();
-		const active = (activeId && workspaces.find((w) => w.id === activeId)) || workspaces[0];
+		const [workspaces, owner] = await Promise.all([services.workspaces.listForCaller(), projectWorkspaceId(services, projectId)]);
+		const active = owner ? workspaces.find((w) => w.id === owner) : (activeId && workspaces.find((w) => w.id === activeId)) || workspaces[0];
 		if (active) {
 			const [members, jobs] = await Promise.all([
 				services.workspaces.listMembers(active.id),

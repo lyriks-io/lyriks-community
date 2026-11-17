@@ -15,7 +15,7 @@ vi.mock('$composition/container.server', () => ({
 }));
 import { getServices } from '$composition/container.server';
 vi.mock('$lib/server/project-access.server', () => ({ requireProjectAccess: async () => {} }));
-vi.mock('$lib/server/domain-scope.server', () => ({ callerAllowedDomains: async () => null }));
+vi.mock('$lib/server/domain-scope.server', () => ({ callerReach: async () => null }));
 
 const { PATCH } = await import('./+server');
 

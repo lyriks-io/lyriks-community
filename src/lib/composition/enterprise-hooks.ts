@@ -1,4 +1,5 @@
 import type { RequestEvent } from '@sveltejs/kit';
+import type { CallerReach } from '$application/portfolio/project-visibility';
 
 /** What a hook may read from the request: the session and the cookies. */
 export type HookEvent = Pick<RequestEvent, 'locals' | 'cookies'>;
@@ -18,8 +19,12 @@ export interface InvitationContext {
  * member administration to show.
  */
 export interface EnterpriseHooks {
-	/** Domain ids the caller may see, or null for every domain. */
-	callerAllowedDomains(event: HookEvent): Promise<ReadonlySet<string> | null>;
+	/**
+	 * What the caller reaches in each workspace they belong to (role and folders),
+	 * or null when nothing is scoped. One reading per request answers every
+	 * question of the request about a project's or a folder's own workspace.
+	 */
+	callerReach(event: HookEvent): Promise<CallerReach | null>;
 	/** The invitation behind a /login redirect, read from the identity source. */
 	invitationBehind(redirectTo: string): Promise<InvitationContext>;
 	/** Page data for the overlay's Settings panels (rendered by its own components). */

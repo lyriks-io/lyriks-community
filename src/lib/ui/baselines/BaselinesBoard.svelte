@@ -1,12 +1,30 @@
 <script lang="ts">
-	import { Button, Icon, SearchInput, matchesQuery, stageFromScore, stageLabel } from '$ui/design-system';
+	import { Button, Icon, SearchInput, confirmDialog, matchesQuery, stageFromScore, stageLabel } from '$ui/design-system';
+	import type { Baseline } from '$domain/baselines';
 	import type { BaselinesStore } from './draft-store.svelte';
 
 	interface Props {
 		store: BaselinesStore;
 		current: { readiness: number; coherence: number; featureCount: number };
+		/** Readers read and export the baselines; capture, rename, note and delete are drawn for those who may write. */
+		canWrite: boolean;
+		/** The baselines a validation of the specification stands on: its version is counted from them. */
+		validationIds: readonly string[];
 	}
-	let { store, current }: Props = $props();
+	let { store, current, canWrite, validationIds }: Props = $props();
+
+	const holdsValidation = (id: string) => validationIds.includes(id);
+
+	/** A deletion cannot be undone: it is confirmed first, naming what goes. */
+	async function remove(b: Baseline) {
+		const ok = await confirmDialog({
+			title: `Delete the baseline ${b.name || 'Untitled baseline'}?`,
+			message: 'Its scores and its requirements snapshot go with it, and this cannot be undone.',
+			confirmLabel: 'Delete',
+			danger: true
+		});
+		if (ok) store.remove(b.id);
+	}
 
 	let name = $state('');
 	let note = $state('');
@@ -51,6 +69,7 @@
 
 <div class="space-y-5">
 	<!-- Capture -->
+	{#if canWrite}
 	<div class="rounded-card border border-line bg-gradient-to-br from-brand-50/30 to-transparent p-4">
 		<p class="mb-2 text-sm font-semibold text-ink-900">Capture a baseline</p>
 		<div class="flex flex-wrap items-end gap-2">
@@ -80,11 +99,12 @@
 			Now: Readiness {stageLabel(stageFromScore(current.readiness))} · Coherence {current.coherence} · {current.featureCount} features.
 		</p>
 	</div>
+	{/if}
 
 	{#if store.draft.baselines.length === 0}
 		<div class="rounded-card border border-dashed border-line bg-surface px-6 py-12 text-center">
 			<p class="text-sm font-semibold text-ink-700">No baselines yet.</p>
-			<p class="mt-1 text-xs text-ink-500">Capture one to freeze the spec and track how it evolves.</p>
+			<p class="mt-1 text-xs text-ink-500">{canWrite ? 'Capture one to freeze the spec and track how it evolves.' : 'A project editor captures them.'}</p>
 		</div>
 	{:else}
 		<SearchInput
@@ -102,12 +122,18 @@
 				<li class="rounded-card border border-line bg-surface p-4">
 					<div class="flex items-start justify-between gap-3">
 						<div class="min-w-0 flex-1">
-							<input
-								value={b.name}
-								oninput={(e) => store.updateBaseline(b.id, { name: e.currentTarget.value })}
-								class="w-full rounded-field border border-transparent bg-transparent px-1 py-0.5 text-sm font-semibold text-ink-900 outline-none hover:border-line focus:border-brand-300"
-							/>
-							<p class="px-1 text-[0.6875rem] text-ink-400">{fmtDate(b.createdAt)}</p>
+							{#if canWrite}
+								<input
+									value={b.name}
+									oninput={(e) => store.updateBaseline(b.id, { name: e.currentTarget.value })}
+									class="w-full rounded-field border border-transparent bg-transparent px-1 py-0.5 text-sm font-semibold text-ink-900 outline-none hover:border-line focus:border-brand-300"
+								/>
+							{:else}
+								<p class="px-1 py-0.5 text-sm font-semibold text-ink-900">{b.name || 'Untitled baseline'}</p>
+							{/if}
+							<p class="px-1 text-[0.6875rem] text-ink-400">
+								{fmtDate(b.createdAt)}{#if holdsValidation(b.id)} · <span class="font-medium text-brand-600" data-validation-baseline>The validated specification stands on it</span>{/if}
+							</p>
 						</div>
 						<div class="flex shrink-0 items-center gap-1">
 							<button
@@ -118,14 +144,16 @@
 							>
 								<Icon name="download" size={12} /> Export
 							</button>
-							<button
-								type="button"
-								onclick={() => store.remove(b.id)}
-								aria-label="Delete baseline"
-								class="rounded p-1.5 text-ink-400 hover:bg-surface-sunken hover:text-danger-500"
-							>
-								<Icon name="x" size={14} />
-							</button>
+							{#if canWrite && !holdsValidation(b.id)}
+								<button
+									type="button"
+									onclick={() => void remove(b)}
+									aria-label="Delete baseline"
+									class="rounded p-1.5 text-ink-400 hover:bg-surface-sunken hover:text-danger-500"
+								>
+									<Icon name="x" size={14} />
+								</button>
+							{/if}
 						</div>
 					</div>
 
@@ -139,12 +167,16 @@
 						{/each}
 					</div>
 
-					<input
-						value={b.note}
-						oninput={(e) => store.updateBaseline(b.id, { note: e.currentTarget.value })}
-						placeholder="Add a note…"
-						class="mt-2 w-full rounded-field border border-line bg-surface px-2.5 py-1.5 text-[0.8125rem] text-ink-700 outline-none placeholder:text-ink-300 focus:border-brand-300"
-					/>
+					{#if canWrite}
+						<input
+							value={b.note}
+							oninput={(e) => store.updateBaseline(b.id, { note: e.currentTarget.value })}
+							placeholder="Add a note…"
+							class="mt-2 w-full rounded-field border border-line bg-surface px-2.5 py-1.5 text-[0.8125rem] text-ink-700 outline-none placeholder:text-ink-300 focus:border-brand-300"
+						/>
+					{:else if b.note}
+						<p class="mt-2 px-1 text-[0.8125rem] text-ink-700">{b.note}</p>
+					{/if}
 				</li>
 			{/each}
 		</ul>

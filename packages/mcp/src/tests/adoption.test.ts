@@ -149,12 +149,18 @@ describe('flag_conflict', () => {
         project_id: 'p',
         feature_id: 'f',
         summary: 'docs say 3 retries, code does 5',
-        statements: [{ source_id: 's-doc', statement: '3 retries' }],
+        statements: [
+          { source_id: 's-doc', statement: '3 retries' },
+          { source_id: 's-code', statement: '5 retries' },
+        ],
       },
       lyriks,
     )
 
-    expect(body().statements).toEqual([{ sourceId: 's-doc', statement: '3 retries' }])
+    expect(body().statements).toEqual([
+      { sourceId: 's-doc', statement: '3 retries' },
+      { sourceId: 's-code', statement: '5 retries' },
+    ])
   })
 })
 

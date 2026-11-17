@@ -3,13 +3,14 @@ import type { AppServices } from '$composition/container.server';
 import { withCarriedGrants } from '$application/specification/capability-registry';
 import { noticedSummary, noticedView } from '$application/spec360/noticed';
 import { accessCount, permissionMatrix } from '$application/spec360/users';
-import { keptIssueFindings, type Finding } from '$domain/retrospec';
+import { fixToConfirmFindings, keptIssueFindings, type Finding } from '$domain/retrospec';
 import { readGlance } from './spec360-read.server';
 
 /**
  * Every point Lyriks noticed with where the decision on it stands (criteria
  * 4189e074, e0f69b3c): the open ones the spec's reading lists, the issues
- * rejected from the list, each against the requests that settle it.
+ * rejected from the list, each against the requests that settle it, and the
+ * fixes waiting for confirmation apart (criterion 2a55c3e7).
  */
 async function readNoticedView(services: AppServices, projectId: string, open: readonly Finding[]) {
 	const [rules, features, experience, documents, evolution] = await Promise.all([
@@ -21,9 +22,12 @@ async function readNoticedView(services: AppServices, projectId: string, open: r
 	]);
 	// A product with no feature has nothing the checks can stand on: they read nothing yet (criterion 01761816).
 	const hasFeature = features.features.length > 0;
+	const issues = { rules, features, experience, sources: documents.sources };
 	const view = noticedView({
 		open: hasFeature ? open : [],
-		kept: hasFeature ? keptIssueFindings({ rules, features, experience, sources: documents.sources }) : [],
+		kept: hasFeature ? keptIssueFindings(issues) : [],
+		// The fixes waiting for confirmation, apart from the points (criterion 2a55c3e7).
+		toConfirm: hasFeature ? fixToConfirmFindings(issues) : [],
 		requests: evolution?.requests ?? [],
 		projectId
 	});
