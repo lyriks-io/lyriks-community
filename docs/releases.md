@@ -30,7 +30,8 @@ that section under the new heading with the date.
 Lyriks promotes released images into `registry.lyriks.io/community` under
 their version and moves the `stable` alias only once every component of a
 release has landed; the appliance kit is published beside them as
-`appliance-kit`. An install tracking `stable` picks the release up with
+`appliance-kit`. The repository's `docker-compose.yml` pulls from there too,
+at the version of the checkout: that registry serves anonymous pulls. An install tracking `stable` picks the release up with
 `./lyriks update`, which takes a backup first and keeps the previous release
 as `:rollback` locally.
 

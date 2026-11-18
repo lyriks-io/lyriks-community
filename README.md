@@ -1,143 +1,124 @@
 <div align="center">
 
-<img src="static/favicon.svg" alt="Lyriks" width="76" height="76">
+<!-- Logo: paper/ink variants follow the GitHub light/dark theme -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/logo-encre.png">
+  <img src="docs/media/logo-papier.png" alt="Lyriks" height="48">
+</picture>
 
 # Lyriks Community Edition
 
-**Turn code into specs. Find gaps. Understand what a change affects.**
+**From your code to a living spec.**
 
+Free, open source, and it runs on your machine.
+
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![ci](https://github.com/lyriks-io/lyriks-community/actions/workflows/ci.yml/badge.svg)](https://github.com/lyriks-io/lyriks-community/actions/workflows/ci.yml)
-[![publish-image](https://github.com/lyriks-io/lyriks-community/actions/workflows/publish-image.yml/badge.svg)](https://github.com/lyriks-io/lyriks-community/actions/workflows/publish-image.yml)
+[![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/s2v5yNR5aD)
 
-<img src="docs/media/control-center.png" alt="A Lyriks project open on its Foundation page with the Control Center panel: Coherence, Coverage and Build Readiness scores, the checks that ran, and the first incoherence to fix" width="900">
+[**Get your free key**](https://lyriks.io/get-started?utm_source=github&utm_medium=readme&utm_campaign=lce-launch) ·
+[Docs](https://lyriks.io/docs?utm_source=github&utm_medium=readme&utm_campaign=lce-launch) ·
+[First steps](https://lyriks.io/first-steps?utm_source=github&utm_medium=readme&utm_campaign=lce-launch) ·
+[Discord](https://discord.gg/s2v5yNR5aD)
 
-<sub>The Control Center, open from any page: the scores, the checks behind them, and the next thing to fix.</sub>
+<img src="docs/media/lyriks-ce.webp" alt="Animation: nobody remembers what your code really does; Lyriks recovers the spec (journeys, features, rules, screens, data, architecture); every element linked, every conflict flagged; a living memory for your AI agents over MCP (Claude Code, Cursor, any MCP client). From your code to a living spec: free, open source, runs on your machine." width="900">
 
 </div>
 
-Lyriks is a self-hosted workspace that connects a product's features, rules,
-screens and data in one specification. Your AI coding client reads the code
-and writes the spec through MCP (Model Context Protocol). You review it in
-the browser and use Lyriks to check for gaps and contradictions.
+---
 
-## What you can do with it
+Lyriks is a self-hosted workspace that holds your product's features, rules, screens and data in one specification. Your AI coding client reads the code and writes that spec through MCP; you review it in the browser.
 
-Each of these works from the spec and evidence recorded so far. None of them
-replaces tests of the running application.
+## Sound familiar?
 
-### Code to spec
+- Nobody remembers why the code does what it does.
+- The spec, if there ever was one, stopped matching the code long ago.
+- AI agents write code without knowing what the product is supposed to do.
 
-You need to know what a product does, and only its code can tell you.
-Lyriks turns what your AI client reads in that code into a spec, with links
-back to the source.
+**Code is not the source of truth. It is the source of the implementation.**
+Lyriks recovers the truth behind it, and keeps it alive.
 
-### Coherence
+## What you get
 
-You need to know whether features, permissions and rules contradict each
-other or leave gaps.
-Lyriks checks the recorded spec and reports the issues to review and fix.
+**360° mapping.** Features, rules, screens, data: your whole product, each element linked to its code and to your reference docs (Confluence, Jira…) when your AI client reaches them over MCP.
 
-### Impact analysis
+**Coherence, built in.** A graph, not a RAG: the engine checks the whole spec for gaps and contradictions, deterministically, and keeps track of where docs, tickets and code disagree. Same spec, same verdict.
 
-You need to know what to review before changing a feature or rule.
-Lyriks exposes the links between features, screens, rules and data, so you
-and your AI client can see what the change may affect.
+**A living memory, not another .md file.** A structured map your AI agents work from, over MCP: Claude Code, Cursor, Copilot and any MCP client. Models come and go. Memory stays.
 
-### Implementation analysis
-
-You need to know how much of the spec is reflected in the code.
-Lyriks uses the code evidence supplied by your AI client to report mapped
-elements, missing implementation and changes since the last sync.
-
-## What leaves your machine
-
-Lyriks stores your projects locally and makes no automatic calls to public
-services by default. Activation uses an email address supplied on
-<https://get.lyriks.io>. A connected AI client may send the code and spec it
-reads to its provider; its data policy applies. Optional external integrations
-require separate configuration.
+**Your spec stays with you.** Lyriks runs on your machine, with the LLM you choose, and sends nothing out on its own. The map belongs to you.
 
 ## Quick start
 
-### 1. Install
+Three steps. One command to install.
 
-The installer sets up the database, app and MCP gateway on your machine.
-Internet access is needed to download them and obtain a Community key.
-
-Linux and macOS:
+**1. Install.** Get your free key on [lyriks.io/get-started](https://lyriks.io/get-started?utm_source=github&utm_medium=readme&utm_campaign=lce-launch), then run:
 
 ```bash
+# Linux and macOS
 curl -fsSL https://get.lyriks.io | sh
 ```
 
-Windows, in PowerShell:
-
 ```powershell
+# Windows, in PowerShell
 irm https://get.lyriks.io/windows | iex
 ```
 
-Open the address printed by the installer. The first user activates the
-install with the Community key sent to their email address and chooses the
-operator password. The key is verified locally. Lyriks then runs without a
-connection to the licensing service.
+The installer checks your machine, offers to install Docker if it is missing, runs everything in containers and verifies itself. Open the address it prints, usually <http://localhost:3000>, and activate with your key. Something off? See [When it goes wrong](https://lyriks.io/docs?utm_source=github&utm_medium=readme&utm_campaign=lce-launch#trouble).
 
-The published images target `linux/amd64`. Native arm64 images and Apple
-Silicon installation have not been validated by the release workflow.
+Lyriks images are built for x86-64. On a Mac with Apple Silicon they run through Rosetta, a little slower; Linux on ARM is not supported.
 
-### 2. Connect your AI client
-
-Point the client at your install's address followed by `/mcp`. With Claude Code:
+**2. Connect your AI client.** Point it at your install followed by `/mcp`. With Claude Code:
 
 ```bash
 claude mcp add --scope user --transport http lyriks http://localhost:3000/mcp
 ```
 
-Then run `/mcp` in Claude Code and sign in with the operator password. Cursor
-and other clients take the same URL in their MCP settings:
+Run `/mcp` in Claude Code and sign in. Cursor, Copilot and other MCP clients take the same URL. See the [MCP guide](docs/mcp.md).
 
-```json
-{ "mcpServers": { "lyriks": { "url": "http://localhost:3000/mcp" } } }
-```
+**3. Get your spec out of your code.** Open your AI client in the repository you want to understand and ask:
 
-The [MCP guide](docs/mcp.md) covers authentication and the gateway itself.
+> Using the Lyriks MCP and the lyriks-retrospec guide, create a project named "First spec" from this codebase. Use the source code as evidence and link the modelled behaviour back to it. Do not change the application's code.
 
-### 3. Create your first spec
+Your client reads the whole repository and writes the spec; on a large codebase this takes a while and uses its tokens. Then open the project in Lyriks: your first spec is there. [First steps](https://lyriks.io/first-steps?utm_source=github&utm_medium=readme&utm_campaign=lce-launch#spec-from-code) shows how to read it and check it against your product.
 
-Open the client in the repository you want to describe and ask it:
+<!-- "Coming from Unspaghettit?" callout, linking to the migration page, goes here. -->
 
-> Using the Lyriks MCP and the lyriks-retrospec guide, create a project named
-> "First spec" from this codebase. Use the source code as evidence and link
-> the modelled behaviour back to it. Do not change the application's code.
+## Community Edition and paid plans
 
-The client reads your checkout and writes the spec through MCP. Open the
-project in Lyriks to review it. [Getting started](docs/getting-started.md)
-walks through this first pass and how to check the result against the product.
-
-## Community and the paid plans
-
-Lyriks is offered in four plans, the ones the Plans entry of the app's
-account menu lists; their prices are on
-[lyriks.io/pricing](https://lyriks.io/pricing). This repository is the free
-one, Community Edition: discover Lyriks on one project.
+The Community Edition is free and open source: one user and one project, for as long as you like. A second project opens with Solo Builder; projects kept from a paid plan stay listed, read-only. Start with one codebase, prove it, then grow.
 
 | | Community Edition | Solo Builder | Team | Enterprise |
-|---|---|---|---|---|
-| Price | free | paid | paid | specific contract terms |
-| Projects | 1 active project (unlimited inactive) | 1 active project per project bought | 1 active project per project bought | as per contract |
-| Users | 1 user, the operator account | 1 user | 5 users per project bought | as per contract |
-| Reverse (reverse specification) and Knowledge (knowledge base) | yes | yes | yes | yes |
-| Changes: evolutions, impact simulation and verification | no | yes | yes | yes |
+|---|:---:|:---:|:---:|:---:|
+| Price | free | per project | per project | on request |
+| Users | 1 | 1 | 5 per project | per contract |
+| Active projects | 1 | 1 per project bought | 1 per project bought | per contract |
+| Inactive projects | unlimited, read-only | unlimited, read-only | unlimited, read-only | per contract |
+| 360° mapping (reverse specification) | ✓ | ✓ | ✓ | ✓ |
+| Knowledge base and project memory over MCP | ✓ | ✓ | ✓ | ✓ |
+| Change simulation and verification | | ✓ | ✓ | ✓ |
+| Team collaboration | | | ✓ | ✓ |
+| Rules proved for every value (solver) | | | | ✓ |
+| Dedicated CSM and specific terms | | | | ✓ |
+| Runs on your servers, with your LLM | ✓ | ✓ | ✓ | ✓ |
+| Licence | AGPL-3.0 | commercial | commercial | commercial |
 
-Community also carries the behaviour engine with its coherence checks and
-scores, and the MCP gateway for AI clients. Proving a rule for every value is
-part of Enterprise. Every plan is self-hosted; Community is AGPL-3.0-only open
-source, the paid plans are commercial. On a Community installation, each
-locked capability names the plan that opens it. See
-[Editions](docs/editions.md).
+Want to go further? Simulate and verify your changes with Solo Builder, then collaborate on your projects with Team. [See pricing](https://lyriks.io/pricing?utm_source=github&utm_medium=readme&utm_campaign=lce-launch).
+
+## What leaves your machine
+
+- **Your code and your spec stay on your machine.** Projects are stored locally, in containers you control.
+- **Your LLM, your tokens.** A connected AI client may send the code and spec it reads to its provider; its own data policy applies. Lyriks sends nothing beyond that. Local and sovereign models work.
+- **Activation** uses the email address you gave on lyriks.io/get-started. The key is verified locally.
+- **No telemetry.** Lyriks collects nothing about how you use it.
+- **Installation** downloads images from `registry.lyriks.io`. After that, nothing leaves until you tick it at first start, and you can untick it any time in Settings: checking for new versions, online feedback, links to lyriks.io.
+
+Read the [security page](https://lyriks.io/security?utm_source=github&utm_medium=readme&utm_campaign=lce-launch), or the installer scripts themselves before you run them: [install.sh](https://get.lyriks.io/install.sh), [install.ps1](https://get.lyriks.io/windows).
 
 ## Other ways to run it
 
-With Docker and Docker Compose available, you can run the stack directly:
+<details>
+<summary><b>Docker Compose</b></summary>
 
 ```bash
 git clone https://github.com/lyriks-io/lyriks-community.git
@@ -149,14 +130,12 @@ openssl rand -hex 32    # LYRIKS_JWT_SECRET
 docker compose up -d
 ```
 
-Open <http://localhost:3000> and activate it as described above.
+Open <http://localhost:3000> and activate as above. The images come from `registry.lyriks.io`, pinned to the version you cloned. To update, back up the volumes and move to a newer checkout: see [Updates and backups](docs/getting-started.md#updates-and-backups). The installer automates this, with rollback.
 
-The Compose file pins the images to the version you cloned. Updating means
-backing up the volumes and moving to a newer checkout, as described in
-[Updates and backups](docs/getting-started.md#updates-and-backups). The
-installer automates that, with rollback and diagnostics.
+</details>
 
-## Work on the code
+<details>
+<summary><b>Work on the code</b></summary>
 
 Requirements: Node 22, pnpm 10.6.3 (`corepack enable`), PostgreSQL 16.
 
@@ -166,43 +145,34 @@ cd lyriks-community
 corepack enable
 pnpm install
 cp .env.example .env        # set LYRIKS_PG_URL to your PostgreSQL
-pnpm dev:community          # the app; the URL is printed (8173 under WSL)
+pnpm dev:community          # the app
+pnpm dev:mcp                # the MCP gateway, in a second terminal
 ```
 
-In a second terminal, run `pnpm dev:mcp`. If the app uses a port other than
-5173, set `LYRIKS_BASE_URL` to its address in that terminal first. Under WSL,
-use `export LYRIKS_BASE_URL=http://localhost:8173`.
+If the app does not run on port 5173 (8173 under WSL), set `LYRIKS_BASE_URL` to its address in the second terminal before `pnpm dev:mcp`.
 
-Development needs no licence key or login with the default configuration.
-Run `pnpm check && pnpm test` before submitting a change;
-[.github/workflows/ci.yml](.github/workflows/ci.yml) is the full sequence CI
-runs on pull requests and pushes to `main`.
+Development needs no key. Run `pnpm check && pnpm test` before submitting a change. The [docs](docs/README.md) cover configuration, architecture and the release process.
 
-## Documentation
+</details>
 
-The [docs](docs/README.md) cover getting started, every configuration variable,
-the architecture, the MCP gateway and its skills, what each score means, when a
-project is finished, and the release process.
-[CHANGELOG.md](CHANGELOG.md) lists what each version changed.
+## Community and support
 
-## Contributing and support
+- **Questions, ideas, feedback:** [Discord](https://discord.gg/s2v5yNR5aD). The team is there.
+- **Bugs:** [open an issue](https://github.com/lyriks-io/lyriks-community/issues). [SUPPORT.md](SUPPORT.md) says what to include.
+- **Security issues:** [SECURITY.md](SECURITY.md), never a public issue.
+- **Anything else:** contact@lyriks.io. We read every message.
 
-Bug reports, documentation fixes and code contributions are welcome. Read
-[CONTRIBUTING.md](CONTRIBUTING.md) and the engineering rules in
-[AGENTS.md](AGENTS.md) before starting.
+## Contributing
 
-Each commit needs a DCO sign-off (`git commit -s`). Contributors also accept
-the [CLA](CLA.md) with their first pull request. It lets the maintainers
-distribute contributions under other terms, including the proprietary
-Enterprise licence. Everyone taking part follows the
-[Code of Conduct](CODE_OF_CONDUCT.md).
+Bug reports, documentation fixes and code are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the engineering rules in [AGENTS.md](AGENTS.md).
 
-[SUPPORT.md](SUPPORT.md) says where a question, a bug or an install problem
-goes. Security issues go through [SECURITY.md](SECURITY.md), never through a
-public issue.
+Each commit needs a DCO sign-off (`git commit -s`). With your first pull request you also accept the [CLA](CLA.md), which lets us distribute contributions under other terms, including the commercial licence. Everyone follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Licence
 
-Copyright (C) 2026 Lyriks. Licensed under the GNU Affero General Public
-License v3.0 only (`AGPL-3.0-only`), see [LICENSE](LICENSE). "Lyriks" is a
-trademark; the licence covers the code, not the name.
+Copyright (C) 2026 Lyriks. The Community Edition is licensed under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`), see [LICENSE](LICENSE). "Lyriks" is a trademark; the licence covers the code, not the name.
+
+<div align="center">
+<br>
+<b>Keep your software in tune!</b>
+</div>
