@@ -9,7 +9,6 @@
 		expired: { icon: 'info', color: 'text-danger-500', label: 'Licence expired' },
 		invalid: { icon: 'x', color: 'text-danger-500', label: 'Licence key invalid' },
 		tampered: { icon: 'lock', color: 'text-danger-500', label: 'System clock rolled back' },
-		wrong_edition: { icon: 'layers', color: 'text-danger-500', label: 'Licence covers another edition' },
 		unlicensed: { icon: 'lock', color: 'text-ink-400', label: 'Product not activated' }
 	};
 
@@ -28,14 +27,6 @@
 		<Icon name={tone.icon} size={20} class={tone.color} />
 		<h2 class="text-sm font-semibold text-ink-900">{tone.label}</h2>
 	</div>
-
-	{#if view.status === 'wrong_edition'}
-		<p class="text-xs text-danger-500">
-			This key is valid, but it grants the <span class="capitalize">{ent?.edition}</span> edition and
-			this installation runs a higher one. A key covers its own edition and every edition below it,
-			so ask us for the key matching this deployment, or reinstall the edition your key covers.
-		</p>
-	{/if}
 
 	{#if view.status === 'tampered'}
 		<p class="text-xs text-danger-500">

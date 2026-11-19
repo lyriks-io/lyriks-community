@@ -1,5 +1,6 @@
 import { evaluateLicense, shouldAdvanceClockFloor, type LicenseView } from '$domain/licensing';
 import type { ActivationRepositoryPort, ClockPort, LicenseVerifierPort } from '../ports';
+import type { EditionInForce } from './edition-in-force';
 
 /**
  * Resolves the current product activation state. Loads the stored key (if any),
@@ -13,11 +14,17 @@ export class LoadActivationUseCase {
 		private readonly activations: ActivationRepositoryPort,
 		private readonly verifier: LicenseVerifierPort,
 		private readonly clock: ClockPort,
-		/** Edition this install declares, so a key that does not cover it is refused. */
-		private readonly installEdition: string | undefined = undefined
+		/** Told the edition of every key read, so the installation opens what its key grants. */
+		private readonly editionInForce: EditionInForce | null = null
 	) {}
 
 	async execute(): Promise<LicenseView> {
+		const view = await this.read();
+		this.editionInForce?.record(view);
+		return view;
+	}
+
+	private async read(): Promise<LicenseView> {
 		const now = this.clock.nowIso();
 		const [stored, clockFloor] = await Promise.all([
 			this.activations.load(),
@@ -41,8 +48,7 @@ export class LoadActivationUseCase {
 		}
 		return evaluateLicense(entitlements, stored.activatedAt, now, {
 			absentStatus: 'invalid',
-			clockFloorIso: clockFloor,
-			installEdition: this.installEdition
+			clockFloorIso: clockFloor
 		});
 	}
 }

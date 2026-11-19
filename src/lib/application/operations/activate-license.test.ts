@@ -68,8 +68,7 @@ describe('ActivateLicenseUseCase', () => {
 			activations,
 			verifier('community'),
 			clock,
-			audit(),
-			'community'
+			audit()
 		).execute('lyk_key');
 		expect(result.ok).toBe(true);
 		expect(result.view.status).toBe('active');
@@ -83,28 +82,23 @@ describe('ActivateLicenseUseCase', () => {
 			activations,
 			verifier('enterprise'),
 			clock,
-			audit(),
-			'community'
+			audit()
 		).execute('lyk_key');
 		expect(result.ok).toBe(true);
 	});
 
-	it('refuses a Community key on an Enterprise install, and stores nothing', async () => {
+	it('takes a Community key whatever the images: the key decides what the install opens', async () => {
 		const activations = repository();
 		const log = audit();
-		const result = await new ActivateLicenseUseCase(
-			activations,
-			verifier('community'),
-			clock,
-			log,
-			'enterprise'
-		).execute('lyk_key', 'ops@example.corp');
-		expect(result).toMatchObject({ ok: false, reason: 'wrong_edition' });
-		// Storing it would leave the install looking activated while every later
-		// page load resolved to the same refusal.
-		expect(activations.read()).toBeNull();
+		const result = await new ActivateLicenseUseCase(activations, verifier('community'), clock, log).execute(
+			'lyk_key',
+			'ops@example.corp'
+		);
+		expect(result.ok).toBe(true);
+		expect(result.view.entitlements?.edition).toBe('community');
+		expect(activations.read()?.key).toBe('lyk_key');
 		expect(log.record).toHaveBeenCalledWith(
-			expect.objectContaining({ action: 'license.activate', outcome: 'failure' })
+			expect.objectContaining({ action: 'license.activate', outcome: 'success' })
 		);
 	});
 

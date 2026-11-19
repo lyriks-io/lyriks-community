@@ -20,6 +20,15 @@ export function tierFromPlan(plan: string | null | undefined): Tier {
 	}
 }
 
+/**
+ * The tier in force: the workspace plan's, capped at Community while the
+ * installation opens Community (a Community key on the Enterprise images), so the
+ * plan a workspace was created with never outlives the key that granted it.
+ */
+export function tierInForce(planTier: Tier, openedEdition: string | undefined): Tier {
+	return openedEdition === 'community' ? 'oss' : planTier;
+}
+
 /** Does the current tier satisfy the minimum required tier? */
 export function tierAllows(current: Tier, required: Tier): boolean {
 	return RANK[current] >= RANK[required];

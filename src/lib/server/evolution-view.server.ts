@@ -391,10 +391,7 @@ async function draftBehaviour(
 ): Promise<LeafBehaviour | null> {
 	const target = resolveWalkTarget(draftId, evolution, false);
 	if (!target.ok || target.target.kind !== 'draft' || !target.target.model) return null;
-	const answer = await services.simulateBehavior.execute({
-		target: target.target,
-		args: { includeFeature: true }
-	});
+	const answer = await services.simulateBehavior.draftFeatureWalk(evolution.projectId, target.target);
 	const walk = answer?.kind === 'walk' ? (answer.walk as { ok?: unknown; feature?: unknown }) : null;
 	if (walk?.ok !== true || !walk.feature || typeof walk.feature !== 'object') return null;
 	// The engine computes the draft over an empty or base feature and stamps it

@@ -16,8 +16,9 @@ describe('the Plans dialog says what switching plan takes', () => {
 		expect(html).not.toContain('href="/activate?plan=community"');
 	});
 
-	it('says a key grants one of two editions and that the configuration moves the plan', () => {
+	it('says a key grants one of two editions and that it decides alone on the Enterprise images', () => {
 		expect(html).toContain('a licence key grants one of two editions, Community or Enterprise.');
-		expect(html).toContain('the key alone does not change which pages it opens.');
+		expect(html).toContain('the key in force decides what it opens');
+		expect(html).toContain('it installs the Enterprise images.');
 	});
 });

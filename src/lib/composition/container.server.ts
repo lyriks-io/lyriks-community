@@ -56,6 +56,7 @@ import {
 	SyncBackLicenceUseCase,
 	CheckForUpdateUseCase,
 	LoadActivationUseCase,
+	EditionInForce,
 	ActivateLicenseUseCase,
 	DeactivateLicenseUseCase,
 	PreviewLicenseUseCase,
@@ -138,7 +139,7 @@ import type {
 	PortfolioRepositoryPort,
 	FeatureMaturityScorerPort
 } from '$application/ports';
-import { tierFromPlan, tierHasFormalDpo, type Tier } from '$domain/tier';
+import { tierFromPlan, tierHasFormalDpo, tierInForce, type Tier } from '$domain/tier';
 import { isLicenseEnforced } from '$domain/licensing';
 import { displayNameFromLicenseCustomer } from '$domain/team';
 import { env } from '$env/dynamic/private';
@@ -448,8 +449,10 @@ export interface AppServices {
 	loadInstallRegistration: LoadInstallRegistrationUseCase;
 	/** True when activation is enforced (every declared edition) — gates the app. */
 	licenseRequired(): boolean;
-	/** Edition this install declares (LYRIKS_EDITION), or undefined for the MAP / dev. */
+	/** Edition this install opens: its key's, never more than its images; undefined for the MAP / dev. */
 	installEdition(): string | undefined;
+	/** Edition of the images this install runs (LYRIKS_EDITION), whatever key it holds. */
+	imagesEdition(): string | undefined;
 	advisorAvailable(): boolean;
 	/** Cached unspa verify findings per project (the Issues board's engine feed). */
 	behaviorAdvisories: BehaviorAdvisoryPort;
@@ -689,13 +692,15 @@ export function getServices(): AppServices {
 	// (the activation wall) follows the declared edition; only an install that
 	// declares none (the standalone MAP, a dev server) can boot unlicensed.
 	const licenseVerifier = new Ed25519LicenseVerifier();
-	// The edition this install declares. It binds the key as well as the gate: a
-	// licence must cover the declared edition, so a free Community key cannot
-	// unlock an Enterprise appliance.
-	const installEdition = env.LYRIKS_EDITION;
+	// The edition of the images (LYRIKS_EDITION) is what the install CAN run; the
+	// key in force decides what it opens within that, so a Community key on the
+	// Enterprise images opens Community. Every licence read keeps it in step.
+	const declaredEdition = env.LYRIKS_EDITION;
+	const editionInForce = new EditionInForce(declaredEdition);
+	const installEdition = (): string | undefined => editionInForce.current();
 	// What a Community installation holds (EVO-001): one project, the active one.
-	const checkProjectCreation = new CheckProjectCreationUseCase(() => installEdition, projectCatalog);
-	const resolveActiveProject = new ResolveActiveProjectUseCase(() => installEdition, projectCatalog, activeProjectStore);
+	const checkProjectCreation = new CheckProjectCreationUseCase(installEdition, projectCatalog);
+	const resolveActiveProject = new ResolveActiveProjectUseCase(installEdition, projectCatalog, activeProjectStore);
 	// EVERY declared edition is gated, Community included: its key is free and
 	// perpetual, and it is how an air-gapped product knows who runs it. The flag
 	// may switch enforcement on for an install that declares nothing (the
@@ -709,7 +714,7 @@ export function getServices(): AppServices {
 	// customer's own hardware where nothing else stops them. Enforcement therefore
 	// derives from the edition the install declares, not from a switch beside it.
 	const licenseRequired = isLicenseEnforced({
-		edition: installEdition,
+		edition: declaredEdition,
 		flag: env.LYRIKS_LICENSE_REQUIRED,
 		// Vite folds this to `false` in the shipped build, so no appliance can reach
 		// the exemption; it only spares `pnpm dev:community` from the wall.
@@ -890,14 +895,15 @@ export function getServices(): AppServices {
 	// engine and v3 share one view of the workspace.
 	const unspaghettitBin = env.UNSPAGHETTIT_MCP_BIN ?? resolveUnspaMcpBin();
 	// Community locks the solver (EVO-001): even an overlay left after a move down proves nothing, and runs no proof again.
-	const proofsAllowed = enterpriseOverlay()?.proofs === true && !isCommunity(installEdition);
+	// Read on each use: a Community key put in force on the Enterprise images locks it too.
+	const proofsAllowed = (): boolean => enterpriseOverlay()?.proofs === true && !isCommunity(installEdition());
 	// Proofs are off on a new installation (criterion 2fa07b24): an administrator
 	// turns them on in Settings, Proofs. The engine reads this switch each time it
 	// starts its subprocess, and the switch restarts it, so no restart of the
 	// installation is needed. The environment's UNSPA_SOLVER=off comes first.
 	const solverOffInEnv = env.UNSPA_SOLVER?.trim().toLowerCase() === 'off';
 	const proofState = { on: false };
-	const proofsOn = (): boolean => proofsAllowed && proofState.on;
+	const proofsOn = (): boolean => proofsAllowed() && proofState.on;
 	const engineConfig = {
 		mcpBinPath: unspaghettitBin,
 		snapshotsRoot: behavior.workspaceRoot(),
@@ -930,7 +936,9 @@ export function getServices(): AppServices {
 	// the coverage tier's reads ride the lane's.
 	// Turning proofs on or off restarts both engine subprocesses with or without the solver (action 0d29aee8).
 	const proofSwitch: ProofSwitchPort = {
-		allowed: proofsAllowed,
+		get allowed() {
+			return proofsAllowed();
+		},
 		operatorTurnedOff: solverOffInEnv,
 		apply(on: boolean) {
 			const next = on && !solverOffInEnv;
@@ -940,7 +948,13 @@ export function getServices(): AppServices {
 			laneAdvisor.engine.recycle();
 		}
 	};
-	if (proofsAllowed) {
+	// The engines started under one edition restart under the next, so a key that
+	// opens Community stops the solver without a restart of the installation.
+	editionInForce.onChange(() => {
+		advisor.engine.recycle();
+		laneAdvisor.engine.recycle();
+	});
+	if (proofsAllowed()) {
 		settingsRepo
 			.loadProofs()
 			.then((stored) => proofSwitch.apply(stored.on))
@@ -960,7 +974,7 @@ export function getServices(): AppServices {
 		activationRepo,
 		licenseVerifier,
 		clock,
-		installEdition
+		editionInForce
 	);
 	// Project contributors, kept in the local project residue: the open-source
 	// product has people to assign work to without any companion service.
@@ -975,6 +989,7 @@ export function getServices(): AppServices {
 	const overlayContext: OverlayContext = {
 		env,
 		tier,
+		editionInForce: installEdition,
 		clock,
 		audit,
 		session,
@@ -1535,7 +1550,15 @@ export function getServices(): AppServices {
 		readBehaviorFeature: new ReadBehaviorFeatureUseCase(behaviorPort),
 		deleteBehaviorState,
 		scoreBehaviorFeature: new ScoreBehaviorFeatureUseCase(advisor),
-		simulateBehavior: new SimulateBehaviorUseCase(advisor),
+		// A draft's computed feature is kept while its model and the kernel are unchanged:
+		// the Changes board computes every draft on each load, one engine call each.
+		// A kernel that cannot be found keeps nothing: there is no state to key on.
+		simulateBehavior: new SimulateBehaviorUseCase(advisor, {
+			signature: (projectId) => {
+				const signature = kernelSignature(projectId);
+				return signature === 'absent' || signature === 'invalid' ? null : signature;
+			}
+		}),
 		whatIf: new WhatIfUseCase(advisor),
 		authorProjectBehavior: new AuthorProjectBehaviorUseCase(advisor),
 		readProjectBehavior: new ReadProjectBehaviorUseCase(advisor, new ProjectStateCache(projectModelRevision, kernelSignature, HEAVY_READINGS_HELD)),
@@ -1582,27 +1605,26 @@ export function getServices(): AppServices {
 			activationRepo,
 			licenseVerifier,
 			clock,
-			audit,
-			installEdition
+			audit
 		),
 		seedActivationDefaults: new SeedActivationDefaultsUseCase(
 			operatorProfileRepo,
 			tier !== 'enterprise'
 		),
 		syncBackLicence,
-		previewLicense: new PreviewLicenseUseCase(activationRepo, licenseVerifier, clock, installEdition),
+		previewLicense: new PreviewLicenseUseCase(activationRepo, licenseVerifier, clock),
 		restorePreviousLicense: new RestorePreviousLicenseUseCase(
 			activationRepo,
 			licenseVerifier,
 			clock,
-			audit,
-			installEdition
+			audit
 		),
 		hasPreviousLicense: async () => (await activationRepo.loadPrevious()) !== null,
 		deactivateLicense: new DeactivateLicenseUseCase(activationRepo, audit),
 		loadInstallRegistration: new LoadInstallRegistrationUseCase(activationRepo, clock),
 		licenseRequired: () => licenseRequired,
-		installEdition: () => installEdition,
+		installEdition,
+		imagesEdition: () => editionInForce.declared(),
 		advisorAvailable: () => advisor.available,
 		behaviorAdvisories,
 		primeProjectAnalysis: async (projectId: string) => {
@@ -1707,7 +1729,7 @@ export function getServices(): AppServices {
 		behaviorWorkspaceRoot: () => behavior.workspaceRoot(),
 		behaviorPort,
 		projectResidue,
-		currentTier: () => tier,
+		currentTier: () => tierInForce(tier, installEdition()),
 		feedbackEndpoint: () => feedbackEndpoint,
 		backLinks,
 		projectAccess: overlayPorts.projectAccess ?? new SingleOperatorProjectAccess(),
@@ -1734,7 +1756,7 @@ export function getServices(): AppServices {
 		removeCollaborator: new RemoveCollaboratorUseCase(teamGateway),
 		// Authoring skills are bundled into the server build — no runtime IO (air-gap).
 		// On Community the Evolution playbook is left out (EVO-001): its every call would be refused.
-		skillCatalog: scopedSkillCatalog(new BundledSkillCatalog(), () => installEdition)
+		skillCatalog: scopedSkillCatalog(new BundledSkillCatalog(), installEdition)
 	};
 	services = built;
 	overlay?.attach(built, overlayContext);

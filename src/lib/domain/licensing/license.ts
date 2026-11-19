@@ -45,23 +45,20 @@ export function isLicenseEdition(value: unknown): value is LicenseEdition {
 	return typeof value === 'string' && (LICENSE_EDITIONS as readonly string[]).includes(value);
 }
 
-/** Position on the entitlement ladder; only the order matters. */
-const EDITION_RANK: Record<LicenseEdition, number> = { community: 0, enterprise: 1 };
-
 /**
- * Whether a key's edition entitles the edition this install declares. Higher
- * editions cover lower ones, so an Enterprise key activates a Community install
- * (which is also how an upgrade avoids a licence wall: activate before the
- * cutover). The reverse is refused, which is what stops a free Community key from
- * unlocking an Enterprise deployment. An install that declares nothing (a dev
- * server, the standalone MAP) has no edition to bind to and accepts any key.
+ * The edition an installation opens: the one its key grants, never more than the
+ * images it runs. The Enterprise images hold every capability and let the key
+ * decide, so a Community key there opens Community (which is how a time-limited
+ * Enterprise key ends without stranding the installation); the Community images
+ * open Community whatever key they hold. An install that declares nothing (a dev
+ * server, the standalone MAP) has no edition to cap.
  */
-export function licenseCoversInstall(
-	keyEdition: LicenseEdition,
-	installEdition: string | undefined
-): boolean {
-	if (!isLicenseEdition(installEdition)) return true;
-	return EDITION_RANK[keyEdition] >= EDITION_RANK[installEdition];
+export function openedEdition(
+	declaredEdition: string | undefined,
+	keyEdition: LicenseEdition | null
+): string | undefined {
+	if (declaredEdition === 'enterprise' && keyEdition === 'community') return 'community';
+	return declaredEdition;
 }
 
 /**
@@ -107,12 +104,6 @@ export type LicenseStatus =
 	 * that a time-limited licence is being replayed past its expiry. Fails closed.
 	 */
 	| 'tampered'
-	/**
-	 * Valid signature, but the key grants a lower edition than this install runs
-	 * (a Community key pasted into an Enterprise appliance). Nothing is wrong with
-	 * the key; it simply does not entitle this deployment.
-	 */
-	| 'wrong_edition'
 	/** Valid signature, not expired — the product is activated. */
 	| 'active';
 
@@ -225,8 +216,6 @@ export interface LicenseContext {
 	readonly absentStatus?: Extract<LicenseStatus, 'unlicensed' | 'invalid'>;
 	/** Highest instant this install has observed, for the rollback tripwire. */
 	readonly clockFloorIso?: string | null;
-	/** Edition this install declares; undefined leaves the key unbound. */
-	readonly installEdition?: string;
 }
 
 /**
@@ -240,16 +229,12 @@ export function evaluateLicense(
 	nowIso: string,
 	context: LicenseContext = {}
 ): LicenseView {
-	const { absentStatus = 'unlicensed', clockFloorIso = null, installEdition } = context;
+	const { absentStatus = 'unlicensed', clockFloorIso = null } = context;
 	if (!entitlements) {
 		return { status: absentStatus, entitlements: null, daysRemaining: null, activatedAt: null };
 	}
-	// The edition mismatch is checked first: it depends on neither the clock nor
-	// the expiry, so reporting it ahead of them gives the holder of a genuine key
-	// the one message that actually explains the refusal.
-	if (!licenseCoversInstall(entitlements.edition, installEdition)) {
-		return { status: 'wrong_edition', entitlements, daysRemaining: null, activatedAt };
-	}
+	// A genuine key is never refused for its edition: the edition it grants is
+	// what the installation opens (see openedEdition).
 	// Clock rollback is checked before expiry: a rolled-back clock could otherwise
 	// make an expired licence read as `active`, which is exactly what this blocks.
 	// daysRemaining stays null — a countdown computed from a clock we just judged

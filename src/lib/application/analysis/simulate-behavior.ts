@@ -109,9 +109,98 @@ export interface SimulateBehaviorInput {
  */
 const BUDGET = { timeoutMs: 60_000 };
 
+/** How many computed drafts are kept: a few projects' worth of open requests. */
+const DRAFT_WALKS_KEPT = 128;
+
+export interface DraftWalkMemoOptions {
+	/**
+	 * The signature of a project's behaviour kernel (its folder on disk). The
+	 * feature a draft makes depends on its model and on the kernel it replays
+	 * over, so a computed draft is reused only while both are unchanged. Without
+	 * it, or when it answers null, nothing is kept and every call reaches the
+	 * engine.
+	 */
+	readonly signature?: (projectId: string) => string | null;
+	readonly kept?: number;
+}
+
+type DraftTarget = Extract<WalkTarget, { kind: 'draft' }>;
+
 /** Simulate a feature, or a draft as the change would leave it, without saving anything. */
 export class SimulateBehaviorUseCase {
-	constructor(private readonly advisor: Pick<UnspaghettitAdvisorPort, 'simulateSteps'>) {}
+	/**
+	 * Computed drafts, newest last. A pending computation is kept too, so the
+	 * readers that ask for the same draft at once share one engine call.
+	 */
+	readonly #draftWalks = new Map<string, Promise<SimulateStepsResult | null>>();
+
+	constructor(
+		private readonly advisor: Pick<UnspaghettitAdvisorPort, 'simulateSteps'>,
+		private readonly memo: DraftWalkMemoOptions = {}
+	) {}
+
+	/**
+	 * The feature a draft's behaviour model makes: the walk with the computed
+	 * feature and nothing else. The engine serves one call at a time and a
+	 * draft costs about a second, so the readers that list every draft (the
+	 * Changes board, a request's graph, its index) reuse the answer while the
+	 * model and the kernel it replays over are unchanged. Each caller gets its
+	 * own copy: nothing a reader changes reaches the next one.
+	 */
+	async draftFeatureWalk(projectId: string, target: DraftTarget): Promise<SimulateStepsResult | null> {
+		const compute = () => this.execute({ target, args: { includeFeature: true } });
+		const signature = this.#signature(projectId);
+		if (signature === null) return compute();
+		const key = JSON.stringify([
+			projectId,
+			signature,
+			target.draftId,
+			target.draftKind,
+			target.baseLeafId,
+			target.model?.operations ?? [],
+			target.model?.mintedIds ?? []
+		]);
+		let pending = this.#draftWalks.get(key);
+		if (pending) {
+			// Most recently used last, so the oldest is the one let go.
+			this.#draftWalks.delete(key);
+			this.#draftWalks.set(key, pending);
+		} else {
+			pending = compute();
+			this.#draftWalks.set(key, pending);
+			this.#trim();
+			// Only a walk is kept: an engine that did not answer or refused is asked again.
+			pending.then(
+				(answer) => {
+					if (answer?.kind !== 'walk') this.#forget(key, pending!);
+				},
+				() => this.#forget(key, pending!)
+			);
+		}
+		const answer = await pending;
+		return answer === null ? null : structuredClone(answer);
+	}
+
+	#signature(projectId: string): string | null {
+		if (!this.memo.signature) return null;
+		try {
+			return this.memo.signature(projectId);
+		} catch {
+			return null;
+		}
+	}
+
+	#forget(key: string, pending: Promise<SimulateStepsResult | null>): void {
+		if (this.#draftWalks.get(key) === pending) this.#draftWalks.delete(key);
+	}
+
+	#trim(): void {
+		const kept = this.memo.kept ?? DRAFT_WALKS_KEPT;
+		for (const oldest of this.#draftWalks.keys()) {
+			if (this.#draftWalks.size <= kept) break;
+			this.#draftWalks.delete(oldest);
+		}
+	}
 
 	execute(input: SimulateBehaviorInput): Promise<SimulateStepsResult | null> {
 		const { target, args } = input;

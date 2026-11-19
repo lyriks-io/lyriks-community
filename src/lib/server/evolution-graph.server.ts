@@ -69,7 +69,7 @@ export async function loadDockingGraph(
 export async function draftFeature(services: AppServices, evolution: EvolutionView['draft'], draftId: string): Promise<Snapshot> {
 	const resolved = resolveWalkTarget(draftId, evolution, false);
 	if (!resolved.ok || resolved.target.kind !== 'draft') return null;
-	const answer = await services.simulateBehavior.execute({ target: resolved.target, args: { includeFeature: true } }).catch(() => null);
+	const answer = await services.simulateBehavior.draftFeatureWalk(evolution.projectId, resolved.target).catch(() => null);
 	if (!answer || answer.kind === 'refused') return null;
 	const walk = answer.walk as { ok?: unknown; feature?: unknown };
 	return walk.ok === true && walk.feature && typeof walk.feature === 'object' ? (walk.feature as Snapshot) : null;

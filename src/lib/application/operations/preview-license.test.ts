@@ -74,8 +74,7 @@ describe('PreviewLicenseUseCase', () => {
 		const result = await new PreviewLicenseUseCase(
 			activations,
 			verifier({ lyk_new: { seats: 25 } }),
-			clock,
-			'enterprise'
+			clock
 		).execute('lyk_new');
 		expect(result.ok).toBe(true);
 		expect(result.view.entitlements?.seats).toBe(25);
@@ -88,28 +87,26 @@ describe('PreviewLicenseUseCase', () => {
 		const preview = await new PreviewLicenseUseCase(
 			repository(),
 			verifier(keys),
-			clock,
-			'enterprise'
+			clock
 		).execute('lyk_expired');
 		const real = await new ActivateLicenseUseCase(
 			repository(),
 			verifier(keys),
 			clock,
-			audit(),
-			'enterprise'
+			audit()
 		).execute('lyk_expired');
 		expect(preview).toMatchObject({ ok: false, reason: 'expired' });
 		expect(real).toMatchObject({ ok: false, reason: 'expired' });
 	});
 
-	it('refuses a key that does not cover this install', async () => {
+	it('reports a Community key as what it grants, whatever the images', async () => {
 		const result = await new PreviewLicenseUseCase(
 			repository(),
 			verifier({ lyk_community: { edition: 'community' } }),
-			clock,
-			'enterprise'
+			clock
 		).execute('lyk_community');
-		expect(result).toMatchObject({ ok: false, reason: 'wrong_edition' });
+		expect(result.ok).toBe(true);
+		expect(result.view.entitlements?.edition).toBe('community');
 	});
 
 	it('reports an unreadable key without touching the store', async () => {
@@ -117,8 +114,7 @@ describe('PreviewLicenseUseCase', () => {
 		const result = await new PreviewLicenseUseCase(
 			activations,
 			verifier({}),
-			clock,
-			'enterprise'
+			clock
 		).execute('not-a-key');
 		expect(result).toMatchObject({ ok: false, reason: 'invalid' });
 		expect(activations.read()).toBeNull();
@@ -129,7 +125,7 @@ describe('RestorePreviousLicenseUseCase', () => {
 	async function installedThenReplaced() {
 		const activations = repository();
 		const v = verifier({ lyk_old: { seats: 5 }, lyk_new: { seats: 25 } });
-		const activate = new ActivateLicenseUseCase(activations, v, clock, audit(), 'enterprise');
+		const activate = new ActivateLicenseUseCase(activations, v, clock, audit());
 		await activate.execute('lyk_old');
 		await activate.execute('lyk_new');
 		return { activations, v };
@@ -143,8 +139,7 @@ describe('RestorePreviousLicenseUseCase', () => {
 			activations,
 			v,
 			clock,
-			audit(),
-			'enterprise'
+			audit()
 		).execute('ops@example.corp');
 
 		expect(result.ok).toBe(true);
@@ -161,8 +156,7 @@ describe('RestorePreviousLicenseUseCase', () => {
 			activations,
 			verifier({}),
 			clock,
-			audit(),
-			'enterprise'
+			audit()
 		).execute();
 		expect(result).toMatchObject({ ok: false, reason: 'none' });
 	});
@@ -175,10 +169,10 @@ describe('RestorePreviousLicenseUseCase', () => {
 		});
 		// Activate the old key while it is still valid, then replace it.
 		const earlier: ClockPort = { nowIso: () => '2025-12-01T00:00:00.000Z' };
-		await new ActivateLicenseUseCase(activations, v, earlier, audit(), 'enterprise').execute(
+		await new ActivateLicenseUseCase(activations, v, earlier, audit()).execute(
 			'lyk_old'
 		);
-		await new ActivateLicenseUseCase(activations, v, clock, audit(), 'enterprise').execute(
+		await new ActivateLicenseUseCase(activations, v, clock, audit()).execute(
 			'lyk_new'
 		);
 
@@ -186,8 +180,7 @@ describe('RestorePreviousLicenseUseCase', () => {
 			activations,
 			v,
 			clock,
-			audit(),
-			'enterprise'
+			audit()
 		).execute();
 
 		expect(result).toMatchObject({ ok: false, reason: 'expired' });
@@ -197,7 +190,7 @@ describe('RestorePreviousLicenseUseCase', () => {
 
 	it('does not let re-pasting the same key destroy the rollback target', async () => {
 		const { activations, v } = await installedThenReplaced();
-		await new ActivateLicenseUseCase(activations, v, clock, audit(), 'enterprise').execute(
+		await new ActivateLicenseUseCase(activations, v, clock, audit()).execute(
 			'lyk_new'
 		);
 		expect(activations.readPrevious()?.key).toBe('lyk_old');
