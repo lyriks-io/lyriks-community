@@ -11,8 +11,7 @@ export type ActivationFailure =
 	| 'invalid'
 	| 'retired'
 	| 'expired'
-	| 'tampered'
-	| 'wrong_edition';
+	| 'tampered';
 
 export type ActivateLicenseResult =
 	| { readonly ok: true; readonly view: LicenseView }
@@ -30,9 +29,7 @@ export class ActivateLicenseUseCase {
 		private readonly activations: ActivationRepositoryPort,
 		private readonly verifier: LicenseVerifierPort,
 		private readonly clock: ClockPort,
-		private readonly audit: AuditLogPort,
-		/** Edition this install declares, so a key that does not cover it is refused. */
-		private readonly installEdition: string | undefined = undefined
+		private readonly audit: AuditLogPort
 	) {}
 
 	async execute(rawKey: string, actor = 'anonymous'): Promise<ActivateLicenseResult> {
@@ -61,13 +58,11 @@ export class ActivateLicenseUseCase {
 		const clockFloor = await this.activations.readClockFloor();
 		const view = evaluateLicense(entitlements, now, now, {
 			absentStatus: 'invalid',
-			clockFloorIso: clockFloor,
-			installEdition: this.installEdition
+			clockFloorIso: clockFloor
 		});
 		// Refused here as well as at the gate, so a key that could never unlock this
 		// install is never stored: it would otherwise sit in the datastore looking
 		// activated and turn every later page load into the same refusal.
-		if (view.status === 'wrong_edition') return fail('wrong_edition', view);
 		if (view.status === 'tampered') return fail('tampered', view);
 		if (view.status === 'expired') return fail('expired', view);
 

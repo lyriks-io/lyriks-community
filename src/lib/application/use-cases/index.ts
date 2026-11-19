@@ -25,6 +25,7 @@ export { SeedActivationDefaultsUseCase } from '../operations/seed-activation-def
 export { SyncBackLicenceUseCase } from '../operations/sync-back-licence';
 export { CheckForUpdateUseCase } from '../operations/check-for-update';
 export { LoadActivationUseCase } from '../operations/load-activation';
+export { EditionInForce } from '../operations/edition-in-force';
 export {
 	ActivateLicenseUseCase,
 	type ActivateLicenseResult,

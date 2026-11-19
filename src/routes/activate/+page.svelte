@@ -21,17 +21,14 @@
 		retired:
 			'This key was issued under a signing key we have since retired, so it can no longer be activated. The key itself is genuine - ask us for a replacement and your entitlements carry over.',
 		expired: 'That licence has expired. Contact sales for a renewal key.',
-		tampered: 'The system clock is set in the past. Correct the machine date and time, then activate.',
-		wrong_edition:
-			'That key is genuine, but it was issued for a lower edition than this installation runs. Use the key issued for this edition, or install the edition your key covers.'
+		tampered: 'The system clock is set in the past. Correct the machine date and time, then activate.'
 	};
 
 	const RESTORE_REASONS: Record<string, string> = {
 		none: 'There is no previous key on this install.',
 		invalid: 'The previous key no longer verifies against this build.',
 		expired: 'The previous key has expired, so going back would leave this install walled.',
-		tampered: 'The system clock is set in the past. Correct the machine date and time first.',
-		wrong_edition: 'The previous key does not cover the edition this install runs.'
+		tampered: 'The system clock is set in the past. Correct the machine date and time first.'
 	};
 
 	let isActive = $derived(data.license.status === 'active');
@@ -46,6 +43,9 @@
 	let replacing = $state(asked !== null);
 	let previewed = $derived(form && 'preview' in form ? form.preview : null);
 	let previewedKey = $derived(form && 'key' in form ? String(form.key) : '');
+	// The images decide what a key can open here: on the Enterprise images the key
+	// in force decides alone, the Community images open Community whatever key.
+	let communityImages = $derived(data.imagesEdition === 'community');
 	let isCommunity = $derived(data.installEdition === 'community');
 	let copied = $state(false);
 
@@ -117,12 +117,16 @@
 				Entering it below activates it on this installation: the licence card then shows the edition it
 				grants (Community or Enterprise), its seats and its expiry.
 			</p>
-			<!-- The key does not move the plan: the edition this install accepts and
-			     the plan that locks its pages come from its configuration, so the
-			     page says who changes them rather than promising a switch (issues.238). -->
+			<!-- What the key changes depends on the images: on the Enterprise images
+			     it decides alone; the Community images need whoever runs the
+			     installation to install the Enterprise ones first (issues.238). -->
 			<p class="mt-1 text-ink-700">
-				The plan this installation runs, which sets the pages it opens and the edition Settings names,
-				is set in its configuration by whoever runs it: ask them to switch it to {asked.name} as well.
+				{#if communityImages}
+					This installation runs the Community images: whoever runs it installs the Enterprise images first,
+					then the {asked.name} key opens them.
+				{:else}
+					On this installation the key decides what opens: what {asked.name} holds opens as soon as its key is in force.
+				{/if}
 			</p>
 		</section>
 	{/if}
@@ -184,7 +188,7 @@
 							for="key"
 							class="mb-1.5 block text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-ink-400"
 						>
-							…or paste your {isCommunity ? 'Community' : 'licence'} key
+							…or paste your {communityImages ? 'Community' : 'licence'} key
 						</label>
 						<textarea
 							bind:this={keyField}
@@ -390,12 +394,13 @@
 	</section>
 
 	<p class="mt-5 text-center text-[0.6875rem] text-ink-400">
-		{#if isCommunity}
+		{#if communityImages}
 			No key yet? The Community key is free and never expires - request one at
-			<span class="font-medium text-ink-600">get.lyriks.io</span> and it arrives by email.
+			<span class="font-medium text-ink-600">lyriks.io/get-started</span> and it arrives by email.
 		{:else}
 			No key yet? Purchase a licence at
-			<span class="font-medium text-ink-600">lyriks.io</span> - the key arrives by email.
+			<span class="font-medium text-ink-600">lyriks.io</span> - the key arrives by email. A free Community key, from
+			<span class="font-medium text-ink-600">lyriks.io/get-started</span>, also opens this installation, as Community.
 		{/if}
 	</p>
 </div>

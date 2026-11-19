@@ -128,8 +128,7 @@ const FIRST_RUN_REASONS: Record<string, string> = {
 	invalid: 'That key is not valid for this installation. Check for copy/paste errors.',
 	retired: 'That key was issued under a signing key we have retired. It is genuine: ask us for a replacement.',
 	expired: 'That licence has expired. Ask us for a renewal key.',
-	tampered: 'The system clock is set in the past. Correct the machine date and time, then try again.',
-	wrong_edition: 'That key was issued for a lower edition than this installation runs.'
+	tampered: 'The system clock is set in the past. Correct the machine date and time, then try again.'
 };
 
 /** Throttle credential attempts per client IP; returns a fail() when over. */

@@ -4,6 +4,7 @@ import {
 	tierAllowsMultipleMembers,
 	tierFromPlan,
 	tierHasFormalDpo,
+	tierInForce,
 	tierLabel
 } from './tier';
 
@@ -31,5 +32,17 @@ describe('edition policy', () => {
 			expect(tierAllows(tier, 'oss')).toBe(true);
 			expect(tierAllows('oss', tier)).toBe(false);
 		}
+	});
+});
+
+describe('tierInForce', () => {
+	it('caps the plan at Community while the installation opens Community', () => {
+		expect(tierInForce('enterprise', 'community')).toBe('oss');
+	});
+
+	it('keeps the plan otherwise', () => {
+		expect(tierInForce('enterprise', 'enterprise')).toBe('enterprise');
+		expect(tierInForce('oss', 'enterprise')).toBe('oss');
+		expect(tierInForce('enterprise', undefined)).toBe('enterprise');
 	});
 });

@@ -6,6 +6,44 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.48] - 2026-11-19
+
+Changes opens in a fraction of a second again.
+
+### Fixed
+
+- The Changes board, a request's graph and a draft feature's behaviour no
+  longer replay every draft in the behaviour engine on each load: the walk of
+  a draft is computed once per model and project state, and readers asking
+  for the same draft at the same time share one computation. A project with
+  six drafts took seven to nine seconds to open Changes; it now answers from
+  memory after the first load. Nothing else changes in what the board shows.
+
+## [0.9.47] - 2026-11-18
+
+The key in force decides what an installation opens, and an install pulled
+with docker login alone says so.
+
+### Changed
+
+- On the Enterprise images, the key in force decides what opens: a Community
+  key opens Community (one user, one active project, every project still
+  listed) and an Enterprise key opens Enterprise. The Community images open
+  Community whatever key they hold. A Community key is no longer refused on
+  the Enterprise images, so the end of a time-limited Enterprise key falls
+  back to Community instead of walling the installation. No setting has to
+  change.
+- The activation page, the Plans dialog and the documentation say what a key
+  changes on each kind of installation.
+
+### Fixed
+
+- The installer records exported registry credentials
+  (LYRIKS_REGISTRY_USERNAME and LYRIKS_REGISTRY_PASSWORD) in .env, and warns
+  after the pull when the images came through docker login alone, naming the
+  two lines to add: without them Settings, Versions could never reach the
+  registry.
+
 ## [0.9.46] - 2026-11-17
 
 An installation is told about a new version, can check on demand, and says

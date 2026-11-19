@@ -51,6 +51,8 @@ import type { EnterpriseHooks } from './enterprise-hooks';
 export interface OverlayContext {
 	readonly env: Record<string, string | undefined>;
 	readonly tier: Tier;
+	/** The edition the installation opens now: its key's, never more than its images. */
+	readonly editionInForce: () => string | undefined;
 	readonly clock: ClockPort;
 	readonly audit: AuditLogPort;
 	readonly session: SessionPort;

@@ -6,7 +6,7 @@ import type {
 	LicenseVerifierPort
 } from '../ports';
 
-export type RestorePreviousFailure = 'none' | 'invalid' | 'expired' | 'tampered' | 'wrong_edition';
+export type RestorePreviousFailure = 'none' | 'invalid' | 'expired' | 'tampered';
 
 export type RestorePreviousLicenseResult =
 	| { readonly ok: true; readonly view: LicenseView }
@@ -30,8 +30,7 @@ export class RestorePreviousLicenseUseCase {
 		private readonly activations: ActivationRepositoryPort,
 		private readonly verifier: LicenseVerifierPort,
 		private readonly clock: ClockPort,
-		private readonly audit: AuditLogPort,
-		private readonly installEdition: string | undefined = undefined
+		private readonly audit: AuditLogPort
 	) {}
 
 	async execute(actor = 'anonymous'): Promise<RestorePreviousLicenseResult> {
@@ -59,10 +58,8 @@ export class RestorePreviousLicenseUseCase {
 		const clockFloor = await this.activations.readClockFloor();
 		const view = evaluateLicense(entitlements, now, now, {
 			absentStatus: 'invalid',
-			clockFloorIso: clockFloor,
-			installEdition: this.installEdition
+			clockFloorIso: clockFloor
 		});
-		if (view.status === 'wrong_edition') return fail('wrong_edition', view);
 		if (view.status === 'tampered') return fail('tampered', view);
 		if (view.status === 'expired') return fail('expired', view);
 

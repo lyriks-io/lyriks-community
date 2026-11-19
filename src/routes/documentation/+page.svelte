@@ -204,9 +204,9 @@
 						{/each}
 					</ul>
 					<p>
-						The key is checked on the machine itself: activation never calls home. A licence key grants one of two editions, Community or Enterprise; a key for a paid plan also
-						opens a Community installation, a Community key does not open a paid one. Switching plan takes a key for that plan, entered on the activation page, and a change of this
-						installation's configuration by whoever runs it: the key alone does not change which pages it opens.
+						The key is checked on the machine itself: activation never calls home. A licence key grants one of two editions, Community or Enterprise. On an installation that runs
+						the Enterprise images, the key in force decides what it opens: an Enterprise key opens Enterprise, a Community key opens Community, and entering a key on the activation
+						page is all a switch takes. A Community installation opens a paid plan once whoever runs it installs the Enterprise images; an Enterprise key there opens Community.
 						The edition this installation runs reads in <a href="/settings#account">Settings, Account</a>, the Plans entry of the account menu lists the offers, and the prices are on the plans page,
 						{#if data.onlineHelp}<a href={PRICING_URL} target="_blank" rel="noopener noreferrer">{PRICING_URL.replace(/^https?:\/\//, '')}</a>{:else}{PRICING_URL.replace(/^https?:\/\//, '')}{/if}.
 					</p>

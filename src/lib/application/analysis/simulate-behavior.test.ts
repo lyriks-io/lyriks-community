@@ -139,3 +139,92 @@ describe('SimulateBehaviorUseCase', () => {
 		expect(sent.blank).toBeUndefined();
 	});
 });
+
+describe('SimulateBehaviorUseCase.draftFeatureWalk', () => {
+	const target = {
+		kind: 'draft',
+		draftId: 'draft:modelled',
+		draftKind: 'add',
+		name: 'Modelled',
+		requestId: 'r',
+		baseLeafId: null,
+		model,
+		frozen: false
+	} as const;
+	const walking = () =>
+		vi.fn().mockImplementation(async () => ({ kind: 'walk', walk: { ok: true, feature: { id: 'draft:modelled', surfaces: [] } } }));
+
+	it('asks the engine for the computed feature and nothing else', async () => {
+		const simulateSteps = walking();
+		await new SimulateBehaviorUseCase({ simulateSteps }, { signature: () => 'k1' }).draftFeatureWalk('p', target);
+		expect(simulateSteps).toHaveBeenCalledTimes(1);
+		expect(simulateSteps.mock.calls[0][0]).toMatchObject({ featureId: 'draft:modelled', blank: true, includeFeature: true });
+		expect(simulateSteps.mock.calls[0][0].steps).toBeUndefined();
+	});
+
+	it('computes a draft once while its model and the kernel are unchanged, and readers at once share the call', async () => {
+		const simulateSteps = walking();
+		const useCase = new SimulateBehaviorUseCase({ simulateSteps }, { signature: () => 'k1' });
+		await Promise.all([useCase.draftFeatureWalk('p', target), useCase.draftFeatureWalk('p', target)]);
+		await useCase.draftFeatureWalk('p', target);
+		expect(simulateSteps).toHaveBeenCalledTimes(1);
+	});
+
+	it('computes again when the kernel moved, the model changed or another project asks', async () => {
+		const simulateSteps = walking();
+		let kernel = 'k1';
+		const useCase = new SimulateBehaviorUseCase({ simulateSteps }, { signature: () => kernel });
+		await useCase.draftFeatureWalk('p', target);
+		kernel = 'k2';
+		await useCase.draftFeatureWalk('p', target);
+		await useCase.draftFeatureWalk('p', {
+			...target,
+			model: { ...model, operations: [...model.operations, { kind: 'add_action', ref: 'x' }] }
+		});
+		await useCase.draftFeatureWalk('q', target);
+		expect(simulateSteps).toHaveBeenCalledTimes(4);
+	});
+
+	it('hands every reader its own copy', async () => {
+		const useCase = new SimulateBehaviorUseCase({ simulateSteps: walking() }, { signature: () => 'k1' });
+		const surfaces = (answer: unknown) => (answer as { walk: { feature: { surfaces: unknown[] } } }).walk.feature.surfaces;
+		surfaces(await useCase.draftFeatureWalk('p', target)).push('changed');
+		expect(surfaces(await useCase.draftFeatureWalk('p', target))).toEqual([]);
+	});
+
+	it('keeps nothing without a signature, nor an engine that did not answer or refused', async () => {
+		const unsigned = walking();
+		const noSignature = new SimulateBehaviorUseCase({ simulateSteps: unsigned }, { signature: () => null });
+		await noSignature.draftFeatureWalk('p', target);
+		await noSignature.draftFeatureWalk('p', target);
+		expect(unsigned).toHaveBeenCalledTimes(2);
+
+		const failing = vi
+			.fn()
+			.mockResolvedValueOnce(null)
+			.mockResolvedValueOnce({ kind: 'refused', error: 'busy' })
+			.mockRejectedValueOnce(new Error('down'))
+			.mockResolvedValue({ kind: 'walk', walk: { ok: true } });
+		const useCase = new SimulateBehaviorUseCase({ simulateSteps: failing }, { signature: () => 'k1' });
+		expect(await useCase.draftFeatureWalk('p', target)).toBeNull();
+		expect(await useCase.draftFeatureWalk('p', target)).toEqual({ kind: 'refused', error: 'busy' });
+		await expect(useCase.draftFeatureWalk('p', target)).rejects.toThrow('down');
+		await useCase.draftFeatureWalk('p', target);
+		await useCase.draftFeatureWalk('p', target);
+		expect(failing).toHaveBeenCalledTimes(4);
+	});
+
+	it('lets the least recently read draft go past the bound', async () => {
+		const simulateSteps = walking();
+		const useCase = new SimulateBehaviorUseCase({ simulateSteps }, { signature: () => 'k1', kept: 2 });
+		const other = (id: string) => ({ ...target, draftId: id });
+		await useCase.draftFeatureWalk('p', other('draft:a'));
+		await useCase.draftFeatureWalk('p', other('draft:b'));
+		await useCase.draftFeatureWalk('p', other('draft:a'));
+		await useCase.draftFeatureWalk('p', other('draft:c'));
+		await useCase.draftFeatureWalk('p', other('draft:a'));
+		expect(simulateSteps).toHaveBeenCalledTimes(3);
+		await useCase.draftFeatureWalk('p', other('draft:b'));
+		expect(simulateSteps).toHaveBeenCalledTimes(4);
+	});
+});

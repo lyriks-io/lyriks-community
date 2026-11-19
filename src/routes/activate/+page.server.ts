@@ -11,8 +11,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 	return {
 		license: view,
 		enforced: services.licenseRequired(),
-		// Drives the copy: a Community operator is sent to the free key form, a
-		// paying one to sales. Reading it here keeps the branch on the server.
+		// Drives the copy: what a key opens depends on the images this install runs,
+		// whatever key it holds now. Reading it here keeps the branch on the server.
+		imagesEdition: services.imagesEdition(),
+		// The edition the key in force opens, for what is said about that edition.
 		installEdition: services.installEdition(),
 		// Shown once activated, for the operator to register the install by hand.
 		// Only resolved then: an install that has no key yet has nothing to register,

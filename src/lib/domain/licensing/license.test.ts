@@ -10,7 +10,7 @@ import {
 	isLicenseEnforced,
 	isLicenseValid,
 	licenseBoundEmail,
-	licenseCoversInstall,
+	openedEdition,
 	licenseEmailMatches,
 	shouldAdvanceClockFloor,
 	type LicenseEntitlements
@@ -134,48 +134,29 @@ describe('evaluateLicense', () => {
 		).toBe('active');
 	});
 
-	it('refuses a key that grants less than the edition this install declares', () => {
-		const view = evaluateLicense(ent({ edition: 'community' }), NOW, NOW, {
-			installEdition: 'enterprise'
-		});
-		expect(view.status).toBe('wrong_edition');
-		expect(isLicenseValid(view)).toBe(false);
-		// The entitlements are still surfaced: the panel names the edition the key
-		// actually grants, which is the only way the message is actionable.
-		expect(view.entitlements?.edition).toBe('community');
-	});
-
-	it('reports the edition mismatch ahead of the clock and the expiry', () => {
-		// A refused key must not be reported as a clock problem the operator would
-		// then chase on the wrong machine.
-		const view = evaluateLicense(ent({ edition: 'community', expiresAt: null }), NOW, NOW, {
-			installEdition: 'enterprise',
-			clockFloorIso: '2026-07-10T00:00:00.000Z'
-		});
-		expect(view.status).toBe('wrong_edition');
-	});
-
-	it('activates a Community install from any edition of key', () => {
+	it('never refuses a genuine key for the edition it grants', () => {
 		for (const edition of ['community', 'enterprise'] as const) {
-			const view = evaluateLicense(ent({ edition, expiresAt: null }), NOW, NOW, {
-				installEdition: 'community'
-			});
+			const view = evaluateLicense(ent({ edition, expiresAt: null }), NOW, NOW);
 			expect(view.status).toBe('active');
+			expect(view.entitlements?.edition).toBe(edition);
 		}
 	});
 });
 
-describe('licenseCoversInstall', () => {
-	it('lets a higher edition cover a lower one, never the reverse', () => {
-		expect(licenseCoversInstall('enterprise', 'community')).toBe(true);
-		expect(licenseCoversInstall('community', 'community')).toBe(true);
-		expect(licenseCoversInstall('enterprise', 'enterprise')).toBe(true);
-		expect(licenseCoversInstall('community', 'enterprise')).toBe(false);
+describe('openedEdition', () => {
+	it('lets the key decide on the Enterprise images', () => {
+		expect(openedEdition('enterprise', 'enterprise')).toBe('enterprise');
+		expect(openedEdition('enterprise', 'community')).toBe('community');
 	});
 
-	it('binds nothing when the install declares no edition', () => {
-		expect(licenseCoversInstall('community', undefined)).toBe(true);
-		expect(licenseCoversInstall('community', 'not-an-edition')).toBe(true);
+	it('never opens more than the Community images', () => {
+		expect(openedEdition('community', 'enterprise')).toBe('community');
+		expect(openedEdition('community', 'community')).toBe('community');
+	});
+
+	it('keeps the images edition until a key is known, and caps nothing undeclared', () => {
+		expect(openedEdition('enterprise', null)).toBe('enterprise');
+		expect(openedEdition(undefined, 'community')).toBeUndefined();
 	});
 });
 

@@ -36,10 +36,7 @@ export const GET: RequestHandler = async (event) => {
 		if (!resolved.ok) error(resolved.status, resolved.message);
 		const target = resolved.target;
 		if (target.kind !== 'draft') error(400, `${featureId} is not a draft`);
-		const answer = await services.simulateBehavior.execute({
-			target,
-			args: { includeFeature: true }
-		});
+		const answer = await services.simulateBehavior.draftFeatureWalk(projectId, target);
 		if (!answer) error(503, 'The behavior engine did not answer; the draft could not be computed.');
 		if (answer.kind === 'refused') error(409, answer.error);
 		const walk = answer.walk as { ok?: unknown; errors?: unknown; feature?: unknown };

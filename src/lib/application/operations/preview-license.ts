@@ -26,9 +26,7 @@ export class PreviewLicenseUseCase {
 	constructor(
 		private readonly activations: ActivationRepositoryPort,
 		private readonly verifier: LicenseVerifierPort,
-		private readonly clock: ClockPort,
-		/** Edition this install declares, so a key that does not cover it is refused. */
-		private readonly installEdition: string | undefined = undefined
+		private readonly clock: ClockPort
 	) {}
 
 	async execute(rawKey: string): Promise<PreviewLicenseResult> {
@@ -48,10 +46,8 @@ export class PreviewLicenseUseCase {
 		const clockFloor = await this.activations.readClockFloor();
 		const view = evaluateLicense(entitlements, now, now, {
 			absentStatus: 'invalid',
-			clockFloorIso: clockFloor,
-			installEdition: this.installEdition
+			clockFloorIso: clockFloor
 		});
-		if (view.status === 'wrong_edition') return { ok: false, reason: 'wrong_edition', view };
 		if (view.status === 'tampered') return { ok: false, reason: 'tampered', view };
 		if (view.status === 'expired') return { ok: false, reason: 'expired', view };
 		return { ok: true, view };
