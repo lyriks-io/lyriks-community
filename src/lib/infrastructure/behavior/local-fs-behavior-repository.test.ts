@@ -85,6 +85,29 @@ describe('kernel cache identity', () => {
 			expect((await repository.loadFeature('p1', 'f1'))?.feature).toMatchObject({ name: 'Other' });
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
+
+	it('fingerprints one feature by its content: another feature moving, or the same text rewritten, leaves it', () => {
+		const root = mkdtempSync(join(tmpdir(), 'lyriks-behavior-'));
+		try {
+			mkdirSync(join(root, 'p1'));
+			const f1 = join(root, 'p1', 'f1.feature.json');
+			writeFileSync(f1, featureSnapshot('f1', 'First'));
+			writeFileSync(join(root, 'p1', 'f2.feature.json'), featureSnapshot('f2', 'Second'));
+			const repository = new LocalFsBehaviorRepository(root);
+			const before = repository.featureFingerprint('p1', 'f1');
+			expect(before).toMatch(/^[0-9a-f]{64}$/);
+
+			writeFileSync(join(root, 'p1', 'f2.feature.json'), featureSnapshot('f2', 'Renamed'));
+			writeFileSync(f1, featureSnapshot('f1', 'First'));
+			utimesSync(f1, 2, 2);
+			expect(repository.featureFingerprint('p1', 'f1')).toBe(before);
+
+			writeFileSync(f1, featureSnapshot('f1', 'Changed'));
+			expect(repository.featureFingerprint('p1', 'f1')).not.toBe(before);
+			expect(repository.featureFingerprint('p1', 'absent')).toBeNull();
+			expect(repository.featureFingerprint('../escape', 'f1')).toBeNull();
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
 });
 
 /**

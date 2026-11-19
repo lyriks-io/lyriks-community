@@ -6,9 +6,27 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.49] - 2026-11-19
+
+The Changes board no longer waits on the behaviour engine.
+
+### Fixed
+
+- Moving an entity, a resource or a persona into the project library now
+  checks, in the behaviour engine too, that the feature it comes from belongs
+  to the project: the platform runs engine 0.27.2, which refuses a move that
+  would take a definition from another project's feature.
+- The Changes board reads the requests alone: it no longer computes the
+  readings of every request nor walks any draft in the behaviour engine, and
+  the page receives what it shows (16 KB instead of 1.66 MB on a project with
+  five requests). A request's page computes its own readings only.
+- A draft's walk is kept per base feature, model and engine version, and
+  survives a restart: a write to another feature, a comment or an answer no
+  longer sends every draft back to the engine.
+
 ## [0.9.48] - 2026-11-19
 
-Changes opens in a fraction of a second again.
+Changes no longer recomputes every draft on each load.
 
 ### Fixed
 

@@ -56,8 +56,8 @@ importers:
         specifier: ^8.23.1
         version: 8.23.1
       unspaghettit:
-        specifier: ^0.27.0
-        version: 0.27.0(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0)(keycharm@0.4.0)(uuid@14.0.1)(vis-util@6.0.0(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0))
+        specifier: ^0.27.2
+        version: 0.27.2(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0)(keycharm@0.4.0)(uuid@14.0.1)(vis-util@6.0.0(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0))
       y-websocket:
         specifier: ^2.0.4
         version: 2.1.0(yjs@13.6.33)
@@ -2145,8 +2145,8 @@ packages:
     resolution: {integrity: sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ==}
     engines: {node: '>= 0.8'}
 
-  unspaghettit@0.27.0:
-    resolution: {integrity: sha512-StcO2aDu7A6TtA3zJvQV+UDH2LORRitg6th2O73rMjNdZ73Eb+svwXf2mq3vdbZMHn9FQYhyLed93/azBjZmUg==}
+  unspaghettit@0.27.2:
+    resolution: {integrity: sha512-tVb9tCS61zhJRL7jCCCJOfguMB6wkVhdt2CTX9BzqiT+Z3B7QYoPF6DBfdtevM+BmyvXpZzsxZEVPaoyKFjpFA==}
     engines: {node: '>=20.10'}
     hasBin: true
 
@@ -4261,7 +4261,7 @@ snapshots:
 
   unpipe@1.0.0: {}
 
-  unspaghettit@0.27.0(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0)(keycharm@0.4.0)(uuid@14.0.1)(vis-util@6.0.0(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0)):
+  unspaghettit@0.27.2(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0)(keycharm@0.4.0)(uuid@14.0.1)(vis-util@6.0.0(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0)):
     dependencies:
       '@modelcontextprotocol/sdk': 1.32.2(zod@4.6.7)
       commander: 14.0.3
