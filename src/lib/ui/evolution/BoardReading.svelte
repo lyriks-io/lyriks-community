@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import type { RequestCardView, SuggestionCardView } from '$lib/server/evolution-view.server';
+	import type { BoardCardView, SuggestionCardView } from '$lib/server/evolution-view.server';
 	import type { AppChrome } from '$lib/shared/app-chrome';
 	import { evolutionStanding, personKey, type EvolutionStanding } from '$domain/evolution';
 	import { Icon, ScoreCount, portalWhile } from '$ui/design-system';
@@ -21,7 +21,7 @@
 	 * reader (criterion ff115da8).
 	 */
 	interface Props {
-		cards: readonly RequestCardView[];
+		cards: readonly BoardCardView[];
 		/** The omissions deferred to a future evolution, read off the choice on their line (criterion 35991202). */
 		suggestions?: readonly SuggestionCardView[];
 		canEdit: boolean;
@@ -48,7 +48,7 @@
 	let { cards, suggestions = [], canEdit, productName, actorId, members, hasProduct, specHref, retroHref, onOpen, onConcurrent, onNew, onOpenLine = () => {}, onStart = () => {}, roadmapHref }: Props = $props();
 
 	/** "Your AI is in session on it", or whose: the AIs at work on a request right now. */
-	function sessionWords(card: RequestCardView): string | null {
+	function sessionWords(card: BoardCardView): string | null {
 		const who = card.inSession ?? [];
 		if (who.length === 0) return null;
 		const names = who.map((id) => (personKey(id) === personKey(actorId) ? 'Your AI' : `${personName(id, members)}'s AI`));
@@ -57,7 +57,7 @@
 
 	type Standing = EvolutionStanding;
 	// The count beside Changes in the navigation reads the same standing (criterion b2f17eef).
-	const standingOf = (card: RequestCardView): Standing => evolutionStanding(card);
+	const standingOf = (card: BoardCardView): Standing => evolutionStanding(card);
 	// The design's tags (.ly-tag): in progress outlined in the action blue, completed filled green, canceled a toner-2 chip.
 	const STANDING: Record<Standing, { label: string; look: string }> = {
 		open: { label: 'In progress', look: `${TAG} ${TAG_TONE.blue}` },
@@ -92,7 +92,7 @@
 			.map((x) => x.card)
 			.filter((c) => standing === 'all' || standingOf(c) === standing)
 	);
-	type Row = { readonly kind: 'card'; readonly card: RequestCardView } | { readonly kind: 'suggestion'; readonly suggestion: SuggestionCardView };
+	type Row = { readonly kind: 'card'; readonly card: BoardCardView } | { readonly kind: 'suggestion'; readonly suggestion: SuggestionCardView };
 	/** The suggestions read right after the requests in progress (criterion 35991202). */
 	const rows = $derived.by<Row[]>(() => {
 		const requests = visible.map((card): Row => ({ kind: 'card', card }));

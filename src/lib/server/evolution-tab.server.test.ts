@@ -3,13 +3,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const impactPart = vi.fn((_request: unknown, opts?: { hypothesis?: string }, lang?: string) => ({
 	impact: { hypothesis: opts?.hypothesis, lang }
 }));
+const views = vi.hoisted(() => ({ full: 0, board: 0 }));
 
 vi.mock('./evolution-view.server', async () => {
 	// A whole request, the way the parser hands it: the decision log reads every list it holds.
 	const { createEvolutionRequest } = await import('$domain/evolution');
 	return {
 		ALL_ROWS: 1000,
-		loadEvolutionView: vi.fn(async () => ({
+		loadBoardView: vi.fn(async () => {
+			views.board += 1;
+			return { projectId: 'p', draft: { requests: [createEvolutionRequest({ id: 'r1', status: 'open', stage: 'specification' })] }, members: [], leaves: [] };
+		}),
+		boardCard: (_view: unknown, request: { id: string }) => ({ id: request.id }),
+		loadEvolutionView: vi.fn(async () => (views.full += 1, {
 			language: 'fr',
 			draft: { requests: [createEvolutionRequest({ id: 'r1', status: 'open', stage: 'specification' })] },
 			members: [],
@@ -41,7 +47,23 @@ const owned = (workspaceId: string | null) => ({ find: async () => (workspaceId 
 const backLinks = owned(null);
 
 describe('loadEvolutionTab', () => {
-	beforeEach(() => impactPart.mockClear());
+	beforeEach(() => {
+		impactPart.mockClear();
+		views.full = 0;
+		views.board = 0;
+	});
+
+	it('reads the board from the requests alone, and a request or a comparison from the whole view', async () => {
+		const services = { currentSession: () => ({ email: 'a@b.c' }), backLinks, resolveActiveMemberName: { execute: async () => 'Ana' } } as never;
+		const cookies = { get: () => undefined } as never;
+		const board = await loadEvolutionTab(services, 'p', new URL('http://x/?tab=evolution'), cookies);
+		expect(views).toEqual({ full: 0, board: 1 });
+		expect(board.cards).toEqual([{ id: 'r1' }]);
+		expect(board.reading).toBeNull();
+		await loadEvolutionTab(services, 'p', new URL('http://x/?tab=evolution&request=r1'), cookies);
+		await loadEvolutionTab(services, 'p', new URL('http://x/?tab=evolution&concurrent=r1'), cookies);
+		expect(views).toEqual({ full: 2, board: 1 });
+	});
 
 	it('writes the three impact readings in the language the spec is written in', async () => {
 		const services = { currentSession: () => ({ email: 'a@b.c' }), backLinks, resolveActiveMemberName: { execute: async () => 'Ana' } } as never;

@@ -1,10 +1,10 @@
 import { render } from 'svelte/server';
 import { describe, expect, it } from 'vitest';
-import type { RequestCardView } from '$lib/server/evolution-view.server';
+import type { BoardCardView } from '$lib/server/evolution-view.server';
 import BoardReading from './BoardReading.svelte';
 
-const card = (id: string, status: string, stage = 'specification') => ({ id, key: `EVO-${id}`, title: `Title ${id}`, status, stage, inSession: [] }) as unknown as RequestCardView;
-const board = (cards: RequestCardView[]) =>
+const card = (id: string, status: string, stage = 'specification') => ({ id, key: `EVO-${id}`, title: `Title ${id}`, status, stage, inSession: [] }) as unknown as BoardCardView;
+const board = (cards: BoardCardView[]) =>
 	render(BoardReading, { props: { cards, canEdit: false, productName: 'P', actorId: 'a', members: [], hasProduct: true, specHref: '/s', retroHref: '/r', onOpen: () => {}, onConcurrent: () => {}, onNew: () => {} } }).body;
 
 describe('evolutions in progress are picked from the list [criterion:b282eb26]', () => {

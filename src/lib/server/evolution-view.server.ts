@@ -400,10 +400,49 @@ async function draftBehaviour(
 	return leafBehaviourOf(feature, { maturity: null, coverage: null });
 }
 
-export async function loadEvolutionView(
+/** What the Changes board reads: see loadBoardView. */
+export type BoardView = Pick<EvolutionView, 'projectId' | 'draft' | 'leaves' | 'members'>;
+
+/**
+ * What the Changes board reads, and nothing more: the requests as this reader
+ * may see them, the product's features by name and the roster. The board shows
+ * each request's key, title, standing and whose AI is at work on it; none of the
+ * readings a request's page computes (the behaviour of each feature it touches,
+ * its drafts replayed by the engine, the sections its blocks point at) reaches
+ * it, so a restart or a write never makes the list wait on the engine.
+ */
+export async function loadBoardView(
 	services: AppServices,
 	projectId: string,
 	opts: { readonly readerId?: string } = {}
+): Promise<BoardView> {
+	const [stored, features, members] = await Promise.all([
+		services.loadEvolutionDraft.execute(projectId),
+		services.loadFeaturesDraft.execute(projectId),
+		loadEvolutionMembers(services, projectId)
+	]);
+	// Projected for the reader like the full view, though the board sends no exchange.
+	const draft: ProjectEvolutionDraft = opts.readerId === undefined
+		? stored
+		: { ...stored, requests: stored.requests.map((r) => requestSeenBy(r, opts.readerId!)) };
+	return { projectId, draft, leaves: leafFeatures(features).map((f) => ({ id: f.id, name: f.name })), members };
+}
+
+export interface EvolutionViewOptions {
+	readonly readerId?: string;
+	/**
+	 * The requests whose readings a page shows (the behaviour of the features
+	 * they touch, their drafts computed by the engine). Every request's by
+	 * default: an AI client's board reads each one's maturity. A request's page
+	 * reads its own, a comparison none.
+	 */
+	readonly readingsOf?: (requests: readonly EvolutionRequest[]) => readonly EvolutionRequest[];
+}
+
+export async function loadEvolutionView(
+	services: AppServices,
+	projectId: string,
+	opts: EvolutionViewOptions = {}
 ): Promise<EvolutionView> {
 	const [storedDraft, features, register, initDraft, revision, users, data, glossary, architecture, definition, coverage, advice, rules, members, specLanguage, assistant] =
 		await Promise.all([
@@ -507,11 +546,12 @@ export async function loadEvolutionView(
 		if (keys.length > 0) filled[request.id] = keys;
 	}
 
-	// The readings of every request: what the touched features hold in the
+	// The readings of every request read: what the touched features hold in the
 	// behaviour model, the access matrix, the data model and the dependencies,
 	// and what the impact report moves. Nothing on the dossier is ticked by
 	// hand; an empty reading is what the completion goes and writes.
-	const touchedLeafIds = [...new Set(draft.requests.flatMap((r) => r.leafIds))];
+	const read = opts.readingsOf ? opts.readingsOf(draft.requests) : draft.requests;
+	const touchedLeafIds = [...new Set(read.flatMap((r) => r.leafIds))];
 	const behaviourByLeaf: Record<string, LeafBehaviour | null> = {};
 	// The names a draft's id-only operations are read with (ac-evo-draft-changes-named).
 	const elementNames: Record<string, ElementNames> = {};
@@ -566,7 +606,7 @@ export async function loadEvolutionView(
 		held
 	};
 	const readings: Record<string, CapabilityReading[]> = {};
-	for (const request of draft.requests) {
+	for (const request of read) {
 		readings[request.id] = capabilityReadings(request, readingInputs, blocksFor(request));
 	}
 
@@ -1978,6 +2018,7 @@ export type VersionsPart = ReturnType<typeof versionsPart>;
 
 /** The board: one card per live request. */
 export type RequestCardView = ReturnType<typeof requestCard>;
+export type BoardCardView = ReturnType<typeof boardCard>;
 export type SuggestionCardView = ReturnType<typeof suggestionCards>[number];
 
 /** What to do next on a request, from the readings its dossier holds (see coachOf). */
@@ -2040,12 +2081,28 @@ function codeCardOf(request: EvolutionRequest, key: string, deploymentBranch: st
 }
 
 /** The deferred omissions the Evolutions list offers, each with its line and the operation that starts it (criteria 35991202, 03b7eacf). */
-export function suggestionCards(view: EvolutionView) {
+export function suggestionCards(view: Pick<EvolutionView, 'projectId' | 'draft'>) {
 	return deferredSuggestions(view.draft.requests).map((suggestion) => ({
 		...suggestion,
 		href: requestPagePath(view.projectId, suggestion.fromRequestId, { kind: 'line', id: suggestion.lineId }),
 		startWith: { op: 'open_request', deferredLineId: suggestion.lineId }
 	}));
+}
+
+/**
+ * A row of the Changes board: what it shows (key, title, standing) and whose AI
+ * is at work on the request now. The full card (requestCard) is what an AI
+ * client reads of the board; it needs the request's readings, the page does not.
+ */
+export function boardCard(view: Pick<EvolutionView, 'draft'>, request: EvolutionRequest, now: number) {
+	return {
+		id: request.id,
+		key: requestKeyOf(view.draft.requests, request.id),
+		title: request.title,
+		status: request.status,
+		stage: request.stage,
+		inSession: sessionsInProgress(request, now).map((s) => s.personId)
+	};
 }
 
 export function requestCard(view: EvolutionView, request: EvolutionRequest, opts: { readonly withNext?: boolean; readonly now?: number } = {}) {

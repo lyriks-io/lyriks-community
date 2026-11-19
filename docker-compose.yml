@@ -20,7 +20,7 @@
 
 name: lyriks-community
 
-x-image: &platform-image ${LYRIKS_REGISTRY:-registry.lyriks.io/community}/lyriks-platform-community:${LYRIKS_TAG:-v0.9.48}
+x-image: &platform-image ${LYRIKS_REGISTRY:-registry.lyriks.io/community}/lyriks-platform-community:${LYRIKS_TAG:-v0.9.49}
 
 services:
   postgres:
@@ -64,7 +64,7 @@ services:
       LYRIKS_BACK_URL: ""
       LYRIKS_JWT_SECRET: ${LYRIKS_JWT_SECRET:?set LYRIKS_JWT_SECRET in .env (openssl rand -hex 32)}
       LYRIKS_AUTH_REQUIRED: "1"
-      LYRIKS_VERSION: ${LYRIKS_TAG:-v0.9.48}
+      LYRIKS_VERSION: ${LYRIKS_TAG:-v0.9.49}
       LYRIKS_UPDATE_CHECK: "0"
       LYRIKS_REGISTRY: ${LYRIKS_REGISTRY:-registry.lyriks.io/community}
       LYRIKS_UPDATE_IMAGE: lyriks-platform-community
@@ -96,7 +96,7 @@ services:
       PORT: "3002"
 
   mcp:
-    image: ${LYRIKS_REGISTRY:-registry.lyriks.io/community}/lyriks-mcp-community:${LYRIKS_TAG:-v0.9.48}
+    image: ${LYRIKS_REGISTRY:-registry.lyriks.io/community}/lyriks-mcp-community:${LYRIKS_TAG:-v0.9.49}
     restart: unless-stopped
     user: "1000:1000"
     environment:
@@ -109,7 +109,7 @@ services:
       PUBLIC_BASE_URL: ${LYRIKS_PUBLIC_ORIGIN:-http://localhost:3000}
 
   dashboard:
-    image: ${LYRIKS_REGISTRY:-registry.lyriks.io/community}/lyriks-behavior-community:${LYRIKS_TAG:-v0.9.48}
+    image: ${LYRIKS_REGISTRY:-registry.lyriks.io/community}/lyriks-behavior-community:${LYRIKS_TAG:-v0.9.49}
     restart: unless-stopped
     user: "1000:1000"
     environment:

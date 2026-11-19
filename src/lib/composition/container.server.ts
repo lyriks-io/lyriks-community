@@ -6,6 +6,7 @@ import { styledProjectCatalog } from '$application/portfolio/styled-project-cata
 import { CheckProjectCreationUseCase } from '$application/portfolio/project-creation-scope';
 import { MakeProjectActiveUseCase, ResolveActiveProjectUseCase } from '$application/portfolio/active-project';
 import { ReadProjectElaborationUseCase } from '$application/analysis/read-project-elaboration';
+import type { StoredDraftWalks } from '$application/analysis/draft-feature-memo';
 import { readBehaviorOverview } from '$application/specification/read-behavior-overview';
 import {
 	AnalyzeBriefUseCase,
@@ -651,6 +652,20 @@ function resolveUnspaMcpBin(): string {
 	const pkg = cjsRequire(pkgPath) as { bin?: Record<string, string> };
 	const rel = pkg.bin?.['unspa-mcp'] ?? './mcp-server/bin.cjs';
 	return pathResolve(dirname(pkgPath), rel);
+}
+
+/**
+ * Which engine build answers: what a result the engine computed is kept under,
+ * so an upgrade, or a locally built engine, computes it again.
+ */
+function engineBuildOf(customBin: string | undefined): string {
+	if (customBin) return `custom:${customBin}`;
+	try {
+		const pkg = cjsRequire(cjsRequire.resolve('unspaghettit/package.json')) as { version?: string };
+		return `unspaghettit@${pkg.version ?? 'unknown'}`;
+	} catch {
+		return 'unspaghettit@unknown';
+	}
 }
 
 export function getServices(): AppServices {
@@ -1550,14 +1565,14 @@ export function getServices(): AppServices {
 		readBehaviorFeature: new ReadBehaviorFeatureUseCase(behaviorPort),
 		deleteBehaviorState,
 		scoreBehaviorFeature: new ScoreBehaviorFeatureUseCase(advisor),
-		// A draft's computed feature is kept while its model and the kernel are unchanged:
-		// the Changes board computes every draft on each load, one engine call each.
-		// A kernel that cannot be found keeps nothing: there is no state to key on.
+		// A draft's computed feature is kept while its model, its base feature and the
+		// engine build are unchanged, in memory and across restarts: the Changes board
+		// reads every draft on each load, and the engine serves one call at a time.
 		simulateBehavior: new SimulateBehaviorUseCase(advisor, {
-			signature: (projectId) => {
-				const signature = kernelSignature(projectId);
-				return signature === 'absent' || signature === 'invalid' ? null : signature;
-			}
+			featureFingerprint: (projectId, featureId) => localBehavior.featureFingerprint(projectId, featureId),
+			engine: engineBuildOf(env.UNSPAGHETTIT_MCP_BIN),
+			store: new ResidueSnapshotStore<StoredDraftWalks>(projectResidue, 'draft-walks'),
+			onStoreError: (error) => console.warn('[draft-walks] store unavailable (best-effort):', error)
 		}),
 		whatIf: new WhatIfUseCase(advisor),
 		authorProjectBehavior: new AuthorProjectBehaviorUseCase(advisor),

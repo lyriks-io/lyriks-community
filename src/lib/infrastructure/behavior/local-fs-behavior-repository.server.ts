@@ -10,7 +10,7 @@ import {
 	rmSync,
 	unlinkSync
 } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 
 import type { BehaviorRepositoryPort } from '$application/ports';
@@ -45,6 +45,8 @@ interface ParsedFile {
 	readonly mtimeMs: number;
 	readonly bytes: number;
 	readonly value: unknown;
+	/** The digest of the file's text: what a reading computed from this file alone keys on. */
+	readonly digest: string;
 }
 
 /**
@@ -154,6 +156,22 @@ export class LocalFsBehaviorRepository implements BehaviorRepositoryPort {
 		// Same rule as `saveFeature`: overwrite the file that already holds this id,
 		// whatever Unspaghettit named it, so the two never fork into rival records.
 		await this.#writeAtomic(this.#existingProjectFile(id) ?? this.#projectPath(id), snapshot);
+	}
+
+	/**
+	 * The content fingerprint of one stored feature, null when it cannot be read.
+	 * A reading computed from that feature alone (a draft replayed over it) keys
+	 * on it, so a write anywhere else in the project leaves that reading valid,
+	 * and a rewrite of the same content (a re-dated file) does too.
+	 */
+	featureFingerprint(projectId: string, featureId: string): string | null {
+		try {
+			const path = this.#existingFeatureFile(projectId, featureId);
+			if (!path || this.#readJson(path) === null) return null;
+			return this.#parsed.get(path)?.digest ?? null;
+		} catch {
+			return null;
+		}
 	}
 
 	async loadFeature(projectId: string, featureId: string): Promise<UnspaFeatureSnapshot | null> {
@@ -391,7 +409,8 @@ export class LocalFsBehaviorRepository implements BehaviorRepositoryPort {
 			size: stats.size,
 			mtimeMs: stats.mtimeMs,
 			bytes: text.length,
-			value
+			value,
+			digest: createHash('sha256').update(text).digest('hex')
 		});
 		this.#parsedBytes += text.length;
 		for (const [oldest, entry] of this.#parsed) {
