@@ -21,7 +21,7 @@ Free, open source, and it runs on your machine.
 [First steps](https://lyriks.io/first-steps?utm_source=github&utm_medium=readme&utm_campaign=lce-launch) ·
 [Discord](https://discord.gg/s2v5yNR5aD)
 
-<img src="docs/media/lyriks-ce.webp" alt="Animation: nobody remembers what your code really does; Lyriks recovers the spec (journeys, features, rules, screens, data, architecture); every element linked, every conflict flagged; a living memory for your AI agents over MCP (Claude Code, Cursor, any MCP client). From your code to a living spec: free, open source, runs on your machine." width="900">
+<img src="docs/media/lyriks-ce.webp" alt="Animation: nobody understands what your code really does; Lyriks recovers the spec (journeys, features, rules, screens, data, architecture); every element linked across code, docs and spec, every conflict flagged; a living memory for all your tools and AI agents over MCP (Jira, Confluence, Notion, Claude Code, Cursor, any MCP client). From your code to a living spec: free, open source, runs on your machine." width="900">
 
 </div>
 
