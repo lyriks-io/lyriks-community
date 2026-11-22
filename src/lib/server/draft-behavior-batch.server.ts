@@ -19,6 +19,10 @@ export interface DraftBatchInput {
 	readonly commit?: string;
 }
 
+/** What a batch refused by the Evolution section's revision guard says: nothing was written, and sending it again lands it. */
+export const DOSSIER_MOVED =
+	'The Evolution section was written by someone else while this batch was saved, so nothing was written on the draft: send the same batch again.';
+
 /** A refused batch, in the shape every apply_behavior_batch answer has. */
 const refused = (dryRun: boolean, errors: readonly string[]) =>
 	json({
@@ -68,7 +72,7 @@ export async function applyBatchToDraft(event: RequestEvent, input: DraftBatchIn
 	signalAiActivity(event, projectId, [target.requestId], 'write');
 	if (target.frozen) {
 		return refused(dryRun, [
-			`The request carrying ${draftId} is frozen: what it proposes is what the code is written against. Rebrief the request before changing its behaviour.`
+			`The request carrying ${draftId} stands past its Build: what it proposes is no longer corrected. Open a new request to change its behaviour.`
 		]);
 	}
 	const guardErrors = behaviorBatchErrors(operations);
@@ -119,12 +123,9 @@ export async function applyBatchToDraft(event: RequestEvent, input: DraftBatchIn
 			})
 		);
 		if (!outcome.ok) {
-			return refused(
-				false,
-				outcome.results
-					.filter((r) => !r.ok)
-					.map((r) => [r.summary, r.detail].filter(Boolean).join(' '))
-			);
+			const reasons = outcome.results.filter((r) => !r.ok).map((r) => [r.summary, r.detail].filter(Boolean).join(' '));
+			// A refusal always says why: a write that landed on the Evolution section first refuses the whole batch with no failing operation.
+			return refused(false, reasons.length > 0 ? reasons : [DOSSIER_MOVED]);
 		}
 	}
 

@@ -1,3 +1,4 @@
+import { mintUuid } from '$domain/shared';
 import {
 	createEmptyIdentityDraft,
 	createEmptyOperationsDraft,
@@ -85,7 +86,7 @@ export class CreateProjectUseCase {
 		private readonly clock: ClockPort,
 		private readonly portfolio: PortfolioRepositoryPort,
 		private readonly mirror?: ProjectCreationMirror,
-		private readonly randomSuffix: () => string = () => crypto.randomUUID().slice(0, 6),
+		private readonly randomSuffix: () => string = () => mintUuid().slice(0, 6),
 		private readonly language?: ProjectLanguageSeed,
 		private readonly scope?: Pick<CheckProjectCreationUseCase, 'execute'>
 	) {}

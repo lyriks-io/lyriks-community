@@ -34,6 +34,11 @@
 	const firstRunEmail = $derived(form && 'email' in form ? String(form.email ?? '') : '');
 	const firstRunKey = $derived(form && 'key' in form ? String(form.key ?? '') : '');
 	const firstRunLicense = $derived(form && 'license' in form ? form.license : null);
+
+	// A refused sign-up hands back the names typed, so only the passwords are
+	// typed again.
+	const registerFirstName = $derived(form && 'firstName' in form ? String(form.firstName ?? '') : '');
+	const registerLastName = $derived(form && 'lastName' in form ? String(form.lastName ?? '') : '');
 </script>
 
 <div class="grid h-screen place-items-center bg-canvas px-4">
@@ -185,6 +190,7 @@
 							name="firstName"
 							type="text"
 							autocomplete="given-name"
+							value={registerFirstName}
 							class="w-full border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue"
 							placeholder="Ada"
 						/>
@@ -195,6 +201,7 @@
 							name="lastName"
 							type="text"
 							autocomplete="family-name"
+							value={registerLastName}
 							class="w-full border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue"
 							placeholder="Lovelace"
 						/>
@@ -206,12 +213,14 @@
 				<!-- An invitation is issued to ONE address and acceptance only works for
 				     it, so while registering via invite the field is locked: editing it
 				     could only produce a confusing refusal three fields later. Signing in
-				     instead (an invitee who already has an account) unlocks it. -->
+				     instead (an invitee who already has an account) unlocks it.
+				     While registering, the address is the account's username: a browser
+				     that generates passwords saves the new one under it, readonly or not. -->
 				<input
 					name="email"
 					type="email"
 					required
-					autocomplete="email"
+					autocomplete={isRegister ? 'username' : 'email'}
 					readonly={isRegister && data.viaInvite}
 					value={form?.email ?? data.inviteEmail ?? ''}
 					class="w-full border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue read-only:cursor-not-allowed read-only:bg-toner-2 read-only:text-ink-3"
@@ -232,6 +241,22 @@
 					placeholder="••••••••"
 				/>
 			</label>
+			{#if isRegister}
+				<!-- Asked twice so a mistyped password cannot lock the person out of the
+				     account they just created; both fields ask for a new password, so a
+				     browser that generates one fills them both. -->
+				<label class="block">
+					<span class="mb-1 block font-evo-mono text-xs font-bold tracking-[0.08em] text-ink-3 uppercase">Confirm password</span>
+					<input
+						name="confirm"
+						type="password"
+						required
+						autocomplete="new-password"
+						class="w-full border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue"
+						placeholder="••••••••"
+					/>
+				</label>
+			{/if}
 			<button
 				type="submit"
 				disabled={!data.authConfigured}

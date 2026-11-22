@@ -40,15 +40,6 @@ export type RequestStage = (typeof REQUEST_STAGES)[number]['code'];
 export const isRequestStage = (v: unknown): v is RequestStage =>
 	typeof v === 'string' && (REQUEST_STAGES as readonly Option[]).some((s) => s.code === v);
 
-/** The columns of the board: the four stages in flight, then Delivered. */
-export const BOARD_COLUMNS: readonly RequestStage[] = [
-	'specification',
-	'coherence',
-	'implementation',
-	'acceptance',
-	'delivered'
-];
-
 /** Forward order of the run. A stage only ever moves one gate at a time. */
 export const STAGE_ORDER: readonly RequestStage[] = [
 	'draft',
@@ -394,7 +385,13 @@ export const HISTORY_ENTRY_TYPES = [
 	{ code: 'draft_change', label: 'Draft change' },
 	{ code: 'risk_decision', label: 'Risk decision' },
 	{ code: 'code_read', label: 'Code read' },
-	{ code: 'code_commit', label: 'Code commit' }
+	{ code: 'code_commit', label: 'Code commit' },
+	/** What a landing validated in Knowledge, or why it could not (EVO-002). */
+	{ code: 'knowledge_validation', label: 'Knowledge validation' },
+	/** Which of two overlapping requests lands first, set at a freeze or by a person, and a landing out of that order (EVO-005). */
+	{ code: 'landing_order', label: 'Landing order' },
+	/** Another request landed on what this one shares: it is read again on the new version (EVO-005). */
+	{ code: 'other_landing', label: 'Another request landed' }
 ] as const satisfies readonly Option[];
 export type HistoryEntryType = (typeof HISTORY_ENTRY_TYPES)[number]['code'];
 export const isHistoryEntryType = (v: unknown): v is HistoryEntryType =>
@@ -444,5 +441,13 @@ export const isCanonicalSection = (v: unknown): v is CanonicalSection =>
 
 /** The furthest the impact engine walks. Past it the result is the whole project. */
 export const MAX_IMPACT_DEPTH = 5;
+/**
+ * What a walk of the impact supposes, and how far it goes, when the one who
+ * asks names neither: a change, two links out (parameters a7bea46e and
+ * b0c3879a of "Read the impact of the change"), never what an earlier walk of
+ * the same request happened to read.
+ */
+export const DEFAULT_IMPACT_HYPOTHESIS: ImpactHypothesis = 'change';
+export const DEFAULT_IMPACT_DEPTH = 2;
 /** The furthest the read-only graph lens walks around the main leaf. */
 export const MAX_LENS_DEPTH = 3;

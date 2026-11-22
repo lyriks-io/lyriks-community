@@ -76,6 +76,11 @@ describe('at a glance', () => {
 		// A definition never saved holds the form's defaults, not answers.
 		const unsaved = glanceView({ identity, definition: createEmptyDefinitionDraft(P), users, outline: specOutline(features()), architecture, counts: { features: 0, actions: 0, rules: 0, users: 0, entities: 0, terms: 0 } });
 		expect(unsaved.meta.flatMap((g) => g.labels)).not.toContain('B2B');
+		// Nor does an identity never saved: its industry is shown once the identity is.
+		expect(view.meta.map((g) => g.dimension)).not.toContain('Industry');
+		const savedIdentity = { ...createEmptyIdentityDraft(P), industry: 'fintech', lastSavedAt: '2026-10-01T00:00:00.000Z' } as never;
+		const named = glanceView({ identity: savedIdentity, definition, users, outline: specOutline(features()), architecture, counts: { features: 0, actions: 0, rules: 0, users: 0, entities: 0, terms: 0 } });
+		expect(named.meta.map((g) => g.dimension)).toContain('Industry');
 		expect(view.outcomes).toEqual([{ label: 'Time to invoice', from: '15 min', to: '2 min' }]);
 		expect(view.symptoms).toEqual([]);
 		expect(view.users[0]).toMatchObject({ name: 'Accountant', userClass: 'end' });

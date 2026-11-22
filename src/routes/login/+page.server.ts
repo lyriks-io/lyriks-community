@@ -300,10 +300,18 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const email = String(form.get('email') ?? '').trim();
 		const password = String(form.get('password') ?? '');
+		const confirm = String(form.get('confirm') ?? '');
 		// The back owns identity as two parts (first/last); it refuses a `name`.
 		const firstName = String(form.get('firstName') ?? '').trim();
 		const lastName = String(form.get('lastName') ?? '').trim();
 		if (!email || !password) return fail(400, { mode: 'register', email, message: 'Email and password are required.' });
+		// A mistyped password would lock the person out of the account they just
+		// created, so the two must match before the account store is asked. The
+		// page is re-rendered by a full POST: the passwords come back empty, the
+		// names and the address are handed back so nothing else is typed again.
+		if (password !== confirm) {
+			return fail(400, { mode: 'register', email, firstName, lastName, message: 'The two passwords do not match.' });
+		}
 		// Registering off an invitation only works for the invited address (the back
 		// matches on it), so name it here instead of letting the back answer with
 		// its generic "registration is closed".

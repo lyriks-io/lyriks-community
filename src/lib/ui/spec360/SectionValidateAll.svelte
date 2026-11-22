@@ -1,10 +1,11 @@
 <script lang="ts">
+	import type { SectionElements } from '$ui/evolution/section-elements';
 	import ValidateAllCheck from './ValidateAllCheck.svelte';
 	import { useEdits } from './edits.svelte';
 	import { useValidation } from './validation.svelte';
 
 	/**
-	 * "Validate all" for one section of a page: validates, in the reader's name
+	 * Validate the whole section, for one section of a page: validates, in the reader's name
 	 * and in one batch, every element of the section still waiting on them (a
 	 * rejection stays an explicit decision and is left out), as the check of the
 	 * four acts with its count (criterion aba60be7). Hidden once nothing of the
@@ -14,7 +15,7 @@
 		/** The anchors of the section's elements, in page order. */
 		anchors: readonly string[];
 		/** How the section names its elements, plural. */
-		what: string;
+		what: SectionElements;
 		/** The section's container: the view moves on from it. */
 		sectionId: string;
 		/** Shown at rest: where the section is the only place its elements are validated (the Overview's frames). */

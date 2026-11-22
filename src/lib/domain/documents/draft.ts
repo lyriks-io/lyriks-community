@@ -1,3 +1,4 @@
+import { mintUuid } from '../shared';
 import type { DocumentKind } from './enums';
 import type { SourcePassage, StoredText } from './passages';
 
@@ -43,5 +44,5 @@ export function createEmptyDocumentsDraft(projectId: string): ProjectDocumentsDr
 }
 
 export function createDocumentSource(overrides: Partial<DocumentSource> = {}): DocumentSource {
-	return { id: crypto.randomUUID(), title: '', kind: 'link', url: '', note: '', ...overrides };
+	return { id: mintUuid(), title: '', kind: 'link', url: '', note: '', ...overrides };
 }

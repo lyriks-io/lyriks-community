@@ -8,7 +8,6 @@ import { earsOfDetectedEdge, readsAsEars } from '../rules';
 import { citesCode, gapOrigin, originLine, type Gap, type PointOrigin } from '../coherence';
 import { effectivePenalties } from '../coherence/incoherence';
 import { isBlockingIssue, issueGapId } from '../coherence/issue-gap';
-import { unconfirmedReason } from './summary';
 import { isKeptIssue } from './finding-decision';
 import { checkKind, FINAL_CHECK_KIND, gapKind, issueKind, UNRELATED_TABLES_KIND, type FindingKind } from './finding-kinds';
 
@@ -399,33 +398,6 @@ export function finalCheckFindings(gaps: readonly Gap[]): Finding[] {
 		});
 	}
 	return out;
-}
-
-/**
- * The other checks the final audit failed (project health is read gap by gap
- * above): one finding each, so a blocked check never hides behind a score.
- */
-export function failedCheckFindings(failedChecks: readonly string[]): Finding[] {
-	return failedChecks
-		.filter((key) => key !== 'coherence')
-		.map((key): Finding => ({
-			id: `check:${key}`,
-			tone: 'major',
-			unconfirmed: true,
-			...SPEC_ORIGIN,
-			text: `Not confirmed: ${unconfirmedReason(key).charAt(0).toLowerCase()}${unconfirmedReason(key).slice(1)}`,
-			where: FINAL_CHECK_KIND.label,
-			kind: FINAL_CHECK_KIND,
-			sheet: {
-				kicker: 'NOT CONFIRMED · FINAL CHECK · BLOCKING',
-				title: unconfirmedReason(key),
-				sections: [
-					{ heading: 'IN SHORT', text: `The final check could not confirm this part: ${unconfirmedReason(key).toLowerCase()}.` },
-					{ heading: 'WHAT YOU CAN DO', text: 'Your LLM completes this part of the specification, then the final check runs again.' },
-					FIND_IT_AGAIN
-				]
-			}
-		}));
 }
 
 /** Who says so, in the reader's words: the guarantee behind a point. */

@@ -1,4 +1,4 @@
-import type { Actor, EvolutionRequest, Observation } from './draft';
+import type { Actor, Observation } from './draft';
 import { firstRefusal, guard, type Guarded } from './guard';
 
 /**
@@ -11,24 +11,6 @@ import { firstRefusal, guard, type Guarded } from './guard';
  * the status of an observation, never its visibility.
  */
 
-/** A logged observation keeps the anchor it was logged with. */
-export function canAnchor(observation: Observation): Guarded {
-	return guard(
-		observation.status === 'logged',
-		'This observation is already logged. Open it in the notebook to move its anchor.',
-		'Blocks re-anchoring an observation that is already in the notebook.'
-	);
-}
-
-/** There is nothing to annotate until a capture is attached. */
-export function canAnnotateCapture(observation: Observation): Guarded {
-	return guard(
-		!observation.captureAttached,
-		'Attach a capture first, then annotate it.',
-		'Blocks annotation while no capture is attached.'
-	);
-}
-
 /**
  * An observation reaches the notebook typed, anchored on a screen and an
  * element, and carrying an annotated capture of what the observer saw.
@@ -38,31 +20,6 @@ export function canLogObservation(observation: Observation): Guarded {
 		observation.body.trim() === '',
 		'Say what you saw before logging the observation.',
 		'An observation is what a person saw on the change; an empty one says nothing to rule on.'
-	);
-}
-
-/** Every message names its author, model replies included, and a ruling closes the thread. */
-export function canPostMessage(observation: Observation, author: string): Guarded {
-	return firstRefusal(
-		guard(
-			author.trim() === '',
-			'A message cannot be posted without an author.',
-			'Blocks an unattributed message, human or model.'
-		),
-		guard(
-			observation.ruling !== 'open',
-			'This thread has been ruled on. It stays readable, but it takes no new messages.',
-			'Blocks new messages once a ruling has been recorded.'
-		)
-	);
-}
-
-/** A viewer takes part in the conversation but decides nothing. */
-export function canAssign(actor: Actor): Guarded {
-	return guard(
-		actor.role === 'viewer',
-		'A viewer can write observations and comment, but cannot assign them.',
-		'Blocks assignment by a viewer.'
 	);
 }
 
@@ -102,22 +59,6 @@ export function canInvalidate(actor: Actor, observation: Observation, reason: st
 	);
 }
 
-/** A deferred, invalidated or requalified observation is never folded back. */
-export function canChooseInjectionTarget(actor: Actor, observation: Observation): Guarded {
-	return firstRefusal(
-		guard(
-			observation.ruling !== 'validated',
-			'Only a validated observation goes back into the spec.',
-			'Blocks choosing a target for an observation that was not validated.'
-		),
-		guard(
-			actor.role === 'viewer',
-			'A viewer can read the observation but cannot write into the spec.',
-			'Blocks a fold-back attempted by a viewer.'
-		)
-	);
-}
-
 /**
  * Fold a validated observation back into the spec: a criterion or a rule written
  * into its canonical section, citing the observation it came from, stamped with
@@ -146,34 +87,4 @@ export function canFoldBack(
 			'Blocks a fold-back attempted by a viewer.'
 		)
 	);
-}
-
-/**
- * How many validated observations are still owed to the spec. Deferred and
- * invalidated observations are not counted: a deferred remark never stands in
- * the way of closing.
- */
-export function validatedNotFoldedBack(request: EvolutionRequest): number {
-	return request.observations.filter((o) => o.ruling === 'validated' && !o.foldedBackAt).length;
-}
-
-/** Closing a request is a decision, and a viewer decides nothing. */
-export function canCloseAfterAcceptance(actor: Actor, request: EvolutionRequest): Guarded {
-	return firstRefusal(
-		guard(
-			validatedNotFoldedBack(request) > 0,
-			'A validated observation has not been folded back into the spec yet.',
-			'Blocks closing while at least one validated observation is still missing from the spec.'
-		),
-		guard(
-			actor.role === 'viewer',
-			'A viewer cannot close an evolution request.',
-			'Blocks a closing attempted by a viewer.'
-		)
-	);
-}
-
-/** An observation stays readable whatever the ruling, invalidated included. */
-export function observationIsVisible(): boolean {
-	return true;
 }

@@ -4,6 +4,26 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalFsBehaviorRepository } from './local-fs-behavior-repository.server';
 import { LocalBehaviorPort } from './local-behavior-port.server';
+import ts from 'typescript';
+
+/** The modules a source file imports (static or dynamic) and how many times it calls fetch, read with the TypeScript parser. */
+function reachesOut(fileName: string, text: string): { modules: string[]; fetches: number } {
+	const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+	const modules: string[] = [];
+	let fetches = 0;
+	const visit = (node: ts.Node): void => {
+		if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+			modules.push(node.moduleSpecifier.text);
+		} else if (ts.isCallExpression(node)) {
+			const callee = node.expression;
+			if (callee.kind === ts.SyntaxKind.ImportKeyword && node.arguments[0] && ts.isStringLiteralLike(node.arguments[0])) modules.push(node.arguments[0].text);
+			if ((ts.isIdentifier(callee) && callee.text === 'fetch') || (ts.isPropertyAccessExpression(callee) && callee.name.text === 'fetch')) fetches += 1;
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(source);
+	return { modules, fetches };
+}
 
 const clock = { nowIso: () => '2026-01-01T00:00:00.000Z' };
 
@@ -46,11 +66,16 @@ describe('LocalBehaviorPort — MAP (engine-off) proof', () => {
 		expect(project!.project.tags).toEqual([{ type: 'core', value: 'Discovery' }]);
 	});
 
-	it('air-gap guard: the write path imports neither the unspa engine nor the back client', () => {
+	it('air-gap guard: the write path imports neither the unspa engine nor the back client, and calls out nowhere', () => {
 		for (const file of ['local-behavior-port.server.ts', 'local-fs-behavior-repository.server.ts']) {
-			const src = readFileSync(new URL(`./${file}`, import.meta.url), 'utf8');
-			expect(src).not.toMatch(/unspaghettit/);
-			expect(src).not.toMatch(/lyriks-back|http-lyriks-back-client|fetch\(/);
+			const { modules, fetches } = reachesOut(file, readFileSync(new URL(`./${file}`, import.meta.url), 'utf8'));
+			expect(modules.filter((m) => /unspaghettit|lyriks-back/.test(m)), file).toEqual([]);
+			expect(fetches, file).toBe(0);
 		}
+	});
+
+	it('air-gap guard: sees an import or a call out however it is written', () => {
+		const snippet = `import type { A } from 'x';\nconst m = await import('unspaghettit/engine');\nawait globalThis.fetch('http://back');\nfetch(url);`;
+		expect(reachesOut('snippet.ts', snippet)).toEqual({ modules: ['x', 'unspaghettit/engine'], fetches: 2 });
 	});
 });

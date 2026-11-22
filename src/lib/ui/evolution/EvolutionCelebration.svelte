@@ -26,6 +26,13 @@
 			<Icon name={celebration.check.whole ? 'check' : 'circle-alert'} size={14} />{celebration.check.text}
 		</span>
 	{/if}
+	{#if celebration.knowledge}
+		<!-- What the landing validated in Knowledge and what stays to review (criterion eb7b058a). -->
+		<span class="flex flex-wrap items-center justify-center gap-1.5 font-evo-mono text-xs font-bold {celebration.knowledge.whole ? 'text-green-ink' : 'text-orange-ink'}" data-knowledge-landing>
+			<Icon name={celebration.knowledge.whole ? 'check' : 'circle-alert'} size={14} />{celebration.knowledge.text}
+			{#if celebration.knowledge.href}<a class="underline underline-offset-2" href={celebration.knowledge.href} onclick={onClose}>See the ones to review</a>{/if}
+		</span>
+	{/if}
 	<span class="text-sm leading-normal text-ink-2">{celebration.next}</span>
 	<div class="mt-1.5 flex flex-wrap justify-center gap-2.5">
 		<button type="button" class={SECONDARY_44} onclick={onClose}>See what happened</button>

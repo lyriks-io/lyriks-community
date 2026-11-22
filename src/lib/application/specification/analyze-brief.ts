@@ -14,7 +14,7 @@ export class EmptyBriefError extends Error {
  */
 export class AnalyzeBriefUseCase {
 	constructor(
-		private readonly ai: AiSuggesterPort,
+		private readonly ai: Pick<AiSuggesterPort, 'analyzeBrief'>,
 		private readonly telemetry: TelemetryPort
 	) {}
 

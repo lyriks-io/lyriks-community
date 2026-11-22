@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EARLIER, isNewSince, newSince, stampFirstSeen } from './first-seen';
+import { EARLIER, isNewSince, stampFirstSeen } from './first-seen';
 
 const NOW = '2026-10-30T09:00:00.000Z';
 const at = (iso: string) => Date.parse(iso);
@@ -20,9 +20,9 @@ describe('what appeared lately reads New [criterion:2a6bff42]', () => {
 
 	it('reads New less than the setting’s days after it appeared, never with the setting at 0', () => {
 		const kept = { f1: NOW, f2: '2026-10-20T09:00:00.000Z' };
-		expect(newSince(kept, at('2026-10-30T20:00:00.000Z'), 1)).toEqual({ f1: NOW });
-		expect(isNewSince(kept, 'f1', at('2026-10-31T09:00:01.000Z'), 1)).toBe(false);
+		expect(isNewSince(kept, 'f1', at('2026-10-31T08:59:59.999Z'), 1)).toBe(true);
+		expect(isNewSince(kept, 'f1', at('2026-10-31T09:00:00.000Z'), 1)).toBe(false);
 		expect(isNewSince(kept, 'f2', at(NOW), 30)).toBe(true);
-		expect(newSince(kept, at(NOW), 0)).toEqual({});
+		expect(isNewSince(kept, 'f1', at(NOW), 0)).toBe(false);
 	});
 });

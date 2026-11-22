@@ -8,6 +8,7 @@
 		readsCode,
 		readsDocs,
 		retrospecPrompt,
+		scopeOptions,
 		sortLinks,
 		type ComplementaryPrompt,
 		type DocsFrom,
@@ -53,10 +54,8 @@
 	}
 	let { projectId, productName, mode, mcpUrl, canWrite, aiSeenAt, now, onMode, docsAt, onDocs, complementary = null, onScope }: Props = $props();
 	const scope = $derived<RetrospecScope>(complementary?.scope ?? 'delta');
-	const SCOPES: readonly { value: RetrospecScope; title: string; sub: string }[] = [
-		{ value: 'delta', title: 'What changed', sub: 'Only what is new or changed since the last run. Erases nothing.' },
-		{ value: 'whole', title: 'The whole product again', sub: 'Everything, from the specification gathered: confirms, completes, corrects. Erases nothing.' }
-	];
+	// The same options as the head of Mismatch, Resume analysis after a run closed before its final check (criterion 1f1f4ca8).
+	const SCOPES = $derived(scopeOptions(true, !!complementary?.resumable).map((o) => ({ value: o.scope, title: o.title, sub: o.sub })));
 
 	const code = $derived(readsCode(mode));
 	const docs = $derived(readsDocs(mode));
@@ -156,7 +155,7 @@
 			{/if}
 		{/if}
 		{#if complementary}
-			<!-- A later run reads what changed or the whole product again; either way it erases nothing (criterion 98612117). -->
+			<!-- A later run reads what changed, the whole product again or where the last run stopped; it erases nothing (EVO-014). -->
 			<span class="mt-2 text-[0.8125rem] font-bold text-ink">How much should it read?</span>
 			<div role="radiogroup" aria-label="How much should it read?" class="flex flex-col gap-2">
 				{#each SCOPES as option (option.value)}

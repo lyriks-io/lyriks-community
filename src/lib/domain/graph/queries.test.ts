@@ -2,10 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { GraphBuilder } from './graph';
 import type { GraphContext, GraphNode, GraphNodeKind } from './graph';
 import {
-	dependantsOf,
-	dependenciesOf,
-	edgesInto,
-	edgesOutOf,
 	indexOf,
 	reachableIds,
 	walk
@@ -38,45 +34,7 @@ const fixture = () => {
 	return builder.build('p', '2026-09-11T00:00:00.000Z');
 };
 
-const ids = (reached: { node: GraphNode; hops: number }[]) =>
-	reached.map((r) => `${r.node.id}@${r.hops}`);
-
 describe('graph queries', () => {
-	it('lists what points at a node and what it points at', () => {
-		const graph = fixture();
-		expect(edgesInto(graph, 'entity:e').map((e) => e.id)).toEqual(['e3', 'e4', 'e5']);
-		expect(edgesInto(graph, 'entity:e', ['writes']).map((e) => e.id)).toEqual(['e3', 'e4']);
-		expect(edgesOutOf(graph, 'project:p').map((e) => e.id)).toEqual(['e1', 'e2']);
-		expect(edgesOutOf(graph, 'screen:x')).toEqual([]);
-		expect(edgesInto(graph, 'nope')).toEqual([]);
-	});
-
-	it('finds the dependants of a node, nearest first, up to the asked depth', () => {
-		const graph = fixture();
-		expect(ids(dependantsOf(graph, 'entity:e'))).toEqual(['feature:a@1', 'feature:b@1', 'step:s@1']);
-		expect(ids(dependantsOf(graph, 'entity:e', { depth: 2 }))).toEqual([
-			'feature:a@1',
-			'feature:b@1',
-			'step:s@1',
-			'project:p@2'
-		]);
-		expect(ids(dependantsOf(graph, 'entity:e', { depth: 2, edgeKinds: ['writes'] }))).toEqual([
-			'feature:a@1',
-			'feature:b@1'
-		]);
-	});
-
-	it('finds the dependencies of a node the same way, following edges outward', () => {
-		const graph = fixture();
-		expect(ids(dependenciesOf(graph, 'project:p'))).toEqual(['feature:a@1', 'feature:b@1']);
-		expect(ids(dependenciesOf(graph, 'project:p', { depth: 2 }))).toEqual([
-			'feature:a@1',
-			'feature:b@1',
-			'entity:e@2'
-		]);
-		expect(dependenciesOf(graph, 'entity:e')).toEqual([]);
-	});
-
 	it('walks both directions for the undirected neighbourhood, start included', () => {
 		const graph = fixture();
 		expect([...reachableIds(graph, 'feature:a')].sort()).toEqual(['entity:e', 'feature:a', 'project:p']);
@@ -101,7 +59,6 @@ describe('graph queries', () => {
 	it('answers an unknown start with the start alone and a depth of zero with no move', () => {
 		const graph = fixture();
 		expect([...reachableIds(graph, 'ghost:1')]).toEqual(['ghost:1']);
-		expect(dependantsOf(graph, 'ghost:1')).toEqual([]);
 		expect([...reachableIds(graph, 'entity:e', { depth: 0 })]).toEqual(['entity:e']);
 	});
 

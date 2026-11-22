@@ -69,9 +69,9 @@ export interface CodeTrack {
 	readonly boundAt?: string;
 	readonly commits: readonly CodeCommit[];
 	readonly history: BranchHistory | null;
-	/** The commit a person validated with the verification (ac-evo-branch-validate). */
+	/** The commit the last approval awaited fixed, and who gave it (ac-evo-branch-validate, EVO-011). */
 	readonly validated: { readonly commit: string; readonly at: string; readonly by: string } | null;
-	/** A commit of code came after the validation: the merge waits for a new one (ac-evo-branch-moved). */
+	/** A commit of code came after the approval: the merge waits for a new one (ac-evo-branch-moved, EVO-011). */
 	readonly validationSetAside: boolean;
 	/**
 	 * The merge into the deployment branch, once reported with the validated
@@ -211,7 +211,7 @@ export function withCodeReport(code: CodeTrack | undefined, report: CodeReport, 
 
 /** What the log says of a report that moved something; null when nothing moved. */
 export function codeReportSummary(code: CodeTrack, previous: CodeTrack | undefined, deploymentBranch: string, moved: { newCommit: boolean; setAside: boolean }): string | null {
-	if (moved.setAside) return `The branch moved after the validation (now ${shortSha(code.codeHead)}): validate the verification again`;
+	if (moved.setAside) return `The branch moved after the approval (now ${shortSha(code.codeHead)}): the approval is asked again`;
 	if (!previous) return `Branch ${code.branch} bound, from ${deploymentBranch}${code.baseCommit ? `@${shortSha(code.baseCommit)}` : ''}: last commit of code ${shortSha(code.codeHead)}${code.clean ? '' : ', with uncommitted code'}`;
 	if (!moved.newCommit) return null;
 	return code.clean ? `New commit of code on ${code.branch}: ${shortSha(code.codeHead)}` : `Uncommitted code on ${code.branch} (last commit ${shortSha(code.codeHead)})`;
@@ -264,7 +264,15 @@ export function validationRefusal(code: CodeTrack | undefined, deploymentBranch:
 	);
 }
 
-/** The commit the validation fixes: the branch's last commit of code. */
+/**
+ * Closing the verification fixes no commit (EVO-011, rules c8ed0817, 3b2c723b):
+ * one an earlier approval fixed is let go until the last approval awaited fixes one again.
+ */
+export function withoutValidatedCommit(code: CodeTrack): CodeTrack {
+	return code.validated || code.validationSetAside ? { ...code, validated: null, validationSetAside: false } : code;
+}
+
+/** The commit the approval fixes: the branch's last commit of code. */
 export function withValidatedCommit(code: CodeTrack, by: string, at: string): CodeTrack {
 	return { ...code, validated: { commit: code.codeHead, at, by }, validationSetAside: false };
 }
@@ -280,11 +288,11 @@ export function mergeRefusal(request: { readonly stage: string; readonly status:
 		guard(!deploymentBranch, 'The project names no deployment branch.', 'A merge is recorded against the deployment branch the project names.'),
 		guard(request.status !== 'open', 'Only an open request is merged.', 'A closed or cancelled request has nothing left to merge.'),
 		guard(request.stage !== 'delivered', 'The merge comes once the change is approved.', 'The merge closes the path: the change was validated and approved first.'),
-		guard(!code?.validated, 'No commit was validated.', 'What goes live is the commit a person validated with the verification.'),
+		guard(!code?.validated, 'No commit was validated.', 'What goes live is the commit the approval fixed.'),
 		guard(!!merge.branch && !!code && merge.branch !== code.branch, `This request's code is on ${code?.branch}.`, 'The merge brings the request\'s own branch.'),
 		guard(merge.into !== deploymentBranch, `The change is merged into ${deploymentBranch}.`, 'Only the deployment branch makes a change live.'),
 		guard(!merge.mergeCommit, 'A merge names the commit it made.', 'The Lyriks tools read it from git.'),
-		guard(!!code?.validationSetAside, 'The branch moved after the validation: validate the verification again.', 'Code that came after the validation was never verified.'),
+		guard(!!code?.validationSetAside, 'The branch moved after the approval: approve the change again.', 'Code that came after the approval was never approved.'),
 		guard(!merge.containsValidated, `git says the validated commit ${shortSha(code?.validated?.commit)} is not in this merge.`, 'What goes live is what was validated.')
 	);
 }
@@ -332,6 +340,8 @@ export interface CodeReading {
 	readonly commitCount: number;
 	readonly validatedCommit: string | null;
 	readonly validatedAt: string | null;
+	/** Who gave the approval that fixed it (criterion e33a838a). */
+	readonly validatedBy: string | null;
 	readonly validationSetAside: boolean;
 	readonly mergedCommit: string | null;
 	readonly mergedInto: string | null;
@@ -363,6 +373,7 @@ export function codeReadingOf(request: { readonly status: string; readonly title
 		commitCount: code?.history?.count ?? 0,
 		validatedCommit: code?.validated?.commit ?? null,
 		validatedAt: code?.validated?.at ?? null,
+		validatedBy: code?.validated?.by ?? null,
 		validationSetAside: code?.validationSetAside ?? false,
 		mergedCommit: code?.merged?.commit ?? null,
 		mergedInto: code?.merged?.into ?? null,

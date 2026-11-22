@@ -4,22 +4,33 @@ import { requireEvolutionAccess, requireEvolutionBatchAccess } from './community
 
 const on = (edition: string | undefined) => ({ installEdition: () => edition });
 
-function refusal(run: () => void): { status: number; message: string } | null {
+function refusal(run: () => void): { status: number; message: string; body: App.Error } | null {
 	try {
 		run();
 		return null;
 	} catch (e) {
-		if (isHttpError(e)) return { status: e.status, message: e.body.message };
+		if (isHttpError(e)) return { status: e.status, message: e.body.message, body: e.body };
 		throw e;
 	}
 }
 
 describe('requireEvolutionAccess', () => {
-	it('refuses every Evolution operation on Community, naming Solo Builder and the plans', () => {
+	it('refuses every Evolution operation on Community with the offer of Solo Builder, the plans and the plan [criterion:ac-leaf-14ef9bc4-cba7-4e8a-97eb-4138ee43b8bd]', () => {
 		const refused = refusal(() => requireEvolutionAccess(on('community')));
 		expect(refused?.status).toBe(403);
-		expect(refused?.message).toContain('Solo Builder');
-		expect(refused?.message).toContain('https://lyriks.io/pricing');
+		expect(refused?.body).toEqual({
+			message: 'Evolutions are available from the Solo Builder plan. Upgrade to keep building.',
+			detail: 'See https://lyriks.io/pricing.',
+			plan: 'solo_builder'
+		});
+	});
+
+	it('words every refused request batch the same way, whatever it reads or drives [criterion:ac-leaf-14ef9bc4-cba7-4e8a-97eb-4138ee43b8bd]', () => {
+		for (const op of ['open_request', 'post_on_field', 'decide_line', 'cross_stage', 'build_implementation_report'])
+			expect(refusal(() => requireEvolutionBatchAccess(on('community'), [{ op, requestId: 'r1' }]))?.body).toMatchObject({
+				message: 'Evolutions are available from the Solo Builder plan. Upgrade to keep building.',
+				plan: 'solo_builder'
+			});
 	});
 
 	it('lets every other edition through, and an install that declares none', () => {

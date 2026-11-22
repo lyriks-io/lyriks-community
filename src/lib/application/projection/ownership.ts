@@ -52,16 +52,9 @@ export const LYRIKS_OWNED_PREFIXES = [
 export const ACCEPTANCE_EDGE_PREFIX = 'ac-edge-';
 export const ACCEPTANCE_LEAF_PREFIX = 'ac-leaf-';
 
-export type NodeOrigin = 'lyriks' | 'engine';
-
 /** True iff `id` follows a Lyriks minting convention (i.e. Lyriks owns the node). */
 export function isLyriksOwned(id: string | undefined): boolean {
 	return typeof id === 'string' && LYRIKS_OWNED_PREFIXES.some((p) => id.startsWith(p));
-}
-
-/** The origin of a node by its id: `lyriks` for a minted-convention id, else `engine`. */
-export function nodeOrigin(id: string | undefined): NodeOrigin {
-	return isLyriksOwned(id) ? 'lyriks' : 'engine';
 }
 
 /**

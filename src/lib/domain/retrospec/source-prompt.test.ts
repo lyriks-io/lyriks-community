@@ -123,3 +123,23 @@ describe('a run that holds its changes reports them instead of writing them [cri
 		expect(resumed).not.toContain('finish_project');
 	});
 });
+
+describe('a run that holds its changes says where its reading is (EVO-014) [criterion:bfb521ca]', () => {
+	it('asks its AI to say each phase it starts and each feature it finished re-reading', () => {
+		const prompt = retrospecPrompt('repo', 'Shop', 'shop', { fromCommit: '7c0d4b1', handEdits: 0, held: true });
+		expect(prompt).toContain('report_retrospec_reading, phase: sources | product | features | data | experience | rules | tech | check');
+		expect(prompt).toContain('report it with report_retrospec_reading, read: [its featureId]');
+		// A run that writes as it reads is followed from the sections it writes.
+		expect(retrospecPrompt('repo', 'Shop', 'shop', { fromCommit: '7c0d4b1', handEdits: 0 })).not.toContain('phase: sources');
+	});
+
+	it('resumes at the phase, from the commit the closed run read [criterion:0fb33bf2]', () => {
+		const resumable = { fromRunId: 'run-1', read: ['sources', 'product'], interrupted: ['features'], left: ['data', 'check'], fromCommit: 'abc1234' };
+		const prompt = retrospecPrompt('repo', 'Shop', 'shop', { fromCommit: null, handEdits: 0, held: true, scope: 'resume', resumable });
+		expect(prompt).toContain('That run read Reading the code, Product and users whole: do not read them again.');
+		expect(prompt).toContain('It stopped in Features, actions and rules: read what is already written there and continue from it without rewriting it.');
+		expect(prompt).toContain('Then read Data model.');
+		expect(prompt).toContain('the files `git diff --name-only abc1234..HEAD` lists.');
+		expect(prompt).toContain('If abc1234 is unknown in this checkout, say so and stop');
+	});
+});

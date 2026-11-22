@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
 import ValidateAllButton from './ValidateAllButton.svelte';
+import type { SectionElements } from './section-elements';
 
-const html = (count: number, what = 'features') => render(ValidateAllButton, { props: { count, what, onclick: () => {} } }).body;
+const html = (count: number, what: SectionElements = 'features') => render(ValidateAllButton, { props: { count, what, onclick: () => {} } }).body;
 
-describe('Validate all of a section', () => {
+describe('Validate the whole section of a section', () => {
 	it('shows only while something in the section waits on the reader', () => {
-		expect(html(0)).not.toContain('Validate all');
-		expect(html(3)).toContain('Validate all');
+		expect(html(0)).not.toContain('Validate the whole section');
+		expect(html(3)).toContain('Validate the whole section (3)');
 	});
 
 	it('keeps its height in a section header, but leaves no hole in a menu once everything is validated', () => {

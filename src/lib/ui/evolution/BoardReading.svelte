@@ -17,8 +17,6 @@
 	 * whose specification holds no feature offers no New evolution and says where
 	 * the product is described first (criterion 40bef6da). Rows in progress are
 	 * ticked, without opening them, to read their concurrent impact (criterion b282eb26).
-	 * The roadmap, the page's other view, is a link beside New change for every
-	 * reader (criterion ff115da8).
 	 */
 	interface Props {
 		cards: readonly BoardCardView[];
@@ -42,10 +40,8 @@
 		onOpenLine?: (href: string) => void;
 		/** Turns a suggestion into an evolution (criterion 03b7eacf). */
 		onStart?: (lineId: string) => void;
-		/** Where the roadmap opens; without one, no link to it shows. */
-		roadmapHref?: string;
 	}
-	let { cards, suggestions = [], canEdit, productName, actorId, members, hasProduct, specHref, retroHref, onOpen, onConcurrent, onNew, onOpenLine = () => {}, onStart = () => {}, roadmapHref }: Props = $props();
+	let { cards, suggestions = [], canEdit, productName, actorId, members, hasProduct, specHref, retroHref, onOpen, onConcurrent, onNew, onOpenLine = () => {}, onStart = () => {} }: Props = $props();
 
 	/** "Your AI is in session on it", or whose: the AIs at work on a request right now. */
 	function sessionWords(card: BoardCardView): string | null {
@@ -106,10 +102,6 @@
 	<div class="flex flex-wrap items-end justify-between gap-4">
 		<h1 class="m-0 text-[1.75rem] font-bold leading-[1.15] tracking-[-0.03em]">Changes</h1>
 		<div class="flex flex-wrap items-center gap-2.5">
-			{#if roadmapHref}
-				<!-- The page's other view, whatever the reader's role; its tabs lead back here (criterion ff115da8). -->
-				<a href={roadmapHref} class="{SECONDARY_44} no-underline" data-sveltekit-noscroll>Roadmap</a>
-			{/if}
 			{#if canEdit && hasProduct}
 				<button type="button" class={PRIMARY_44} onclick={onNew}>New change</button>
 			{/if}
@@ -165,6 +157,15 @@
 					<span class="relative flex size-2.5 flex-none" title={sessionWords(card)} role="img" aria-label={sessionWords(card)}>
 						<span class="absolute inset-0 animate-lk-pulse bg-green"></span>
 					</span>
+				{/if}
+				{#if standingOf(card) === 'open'}
+					<!-- What it waits on, read at a glance (EVO-005, criteria f2108b7e and 44f6ec8a). -->
+					{#each card.order?.conflicts ?? [] as other (other)}
+						<span class="px-2.5 py-1 text-xs {TAG} border-red-ink text-red-ink" data-conflict={other}>Conflict · {other}</span>
+					{/each}
+					{#each card.order?.after ?? [] as other (other)}
+						<span class="px-2.5 py-1 text-xs {TAG} border-ink-3 text-ink-2" data-after={other}>After {other}</span>
+					{/each}
 				{/if}
 				<span class="px-2.5 py-1 text-xs {look.look}">{look.label}</span>
 			</button>

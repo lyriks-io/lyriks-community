@@ -14,7 +14,7 @@ export interface ValidationView {
 	readonly label: string;
 	/** What the state means, said in words on hover. */
 	readonly title: string;
-	/** The people drawn as initials, at most STAMPS_SHOWN, those still awaited first. */
+	/** The people drawn as initials (shownCount of them): the reader first, then those still awaited. */
 	readonly shown: readonly Stamp[];
 	/** How many more people the +N chip stands for. */
 	readonly more: number;
@@ -24,6 +24,15 @@ export interface ValidationView {
 
 /** How many people read as initials before the rest folds into +N: eight never overflow a card. */
 export const STAMPS_SHOWN = 3;
+
+/**
+ * How many people of `total` read as initials: STAMPS_SHOWN, or one more when
+ * that one alone would be left, since a +1 chip takes the same room as their
+ * initials (criterion 8d6c8ec0): +N always stands for two people or more.
+ */
+export function shownCount(total: number): number {
+	return total === STAMPS_SHOWN + 1 ? total : Math.min(total, STAMPS_SHOWN);
+}
 
 /** A stamp's person: its own name when it carries one, else the head of its title ("Ana · validated"). */
 export function stampName(stamp: Stamp): string {
@@ -52,7 +61,8 @@ export function validationView(control: ValidateControl): ValidationView {
 	const awaited = control.stamps.filter((s) => !s.ok);
 	const awaitedNames = awaited.map(stampName);
 	const state = stateOf(control, awaitedNames.length);
-	const withdraw = control.withdraws && control.run ? '. Point a moment to withdraw yours' : '';
+	// A check that asks first is taken back on a click (EVO-007); a pill arms once pointed at a moment (withdraw-arm).
+	const withdraw = control.withdraws && control.run ? (control.withdrawConfirm ? '. Click to withdraw yours' : '. Point a moment to withdraw yours') : '';
 	// Validate already says the reader's own validation is awaited: the tooltip then names the others only.
 	const others = awaited.filter((s) => !s.me).map(stampName);
 	const label = state === 'saving' ? 'Saving…' : state === 'validate' ? 'Validate' : state === 'waiting' ? (awaitedNames.length > 0 ? `Waiting for ${awaitedNames.length}` : 'Waiting') : 'Validated';
@@ -67,9 +77,10 @@ export function validationView(control: ValidateControl): ValidationView {
 		label,
 		// Held, the reader needs why: the button will not do anything until that is settled.
 		title: control.held ?? title,
-		// Who is still awaited comes first: it is what the reader needs to see before +N folds the rest.
-		shown: [...awaited, ...control.stamps.filter((s) => s.ok)].slice(0, STAMPS_SHOWN),
-		more: Math.max(0, control.stamps.length - STAMPS_SHOWN),
+		// The reader first, never folded into +N (criterion 8d6c8ec0); then who is still awaited, what the
+		// reader needs to see before +N folds the rest; then who validated.
+		shown: [...control.stamps.filter((s) => s.me), ...awaited.filter((s) => !s.me), ...control.stamps.filter((s) => s.ok && !s.me)].slice(0, shownCount(control.stamps.length)),
+		more: control.stamps.length - shownCount(control.stamps.length),
 		people: control.stamps.map((s) => s.title).join('\n')
 	};
 }

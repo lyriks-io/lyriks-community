@@ -106,4 +106,15 @@ describe('authenticate middleware in optional development mode', () => {
     expect(status).toBe(200)
     expect(json.user_id).toBe('dev')
   })
+
+  it('AU09 accepts a valid token in development mode and acts as its subject, forwarding it', async () => {
+    const { status, json } = await req(await makeToken(USER_ID))
+    expect(status).toBe(200)
+    expect(json).toEqual({ user_id: USER_ID, has_token: true })
+  })
+
+  it('AU10 refuses a well-signed token that names no subject', async () => {
+    const anonymous = await new SignJWT({ role: 'designer' }).setProtectedHeader({ alg: 'HS256' }).setExpirationTime('1h').sign(SECRET)
+    expect((await req(anonymous)).status).toBe(401)
+  })
 })

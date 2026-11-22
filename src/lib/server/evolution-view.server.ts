@@ -1,8 +1,9 @@
 import { proofImpactHeadline } from '$lib/domain/evolution/proof-impact';
-import { crossEvolutionsOf } from './evolution-cross.server';
+import { boardOrderOf, crossEvolutionsOf, landingOrderReading } from './evolution-cross.server';
 import type { SpecLanguage } from '$domain/language';
 import type { AppServices } from '$composition/container.server';
-import { codeReadingOf, deferredCarriers, deferredSuggestions } from '$domain/evolution';
+import { codeReadingOf, deferredCarriers, deferredSuggestions, freezeHeldOf, withBuildCodeGate } from '$domain/evolution';
+import { correctionReading } from '$domain/evolution';
 import { assistantAvailable } from '$domain/settings';
 import {
 	ALL_BLOCK_FIELDS,
@@ -34,7 +35,6 @@ import {
 	functionalDiagramWords,
 	technicalDiagramWords,
 	diagramBehindTexts,
-	solutionDiagramOwed,
 	behindSince,
 	textsBehindDiagram,
 	STEP_QUESTIONS,
@@ -57,13 +57,23 @@ import {
 	fieldKey,
 	lastSessionOf,
 	openProjectSessionOf,
+	subjectHolder,
 	type LiveSession,
 	stepPrefillOf,
 	filledKeysOfReadings,
 	gateReading,
+	concurrentHoldOf,
 	specificationHold,
+	specificationLeft,
+	describingDraft,
+	DESCRIPTION_PATH,
+	isDescriptionPath,
+	landedDescription,
+	specificationStanding,
 	type SpecificationHold,
-	type SpecificationItem,
+	type SpecificationItemKind,
+	type SpecificationActions,
+	NO_ACTIONS_COUNTED,
 	holdsValue,
 	latestThread,
 	leafOf,
@@ -76,6 +86,8 @@ import {
 	supportedStage,
 	undecidedCount,
 	toBuildCount,
+	awaitingCodeCount,
+	awaitingPersonCount,
 	fieldOrigin,
 	dataChangeView,
 	readVersions,
@@ -129,7 +141,7 @@ import {
 	withoutGoneValidators
 } from '$domain/evolution';
 import type { PersonJobs } from '$application/ports';
-import { draftCarriedValue, readDossierField, readTouchedField } from '$application/evolution/save-dossier-field';
+import { draftCarriedValue, readDossierField, readHeldField, readTouchedField } from '$application/evolution/save-dossier-field';
 import { resolveWalkTarget } from '$application/analysis/simulate-behavior';
 import { leafFeatures, type ProjectFeaturesDraft } from '$domain/features';
 import type { ProjectDataDraft } from '$domain/data';
@@ -733,6 +745,8 @@ export const DOSSIER_PARTS = [
 	'texts',
 	'coherence',
 	'points',
+	// Every item the Specification gate counts, each with the key validate_field takes (criterion 2df61e72).
+	'specification',
 	// Without a request: the board's own lists.
 	'leaves',
 	'sources'
@@ -763,10 +777,11 @@ export interface DossierOptions {
 	readonly scope?: FindingScope;
 	/**
 	 * summary: the trails of the actions the Specification offers to validate,
-	 * read with the engine's graph by an async caller (specificationActionTrails).
-	 * Without them the Specification's hold counts its answers and its journey.
+	 * read with the engine's graph by an async caller (specificationActionTrails),
+	 * or why they could not be read. Without them the Specification's hold counts
+	 * its answers and its journey.
 	 */
-	readonly specificationActions?: readonly SpecificationItem[];
+	readonly specificationActions?: SpecificationActions;
 }
 
 /** One page of a long list, with what a reader needs to ask for the next one. */
@@ -936,19 +951,101 @@ function aiDelegationOf(view: EvolutionView, request: EvolutionRequest, actor: A
 export function specificationHoldOf(
 	view: EvolutionView,
 	request: EvolutionRequest,
-	actions: readonly SpecificationItem[] = [],
+	actions: SpecificationActions = NO_ACTIONS_COUNTED,
 	rows = dossierFieldRows(view, request)
 ): SpecificationHold {
-	const answers = rows.filter((f) => f.leafId !== null && f.filled).map((f) => f.trail ?? {});
-	return specificationHold([
-		...answers,
-		...Object.values(journeyPathTrails(view, request)),
-		...Object.values(sectionChangeTrails(view, request)),
-		...Object.values(ruleChangeTrails(view, request)),
-		...Object.values(findingChangeTrails(view, request)),
-		...Object.values(dataChangeTrails(view, request)),
-		...actions
-	]);
+	// Actions the engine could not read are not counted as none: the hold says why it cannot count them (criterion c623df9c).
+	const items = actions.status === 'read' ? actions.items : [];
+	return specificationHold([...specificationEntriesOf(view, request, rows).map((e) => e.trail), ...items], actions.status === 'unread' ? actions.reason : undefined);
+}
+
+/**
+ * One item the Specification asks to be validated, with the key validate_field
+ * takes for it (`fieldPath`, and `leafId` when it has one): what the gate counts,
+ * listed so a client never builds a key from a diagram or the code (criterion 2df61e72).
+ */
+export interface SpecificationEntry {
+	readonly fieldPath: string;
+	readonly leafId: string | null;
+	readonly kind: SpecificationItemKind;
+	readonly label: string;
+	readonly trail: ReturnType<typeof fieldTrail>;
+	readonly href: string;
+}
+
+/**
+ * Every item of the Specification but the actions, which only the engine's graph
+ * names (specificationActionEntries), in the order the gate counts them: the
+ * answers of the touched features, the paths of the journey, then the changes to
+ * the other pages, to the rules, the findings settled and the data changes.
+ */
+export function specificationEntriesOf(view: EvolutionView, request: EvolutionRequest, rows = dossierFieldRows(view, request)): SpecificationEntry[] {
+	const page = requestPagePath(view.projectId, request.id);
+	const leafName = (id: string) => view.leaves.find((l) => l.id === id)?.name || request.drafts.find((d) => d.id === id)?.name || id;
+	const tableName = (id: string | null) => (id ? (view.data.entities.find((e) => e.id === id)?.name ?? id) : '');
+	const entry = (key: string, kind: SpecificationItemKind, label: string, trail: ReturnType<typeof fieldTrail>): SpecificationEntry => ({ fieldPath: key, leafId: null, kind, label, trail, href: page });
+	const drawing = request.stepAnswers.functional_spec?.[FUNCTIONAL_DIAGRAM_KEY] ?? '';
+	const paths = journeyPathTrails(view, request);
+	const sections = sectionChangeTrails(view, request);
+	const rules = ruleChangeTrails(view, request);
+	const findings = findingChangeTrails(view, request);
+	const data = dataChangeTrails(view, request);
+	return [
+		...rows
+			.filter((f) => f.leafId !== null && f.filled)
+			.map((f): SpecificationEntry => ({ fieldPath: f.path, leafId: f.leafId, kind: isDescriptionPath(f.path) ? 'description' : 'answer', label: `${leafName(f.leafId!)} › ${f.label}`, trail: f.trail, href: f.href })),
+		...journeyPaths(readFunctionalDiagram(drawing).diagram).map((p) => entry(p.key, 'path', `Path of the journey › ${p.useCase}`, paths[p.key])),
+		...liveSectionDrafts(request.sectionDrafts).map((d) => entry(sectionChangeKey(d), 'section_change', `${SPEC_PAGES[d.page].name} › ${d.summary}`, sections[sectionChangeKey(d)])),
+		...liveRuleDrafts(request.ruleDrafts).map((d) => entry(ruleChangeKey(d), 'rule_change', `Rules › ${d.summary}`, rules[ruleChangeKey(d)])),
+		...liveFindingDrafts(request.findingDrafts).map((d) => entry(findingChangeKey(d), 'finding', `Finding › ${d.title || d.findingId}`, findings[findingChangeKey(d)])),
+		...liveDataDrafts(request.dataDrafts).map((d) =>
+			entry(dataChangeKey(d), 'data_change', `Data › ${d.kind} table "${d.name || tableName(d.entityId)}"`, data[dataChangeKey(d)])
+		)
+	];
+}
+
+/**
+ * The items the Specification gate counts, one page of them, each with its key
+ * as validate_field takes it, its kind, where it stands and who validated it
+ * (criterion 2df61e72). `total`, `validated` and `left` are the gate's own counts.
+ */
+export function specificationPart(
+	view: EvolutionView,
+	request: EvolutionRequest,
+	actions: { readonly status: 'read'; readonly entries: readonly SpecificationEntry[] } | { readonly status: 'unread'; readonly reason: string },
+	opts: DossierOptions = {}
+) {
+	// Actions the engine could not read are not listed as none: the part says why (criterion c623df9c).
+	const all = [...specificationEntriesOf(view, request), ...(actions.status === 'read' ? actions.entries : [])];
+	const hold = specificationHold(all.map((e) => e.trail), actions.status === 'unread' ? actions.reason : undefined);
+	// An action is keyed on its feature node of the graph (feature:<leaf id>).
+	const kept = opts.leaf ? all.filter((e) => e.leafId === opts.leaf || e.leafId === `feature:${opts.leaf}`) : all;
+	const paged = page(kept, opts);
+	return {
+		...headOf(request),
+		specification: {
+			total: hold.total,
+			validated: hold.validated,
+			left: specificationLeft(hold),
+			...(hold.unread ? { unread: hold.unread } : {}),
+			leaf: opts.leaf ?? null,
+			matched: kept.length,
+			offset: paged.offset,
+			limit: paged.limit,
+			items: paged.returned.map((e) => ({
+				key: fieldKey(e.fieldPath, e.leafId),
+				fieldPath: e.fieldPath,
+				leafId: e.leafId,
+				kind: e.kind,
+				label: e.label,
+				standing: specificationStanding(e.trail),
+				validatedBy: e.trail.validatedBy ?? [],
+				...(e.trail.refusedBy ? { refusedBy: e.trail.refusedBy, refusalReason: e.trail.refusalReason } : {}),
+				...(e.trail.outdatedBy ? { outdatedBy: e.trail.outdatedBy } : {}),
+				href: e.href
+			}))
+		}
+	};
 }
 
 /** What 3.4 Datamap validates and discusses, each only when the request holds it (criterion 3d4f23dd). */
@@ -1082,7 +1179,7 @@ export function dossierFieldRows(
 ) {
 	const features = view.features;
 	const pending = pendingProposals(request);
-	return blocksFor(request).flatMap((block) =>
+	const rows = blocksFor(request).flatMap((block) =>
 		block.fields.flatMap((field) => {
 			if (field.editor !== 'inline') return [];
 			// One home per touched FEATURE: an amendment and the leaf it stands for
@@ -1099,12 +1196,9 @@ export function dossierFieldRows(
 			);
 			return homes.map((leafId) => {
 				const key = fieldKey(field.path, leafId);
-				const written = leafId ? readTouchedField(features, request, field.path, leafId) : { value: '', sourceIds: [] };
-				// What the amendment carries counts too: the freeze writes it on this leaf.
-				const read =
-					leafId && !holdsValue(field, written.value) && holdsValue(field, draftCarriedValue(request, leafId, field.path))
-						? { ...written, value: draftCarriedValue(request, leafId, field.path) }
-						: written;
+				// What the amendment carries counts too: the freeze writes it on this leaf. The value
+				// is the one a validation stands behind, the behaviour criteria it changes included (criterion 52c53f0c).
+				const read = leafId ? readHeldField(features, request, field.path, leafId) : { value: '', sourceIds: [] };
 				const proposal = pending.find((p) => p.targetField === field.path && leafOf(p) === leafId) ?? null;
 				const thread = latestThread(request, key) ?? null;
 				const excerpted = excerpt && read.value.length > FIELD_EXCERPT;
@@ -1150,6 +1244,34 @@ export function dossierFieldRows(
 			});
 		})
 	);
+	// The description a draft writes is read and validated with the feature, after its answers, which carry
+	// the feature's conversation (criterion e384d594).
+	const described: (typeof rows)[number][] = touchedLeafIds(request).flatMap((leafId) => {
+		const draft = describingDraft(request.drafts, leafId);
+		if (!draft) return [];
+		const value = landedDescription(draft, features.features.find((f) => f.id === draft.baseLeafId)?.description ?? '');
+		const key = fieldKey(DESCRIPTION_PATH, leafId);
+		const thread = latestThread(request, key) ?? null;
+		const excerpted = excerpt && value.length > FIELD_EXCERPT;
+		return [
+			{
+				path: DESCRIPTION_PATH,
+				block: 'description',
+				label: 'Description',
+				critical: false,
+				leafId,
+				value: excerpted ? `${value.slice(0, FIELD_EXCERPT - 3)}...` : value,
+				...(excerpted ? { valueLength: value.length } : {}),
+				filled: value.trim() !== '',
+				openQuestion: false,
+				trail: fieldTrail(view, request, key, value),
+				pendingProposalId: null,
+				thread: thread ? { id: thread.id, state: thread.state, messages: thread.messages } : null,
+				href: requestPagePath(view.projectId, request.id)
+			}
+		];
+	});
+	return [...rows, ...described];
 }
 
 /**
@@ -1522,7 +1644,7 @@ function reportCounts(request: EvolutionRequest, lines: readonly EvolutionReques
 			gates: false
 		},
 		baseline: request.baselineKeys
-			? 'Lines about what the touched features already held at the first freeze are older points: listed for information, they never block the request.'
+			? "Lines about what the touched features hold that this request's drafts neither bring nor change (what they held at the first freeze, or what a direct change added since) are the features' backlog: listed for information, they never block the request."
 			: request.specVersion === 0
 				? 'The baseline is taken at the first freeze: until then there is no report.'
 				: 'This request was frozen before the baseline existed, so every line is counted as its own.'
@@ -1638,7 +1760,7 @@ export function requestPart(
 	view: EvolutionView,
 	request: EvolutionRequest,
 	actor: Actor,
-	opts: DossierOptions & { part: Exclude<DossierPart, 'summary' | 'leaves' | 'sources' | 'graph' | 'docking' | 'sections'> }
+	opts: DossierOptions & { part: Exclude<DossierPart, 'summary' | 'leaves' | 'sources' | 'graph' | 'docking' | 'sections' | 'specification'> }
 ) {
 	switch (opts.part) {
 		case 'drafts':
@@ -1679,12 +1801,17 @@ function carriersOf(view: EvolutionView, request: EvolutionRequest): { deferredC
 	return Object.keys(carriers).length > 0 ? { deferredCarriers: carriers } : {};
 }
 
-export function requestSummary(view: EvolutionView, request: EvolutionRequest, actor: Actor, specificationActions: readonly SpecificationItem[] = []) {
+export function requestSummary(view: EvolutionView, request: EvolutionRequest, actor: Actor, specificationActions: SpecificationActions = NO_ACTIONS_COUNTED) {
 	const head = headOf(request);
 	const features = view.features;
 	const maturity = maturityOf(view, features, request);
 	const coherence = readCoherence(request);
-	const gate = gateReading(request, maturity.criticalEmptyCount, specificationHoldOf(view, request, specificationActions));
+	// The Build's gate reads its branch too: Start acceptance testing says what holds it (EVO-011, criterion 3cf58130).
+	const gate = withBuildCodeGate(
+		gateReading(request, maturity.criticalEmptyCount, specificationHoldOf(view, request, specificationActions), concurrentHoldOf(request, view.draft.requests)),
+		request,
+		view.draft.deploymentBranch ?? ''
+	);
 	const pending = pendingProposals(request);
 	const readings = view.readings[request.id] ?? [];
 	const fields = dossierFieldRows(view, request);
@@ -1727,7 +1854,7 @@ export function requestSummary(view: EvolutionView, request: EvolutionRequest, a
 			return value !== '' || trail.versionCount > 0 || Object.keys(talk).length > 0 ? [{ step: q.step, key: q.key, value, trail, ...talk }] : [];
 		}),
 		// Whether the diagram follows the texts of its step, since when it does not, and the texts it moved past (ac-evo-func-uml-sync).
-		functionalDiagram: { behind: diagramBehindTexts(request), since: behindSince(request), textsBehind: textsBehindDiagram(request), owed: solutionDiagramOwed(request) },
+		functionalDiagram: { behind: diagramBehindTexts(request), since: behindSince(request), textsBehind: textsBehindDiagram(request) },
 		technicalDiagram: {
 			behind: diagramBehindTexts(request, 'technical_spec'),
 			since: behindSince(request, 'technical_spec'),
@@ -1736,7 +1863,7 @@ export function requestSummary(view: EvolutionView, request: EvolutionRequest, a
 		// Whether the page may have the built-in assistant draw a diagram behind its texts (ac-evo-diagram-assistant).
 		assistant: { available: view.assistantAvailable },
 		// The reader's live session with their AI and the clicks it still owes them (ac-evo-live-start, -click-state).
-		live: liveOf(request, actor.id, openProjectSessionOf(view.draft, actor.id)),
+		live: liveOf(request, actor.id, openProjectSessionOf(view.draft, actor.id, subjectHolder(view.draft, actor.id, { kind: 'request', requestId: request.id }) ?? undefined)),
 		// What was asked of this request in particular, open ones first (ac-evo-coach-custom-1).
 		customQuestions: {
 			max: MAX_OPEN_CUSTOM_QUESTIONS,
@@ -1757,6 +1884,8 @@ export function requestSummary(view: EvolutionView, request: EvolutionRequest, a
 		docking: { counts: dockingCounts(docking), points: docking.slice(0, DOCKING_SHOWN), total: docking.length },
 		// The other evolutions in progress, read against this one: what both touch, and whether it conflicts.
 		crossEvolutions: crossEvolutionsOf(view, request),
+		// Which requests it lands after, the conflicts still undecided, and the landings it was read again after (EVO-005).
+		landingOrder: landingOrderReading(view, request),
 		deployment: request.deployment,
 		// Where its code stands in git, from its branch to its merge; null where the project names no deployment branch (feat-evo-code-branch).
 		code: codeReadingOf(request, requestKeyOf(view.draft.requests, request.id) ?? 'EVO', view.draft.deploymentBranch ?? ''),
@@ -1837,6 +1966,8 @@ export function requestSummary(view: EvolutionView, request: EvolutionRequest, a
 		iteration: request.iteration,
 		specVersion: request.specVersion,
 		frozen: request.frozen,
+		// Version N+1 in correction in the Build, the code still built against N (EVO-012).
+		correction: correctionReading(request),
 		frozenVersions: request.frozenVersions,
 		maturity: {
 			score: maturity.score,
@@ -1941,6 +2072,8 @@ export function requestSummary(view: EvolutionView, request: EvolutionRequest, a
 			// Where a person crosses it, or waives it with a reason.
 			href: requestPagePath(view.projectId, request.id, { kind: 'next-step' })
 		},
+		// What held the freeze after the last validation of the Specification, said by the foot (EVO-011, criterion c39cfe76).
+		freezeHeld: freezeHeldOf(request),
 		waiver: openWaiver(request),
 		// The report in short; the lines are one part away (part=report, optionally per verdict).
 		report: {
@@ -1985,7 +2118,8 @@ export function requestDossier(
 ) {
 	const part = opts.part ?? 'summary';
 	// The board's lists have no meaning on one request: its summary names its own.
-	return part === 'summary' || part === 'leaves' || part === 'sources' || part === 'graph' || part === 'docking' || part === 'sections'
+	// The parts read with the engine (graph, docking, sections, specification) are served by the route.
+	return part === 'summary' || part === 'leaves' || part === 'sources' || part === 'graph' || part === 'docking' || part === 'sections' || part === 'specification'
 		? requestSummary(view, request, actor, opts.specificationActions)
 		: requestPart(view, request, actor, { ...opts, part });
 }
@@ -2022,12 +2156,12 @@ export type BoardCardView = ReturnType<typeof boardCard>;
 export type SuggestionCardView = ReturnType<typeof suggestionCards>[number];
 
 /** What to do next on a request, from the readings its dossier holds (see coachOf). */
-export function coachFor(view: EvolutionView, request: EvolutionRequest, specificationActions: readonly SpecificationItem[] = []) {
+export function coachFor(view: EvolutionView, request: EvolutionRequest, specificationActions: SpecificationActions = NO_ACTIONS_COUNTED) {
 	const maturity = maturityOf(view, view.features, request);
 	const rows = dossierFieldRows(view, request);
 	// The Specification as the step lock reads it: its answers, its journey and the actions read with the graph (ac-evo-form-step-lock).
 	const specification = specificationHoldOf(view, request, specificationActions, rows);
-	const gate = gateReading(request, maturity.criticalEmptyCount, specification);
+	const gate = withBuildCodeGate(gateReading(request, maturity.criticalEmptyCount, specification, concurrentHoldOf(request, view.draft.requests)), request, view.draft.deploymentBranch ?? '');
 	const pending = pendingProposals(request).length;
 	const owed = rows.filter((f) => (!f.filled || f.openQuestion) && f.pendingProposalId === null).length;
 	const counts = dockingCounts(dockingOf(view, request));
@@ -2038,7 +2172,9 @@ export function coachFor(view: EvolutionView, request: EvolutionRequest, specifi
 		gate: { ok: gate.verdict.ok, reason: gate.verdict.ok ? null : gate.verdict.reason },
 		collisions: counts.collision,
 		frictions: counts.friction,
-		undecidedLines: undecidedCount(request),
+		// The lines a person decides, apart from those a test closes (criterion 4913a449).
+		undecidedLines: awaitingPersonCount(request),
+		linesAwaitingCode: awaitingCodeCount(request),
 		solo: view.members.length <= 1,
 		inputs: { need: inputValidation(view, request, 'need'), solution: inputValidation(view, request, 'solution') },
 		specification
@@ -2101,7 +2237,9 @@ export function boardCard(view: Pick<EvolutionView, 'draft'>, request: Evolution
 		title: request.title,
 		status: request.status,
 		stage: request.stage,
-		inSession: sessionsInProgress(request, now).map((s) => s.personId)
+		inSession: sessionsInProgress(request, now).map((s) => s.personId),
+		// After which requests not landed it lands, and which it conflicts with (EVO-005).
+		order: boardOrderOf(view, request)
 	};
 }
 
@@ -2131,6 +2269,8 @@ export function requestCard(view: EvolutionView, request: EvolutionRequest, opts
 		linesToBuild: toBuildCount(request),
 		acceptanceDebt: acceptanceDebt(request),
 		waived: openWaiver(request) !== null,
+		// After which requests not landed it lands, and which it conflicts with (EVO-005).
+		order: boardOrderOf(view, request),
 		// When the request last moved a step: the board reads how long it has stood there.
 		stepSince: stepSinceOf(request),
 		// The step the card reads at, and the steps marked not applicable with their reasons (ac-evo-req-16).

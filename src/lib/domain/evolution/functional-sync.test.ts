@@ -129,6 +129,16 @@ describe('the diagram leaves behind the texts it changes [criterion:ac-leaf-ac-e
 		);
 	});
 
+	it('names who takes part in a use case only when someone does, and walks a flow drawn for a use case never declared', () => {
+		const texts = describeFunctionalDiagram(
+			readFunctionalDiagram(`use case Close the day
+
+flow Count the till
+  Baker: counts the till`).diagram
+		);
+		expect(texts.description.split('\n\n')).toEqual(['Close the day: no flow drawn yet.', 'Count the till: Baker counts the till.']);
+	});
+
 	it('leaves the texts as they are when the diagram drawn is empty', () => {
 		const described = ok(updateStepDescriptionAct(ctxFor(ana), open(), { step: 'functional_spec', description: 'The baker marks the bag ready.' }));
 		const cleared = ok(answerStepAct(ctxFor(ana), described, { step: 'functional_spec', question: 'diagram', answer: 'nothing readable here' }));
@@ -238,7 +248,7 @@ describe('a person catches either side up by hand, with no AI [criterion:ac-leaf
 	});
 });
 
-describe('in a session, the texts and the diagram follow each other [criterion:ac-leaf-ac-evo-live-follow]', () => {
+describe('in a session, the texts and the diagram follow each other [criterion:ac-leaf-ac-evo-live-follow] [criterion:99cfd796]', () => {
 	const withSession = (): EvolutionRequest => {
 		const outcome = startSession(open(), ana.id, 's1', '2026-10-20T09:00:00.000Z');
 		if (!outcome.ok) throw new Error(outcome.reason);
@@ -246,14 +256,24 @@ describe('in a session, the texts and the diagram follow each other [criterion:a
 	};
 	const drawClicks = (request: EvolutionRequest) => (request.aiClicks ?? []).filter((c) => c.kind === 'draw');
 
-	it('a text written leaves the diagram behind: one Draw click goes to the AI, sent by the page', () => {
-		const before = withSession();
+	/** A drawn diagram, in step with the description it was drawn from. */
+	const drawnInSession = (): EvolutionRequest =>
+		ok(redrawDiagramAct(ctxFor(ai), ok(updateStepDescriptionAct(ctxFor(ana), withSession(), { step: 'functional_spec', description: 'The baker marks a bag ready.' })), { diagram: 'actor Baker\nuse case Mark a bag ready: Baker' }));
+
+	it('a text written leaves a drawn diagram behind: one Draw click goes to the AI, sent by the page', () => {
+		const before = drawnInSession();
 		const after = ok(updateStepDescriptionAct(ctxFor(ana), before, { step: 'functional_spec', description: 'The baker marks a bag ready and the customer gets a text.' }));
 		const followed = followUpClicks(before, after, ana.id, '2026-10-20T10:01:00.000Z', () => 'f1');
 		expect(drawClicks(followed)).toMatchObject([{ id: 'f1', step: 'functional_spec', state: 'waiting', follow: true }]);
 		// A second write while it waits sends no other.
-		const again = ok(updateStepDescriptionAct(ctxFor(ana), followed, { step: 'functional_spec', description: 'The baker marks a bag ready.' }));
+		const again = ok(updateStepDescriptionAct(ctxFor(ana), followed, { step: 'functional_spec', description: 'The baker marks a bag ready; the customer gets one text.' }));
 		expect(drawClicks(followUpClicks(followed, again, ana.id, '2026-10-20T10:02:00.000Z', () => 'f2'))).toHaveLength(1);
+	});
+
+	it('a text written while no diagram is drawn sends no Draw click: the diagram is offered, never owed [criterion:ac-leaf-57e3e39f-60c6-4dc9-8977-ac566e4da0e4]', () => {
+		const before = withSession();
+		const after = ok(updateStepDescriptionAct(ctxFor(ana), before, { step: 'functional_spec', description: 'The baker marks a bag ready and the customer gets a text.' }));
+		expect(drawClicks(followUpClicks(before, after, ana.id, '2026-10-20T10:01:30.000Z', () => 'f0'))).toEqual([]);
 	});
 
 	it('the diagram edited leaves texts behind: the Draw click catches them up', () => {
@@ -265,8 +285,8 @@ describe('in a session, the texts and the diagram follow each other [criterion:a
 	});
 
 	it('back in step, the click still waiting is taken back; without a session nothing is sent', () => {
-		const before = withSession();
-		const written = ok(updateStepDescriptionAct(ctxFor(ana), before, { step: 'functional_spec', description: 'The baker marks a bag ready.' }));
+		const before = drawnInSession();
+		const written = ok(updateStepDescriptionAct(ctxFor(ana), before, { step: 'functional_spec', description: 'The baker marks a bag ready and texts the customer.' }));
 		const followed = followUpClicks(before, written, ana.id, '2026-10-20T10:04:00.000Z', () => 'f4');
 		const redrawn = ok(redrawDiagramAct(ctxFor(ai), followed, { diagram: DIAGRAM }));
 		expect(drawClicks(followUpClicks(followed, redrawn, ana.id, '2026-10-20T10:05:00.000Z', () => 'f5'))).toMatchObject([{ id: 'f4', state: 'withdrawn' }]);

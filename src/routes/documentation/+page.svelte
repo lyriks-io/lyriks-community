@@ -297,11 +297,12 @@
 
 			{#if shown.has('validation')}
 				<DocSection id="validation" title="Validating the specification" lead="Who says the specification is right, and how.">
-					<!-- The band counts the page on screen and offers Validate all section, never the whole specification (criteria 71c9c06b, d7cd4e43). -->
+					<!-- The band counts the page on screen and offers Validate the whole section, never the whole specification; the controls are named as the
+					     product reads them (criteria 71c9c06b, d7cd4e43, EVO-009). -->
 					<p>
 						A specification written by an AI is a <strong>DRAFT</strong> until people validate it. Each element shows <strong>Validate</strong> with the initials of the people it waits on;
-						once they all validated, it reads Validated. A section's <strong>Validate all</strong> validates at once everything in it that waits on you, and the band at the top of Knowledge
-						counts what is validated on the page on screen, with <strong>Validate all section</strong> for the elements of the page that wait on you.
+						once they all validated, it reads Validated. A section's <strong>Validate the whole section</strong> validates at once everything in it that waits on you, and the band at the top of Knowledge
+						counts what is validated on the page on screen, with <strong>Validate the whole section</strong> for the elements of the page that wait on you.
 					</p>
 					<p>
 						Under the top bar of Knowledge, a band reads DRAFT · TO VALIDATE until everything is validated, then <strong>VALIDATED</strong>; while it is a draft, a tab whose elements are all

@@ -1,5 +1,8 @@
+import { mintUuid } from '$domain/shared';
 import {
+	behaviourCriterionLines,
 	blockFieldByPath,
+	landedCriteria,
 	canSaveField,
 	canonicalPathsFor,
 	type BlockField,
@@ -71,7 +74,7 @@ function applyToLeafMeta(
 		const previous = current.acceptanceCriteria ?? [];
 		const byText = new Map(previous.map((c) => [c.text, c]));
 		next.acceptanceCriteria = linesOf(value).map(
-			(text): AcceptanceCriterion => byText.get(text) ?? { id: crypto.randomUUID(), text }
+			(text): AcceptanceCriterion => byText.get(text) ?? { id: mintUuid(), text }
 		);
 		return next;
 	}
@@ -182,20 +185,27 @@ export function draftCarriedValue(request: Pick<EvolutionRequest, 'drafts'>, lea
 	// there, so a field the draft fills is filled on that feature too. Read only
 	// on the draft's own id, the base feature kept asking for values the draft
 	// already carried, and the author proposed them a second time to be counted.
-	const draft =
-		request.drafts.find((d) => d.id === leafId) ??
-		request.drafts.find((d) => d.kind === 'amend' && d.baseLeafId === leafId && d.materialisedAs === null);
+	const draft = carryingDraft(request, leafId);
 	if (!draft) return '';
 	const key = blockFieldByPath(fieldPath)?.canonicalPath.split('.').pop();
-	if (key === 'acceptanceCriteria') return draft.acceptanceCriteria.map((c) => c.text).join('\n');
+	// A Given/When/Then criterion the behaviour model adds, rewords or retires is an acceptance change too (criterion 52c53f0c).
+	if (key === 'acceptanceCriteria') return [...draft.acceptanceCriteria.map((c) => c.text), ...behaviourCriterionLines(draft.behaviourModel)].join('\n');
 	const raw = key ? (draft as unknown as Record<string, unknown>)[key] : undefined;
 	return typeof raw === 'string' ? raw : '';
 }
 
+const carryingDraft = (request: Pick<EvolutionRequest, 'drafts'>, leafId: string) =>
+	request.drafts.find((d) => d.id === leafId) ??
+	request.drafts.find((d) => d.kind === 'amend' && d.baseLeafId === leafId && d.materialisedAs === null);
+
 /**
- * What a field of a touched feature holds now, as its card shows it: what the
- * section (or the amendment) holds, else what the draft carries. Validating or
- * refusing stands behind this very value (d6560483).
+ * What a field of a touched feature holds now, as its card shows it, and what
+ * validating or refusing it stands behind (d6560483): the value the landing of
+ * the request's draft would write (criterion c0a6eef3). A text signed on the
+ * draft, else typed on it, stands before the feature's own; the Acceptance
+ * criteria read the feature's text criteria with the draft's rewordings and
+ * retirements applied and its added ones, then the behaviour criteria it changes
+ * (criterion 52c53f0c). So any later change of the draft outdates a validation.
  */
 export function readHeldField(
 	draft: ProjectFeaturesDraft,
@@ -204,7 +214,15 @@ export function readHeldField(
 	leafId: string
 ): { value: string; sourceIds: string[] } {
 	const written = readTouchedField(draft, request, fieldPath, leafId);
-	if (written.value.trim() !== '') return written;
-	const carried = draftCarriedValue(request, leafId, fieldPath);
-	return carried.trim() !== '' ? { ...written, value: carried } : written;
+	const carrying = carryingDraft(request, leafId);
+	if (!carrying) return written;
+	const meta = (id: string | null) => (id ? draft.leafMeta?.[id] : undefined);
+	if (blockFieldByPath(fieldPath)?.canonicalPath.split('.').pop() === 'acceptanceCriteria') {
+		const landed = landedCriteria(meta(carrying.baseLeafId)?.acceptanceCriteria, carrying, meta(carrying.id)?.acceptanceCriteria);
+		return { ...written, value: [...landed.map((c) => c.text), ...behaviourCriterionLines(carrying.behaviourModel)].join('\n') };
+	}
+	const signed = readDossierField(draft, fieldPath, carrying.id).value;
+	const typed = draftCarriedValue(request, leafId, fieldPath);
+	const own = carrying.baseLeafId ? readDossierField(draft, fieldPath, carrying.baseLeafId).value : '';
+	return { ...written, value: [signed, typed, own].find((v) => v.trim() !== '') ?? '' };
 }

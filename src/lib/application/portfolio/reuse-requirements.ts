@@ -1,3 +1,4 @@
+import { mintUuid } from '$domain/shared';
 import { createCore, createFeature, leafFeatures } from '$domain/features';
 import {
 	REUSE_LIBRARY_SECTION,
@@ -58,7 +59,7 @@ export class ExportRequirementUseCase {
 		const meta = features.leafMeta?.[featureId] ?? {};
 		const now = this.clock.nowIso();
 		const template: RequirementTemplate = {
-			id: crypto.randomUUID(),
+			id: mintUuid(),
 			title: leaf.name,
 			description: leaf.description,
 			problem: meta.problem ?? '',
@@ -115,7 +116,7 @@ export class ImportRequirementUseCase {
 			problem: template.problem,
 			value: template.value,
 			acceptanceCriteria: template.acceptanceCriteria.map((c) => ({
-				id: crypto.randomUUID(),
+				id: mintUuid(),
 				text: c.text
 			})),
 			sourceLink: `Imported from ${template.sourceProjectName}`

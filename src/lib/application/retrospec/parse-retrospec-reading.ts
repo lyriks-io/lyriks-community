@@ -20,6 +20,10 @@ export interface RetrospecReading {
 	readonly finished: boolean;
 	/** The elements each validated change became, once written (criterion 1aaa8316). */
 	readonly written: readonly WrittenChange[];
+	/** The phase of the order of work the AI says it reads now (EVO-014, action 83ba020b). */
+	readonly phase: string | null;
+	/** The features it finished re-reading (EVO-014, action ef746636). */
+	readonly read: readonly string[];
 }
 
 type Raw = Record<string, unknown>;
@@ -109,5 +113,16 @@ export function parseRetrospecReading(body: unknown): { ok: true; reading: Retro
 		if (!id) return { ok: false, reason: 'withdrawn names the id of each change.' };
 		withdrawn.push(id);
 	}
-	return { ok: true, reading: { commit, checks, received: o.received === true, changes, withdrawn, finished: o.finished === true, written } };
+	// The phase is checked against the order of work by the act, which names the eight phases (rule 2d4bc8ba).
+	const phase = o.phase === undefined || o.phase === null ? null : short(o.phase, 40)?.trim() || '';
+	if (phase === '') return { ok: false, reason: 'phase names the phase of the order of work you read now.' };
+	const rawRead = o.read === undefined ? [] : o.read;
+	if (!Array.isArray(rawRead) || rawRead.length > MAX_CHANGES) return { ok: false, reason: `read is a list of at most ${MAX_CHANGES} feature ids.` };
+	const read: string[] = [];
+	for (const x of rawRead) {
+		const id = short(x, 200)?.trim();
+		if (!id) return { ok: false, reason: 'Name the feature you re-read by its id.' };
+		read.push(id);
+	}
+	return { ok: true, reading: { commit, checks, received: o.received === true, changes, withdrawn, finished: o.finished === true, written, phase, read } };
 }

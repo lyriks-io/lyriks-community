@@ -28,9 +28,6 @@ const featuresWith = (featureId: string): ProjectFeaturesDraft => ({
 			unspaghettitFeatureId: featureId
 		}
 	],
-	mvpAssignments: [],
-	releases: [],
-	roadmapAssignments: [],
 	lastSavedAt: null
 });
 

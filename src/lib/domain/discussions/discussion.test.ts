@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
 	AI_AUTHOR_PREFIX,
 	aiAnswerAuthor,
-	aiTakesPart,
 	anchorTally,
 	applyDiscussionAct,
 	cleanNotify,
@@ -139,24 +138,6 @@ describe('reading stored documents and requests', () => {
 		expect(parseDiscussionAct({ kind: 'resolve', threadId: 't' })).toMatchObject({ ok: true });
 		expect(parseDiscussionAct({ kind: 'reopen' })).toMatchObject({ ok: false });
 		expect(parseDiscussionAct({ kind: 'delete', threadId: 't' })).toMatchObject({ ok: false });
-	});
-});
-
-describe('a reply reaches the AI only in a conversation it takes part in [criterion:ac-leaf-ac-ai-session-ask-block]', () => {
-	const ai = { email: `${AI_AUTHOR_PREFIX}claude-client`, name: 'Lyriks · for Carmen R.' };
-	const message = (id: string, author: typeof carmen) => ({ id, author, at: '2026-10-26T10:00:00.000Z', text: 'A remark' });
-	const never = () => false;
-
-	it('a conversation between people keeps its replies among them', () => {
-		expect(aiTakesPart({ messages: [message('m1', carmen), message('m2', sarah)] }, never)).toBe(false);
-	});
-
-	it('the AI takes part once it answered there', () => {
-		expect(aiTakesPart({ messages: [message('m1', carmen), message('m2', ai)] }, never)).toBe(true);
-	});
-
-	it('the AI takes part once a message there was asked of it, before it answers', () => {
-		expect(aiTakesPart({ messages: [message('m1', carmen)] }, (id) => id === 'm1')).toBe(true);
 	});
 });
 

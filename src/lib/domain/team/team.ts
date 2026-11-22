@@ -23,23 +23,6 @@ export const ROLE_LABEL: Record<CollaboratorRole, string> = {
 	reviewer: 'Reviewer',
 	viewer: 'Viewer',
 };
-export const ROLE_HINT: Record<CollaboratorRole, string> = {
-	owner: 'Full control. Cannot be removed.',
-	contributor: 'Can edit any artifact; attribution tracked.',
-	reviewer: 'Read + comment. No direct edits.',
-	viewer: 'Read-only access.',
-};
-
-export const SENIORITY_LABEL: Record<CollaboratorSeniority, string> = {
-	ic: 'IC',
-	manager: 'Manager',
-	executive: 'Executive',
-};
-export const SENIORITY_HINT: Record<CollaboratorSeniority, string> = {
-	ic: 'Individual contributor',
-	manager: 'Reads dashboards. Approves gates.',
-	executive: 'Reads governance reports. Sets policy.',
-};
 
 export interface ExpertiseDef {
 	id: string;
@@ -63,10 +46,6 @@ export const EXPERTISES: ExpertiseDef[] = [
 	{ id: 'governance', label: 'Governance', managerTier: true },
 ];
 
-export function expertiseLabel(id: string): string {
-	return EXPERTISES.find((e) => e.id === id)?.label ?? id;
-}
-
 export interface Collaborator {
 	readonly id: string;
 	name: string;
@@ -87,20 +66,6 @@ export interface Team {
 
 export function emptyTeam(): Team {
 	return { collaborators: [] };
-}
-
-/** A project is "solo" when it has at most one collaborator. */
-export function isSolo(team: Team): boolean {
-	return team.collaborators.length <= 1;
-}
-
-export function teamSize(team: Team): number {
-	return team.collaborators.length;
-}
-
-export function isManagerCollaborator(c: Collaborator): boolean {
-	if (c.seniority === 'manager' || c.seniority === 'executive') return true;
-	return c.expertise.some((e) => EXPERTISES.find((x) => x.id === e)?.managerTier);
 }
 
 /** Case-insensitive, whitespace-tolerant email match. Empty/absent on either side never matches. */

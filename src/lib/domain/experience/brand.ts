@@ -9,6 +9,7 @@
  *
  * Shape ported 1:1 from the prototype's `data.brand`.
  */
+import { mintUuid } from '../shared';
 
 /* ── Uploaded file references ────────────────────────────────────────────── */
 export interface BrandFileRef {
@@ -465,7 +466,7 @@ function strArray(v: unknown): string[] {
 	return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 }
 function id(v: unknown): string {
-	return typeof v === 'string' && v ? v : crypto.randomUUID();
+	return typeof v === 'string' && v ? v : mintUuid();
 }
 function fileRef(v: unknown): BrandFileRef | null {
 	if (!v || typeof v !== 'object') return null;
@@ -752,5 +753,5 @@ export function resolveToken(brand: ProjectBrand, group: BrandTokenGroup, key: s
 
 /** Stable id for a new brand row. */
 export function brandNewId(prefix: string): string {
-	return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
+	return `${prefix}_${mintUuid().slice(0, 8)}`;
 }

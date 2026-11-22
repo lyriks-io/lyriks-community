@@ -7,7 +7,7 @@ import type { ProjectScopeDraft } from '$domain/scope';
 import {
 	RETROSPEC_SECTIONS,
 	currentRun,
-	defaultScope,
+	nextRunOf,
 	rebuiltFromSourceMode,
 	retrospecEvents,
 	retrospecStatus,
@@ -16,7 +16,7 @@ import {
 	type RetrospecDocument,
 	type RetrospecEvent,
 	type RetrospecMode,
-	type RetrospecScope,
+	type NextRunReading,
 	type RetrospecFacts,
 	type BuiltFigures,
 	type RetrospecStatus
@@ -128,10 +128,14 @@ export const retrospecUnderWay = (doc: RetrospecDocument): boolean => {
 	return !!run && !run.publishedAt && !run.reviewStartedAt && !run.analysisEndedAt;
 };
 
-/** What the next run reads unless the person chooses otherwise: the whole product when the last run stopped short or no delta can be read (criterion 98612117). */
-export async function nextRunScope(services: AppServices, projectId: string): Promise<RetrospecScope> {
-	const [{ doc }, scopeDraft, register] = await Promise.all([loadRetrospecDocument(services.sectionDocuments, projectId), services.loadScopeDraft.execute(projectId), services.loadDocumentRegister.execute(projectId)]);
-	return defaultScope(doc, scopeDraft.auditLog.map((e) => e.performedAt), register.sources.some((s) => !!s.stored));
+/** The facts a status is read from, for a caller that reads more of the run than its status (EVO-014). */
+export async function readRetrospecFacts(services: AppServices, projectId: string): Promise<RetrospecFacts> {
+	return (await statusInputs(services, projectId)).facts;
+}
+
+/** What the next run reads and starts from, read once for a start and for the launch Mismatch offers (EVO-014). */
+export async function readNextRun(services: AppServices, projectId: string): Promise<NextRunReading> {
+	return nextRunOf(await readRetrospecFacts(services, projectId));
 }
 
 /**

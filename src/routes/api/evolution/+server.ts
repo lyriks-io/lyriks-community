@@ -6,18 +6,23 @@ import { requireEvolutionAccess, requireEvolutionBatchAccess } from '$lib/server
 import { accessNeededFor } from '$lib/server/evolution-door.server';
 import { guardSectionWrite } from '$lib/server/section-save.server';
 import { currentPersonId, resolveEvolutionActor } from '$lib/server/evolution-actor.server';
-import { loadDockingGraph, loadLocalGraph } from '$lib/server/evolution-graph.server';
-import { actionReadings, specificationActionTrails } from '$lib/server/evolution-spec-actions.server';
+import { draftsVersionOf, loadDockingGraph, loadLocalGraph } from '$lib/server/evolution-graph.server';
+import { actionReadings, specificationActionEntries, specificationActionTrails } from '$lib/server/evolution-spec-actions.server';
 import {
 	DOSSIER_PARTS,
 	evolutionAggregate,
 	isDossierPart,
-	loadEvolutionView
+	loadEvolutionView,
+	specificationPart
 } from '$lib/server/evolution-view.server';
 import { applyEvolutionOperations } from '$lib/server/evolution-operations.server';
+import { readTouchedValidation } from '$lib/server/evolution-touched-validation.server';
+import { retrospecActor } from '$lib/server/retrospec-status.server';
 import { signalAiActivity } from '$lib/server/ai-activity.server';
 import {
+	ACTIONS_UNREAD,
 	findRequestByRef,
+	readsSpecificationActions,
 	isImpactHypothesis,
 	unresolvedRequestReason,
 	type FindingScope
@@ -29,7 +34,7 @@ import type { RequestHandler } from './$types';
  * calls, so an MCP client runs a request from the raw need to acceptance
  * without recomputing the dossier's rules from the raw section document.
  *
- *   GET  /api/evolution?projectId=<id>[&requestId=<id or unique prefix>][&part=drafts|fields|proposals|impact|report|readings|history|versions|data|graph|docking|texts|coherence|points]
+ *   GET  /api/evolution?projectId=<id>[&requestId=<id or unique prefix>][&part=drafts|fields|proposals|impact|report|readings|history|versions|data|graph|docking|texts|coherence|points|knowledge]
  *        -> the board (every live request as a card, first), one dossier in
  *           counts, or one list of it, narrowed by `leaf` / `section` /
  *           `verdict` and paged by `offset` / `limit`. Without a request,
@@ -41,6 +46,9 @@ import type { RequestHandler } from './$types';
  * MCP names itself as an AI client, and `as_person: true` relays the signed-in
  * person's own decision with the channel stamped on the timeline.
  */
+/** The block Not validated in Knowledge of a request's Simulation, read on its own. */
+const KNOWLEDGE_PART = 'knowledge';
+
 const scopeParam = (raw: string | null): FindingScope | undefined => {
 	if (raw === null) return undefined;
 	if (raw === 'request' || raw === 'inherited') return raw;
@@ -63,8 +71,18 @@ export const GET: RequestHandler = async (event) => {
 	]);
 	const requestId = event.url.searchParams.get('requestId') ?? undefined;
 	const part = event.url.searchParams.get('part') ?? undefined;
+	// What the change touches that Knowledge has not validated, read for this reader (EVO-003).
+	if (part === KNOWLEDGE_PART) {
+		const lookup = requestId ? findRequestByRef(view.draft.requests.filter((r) => r.status !== 'deleted'), requestId) : null;
+		if (!requestId || !lookup || lookup.kind !== 'found')
+			error(lookup?.kind === 'ambiguous' ? 400 : 404, requestId && lookup ? unresolvedRequestReason(requestId, lookup) : `part=${KNOWLEDGE_PART} needs a requestId`);
+		const canWrite = await requireProjectAccess(event, projectId, 'write').then(() => true, () => false);
+		const reader = await retrospecActor(services, projectId, event.cookies);
+		const knowledge = await readTouchedValidation(services, projectId, lookup.request, reader, canWrite);
+		return json({ projectId, revision: view.revision, requestId: lookup.request.id, knowledge });
+	}
 	if (part !== undefined && !isDossierPart(part)) {
-		error(400, `unknown part "${part}". Valid: ${DOSSIER_PARTS.join(', ')}`);
+		error(400, `unknown part "${part}". Valid: ${[...DOSSIER_PARTS, KNOWLEDGE_PART].join(', ')}`);
 	}
 	const int = (key: string): number | undefined => {
 		const raw = event.url.searchParams.get(key);
@@ -88,6 +106,16 @@ export const GET: RequestHandler = async (event) => {
 		const rules = await readRuleDrafts(services, projectId, lookup.request, view.language);
 		return json({ projectId, revision: view.revision, requestId: lookup.request.id, total: sections.length + rules.length, sections, rules });
 	}
+	// Every item the Specification gate counts, the actions read with the engine's graph (criterion 2df61e72).
+	if (part === 'specification') {
+		const lookup = requestId ? findRequestByRef(view.draft.requests.filter((r) => r.status !== 'deleted'), requestId) : null;
+		if (!requestId || !lookup || lookup.kind !== 'found')
+			error(lookup?.kind === 'ambiguous' ? 400 : 404, requestId && lookup ? unresolvedRequestReason(requestId, lookup) : 'part=specification needs a requestId');
+		signalAiActivity(event, projectId, [lookup.request.id], 'read');
+		const actions = await specificationActionEntries(services, view, lookup.request);
+		const opts = { leaf: event.url.searchParams.get('leaf') ?? undefined, offset: int('offset'), limit: int('limit') };
+		return json({ projectId, revision: view.revision, requests: [], request: specificationPart(view, lookup.request, actions, opts) });
+	}
 	// The graph is computed by the engine on demand, from the drafts' behaviour.
 	if (part === 'graph' || part === 'docking') {
 		const lookup = requestId
@@ -97,17 +125,24 @@ export const GET: RequestHandler = async (event) => {
 			error(lookup?.kind === 'ambiguous' ? 400 : 404, requestId && lookup ? unresolvedRequestReason(requestId, lookup) : `part=${part} needs a requestId`);
 		signalAiActivity(event, projectId, [lookup.request.id], 'read');
 		// The network docks the request on the knowledge graph, built only when a reader opens it.
-		if (part === 'docking')
-			return json({ projectId, revision: view.revision, requestId: lookup.request.id, docking: await loadDockingGraph(services, view, lookup.request) });
-		const graph = await loadLocalGraph(services, view, lookup.request);
+		if (part === 'docking') {
+			const docking = await loadDockingGraph(services, view, lookup.request);
+			if (!docking) error(503, ACTIONS_UNREAD);
+			return json({ projectId, revision: view.revision, requestId: lookup.request.id, docking });
+		}
+		const reading = await loadLocalGraph(services, view, lookup.request);
+		const head = { projectId, revision: view.revision, requestId: lookup.request.id, version: draftsVersionOf(lookup.request) };
 		// Each action of the specification travels with where it stands, validated like an answer.
-		return json({ projectId, revision: view.revision, requestId: lookup.request.id, graph, actions: actionReadings(view, lookup.request, graph) });
+		if (reading.status === 'read') return json({ ...head, graph: reading.graph, readAt: reading.readAt, actions: actionReadings(view, lookup.request, reading.graph) });
+		// The engine did not answer: the last good reading of these drafts, said as such, never a graph read without them (criterion c623df9c).
+		const last = reading.last;
+		return json({ ...head, unread: reading.reason, graph: last?.graph ?? null, readAt: last?.readAt ?? null, actions: last ? actionReadings(view, lookup.request, last.graph) : {} });
 	}
-	// The summary of a request at the Impact analysis counts the Specification's actions too, read with
-	// the engine's graph only there, where the Simulation and the freeze wait on them (ac-evo-form-step-lock).
+	// The summary of a request before its freeze counts the Specification's actions too, read with the
+	// engine's graph, since the Simulation and the freeze wait on them (ac-evo-form-step-lock, criterion c0a6eef3).
 	const summarised = requestId && (part === undefined || part === 'summary') ? findRequestByRef(view.draft.requests.filter((r) => r.status !== 'deleted'), requestId) : null;
 	const specificationActions =
-		summarised?.kind === 'found' && summarised.request.stage === 'coherence' ? await specificationActionTrails(services, view, summarised.request) : undefined;
+		summarised?.kind === 'found' && readsSpecificationActions(summarised.request) ? await specificationActionTrails(services, view, summarised.request) : undefined;
 	const aggregate = evolutionAggregate(view, actor, requestId, {
 		specificationActions,
 		part,

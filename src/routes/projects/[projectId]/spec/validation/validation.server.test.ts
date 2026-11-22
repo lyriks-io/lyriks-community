@@ -24,3 +24,24 @@ describe('validation request access boundary [criterion:1a489659]', () => {
 		expect(apply).not.toHaveBeenCalled();
 	});
 });
+
+describe('withdrawing the validation a request gave (EVO-002)', () => {
+	beforeEach(() => { authorize.mockReset(); apply.mockClear(); });
+	const withdrawal = () => ({
+		params: { projectId: 'p' }, cookies: {}, locals: { services: { projectExists: async () => true } },
+		request: new Request('http://x/projects/p/spec/validation', { method: 'POST', body: JSON.stringify({ acts: [{ op: 'withdraw_request_validation', itemId: 'stack:a' }] }) })
+	}) as never;
+
+	it('answers a project outside the caller\'s workspace as not found and withdraws nothing (rule 91b415a4)', async () => {
+		authorize.mockImplementation(async () => error(404, 'Project not found'));
+		await expect(POST(withdrawal())).rejects.toMatchObject({ status: 404, body: { message: 'Project not found' } });
+		expect(apply).not.toHaveBeenCalled();
+	});
+
+	it('hands the act to the server policy, a reader without editing rights included', async () => {
+		authorize.mockImplementation(async (_event, _project, action) => { if (action === 'write') error(403, 'forbidden'); });
+		expect((await POST(withdrawal())).status).toBe(200);
+		expect(apply.mock.calls[0]?.[2]).toEqual([{ op: 'withdraw_request_validation', itemId: 'stack:a' }]);
+		expect(apply.mock.calls[0]?.[5]).toEqual({ canWrite: false });
+	});
+});

@@ -2,7 +2,7 @@
 	import PageFoot from '$ui/shell/PageFoot.svelte';
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { pushToast } from '$ui/design-system';
+	import { promptDialog, pushToast } from '$ui/design-system';
 	import { PLACE_PARAM, changesSummary, parsePlace, placeElementId } from '$domain/evolution';
 	import type { DossierReading, ReportPart } from '$lib/server/evolution-view.server';
 	import type { ClosingReading } from '$lib/server/evolution-closing.server';
@@ -259,8 +259,10 @@
 	const approvedBy = $derived((approval?.given ?? []).map(nameOf).join(', '));
 	const lifecycle = $derived.by((): { text: string; label: string; next: boolean } | null => {
 		if (!canEdit || dossier.status !== 'open') return null;
-		if (dossier.stage === 'implementation')
-			return dossier.gate.ok ? { text: 'Every requirement is settled: the report can be closed.', label: 'Start acceptance testing →', next: true } : null;
+		// Offered only while the gate of the Build holds, saying what holds it: once settled, the Build moves on its own (EVO-011, criterion 3cf58130).
+		// While version N+1 is in correction, its freeze is the next step, a person's act; acceptance testing waits for it (EVO-012).
+		if (dossier.stage === 'implementation' && dossier.correction) return { text: dossier.gate.reason ?? '', label: `Freeze version ${dossier.correction.version} →`, next: true };
+		if (dossier.stage === 'implementation') return dossier.gate.ok ? null : { text: dossier.gate.reason ?? '', label: 'Start acceptance testing →', next: false };
 		if (dossier.stage !== 'acceptance') return null;
 		if (approval?.validated)
 			return dossier.gate.ok ? { text: 'Approved: the evolution can be closed.', label: 'Approve the evolution →', next: true } : { text: dossier.gate.reason ?? '', label: 'Approve the evolution →', next: false };
@@ -293,9 +295,13 @@
 	 * approval, the reader's own and the crossing it completes sent as one save.
 	 */
 	async function moveOn() {
+		// The page says the move once the server does (stageMoveNote): a crossing by hand and one on its own read alike.
+		if (dossier.stage === 'implementation' && dossier.correction) {
+			await send({}, [{ op: 'cross_stage' }], `the freeze of version ${dossier.correction.version}`);
+			return;
+		}
 		if (dossier.stage === 'implementation') {
-			if (await send({ [patchKey.stage]: { kind: 'stage', stage: 'acceptance' } }, [{ op: 'cross_stage' }], 'the move to acceptance testing'))
-				pushToast({ level: 'success', message: 'Verification closed: the evolution moves to acceptance testing' });
+			await send({ [patchKey.stage]: { kind: 'stage', stage: 'acceptance' } }, [{ op: 'cross_stage' }], 'the move to acceptance testing');
 			return;
 		}
 		const approving = !approval?.validated && !mine;
@@ -309,8 +315,21 @@
 		pushToast({ level: 'success', message: crossing ? 'Approved: the evolution can be closed' : 'Approval recorded: the others named on it are waited on' });
 	}
 	async function closeEvolution() {
+		// Before its turn, the dialog asks why it lands first; nothing lands without it (EVO-005, rule a05d347f).
+		const ahead = dossier.landingOrder?.landsAfter ?? [];
+		let outOfOrderReason = '';
+		if (ahead.length > 0) {
+			const said = await promptDialog({
+				title: `${ahead.map((r) => r.key).join(', ')} lands before this one`,
+				placeholder: 'Say why you declare it live first (kept in its history)',
+				confirmLabel: 'Declare it live first'
+			});
+			if (said === null || said.trim() === '') return;
+			outOfOrderReason = said.trim();
+		}
 		const at = new Date().toISOString();
-		if (await send({ [patchKey.status]: { kind: 'status', status: 'closed', reason: '', by: actorId, at } }, [{ op: 'declare_deployment' }], `the closing of ${key}`))
+		const op = outOfOrderReason ? { op: 'declare_deployment', outOfOrderReason } : { op: 'declare_deployment' };
+		if (await send({ [patchKey.status]: { kind: 'status', status: 'closed', reason: '', by: actorId, at } }, [op], `the closing of ${key}`))
 			pushToast({ level: 'success', message: `Evolution ${key} closed` });
 	}
 

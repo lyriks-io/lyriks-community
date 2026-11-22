@@ -30,7 +30,12 @@ import {
 	type Proposal
 } from './draft';
 import { ALLOW, firstRefusal, guard, refuse, type Guarded, type Refused } from './guard';
-import { specificationGate, type SpecificationHold } from './specification-hold';
+import { withoutValidatedCommit } from './code-branch';
+import { actionsUnreadGate, specificationGate, type SpecificationHold } from './specification-hold';
+import { correctionHoldsApproval, draftsOpen, textsOpen } from './correction';
+import { concurrentGate, concurrentHoldOf, orderAtFreeze, type ConcurrentHold } from './landing-order';
+import { requestKeyOf } from './request-ref';
+import { leftToLandingAtFreeze, type TouchedLine } from './touched-validation';
 import { canDelegateToAi, withDelegation } from './ai-delegation';
 import {
 	DATA_DRAFT_PREFIX,
@@ -96,9 +101,11 @@ import { fieldValidationOf, isActionReviewKey, latestVersion, stepAnswerKey, ste
 import { linesOf, listDelta } from './list-delta';
 import { personKey, stepOfTarget, withNamed } from './named-validators';
 import { MAX_OPEN_CUSTOM_QUESTIONS, openCustomQuestions } from './custom-questions';
+import { JOURNEY_PATH_PREFIX } from './journey-paths';
 import { FUNCTIONAL_DIAGRAM_KEY, functionalDiagramWords, isEmptyDiagram, readFunctionalDiagram } from './functional-diagram';
 import {
 	diagramBehindTexts,
+	drawnDiagramBehind,
 	diagramFieldOf,
 	diagramPartOfTexts,
 	functionalTexts,
@@ -127,7 +134,7 @@ import {
 } from './lifecycle';
 import { canCrossToImplementation, canLeaveCoherence, canLeaveSpecification, canLiftWaiver, canWaive, nothingToArbitrate, openWaiver } from './gate';
 import { amend, canReceiveReport, freeze } from './freeze';
-import { canAdopt, canBuildReport, canCloseReport, canDecide, canRemove } from './implementation';
+import { canAdopt, canBuildReport, canCloseReport, canDecide, canRemove, currentLines, reportSummary } from './implementation';
 import {
 	canAcceptProposal,
 	canAnswerOpenQuestion,
@@ -556,20 +563,19 @@ function setLeavesActCore(
  * (ac-evo-draft-4). What writes them is the freeze, once (ac-evo-draft-5).
  */
 
-const draftsAreOpen = (request: EvolutionRequest): Guarded =>
-	guard(
-		request.frozen,
-		`The specification is frozen as version ${request.specVersion}. Rebrief the request before changing what it proposes.`,
-		'What a frozen version proposes is part of what was frozen; the code is being written against it.'
-	);
+/**
+ * What a request proposes is changed until the end of its Build: there, the
+ * first change opens version N+1 in correction while the code is still built
+ * against N; from Approval on, a new request carries it (EVO-012).
+ */
+const draftsAreOpen = (request: EvolutionRequest): Guarded => draftsOpen(request);
 
-/** The Briefing reads locked from the freeze on, and the server keeps it so: the build is compared to the version frozen (issue 45). */
-const briefingIsOpen = (request: EvolutionRequest): Guarded =>
-	guard(
-		request.frozen,
-		`The specification is frozen as version ${request.specVersion}. Rebrief the request before changing its Briefing.`,
-		'The Briefing is part of the version frozen; the code is being written against it.'
-	);
+/**
+ * The Briefing reads locked from the freeze on, and the server keeps it so: the
+ * build is compared to the version frozen (issue 45). Like the Solution and the
+ * specs, it is rewritten after a rebrief only, never corrected in the Build.
+ */
+const briefingIsOpen = (request: EvolutionRequest): Guarded => textsOpen(request);
 
 export interface DraftLeafInput {
 	readonly kind?: DraftLeafKind;
@@ -649,11 +655,13 @@ function draftDelta(
 			: input.changeCriteria
 					.map((c) => ({ id: c.id.trim(), text: c.text.trim() }))
 					.filter((c) => c.id !== '' && c.text !== '');
-	const unknown = [...(retire ?? []), ...(change ?? []).map((c) => c.id)].filter((id) => !known.has(id));
+	// Every id named counts, a row sent without a text included: it is never dropped unread (criterion 569c7789).
+	const named = (input.changeCriteria ?? []).map((c) => c.id.trim()).filter((id) => id !== '');
+	const unknown = [...new Set([...(retire ?? []), ...(change ?? []).map((c) => c.id), ...named])].filter((id) => !known.has(id));
 	if (leaf && unknown.length > 0)
 		return refuse(
 			`"${baseLeafId}" carries no acceptance criterion ${unknown.map((id) => `"${id}"`).join(', ')}.`,
-			'A retired or reworded criterion is named by the id the feature gave it; get_section(features) or get_knowledge_graph with the feature id lists them.'
+			'A retired or reworded criterion is named by the id the feature gave it: get_section(features) lists its text criteria, get_behavior_feature summary:true the Given/When/Then criteria of its behaviour model.'
 		);
 	const patch =
 		input.descriptionPatch === undefined
@@ -1964,14 +1972,14 @@ export function buildReportAct(
 		canReceiveReport(request, request.specVersion),
 		guard(
 			request.stage !== 'implementation',
-			'The report is built in Verify.',
-			'A report judges what was built against the frozen version; before Verify there is nothing built yet.'
+			'The report is built at Build.',
+			'A report judges what was built against the frozen version; before the Build there is nothing built yet.'
 		)
 	);
 	if (!allowed.ok) return allowed;
-	const count = (verdict: ImplementationFinding['verdict']) => lines.filter((l) => l.verdict === verdict).length;
-	const summary = `Report for version ${request.specVersion}: ${count('conform')} conform, ${count('non_conform')} non-conform, ${count('missing')} missing, ${count('out_of_scope')} out of scope, ${count('regression')} regression`;
 	const derived = withDerivedReport(request, lines, ctx.at);
+	// The request's own lines lead; the inherited ones are the features' backlog (criterion:46dc1372).
+	const summary = reportSummary(request.specVersion, currentLines(derived));
 	// What the Build step's log reads: each reading of the code that moved a line of this request, never a rebuild that moved nothing.
 	const read = codeReadSummary(
 		request.implementationFindings.filter((l) => l.iteration === request.iteration),
@@ -2009,7 +2017,8 @@ export function gateFor(
 	request: EvolutionRequest,
 	target: RequestStage,
 	criticalEmptyCount: number,
-	specification?: SpecificationHold
+	specification?: SpecificationHold,
+	concurrent?: ConcurrentHold
 ): Guarded {
 	switch (target) {
 		case 'coherence':
@@ -2019,11 +2028,13 @@ export function gateFor(
 			return firstRefusal(
 				canCrossToImplementation(request, criticalEmptyCount),
 				canLeaveCoherence(request),
-				solutionValidated(request),
-				specificationGate(specification)
+				specificationGate(specification),
+				// A conflict with a request under way waits for a person, whatever else the request has to arbitrate (EVO-005).
+				concurrentGate(concurrent)
 			);
 		case 'acceptance':
-			return canCloseReport(request);
+			// Never into Approval while version N+1 waits in correction, on its own or by hand (EVO-012).
+			return firstRefusal(correctionHoldsApproval(request), canCloseReport(request));
 		case 'delivered':
 			return firstRefusal(
 				guard(
@@ -2049,7 +2060,15 @@ export function gateFor(
 export function crossStageAct(
 	ctx: ActContext,
 	request: EvolutionRequest,
-	input: { readonly criticalEmptyCount: number; readonly waiverReason?: string; readonly specification?: SpecificationHold }
+	input: {
+		readonly criticalEmptyCount: number;
+		readonly waiverReason?: string;
+		readonly specification?: SpecificationHold;
+		/** The elements the change touches still waiting for a validation choice: the freeze sets them to the landing (EVO-003). */
+		readonly leftToLanding?: readonly Pick<TouchedLine, 'id' | 'title'>[];
+		/** Every request of the project, this one included: the freeze reads the conflicts and sets the order against them (EVO-005). */
+		readonly requests?: readonly EvolutionRequest[];
+	}
 ): ActOutcome {
 	const target = nextStage(request.stage);
 	const allowed = firstRefusal(
@@ -2057,12 +2076,17 @@ export function crossStageAct(
 		guard(
 			target === null,
 			'This request has reached the end of its run.',
-			'Delivered is the last stage; closing is a separate act.'
+			'Deployment is the last stage; closing is a separate act.'
 		),
-		target ? canAdvance(request, target) : ALLOW
+		target ? canAdvance(request, target) : ALLOW,
+		// Before any waiver: no one stands behind actions the engine could not read.
+		target === 'implementation' ? actionsUnreadGate(input.specification) : ALLOW,
+		// Nor does a waiver carry drafts nobody validated into Approval (EVO-012).
+		target === 'acceptance' ? correctionHoldsApproval(request) : ALLOW
 	);
 	if (!allowed.ok || !target) return allowed as Refused;
-	const gate = gateFor(request, target, input.criticalEmptyCount, input.specification);
+	const concurrent = target === 'implementation' && input.requests ? concurrentHoldOf(request, input.requests) : undefined;
+	const gate = gateFor(request, target, input.criticalEmptyCount, input.specification, concurrent);
 	let crossed: EvolutionRequest;
 	if (input.waiverReason !== undefined) {
 		const waivable = canWaive(ctx.actor, input.waiverReason, gate.ok);
@@ -2093,15 +2117,25 @@ export function crossStageAct(
 		crossed = stamp(ctx, { ...request, stage: target }, 'stage_crossing', said(ctx).crossed(target));
 	}
 	if (target === 'implementation') {
+		// The choice is asked, never imposed: what is left goes to the landing, and the version freezes with it (rule bd0263a6).
+		crossed = leftToLandingAtFreeze(ctx, crossed, input.leftToLanding ?? []);
 		const frozen = freeze(crossed, ctx.actor, ctx.at);
 		crossed = stamp(ctx, frozen, 'spec_frozen', said(ctx).frozen(String(frozen.specVersion)));
+		// The first one frozen lands first: set after every overlapping request under way frozen before it (rule 360bcd3f).
+		if (input.requests) {
+			const ordered = orderAtFreeze(crossed, input.requests);
+			const keys = ordered.after.map((r) => requestKeyOf(input.requests ?? [], r.id) ?? r.title);
+			crossed = keys.length > 0 ? stamp(ctx, ordered.request, 'landing_order', `Set to land after ${keys.join(', ')}, frozen before it`) : ordered.request;
+		}
 	}
 	if (target === 'acceptance') {
 		crossed = {
 			...crossed,
 			iterations: crossed.iterations.map((i) =>
 				i.number === crossed.iteration ? { ...i, reportStatus: 'closed' } : i
-			)
+			),
+			// Closing the verification fixes no commit: the last approval awaited does (EVO-011).
+			...(crossed.code ? { code: withoutValidatedCommit(crossed.code) } : {})
 		};
 	}
 	return done(
@@ -2350,10 +2384,11 @@ export function deleteRequestAct(ctx: ActContext, request: EvolutionRequest): Ac
 export function gateReading(
 	request: EvolutionRequest,
 	criticalEmptyCount: number,
-	specification?: SpecificationHold
+	specification?: SpecificationHold,
+	concurrent?: ConcurrentHold
 ): { readonly next: RequestStage | null; readonly verdict: Guarded } {
 	const next = nextStage(request.stage);
-	return { next, verdict: next ? firstRefusal(canAdvance(request, next), gateFor(request, next, criticalEmptyCount, specification)) : ALLOW };
+	return { next, verdict: next ? firstRefusal(canAdvance(request, next), gateFor(request, next, criticalEmptyCount, specification, concurrent)) : ALLOW };
 }
 
 export const stageIndex = (stage: RequestStage): number => STAGE_ORDER.indexOf(stage);
@@ -2397,21 +2432,6 @@ const withNeed = (request: EvolutionRequest, key: NeedKey, value: string): Evolu
 	...request,
 	need: { ...request.need, [key]: value.trim() }
 });
-
-/**
- * The freeze reads that a person stood behind the Solution: validating is
- * optional until the build, and the Solution is the one validation the build
- * waits for (ac-evo-gate-steps). A request with nothing to arbitrate closes
- * itself rather than freezing, and is not held here.
- */
-function solutionValidated(request: EvolutionRequest): Guarded {
-	if (nothingToArbitrate(request)) return ALLOW;
-	return guard(
-		!isStepValidated(request, 'solution'),
-		'The Solution is not validated yet: a person validates it before the build.',
-		'The Need, the Functional spec and the Technical spec may be validated too, but the build waits for the Solution only. The waiver remains the named way through.'
-	);
-}
 
 /**
  * Answer questions of the need (ac-evo-need-1..3). Typed answers are the
@@ -2533,19 +2553,14 @@ export function validateStepAct(ctx: ActContext, request: EvolutionRequest, step
 			'The need still owes its current situation or its objectives.',
 			'Answer them, park them as open questions to discuss, or mark the Need step not applicable with a reason.'
 		),
-		// A step of prose holds its required texts before anyone stands behind it (ac-evo-sol-prose, ac-evo-func-prose).
+		// The Solution holds its description before anyone stands behind it; the Functional spec owes no text (EVO-013, rule e13532fb).
 		guard(
 			current?.step === 'solution' && requiredTextsEmpty(request, 'solution').length > 0,
-			'The Solution still owes its description or how we will know it works.',
-			'Write them in your own words; the features it touches are read at the Impact analysis.'
-		),
-		guard(
-			current?.step === 'functional_spec' && requiredTextsEmpty(request, 'functional_spec').length > 0,
-			'The Functional spec still owes its description or what the product refuses.',
-			'Answer them, or mark the Functional spec not applicable with a reason.'
+			'The Solution still owes its description.',
+			'Write it in your own words; the features it touches are read at the Impact analysis.'
 		),
 		// Nobody stands behind texts and a drawing that say two things (ac-evo-func-uml-sync).
-		guard(!!current && isPairedStep(current.step) && diagramBehindTexts(request, current.step), diagramBehind(current?.step), DIAGRAM_BEHIND_HINT),
+		guard(!!current && isPairedStep(current.step) && drawnDiagramBehind(request, current.step), diagramBehind(current?.step), DIAGRAM_BEHIND_HINT),
 		guard(!!current && isPairedStep(current.step) && textsBehindDiagram(request, current.step).length > 0, textBehind(current?.step), TEXT_BEHIND_HINT)
 	);
 	if (!allowed.ok || !current) return allowed as Refused;
@@ -2776,7 +2791,7 @@ export function updateStepDescriptionAct(
 			'Solution, Functional spec and Technical spec open on a description; the Need keeps its own (update_need).',
 			'Build, Approval and Deployment have none: the code, the remarks and the release stand for it.'
 		),
-		draftsAreOpen(request),
+		textsOpen(request),
 		guard(isPairedStep(step) && textsBehindDiagram(request, step).includes('description'), textBehind(step), TEXT_BEHIND_HINT)
 	);
 	if (!allowed.ok || !isDescribedStep(step)) return allowed as Refused;
@@ -2890,7 +2905,7 @@ export function answerStepAct(
 			`"${input.step}" asks no question "${input.question}".`,
 			`The questions are: ${STEP_QUESTIONS.map((q) => `${q.step} ${q.key} (${q.question}${q.required ? ', required' : ''})`).join('; ')}.`
 		),
-		draftsAreOpen(request),
+		textsOpen(request),
 		guard(!!asked && isPairedStep(asked.step) && textsBehindDiagram(request, asked.step).includes(asked.key), textBehind(asked?.step), TEXT_BEHIND_HINT)
 	);
 	if (!allowed.ok || !asked) return allowed as Refused;
@@ -2964,7 +2979,7 @@ export function redrawDiagramAct(
 	const allowed = firstRefusal(
 		notFinished(request),
 		guard(!canEdit(ctx.actor), 'A viewer reads and comments, but does not write.', 'A redraw is a write on the request.'),
-		draftsAreOpen(request),
+		textsOpen(request),
 		guard(
 			input.step !== undefined && input.step !== '' && !isPairedStep(input.step),
 			`"${input.step}" holds no diagram.`,
@@ -3017,7 +3032,7 @@ export function writeTextFromDiagramAct(
 	const allowed = firstRefusal(
 		notFinished(request),
 		guard(!canEdit(ctx.actor), 'A viewer reads and comments, but does not write.', 'A text is a write on the request.'),
-		draftsAreOpen(request),
+		textsOpen(request),
 		guard(
 			input.step !== undefined && input.step !== '' && !isPairedStep(input.step),
 			`"${input.step}" holds no diagram.`,
@@ -3079,6 +3094,8 @@ export function validateFieldAct(
 		...DIAGRAM_STEPS_FIELDS.filter(([step, field]) => input.key === field && diagramBehindTexts(request, step)).map(([step]) =>
 			guard(true, diagramBehind(step), DIAGRAM_BEHIND_HINT)
 		),
+		// A drawn diagram left behind its texts still holds the validation of the paths it draws (EVO-013).
+		guard(input.key.startsWith(JOURNEY_PATH_PREFIX) && drawnDiagramBehind(request), diagramBehind('functional_spec'), DIAGRAM_BEHIND_HINT),
 		...textBehindOf(request, input.key).map((step) => guard(true, textBehind(step), TEXT_BEHIND_HINT))
 	);
 	if (!allowed.ok) return allowed;

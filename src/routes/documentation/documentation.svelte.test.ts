@@ -77,6 +77,18 @@ describe('the Documentation says what the product does today', () => {
 		expect(text).not.toContain('A validated specification stays editable');
 	});
 
+	it("names the band's button and a section's control Validate the whole section, as the product reads them, and no button for the whole specification [criterion:ac-leaf-e3afcc65-9bc4-4db8-a2f7-3135dc3ce32e] [criterion:71c9c06b]", () => {
+		// Its first paragraph, under the section's lead.
+		const section = html.slice(html.indexOf('id="validation"'));
+		const paragraphs = [...section.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/g)].map((m) => m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '));
+		const first = paragraphs.find((p) => p.includes('A specification written by an AI')) ?? '';
+		expect(first).toContain('Each element shows Validate with the initials of the people it waits on');
+		expect(first).toContain("A section's Validate the whole section validates at once everything in it that waits on you");
+		expect(first).toContain('the band at the top of Knowledge counts what is validated on the page on screen, with Validate the whole section for the elements of the page that wait on you');
+		expect(text).not.toMatch(/Validate all section|A section's Validate all\b/);
+		expect(first).not.toMatch(/whole specification/);
+	});
+
 	it('names the plans that open Changes and writes the change when it goes live [criterion:7af1087d]', () => {
 		expect(text).toContain('Changes Solo Builder, Team and Enterprise. An evolution carries one change');
 		expect(text).toContain('the change is then frozen as a numbered version the code is built and checked against, and written into the specification when it goes live, never before.');

@@ -259,13 +259,15 @@ describe('ImportProjectUseCase, authorizing the locked restore target', () => {
 describe('ImportProjectUseCase, on a Community installation holding one project (EVO-001)', () => {
 	const holdsOne = { execute: async () => locked('secondProject') };
 
-	it('refuses a copy before writing anything, saying Community holds one project', async () => {
+	it('refuses a copy before writing anything, offering the plan that opens more projects [criterion:ac-leaf-343d6e7d-aac1-4ec5-8a47-75da99d08d33]', async () => {
 		const { useCase, written, promoted } = harness({}, ['a1b2c3'], holdsOne);
 
 		await expect(useCase.execute({ bytes: bundleOf(), mode: 'copy', name: 'Expensa' })).rejects.toThrow(
 			ProjectScopeRefusedError
 		);
-		await expect(useCase.execute({ bytes: bundleOf(), mode: 'copy' })).rejects.toThrow('Community holds one project.');
+		await expect(useCase.execute({ bytes: bundleOf(), mode: 'copy' })).rejects.toThrow(
+			'More active projects are available from the Solo Builder plan. Upgrade to keep building.'
+		);
 		expect(written).toEqual([]);
 		expect(promoted).toEqual([]);
 	});

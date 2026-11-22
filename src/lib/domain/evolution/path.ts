@@ -4,7 +4,7 @@ import type { DraftLeaf, EvolutionRequest, SkippableStep, StepSkip } from './dra
 import { behaviourOperationCount, skippedQuestionOf, STEP_QUESTIONS } from './draft';
 import { NEED_KEYS, fieldKey, type NeedKey } from './blocks';
 import { openCustomQuestions } from './custom-questions';
-import { diagramBehindTexts, textsBehindDiagram } from './functional-sync';
+import { drawnDiagramBehind, textsBehindDiagram } from './functional-sync';
 import { awaitedAmong, goneFrom, isWholeValidatedStep, namedOn, stepTarget } from './named-validators';
 
 /**
@@ -133,6 +133,22 @@ export function unvalidatedSpecSteps(request: StepJudged & Pick<EvolutionRequest
 	return SPEC_STEPS.filter((step) => skipOf(request, step) === null && !isStepValidated(request, step));
 }
 
+/**
+ * Every step of specification owes nothing, its custom questions answered and a
+ * diagram once drawn in step with its texts, validated or not: the request can
+ * be read at the Impact analysis (criteria b10629df, 80349d4a). Only the Need's
+ * situation and objectives and the Solution's description are owed; the
+ * Functional spec and the Technical spec read done while empty (EVO-013).
+ */
+export function specStepsWritten(request: EvolutionRequest): boolean {
+	const facts: PathFacts = { questionsOwed: 0, pendingProposals: 0 };
+	return SPEC_STEPS.every((step) => {
+		const { progress } = progressOf(request, step, facts);
+		if (progress === 'not_applicable') return true;
+		return progress === 'done' && openCustomQuestions(request, step).length === 0;
+	});
+}
+
 /** The need keys whose answer is critical for the freeze (ac-evo-gate-need). */
 export const CRITICAL_NEED_KEYS: readonly NeedKey[] = ['situation', 'objectives'];
 
@@ -152,12 +168,14 @@ export function needCriticalEmpty(request: Pick<EvolutionRequest, 'need' | 'open
 	return CRITICAL_NEED_KEYS.filter((key) => !needSettled(request, key)).map((key) => `00-need.${key}`);
 }
 
-/** The steps of prose whose description and first question are required (ac-evo-sol-prose, ac-evo-func-prose). */
+/** The steps of prose whose texts the path reads as owed or not (ac-evo-sol-prose, ac-evo-func-prose). */
 export type ProseStep = 'solution' | 'functional_spec';
 
 /**
- * The texts a step of prose still owes, by field path: its description and its
- * required questions. Nothing is owed once the step is marked not applicable.
+ * The texts a step of prose still owes, by field path: the Solution its
+ * description, the Functional spec nothing, and no question is required
+ * (EVO-013, criteria c1db73b7, e5ba6571). Nothing is owed once the step is
+ * marked not applicable.
  */
 export function requiredTextsEmpty(
 	request: Pick<EvolutionRequest, 'stepDescriptions' | 'stepAnswers' | 'skippedSteps'> & {
@@ -173,7 +191,7 @@ export function requiredTextsEmpty(
 	const skipped = new Set((request.skippedQuestions ?? []).map((s) => s.key));
 	const owed = (path: string, value: string) => (value.trim() === '' && !skipped.has(path)) || postponed.has(path);
 	return [
-		...(owed(`step.${step}.description`, request.stepDescriptions[step]) ? [`step.${step}.description`] : []),
+		...(step === 'solution' && owed(`step.${step}.description`, request.stepDescriptions[step]) ? [`step.${step}.description`] : []),
 		...STEP_QUESTIONS.filter((q) => q.step === step && q.required && owed(`step.${q.step}.${q.key}`, request.stepAnswers[step][q.key] ?? '')).map(
 			(q) => `step.${q.step}.${q.key}`
 		)
@@ -186,11 +204,11 @@ const writtenOn = (request: Pick<EvolutionRequest, 'stepDescriptions' | 'stepAns
 
 /** What a required text is called in a sentence that says it is owed. */
 const OWED_LABEL: Record<string, string> = {
-	'step.solution.description': 'what changes',
-	'step.solution.examples': 'how we will know it works',
-	'step.functional_spec.description': 'how it goes',
-	'step.functional_spec.refusals': 'its rules'
+	'step.solution.description': 'what changes'
 };
+
+/** What a step offered but never owed reads while nothing is written on it (EVO-013, criterion e5ba6571). */
+const OPTIONAL_UNWRITTEN = 'Optional: nothing written.';
 
 const hasBehaviour = (draft: DraftLeaf): boolean =>
 	draft.behaviour.length > 0 || behaviourOperationCount(draft.behaviourModel) > 0;
@@ -208,11 +226,9 @@ function progressOf(request: EvolutionRequest, step: EvolutionStep, facts: PathF
 			const answered = NEED_KEYS.filter((key) => needAnswered(request, key)).length;
 			const owed = needCriticalEmpty(request);
 			if (answered === 0) return { progress: 'todo', detail: 'Describe the change, then the facts behind it.' };
-			if (owed.length > 0 || !needSettled(request, 'description')) {
-				const missing = [
-					...(needSettled(request, 'description') ? [] : ['the description']),
-					...owed.map((path) => (path.endsWith('situation') ? 'the current situation' : 'the objectives'))
-				];
+			// The Need owes its current situation and its objectives, nothing more (EVO-013, criterion d4f176d4).
+			if (owed.length > 0) {
+				const missing = owed.map((path) => (path.endsWith('situation') ? 'the current situation' : 'the objectives'));
 				// "The objectives" is one plural noun: "the objectives are owed".
 				const plural = missing.length > 1 || missing[0] === 'the objectives';
 				return { progress: 'in_progress', detail: `${answered} of ${NEED_KEYS.length} questions answered; ${missing.join(' and ')} ${plural ? 'are' : 'is'} owed.` };
@@ -221,32 +237,29 @@ function progressOf(request: EvolutionRequest, step: EvolutionStep, facts: PathF
 		}
 		case 'solution': {
 			// Prose (ac-evo-sol-prose): the features it touches are read at the Impact analysis.
-			if (!writtenOn(request, 'solution')) return { progress: 'todo', detail: 'Say what changes in the product, and how we will know it works.' };
+			if (!writtenOn(request, 'solution')) return { progress: 'todo', detail: 'Say what changes in the product.' };
 			const owed = requiredTextsEmpty(request, 'solution');
 			if (owed.length > 0) return { progress: 'in_progress', detail: `Still to write: ${owed.map((path) => OWED_LABEL[path]).join(' and ')}.` };
 			return { progress: 'done', detail: 'Written.' };
 		}
 		case 'functional_spec': {
 			// Prose first (ac-evo-func-prose): the behaviour model is the AI's optional translation (ac-evo-func-model).
-			const owed = requiredTextsEmpty(request, 'functional_spec');
-			if (!writtenOn(request, 'functional_spec')) return { progress: 'todo', detail: 'Say how it goes for the person using it, and what the product refuses.' };
-			if (owed.length > 0) return { progress: 'in_progress', detail: `Still to write: ${owed.map((path) => OWED_LABEL[path]).join(' and ')}.` };
-			// Never behind in silence (ac-evo-func-uml-sync).
-			if (diagramBehindTexts(request)) return { progress: 'in_progress', detail: 'Written; the diagram is behind the texts, to redraw from them.' };
+			// Offered, never owed: empty, or written then emptied, it holds nothing (EVO-013, criterion e5ba6571).
+			if (!writtenOn(request, 'functional_spec')) return { progress: 'done', detail: OPTIONAL_UNWRITTEN };
+			// Never behind in silence (ac-evo-func-uml-sync); a diagram never drawn has nothing to keep in step (EVO-013).
+			if (drawnDiagramBehind(request)) return { progress: 'in_progress', detail: 'Written; the diagram is behind the texts, to redraw from them.' };
 			if (textsBehindDiagram(request).length > 0) return { progress: 'in_progress', detail: 'Written; the diagram changed a text, to update from it.' };
 			const translated = request.drafts.filter(hasBehaviour).length;
 			return { progress: 'done', detail: translated === 0 ? 'Written.' : `Written; translated by the AI on ${translated} ${translated === 1 ? 'subject' : 'subjects'}.` };
 		}
 		case 'technical_spec': {
 			// Prose (ac-evo-tech-prose): the tables themselves are declared at the Impact analysis.
-			const described = request.stepDescriptions.technical_spec.trim() !== '';
 			if (stageAtLeast(request.stage, 'implementation'))
 				return { progress: 'done', detail: `${writtenOn(request, 'technical_spec') ? 'Written' : 'Not described'}; frozen in version ${request.specVersion}.` };
-			if (!writtenOn(request, 'technical_spec'))
-				return { progress: 'todo', detail: 'Say what the change asks of the technique: the constraints and risks you know of, the data it moves.' };
-			if (!described) return { progress: 'in_progress', detail: 'The technical constraints and risks are not described yet.' };
+			// Offered, never owed, its description included (EVO-013, criterion e5ba6571).
+			if (!writtenOn(request, 'technical_spec')) return { progress: 'done', detail: OPTIONAL_UNWRITTEN };
 			// Never behind in silence (ac-evo-tech-uml-sync).
-			if (diagramBehindTexts(request, 'technical_spec')) return { progress: 'in_progress', detail: 'Written; the diagram is behind the description, to redraw from it.' };
+			if (drawnDiagramBehind(request, 'technical_spec')) return { progress: 'in_progress', detail: 'Written; the diagram is behind the description, to redraw from it.' };
 			return textsBehindDiagram(request, 'technical_spec').length > 0
 				? { progress: 'in_progress', detail: 'Written; the diagram changed the description, to update from it.' }
 				: { progress: 'done', detail: 'Written.' };
@@ -270,6 +283,9 @@ function progressOf(request: EvolutionRequest, step: EvolutionStep, facts: PathF
 		}
 		case 'build':
 			if (stageAtLeast(request.stage, 'acceptance')) return { progress: 'done', detail: 'Accepted: the code matches the frozen version.' };
+			// A version in correction leaves the build on the version frozen until it is frozen in turn (EVO-012).
+			if (request.stage === 'implementation' && request.correction?.of === request.specVersion)
+				return { progress: 'in_progress', detail: `Building against version ${request.specVersion}; version ${request.specVersion + 1} in correction waits for its validation.` };
 			if (request.stage === 'implementation') return { progress: 'in_progress', detail: `Building against version ${request.specVersion}, not official until declared live.` };
 			return { progress: 'todo', detail: 'Opens once the spec is frozen.' };
 		case 'approval':

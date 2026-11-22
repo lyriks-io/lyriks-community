@@ -33,6 +33,17 @@ export function failureMessage(what: string | undefined, reason: string): string
  * so the newer version someone else saved shows.
  */
 export async function applyEvolution(projectId: string, operations: EvolutionOp[], opts: { readonly what?: string } = {}): Promise<boolean> {
+	if (!(await postEvolution(projectId, operations, opts))) return false;
+	await invalidateAll();
+	return true;
+}
+
+/**
+ * Sends the operations and answers with the server: true once they are saved,
+ * before the page reads the request again (the caller does, criterion 27bbfacd).
+ * A refusal or a failure is said as applyEvolution says it.
+ */
+export async function postEvolution(projectId: string, operations: EvolutionOp[], opts: { readonly what?: string } = {}): Promise<boolean> {
 	let res: Response;
 	try {
 		res = await fetch('/api/evolution', {
@@ -61,7 +72,6 @@ export async function applyEvolution(projectId: string, operations: EvolutionOp[
 		if (res.status === 409) void invalidateAll();
 		return false;
 	}
-	await invalidateAll();
 	return true;
 }
 

@@ -21,7 +21,7 @@
 <script lang="ts">
 	import { untrack, type Snippet } from 'svelte';
 	import { pushToast } from '$ui/design-system';
-	import { owesAnswer, personKey, placeElementId, pointsOf, textOfPoints, type StepReading } from '$domain/evolution';
+	import { isOwedBeforeImpact, personKey, placeElementId, pointsOf, textOfPoints, type StepReading } from '$domain/evolution';
 	import SectionCard, { type SectionStep } from './SectionCard.svelte';
 	import EditedField from './EditedField.svelte';
 	import RequirementSuggestions from './RequirementSuggestions.svelte';
@@ -35,6 +35,7 @@
 	import { ADD_ROW, FOOT_BAR, ROW, ROW_DELETE, ROW_INPUT, primary48 } from './evo-look';
 	import { STEP_FOOT_ID, bringNextToValidate } from './evo-scroll';
 	import { requirementKindOf, requirementLanguage } from './requirement-kinds';
+	import { firstOwingSection, optionalUnwritten } from './solution-owed';
 
 	/**
 	 * The Solution of the Evolution design: 2.1 the functional requirements and
@@ -81,8 +82,6 @@
 		useCaseDiagram: Snippet;
 		/** The Technical spec's diagram, when the step has one. */
 		technicalDiagram?: Snippet | null;
-		/** The Solution's texts are written and no use case diagram is drawn (ac-evo-sol-with-diagram). */
-		diagramOwed?: boolean;
 		/** Each section's diagram as an answer, validated with its requirements (ac-evo-sol-diagram-alone); null where the step draws none. */
 		drawings?: { readonly functional_spec: DossierFieldRow | null; readonly technical_spec: DossierFieldRow | null };
 		/**
@@ -115,7 +114,6 @@
 		onDiagram,
 		useCaseDiagram,
 		technicalDiagram = null,
-		diagramOwed = false,
 		drawings = { functional_spec: null, technical_spec: null },
 		outOfStep = () => null,
 		onGoSpecification
@@ -196,9 +194,10 @@
 	});
 	const open = (id: string) => onEdit(id);
 	// The step opens on what is owed (189c4d88): its first section still owing an answer opens in edit mode, once, unless another is open.
+	// Only the Solution's description is owed there; what the tab offers opens no editor by itself (EVO-013, criterion 0a4d6036).
 	$effect(() =>
 		untrack(() => {
-			const owed = SECTIONS.find((s) => s.questions.some((q) => owesAnswer(q.field)));
+			const owed = firstOwingSection(SECTIONS);
 			if (owed && openOwed && canEdit && editing === null) open(owed.id);
 		})
 	);
@@ -271,9 +270,14 @@
 
 {#snippet sectionRead(s: Section)}
 	{@const lines = linesOf(s)}
-	{#if lines.length === 0}
+	<!-- What the tab offers and nobody wrote reads Optional, never owed (EVO-013, criterion 0a4d6036). -->
+	{@const offered = optionalUnwritten(
+		[...s.questions.map((q) => ({ step: q.step, key: q.key, filled: q.field.filled })), ...(drawings[s.step] ? [{ step: s.step, key: 'diagram', filled: drawings[s.step]?.filled ?? false }] : [])],
+		requirementKindOf(requirementLanguage(lang), 'solution', 'examples') ?? 'Example'
+	)}
+	{#if lines.length === 0 && s.questions.some((q) => isOwedBeforeImpact(q.field.path))}
 		<p class="text-[0.8125rem] italic text-ink-3">{canEdit ? 'Nothing written yet: edit the section to write it.' : 'Not answered'}</p>
-	{:else}
+	{:else if lines.length > 0}
 		<div class="flex flex-col gap-1.5">
 			{#each lines as line, at (at)}
 				<!-- The first line of an answer is where a link opens on it (ac-evo-live-guide). -->
@@ -285,6 +289,12 @@
 				</div>
 			{/each}
 		</div>
+	{/if}
+	{#if offered.length > 0}
+		<p class="flex flex-wrap items-center gap-2 text-[0.8125rem] text-ink-3" data-optional>
+			<span class="bg-toner-2 px-2 py-[2px] font-evo-mono text-xs font-bold tracking-[0.06em] text-ink-2 uppercase">Optional</span>
+			<span>{offered.join(' · ')}{canEdit ? `: write ${offered.length === 1 ? 'it' : 'them'} when the change needs ${offered.length === 1 ? 'it' : 'them'}, or let your AI prefill ${offered.length === 1 ? 'it' : 'them'}.` : ': not written.'}</span>
+		</p>
 	{/if}
 	<RequirementSuggestions {projectId} {requestId} {members} {canEdit} {lang} {mentionLinks}
 		fields={SECTIONS.flatMap((section) => section.questions.map((q) => q.field))}
@@ -341,8 +351,7 @@
 			view={drawing
 				? {
 						diagram: diagramShown(s.id),
-						toggle: () => onDiagram(s.id, !diagramShown(s.id)),
-						owed: s.id === 'sol-functional' && diagramOwed ? 'The use case diagram is owed: the Solution goes with its drawing.' : null
+						toggle: () => onDiagram(s.id, !diagramShown(s.id))
 					}
 				: null}
 		>

@@ -3,6 +3,7 @@
 	import { anchorDomId, anchorOf, type AnchorKind } from '$domain/discussions';
 	import type { FactItem } from '$application/spec360/tech';
 	import BlockFoot from './BlockFoot.svelte';
+	import type { SectionElements } from '$ui/evolution/section-elements';
 	import SectionValidateAll from './SectionValidateAll.svelte';
 	import SpecControls from './SpecControls.svelte';
 	import { useValidation } from './validation.svelte';
@@ -21,7 +22,7 @@
 		kind: AnchorKind;
 		kicker?: string;
 		/** How the section names its rows, plural, for its Validate all. */
-		what?: string;
+		what?: SectionElements;
 		/** The card's own head (its kicker and its Validate all); false where the page's section title holds them. */
 		head?: boolean;
 		/** Where a chip leads, null for a chip that only reads (a database opens the map on its tables, criterion e8a213be). */

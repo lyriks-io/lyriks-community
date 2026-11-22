@@ -42,9 +42,16 @@ describe('the folders are put in order by dragging them [criterion:ddf5cc35] [ac
 		expect(r.writes).toEqual([]);
 	});
 
-	it('never loses a place when a folder is renamed', async () => {
-		const r = repo([domain('eng', 1)]);
-		await r.port.saveDomain({ ...domain('eng'), name: 'Engineering', position: undefined });
-		expect(r.domains.get('eng')?.position).toBe(1);
+	it('places only the caller\'s own folders: another team\'s are never theirs to name or to need', async () => {
+		const r = repo([
+			{ ...domain('eng'), workspaceId: 'mine' },
+			{ ...domain('ops'), workspaceId: 'mine' },
+			{ ...domain('theirs'), workspaceId: 'other' },
+			domain('unplaced')
+		]);
+		const reorder = new ReorderDomainsUseCase(r.port);
+		expect(await reorder.execute(['ops', 'eng', 'theirs'], new Set(['mine']))).toEqual({ reordered: false, reason: REORDER_OUTSIDE_LIST });
+		expect(await reorder.execute(['ops', 'eng'], new Set(['mine']))).toEqual({ reordered: true });
+		expect(r.writes).toEqual([['ops', 'eng']]);
 	});
 });

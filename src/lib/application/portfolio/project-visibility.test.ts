@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { foldersIn, isProjectVisible, seesEverything, type ProjectVisibility } from './project-visibility';
+import { foldersIn, isProjectVisible, type ProjectVisibility } from './project-visibility';
 import { emptyTeam, type Collaborator, type Team } from '$domain/team';
 
 function teamWith(email: string): Team {
@@ -18,13 +18,6 @@ function teamWith(email: string): Team {
 }
 
 const noTeam = async () => emptyTeam();
-
-describe('seesEverything', () => {
-	it('is true only for blanket (null domains)', () => {
-		expect(seesEverything({ allowedDomainIds: null, email: 'a@b.com' })).toBe(true);
-		expect(seesEverything({ allowedDomainIds: new Set(), email: 'a@b.com' })).toBe(false);
-	});
-});
 
 describe('isProjectVisible', () => {
 	it('blanket visibility sees every project without loading teams', async () => {

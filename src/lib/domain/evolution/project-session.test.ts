@@ -7,7 +7,9 @@ import {
 	closeProjectTurn,
 	endProjectSession,
 	isProjectIdle,
-	nextClickOf,
+	clicksFor,
+	runOfClick,
+	subjectHolder,
 	openProjectSessionOf,
 	pendingProjectClicksOf,
 	sendProjectClick,
@@ -20,7 +22,7 @@ import {
 } from './project-session';
 import { parseEvolutionDraft } from '$lib/application/evolution/parse-evolution-draft';
 
-/** feat-ai-session: one session of the person's own AI for the whole project. */
+/** feat-ai-session: the sessions of the person's own AIs on the whole project, one per AI (EVO-015). */
 
 const T = (m: number) => new Date(Date.UTC(2026, 9, 29, 10, m)).toISOString();
 const ana = 'ana@acme.io';
@@ -35,17 +37,19 @@ const opened = (draft = draftWith()) => {
 	return outcome.draft;
 };
 
-describe('one session per person and project covers every page [criterion:ac-leaf-ac-ai-session-project]', () => {
-	it('opens on the project, and a new one replaces it and every session of the person on a request', () => {
+describe('each AI of a person holds its own session covering every page [criterion:ac-leaf-ac-ai-session-project]', () => {
+	it('opens on the project beside the sessions the person already holds, on it or on a request, and ends none', () => {
 		const onRequest = startSession(request, ana, 'old', T(0));
 		if (!onRequest.ok) throw new Error(onRequest.reason);
 		const first = opened(draftWith({ requests: [onRequest.request] }));
 		expect(openProjectSessionOf(first, ana)?.id).toBe('s1');
-		expect(openSessionOf(first.requests[0], ana)).toBeNull();
-		const second = startProjectSession(first, ana, 's2', T(1));
+		expect(openSessionOf(first.requests[0], ana)?.id).toBe('old');
+		const second = startProjectSession(first, ana, 's2', T(1), { client: 'Codex' });
 		if (!second.ok) throw new Error(second.reason);
-		expect(second.replaced?.id).toBe('s1');
-		expect(second.draft.sessions?.find((s) => s.id === 's1')).toMatchObject({ endReason: 'replaced' });
+		expect(second.draft.sessions?.filter((s) => !s.endedAt).map((s) => s.id)).toEqual(['s1', 's2']);
+		expect(second.draft.sessions?.some((s) => s.endReason === 'replaced')).toBe(false);
+		expect(openProjectSessionOf(second.draft, ana)).toMatchObject({ id: 's2', client: 'Codex' });
+		expect(openProjectSessionOf(second.draft, ana, 's1')?.id).toBe('s1');
 	});
 
 	it('hands a click on a request through that request, which gets a session of the same id', () => {
@@ -60,10 +64,11 @@ describe('one session per person and project covers every page [criterion:ac-lea
 		if (!clicked.ok) throw new Error(clicked.reason);
 		const asked = sendProjectClick(opened(draftWith({ requests: [clicked.request] })), ana, ask('Why?'), false, 'p1', T(3));
 		if (!asked.ok) throw new Error(asked.reason);
-		expect(nextClickOf(asked.draft, ana)).toMatchObject({ where: 'request', requestId: 'r1' });
+		const none = () => ({ free: false, working: false });
+		expect(clicksFor(asked.draft, ana, 's1', none)[0]).toMatchObject({ where: 'request', requestId: 'r1' });
 		const later = sendProjectClick(opened(), ana, ask('Why?'), false, 'p2', T(1));
 		if (!later.ok) throw new Error(later.reason);
-		expect(nextClickOf({ ...later.draft, requests: [clicked.request] }, ana)).toMatchObject({ where: 'project', click: { id: 'p2' } });
+		expect(clicksFor({ ...later.draft, requests: [clicked.request] }, ana, 's1', none)[0]).toMatchObject({ where: 'project', click: { id: 'p2' } });
 	});
 });
 
@@ -102,7 +107,7 @@ describe('a re-reading of the code is asked by an editor and answered by one sen
 		if (!sent.ok) throw new Error(sent.reason);
 		const taken = takeProjectClick(sent.draft, 'p1', T(2))!;
 		expect(answerProjectClick(taken.draft, ana, 'p1', ' ', T(3))).toMatchObject({ ok: false, reason: 'Say what changed, or that nothing needed to change.' });
-		const closed = closeProjectTurn(taken.draft, ana, T(4));
+		const closed = closeProjectTurn(taken.draft, ana, T(4), 's1');
 		expect(closed.clicks?.[0]).toMatchObject({ state: 'answered', answeredNothing: true });
 	});
 });
@@ -180,5 +185,30 @@ describe('a session its AI left never reads in session (ac-ai-session-end) [crit
 	it('keeps a session whose AI waits or works', () => {
 		expect(pulse({ callHeld: true })).toBeNull();
 		expect(pulse({ working: true })).toBeNull();
+	});
+});
+
+describe('a click on a run goes to the AI that holds the run (EVO-015, the run click of EVO-014)', () => {
+	const free = (ids: readonly string[]) => (id: string) => ({ free: ids.includes(id), working: false });
+	const runClick = (draft: ProjectEvolutionDraft, id: string, at: string): ProjectEvolutionDraft => ({
+		...draft,
+		clicks: [...(draft.clicks ?? []), { id, personId: ana, kind: 'reread', page: 'retrospec', anchor: 'retrospec', title: 'Reverse-Specification', runId: 'retrospec', at, state: 'waiting' }]
+	});
+
+	it('reads the run a run click anchors on, and none on any other click', () => {
+		expect(runOfClick({ kind: 'reread', anchor: 'feature:f1' })).toBeNull();
+		expect(runOfClick({ kind: 'reread', anchor: 'x', runId: 'r9' })).toBe('r9');
+		expect(runOfClick({ kind: 'run' as never, anchor: 'retrospec' })).toBe('retrospec');
+	});
+
+	it('hands the next click on the run to the session that took the last one, even when a newer AI is free', () => {
+		const first = startProjectSession(runClick(draftWith(), 'k1', T(1)), ana, 'codex', T(0));
+		if (!first.ok) throw new Error(first.reason);
+		const taken = takeProjectClick(first.draft, 'k1', T(2), 'codex')!;
+		const second = startProjectSession(runClick(taken.draft, 'k2', T(4)), ana, 'claude', T(3));
+		if (!second.ok) throw new Error(second.reason);
+		expect(subjectHolder(second.draft, ana, { kind: 'run', runId: 'retrospec' })).toBe('codex');
+		expect(clicksFor(second.draft, ana, 'claude', free(['codex', 'claude']))).toEqual([]);
+		expect(clicksFor(second.draft, ana, 'codex', free(['claude']))).toMatchObject([{ where: 'project', click: { id: 'k2' } }]);
 	});
 });

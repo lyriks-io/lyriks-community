@@ -1,3 +1,4 @@
+import { mintUuid } from '$domain/shared';
 import {
 	createCompetitor,
 	createEmptyDefinitionDraft,
@@ -226,16 +227,16 @@ export function parseDefinitionDraft(input: unknown, projectId: string): Foundat
 		rawLinks.length > 0
 			? rawLinks
 					.map((p) => {
-						if (typeof p === 'string') return { id: crypto.randomUUID(), text: p, roleIds: [] };
+						if (typeof p === 'string') return { id: mintUuid(), text: p, roleIds: [] };
 						const o = (p ?? {}) as Record<string, unknown>;
 						return {
-							id: typeof o.id === 'string' && o.id ? o.id : crypto.randomUUID(),
+							id: typeof o.id === 'string' && o.id ? o.id : mintUuid(),
 							text: typeof o.text === 'string' ? o.text : '',
 							roleIds: arr<unknown>(o, 'roleIds').filter((x): x is string => typeof x === 'string')
 						};
 					})
 					.filter((p) => p.text.trim().length > 0)
-			: painPointsLegacy.map((text) => ({ id: crypto.randomUUID(), text, roleIds: [] }));
+			: painPointsLegacy.map((text) => ({ id: mintUuid(), text, roleIds: [] }));
 
 	return {
 		...base,

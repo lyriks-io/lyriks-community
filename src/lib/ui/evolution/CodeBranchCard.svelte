@@ -5,6 +5,7 @@
 	import { applyEvolution } from './reading-api';
 	import { KICKER, SECONDARY_44 } from './evo-look';
 	import { codeSummary, COMMITTED_TIP, testedTip, type GlanceTone } from './code-summary';
+	import { personName } from './people';
 
 	/**
 	 * Where the request's code stands in git, from its branch to its merge
@@ -21,8 +22,10 @@
 		projectId: string;
 		dossier: DossierReading;
 		canEdit: boolean;
+		/** The roster, so who approved is named, never shown by id. */
+		members?: readonly { id: string; name: string }[];
 	}
-	let { projectId, dossier, canEdit }: Props = $props();
+	let { projectId, dossier, canEdit, members = [] }: Props = $props();
 
 	const code = $derived(dossier.code);
 	// The design's tags: what holds filled green, what to watch orange, the rest a toner-2 chip.
@@ -172,11 +175,17 @@
 							{#if code.reportedAt}<span class="font-evo-mono text-xs text-ink-3">reported at {TIME.format(new Date(code.reportedAt))}</span>{/if}
 						</dd>
 					{/if}
-					{#if code.validatedCommit}
+					<!-- The approval fixes the commit that goes live: none before it, none once a later commit set it aside (EVO-011, criteria e33a838a, 225154a2). -->
+					{#if code.validatedCommit && !code.validationSetAside}
 						<dt class="font-evo-mono text-xs tracking-[0.06em] text-ink-3 uppercase">Validated commit</dt>
 						<dd class="m-0 flex flex-wrap items-center gap-2">
-							<span class="font-evo-mono text-evo-ink" title="The commit a person validated with the verification: what the merge brings into {code.deploymentBranch}">{shortSha(code.validatedCommit)}</span>
-							{#if code.validationSetAside}<span class="{CHIP} border-orange bg-orange text-ink">the branch moved since: validate again</span>{/if}
+							<span class="font-evo-mono text-evo-ink" title="The commit the approval fixed: what the merge brings into {code.deploymentBranch}">{shortSha(code.validatedCommit)}</span>
+							{#if code.validatedBy}<span class="text-sm text-ink-2">approved by {personName(code.validatedBy, members)}</span>{/if}
+						</dd>
+					{:else if code.validationSetAside}
+						<dt class="font-evo-mono text-xs tracking-[0.06em] text-ink-3 uppercase">Approval</dt>
+						<dd class="m-0 flex flex-wrap items-center gap-2">
+							<span class="{CHIP} border-orange bg-orange text-ink">the branch moved since the approval: approve again</span>
 						</dd>
 					{/if}
 					{#if code.mergedCommit}

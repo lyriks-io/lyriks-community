@@ -29,7 +29,7 @@ import type { UnspaFeatureSnapshot } from '$lib/unspa-schema';
 export class MergedKnowledgeGraphProvider implements KnowledgeGraphProviderPort {
 	constructor(
 		private readonly local: KnowledgeGraphProviderPort,
-		private readonly behavior: BehaviorRepositoryPort,
+		private readonly behavior: Pick<BehaviorRepositoryPort, 'loadProject' | 'loadFeature'>,
 		private readonly formalVerdict: FormalVerdictPort,
 		private readonly clock: ClockPort,
 		private readonly onError?: (err: unknown) => void,

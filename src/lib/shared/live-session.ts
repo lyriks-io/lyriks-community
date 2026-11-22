@@ -20,6 +20,12 @@ export interface LiveSessionSignal {
 	readonly step: number | null;
 	/** Why the session ended, once it did. */
 	readonly endReason: 'ended_by_person' | 'idle' | 'gone' | 'replaced' | 'finished' | null;
+	/**
+	 * A waiting call of the AI is held right now (EVO-015): what makes the AI free
+	 * to take a click, read on every node through the bus; said again at each
+	 * beat of the wait, so a signal no longer refreshed stops counting.
+	 */
+	readonly callHeld?: boolean;
 	readonly at: string;
 }
 

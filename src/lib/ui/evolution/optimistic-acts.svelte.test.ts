@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OptimisticActs } from './optimistic-acts.svelte';
+import { pendingSaves } from '$ui/shell/pending-saves.svelte';
 
 describe('a Validate reads at once and goes back if the save fails [criterion:ac-leaf-ac-evo-form-edit-optimistic]', () => {
 	beforeEach(() => vi.stubGlobal('requestAnimationFrame', (f: () => void) => setTimeout(f, 0)));
@@ -14,6 +15,21 @@ describe('a Validate reads at once and goes back if the save fails [criterion:ac
 		answer(true);
 		await new Promise((r) => setTimeout(r, 20));
 		// Saved, but the page has not read the request again yet: the card does not blink back.
+		expect(acts.of('section')).toBe('validate');
+		reading = { version: 2 };
+		expect(await run).toBe(true);
+		expect(acts.of('section')).toBeNull();
+	});
+
+	it('ends Saving at the server answer and keeps the act until the page read the request again [criterion:27bbfacd]', async () => {
+		const acts = new OptimisticActs<string>();
+		let reading = { version: 1 };
+		let answer!: (ok: boolean) => void;
+		const run = acts.run('section', 'validate', () => new Promise<boolean>((done) => (answer = done)), () => reading);
+		expect(pendingSaves.waiting).toBe(1);
+		answer(true);
+		await new Promise((r) => setTimeout(r, 20));
+		expect(pendingSaves.waiting).toBe(0);
 		expect(acts.of('section')).toBe('validate');
 		reading = { version: 2 };
 		expect(await run).toBe(true);

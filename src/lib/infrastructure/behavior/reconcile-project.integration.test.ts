@@ -137,3 +137,29 @@ describe('ReconcileProjectUseCase (real FS adapters)', () => {
 		expect(existsSync(join(root, '.locks', 'proj'))).toBe(false); // lock released
 	});
 });
+
+describe('reading a kernel folder that holds two manifests', () => {
+	function manifest(folderKey: string, fileStem: string, name: string) {
+		const dir = join(root, folderKey);
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, `${fileStem}.project.json`), JSON.stringify({ format: 'unspaghettit-project', version: 1, project: { id: folderKey, name, featureIds: [] } }));
+	}
+	const nameIn = async (folderKey: string) => (await new FsReconciliationStore(root).loadCandidates([folderKey]))[0].project?.name;
+
+	it('trusts the manifest named after the folder over one the engine left under another name, whichever sorts first', async () => {
+		manifest('p-shop', 'a-renamed', 'Before the rename');
+		manifest('p-shop', 'p-shop', 'Shop');
+		manifest('p-shop', 'z-renamed', 'After the rename');
+		expect(await nameIn('p-shop')).toBe('Shop');
+	});
+
+	it('falls back to the first other manifest when none is named after the folder', async () => {
+		manifest('p-shop', 'b-renamed', 'Second');
+		manifest('p-shop', 'a-renamed', 'First');
+		expect(await nameIn('p-shop')).toBe('First');
+	});
+
+	it('reads an absent folder as an empty one', async () => {
+		expect(await new FsReconciliationStore(root).loadCandidates(['p-none'])).toEqual([{ folderKey: 'p-none', project: null, features: [] }]);
+	});
+});

@@ -61,8 +61,10 @@
 		onImpact: (code: string) => void;
 		onCross: (id: string, section: boolean) => void;
 		onDetails: () => void;
+		/** What holds the freeze, said at the foot as in the details (EVO-011, criterion c39cfe76). */
+		holding?: string | null;
 	}
-	let { counts, ready, paragraphs, areas, majors, minors, cross, onImpact, onCross, onDetails }: Props = $props();
+	let { counts, ready, paragraphs, areas, majors, minors, cross, onImpact, onCross, onDetails, holding = null }: Props = $props();
 
 	// The design's block (.ly-card): sand, flat, no rule around it.
 	const CARD = 'flex min-w-0 flex-col gap-3 rounded-evo-card border border-transparent bg-surface px-6 py-5';
@@ -220,6 +222,7 @@
 	</div>
 
 	<PageFoot class="flex flex-wrap items-center justify-end gap-2.5">
+		{#if holding}<span class="mr-auto text-sm text-ink-2">{holding}</span>{/if}
 		<button type="button" class={PRIMARY_48} onclick={onDetails}>See the impacts in detail →</button>
 	</PageFoot>
 </section>

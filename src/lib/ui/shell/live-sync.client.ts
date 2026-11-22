@@ -26,6 +26,11 @@ import { LIVE_SESSION_EVENT, type LiveSessionSignal } from '$lib/shared/live-ses
  * of loads that SvelteKit aborts the first for. An AI writing every second used
  * to keep a page reloading without end, its server answering loads nobody read.
  *
+ * A tab out of sight (behind another tab, its window minimized) keeps what it
+ * hears and refreshes once, as soon as it shows again: with several tabs open
+ * on a project, every save used to reload them all at once on the one server
+ * and slowed the very tab in front (rule 0d93c05b, action abdfb2d2).
+ *
  * An `activity` event (the person's AI read or wrote an Evolution request)
  * reloads nothing: it is re-emitted on `window` as `AI_ACTIVITY_EVENT`, for an
  * open dossier page to follow the AI while it works. A `live` event (what the
@@ -52,6 +57,8 @@ export function startLiveSync(projectId: string): () => void {
 	);
 
 	const pending = new Set<string>();
+	/** Sections heard while the tab was out of sight, told to the stores once it shows again. */
+	const heardOutOfSight = new Set<string>();
 	let refreshAll = false;
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	/** The reload in flight: what arrives meanwhile waits for it. */
@@ -62,6 +69,9 @@ export function startLiveSync(projectId: string): () => void {
 		timer = null;
 		if (closed) return;
 		if (reloading) return; // the reload in flight schedules the next one when it ends
+		// A tab out of sight keeps what it heard until it shows again (rule 0d93c05b): with several
+		// tabs open, every save used to reload them all at once and slowed the one in front.
+		if (outOfSight()) return;
 		// Invalidation replaces SvelteKit's navigation token. Let the person's
 		// destination settle first, keeping every queued key until it does.
 		if (navigating.to !== null) {
@@ -86,6 +96,18 @@ export function startLiveSync(projectId: string): () => void {
 	const schedule = () => {
 		if (timer === null && !reloading) timer = setTimeout(flush, COALESCE_MS);
 	};
+	const tellStores = (section: string) => window.dispatchEvent(new CustomEvent<string>(SECTION_CHANGE_EVENT, { detail: section }));
+	// The page shows again (action abdfb2d2): what it heard meanwhile refreshes at once, in one refresh.
+	const onShown = () => {
+		if (closed || outOfSight()) return;
+		for (const section of heardOutOfSight) tellStores(section);
+		heardOutOfSight.clear();
+		if (pending.size === 0 && !refreshAll) return;
+		if (timer !== null) clearTimeout(timer);
+		flush();
+	};
+	const page = typeof document === 'undefined' ? null : document;
+	page?.addEventListener('visibilitychange', onShown);
 
 	source.addEventListener('change', (event) => {
 		let section = '';
@@ -102,7 +124,8 @@ export function startLiveSync(projectId: string): () => void {
 		}
 		pending.add(sectionSyncKey(projectId, section));
 		// A store that reads apart from the page loads (the AI session the floating chip reads) hears which section moved.
-		window.dispatchEvent(new CustomEvent<string>(SECTION_CHANGE_EVENT, { detail: section }));
+		if (outOfSight()) heardOutOfSight.add(section);
+		else tellStores(section);
 		// A dotted key is a slice of one public section (e.g. `foundation.identity`).
 		// Loads only depend on the public section, so invalidate that too.
 		const publicSection = section.split('.')[0];
@@ -131,6 +154,12 @@ export function startLiveSync(projectId: string): () => void {
 	return () => {
 		closed = true;
 		if (timer !== null) clearTimeout(timer);
+		page?.removeEventListener('visibilitychange', onShown);
 		source.close();
 	};
+}
+
+/** True while the tab is behind another one or its window is minimized (state page.outOfSight). */
+function outOfSight(): boolean {
+	return typeof document !== 'undefined' && document.visibilityState === 'hidden';
 }

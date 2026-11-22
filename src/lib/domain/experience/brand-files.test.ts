@@ -53,18 +53,4 @@ describe('listBrandFiles / findBrandFile', () => {
 		brand.identity.brandbookFile = { name: 'empty', dataUrl: '' };
 		expect(listBrandFiles(brand)).toHaveLength(0);
 	});
-
-	it('decodes to the exact original bytes (mirrors the download endpoint)', () => {
-		const original = 'Hello, PDF & Ünïcode 🎯';
-		const dataUrl = `data:text/plain;base64,${Buffer.from(original, 'utf-8').toString('base64')}`;
-		const brand = defaultBrand();
-		brand.identity.brandbookFile = { name: 'doc.txt', dataUrl };
-
-		const entry = findBrandFile(brand, 'identity/brandbook')!;
-		const parsed = parseDataUrl(entry.dataUrl)!;
-		// This is precisely what /api/files does to build the Response body.
-		const bytes = Buffer.from(parsed.base64, 'base64');
-		expect(bytes.toString('utf-8')).toBe(original);
-		expect(parsed.mime).toBe('text/plain');
-	});
 });

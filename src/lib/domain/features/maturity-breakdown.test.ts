@@ -1,11 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createEmptyFeaturesDraft, createCore, createFeature, createRelease } from './draft';
-import {
-	maturityByCore,
-	maturityByFeature,
-	maturityByRelease,
-	UNPLANNED_RELEASE_ID
-} from './maturity-breakdown';
+import { createEmptyFeaturesDraft, createCore, createFeature } from './draft';
+import { maturityByCore, maturityByFeature } from './maturity-breakdown';
 
 function draftWith(over: Partial<ReturnType<typeof createEmptyFeaturesDraft>>) {
 	return { ...createEmptyFeaturesDraft('p1'), ...over };
@@ -57,48 +52,5 @@ describe('maturityByFeature', () => {
 				featureCount: 1
 			}
 		]);
-	});
-});
-
-describe('maturityByRelease', () => {
-	const releases = [
-		createRelease({ id: 'r2', name: 'Later', version: 'V1', order: 1, weekStart: 7, weekEnd: 12 }),
-		createRelease({ id: 'r1', name: 'Core', version: 'V0', order: 0, weekStart: 1, weekEnd: 6 })
-	];
-
-	it('averages per release in roadmap order and carries the version + weeks detail', () => {
-		const draft = draftWith({
-			releases,
-			features: [createFeature('c1', null, { id: 'x1' }), createFeature('c1', null, { id: 'x2' })],
-			roadmapAssignments: [
-				{ featureId: 'x1', releaseId: 'r1' },
-				{ featureId: 'x2', releaseId: 'r2' }
-			]
-		});
-		const rows = maturityByRelease(draft, { x1: 70, x2: 30 });
-		expect(rows.map((r) => [r.id, r.detail, r.score])).toEqual([
-			['r1', 'V0 · Weeks 1–6', 70],
-			['r2', 'V1 · Weeks 7–12', 30]
-		]);
-	});
-
-	it('appends an unplanned row when leaves are outside every release', () => {
-		const draft = draftWith({
-			releases,
-			features: [createFeature('c1', null, { id: 'x1' }), createFeature('c1', null, { id: 'x2' })],
-			roadmapAssignments: [{ featureId: 'x1', releaseId: 'r1' }]
-		});
-		const last = maturityByRelease(draft, { x1: 70, x2: 30 }).at(-1);
-		expect(last).toMatchObject({ id: UNPLANNED_RELEASE_ID, score: 30, featureCount: 1 });
-	});
-
-	it('ignores orphaned assignments and shows an empty release as null', () => {
-		const draft = draftWith({
-			releases,
-			roadmapAssignments: [{ featureId: 'ghost', releaseId: 'r1' }]
-		});
-		const rows = maturityByRelease(draft, {});
-		expect(rows).toHaveLength(2);
-		expect(rows[0]).toMatchObject({ id: 'r1', score: null, featureCount: 0 });
 	});
 });

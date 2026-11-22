@@ -3,7 +3,7 @@ import { applyRetrospecAct, defaultScope, type ActContext } from './acts';
 import { currentRun, emptyRetrospecDocument, parseRetrospecDocument, type RetrospecDocument } from './document';
 import { codeChangesSince, codeKey, codeValue, type CodeFeatureFacts } from './code-drift';
 import { elementStanding } from './spec-validation';
-import { handEdited, specEditLines, specEditMarks, specEditStatus, specEditsKept, specEditsToReview, type SpecEditChange } from './spec-edits';
+import { handEdited, specEditLines, specEditStatus, specEditsKept, specEditsToReview, type SpecEditChange } from './spec-edits';
 import { nextRunReads, runCards } from './run-history';
 
 const ana = { id: 'ana@acme.io', name: 'Ana P.' };
@@ -63,10 +63,9 @@ describe('a hand edit of a validated specification is followed, never refused [c
 		expect(doc.specEdits).toBeUndefined();
 	});
 
-	it('marks prose the code cannot confirm instead of listing it [criterion:956cb2ac]', () => {
+	it('never lists prose the code cannot confirm as a line to review', () => {
 		const doc = ok(validated(), [{ op: 'edit', itemId: 'problem', title: 'Current situation', change: { ...rename('Teams lose orders', false), itemId: 'problem', featureId: null } }]);
 		expect(specEditLines(doc.specEdits)).toEqual([]);
-		expect(specEditMarks(doc.specEdits).map((e) => e.itemId)).toEqual(['problem']);
 		expect(specEditsToReview(doc.specEdits)).toBe(0);
 	});
 });
@@ -220,14 +219,15 @@ describe('a hand edit never hides the code of the feature [criterion:68b978c4]',
 });
 
 describe('a later run reads what changed or the whole product again, and erases nothing either way [criterion:98612117]', () => {
-	it('reads what changed by default, the whole product when the last run stopped short or no delta can be read', () => {
-		expect(defaultScope(validated(), [], false)).toBe('delta');
+	it('reads by one rule: Full analysis with nothing gathered, Resume after a run closed short, Delta otherwise [criterion:04f3bc85]', () => {
+		expect(defaultScope(validated(), [], true)).toBe('delta');
+		// No commit and no stored text: Delta analysis still, reading what is new or changed in what the specification cites.
 		expect(defaultScope(validated(false), [], true)).toBe('delta');
-		// No commit and no stored text: nothing to read a delta from.
-		expect(defaultScope(validated(false), [], false)).toBe('whole');
-		// The last run was closed by a person before its AI's final check.
+		// Nothing gathered yet: the first run reads the whole product.
+		expect(defaultScope(emptyRetrospecDocument(), [], false)).toBe('whole');
+		// The last run was closed by a person before its AI's final check: it is resumed.
 		const closed = ok(emptyRetrospecDocument(), [{ op: 'start', mode: 'repo', baseline: {} }], [{ op: 'launch' }], [{ op: 'end_analysis' }]);
-		expect(defaultScope(closed, [], true)).toBe('whole');
+		expect(defaultScope(closed, [], true)).toBe('resume');
 		expect(defaultScope(closed, [at(9)], true)).toBe('delta');
 	});
 

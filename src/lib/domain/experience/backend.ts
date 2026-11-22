@@ -8,6 +8,7 @@
  * email, price, …) — no randomness — so rows are stable across re-renders and
  * authoring stays effortless (declare a shape, get believable rows for free).
  */
+import { mintUuid } from '../shared';
 import type { Option } from '$domain/shared';
 
 /* ── Field kinds drive the fake-data generator ───────────────────────── */
@@ -76,7 +77,7 @@ export interface BackendCollection {
 }
 
 function newId(): string {
-	return crypto.randomUUID();
+	return mintUuid();
 }
 
 export function createBackendField(overrides: Partial<BackendField> = {}): BackendField {

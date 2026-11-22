@@ -3,6 +3,7 @@ import type { AppServices } from '$composition/container.server';
 import { saveRetrospecActs } from '$application/retrospec/retrospec-store';
 import type { SpecValidationAct } from '$application/specification/parse-spec-validation-acts';
 import { onFeaturesPages } from '$domain/discussions';
+import { choicesOpen } from '$domain/evolution';
 import { SPEC360_TAB, applyRetrospecActs, canReviewElement, codeSnapshot, samePersonRef, specValidationBoard, waitingOn, type PersonRef, type RetrospecAct } from '$domain/retrospec';
 import { publishSectionChange } from './sync-bus.server';
 import { readCodeChanges, readCodeFacts } from './spec-code-drift.server';
@@ -22,6 +23,19 @@ async function captureBaseline(services: AppServices, projectId: string, name: s
 	return captured.draft.baselines[0]?.id ?? null;
 }
 
+/** The requests whose Simulation the acts come from, each refused when its version is frozen: its choices read only (rule d1cd168e). */
+async function refuseFromFrozenRequests(services: AppServices, projectId: string, acts: readonly SpecValidationAct[]): Promise<void> {
+	const named = [...new Set(acts.flatMap((act) => ('fromRequest' in act ? [act.fromRequest] : [])))];
+	if (named.length === 0) return;
+	const { requests } = await services.loadEvolutionDraft.execute(projectId);
+	for (const requestId of named) {
+		const request = requests.find((r) => r.id === requestId && r.status !== 'deleted');
+		if (!request) error(404, 'This change request does not exist.');
+		const open = choicesOpen(request);
+		if (!open.ok) error(400, open.reason);
+	}
+}
+
 export async function applySpecValidationActs(
 	services: AppServices, projectId: string,
 	acts: readonly SpecValidationAct[],
@@ -29,13 +43,15 @@ export async function applySpecValidationActs(
 	origin: string | null,
 	access: { readonly canWrite: boolean } = { canWrite: true }
 ): Promise<{ revision: number }> {
+	// A validation given from the Simulation of a request is the same act, once that request's version is not frozen (EVO-003).
+	await refuseFromFrozenRequests(services, projectId, acts);
 	const read = await readSpecValidationBoard(services, projectId, actor, { requireTeam: true, reviewOnly: !access.canWrite });
 	const { elements, team, doc } = read;
 	let board = read.board;
 	let projected = doc;
 	const now = new Date().toISOString();
 	if (acts.some((act) => act.op === 'finalize') && acts.length > 1) error(400, 'Validate definitively on its own.');
-	if (!access.canWrite && acts.some((act) => !['validate', 'withdraw', 'validate_waiting'].includes(act.op))) {
+	if (!access.canWrite && acts.some((act) => !['validate', 'withdraw', 'validate_waiting', 'withdraw_request_validation'].includes(act.op))) {
 		error(403, 'Only a project editor may change validation assignments or the specification.');
 	}
 	const byId = new Map(elements.map((e) => [e.id, e]));
@@ -70,6 +86,20 @@ export async function applySpecValidationActs(
 				// Validating an element the former review rejected restores it: the click is the explicit decision.
 				if (act.op === 'validate' && board.standings[e.id]?.rejected) out.push({ op: 'clear_flag', itemId: e.id, total });
 				out.push(act.op === 'validate' ? { op: 'validate', itemId: e.id, title: e.title, tab: SPEC360_TAB, total } : { op: 'withdraw', itemId: e.id, total });
+				break;
+			}
+			case 'withdraw_request_validation': {
+				const e = element(act.itemId);
+				const waitsOnActor = canReviewElement(projected, e, team, actor, access.canWrite);
+				// An unassigned reader cannot act for the people an element waits on (rule 312a7bb5).
+				if (!access.canWrite && !waitsOnActor) error(403, 'forbidden');
+				// Only the people an element waits on take back what stands in their place (rule 846c0d0a).
+				if (!waitsOnActor) error(403, 'This question does not require your validation.');
+				// Once the specification is the reference, it changes through a change request (rule 78b379d6).
+				if (board.summary.state === 'validated') error(400, 'The specification is already validated.');
+				// There is nothing to take back where no request validated the element (rule c75239d4).
+				if (!board.standings[e.id]?.through) error(400, 'No change request validated this element.');
+				out.push({ op: 'withdraw_request_validation', itemId: e.id, total });
 				break;
 			}
 			case 'reject': {

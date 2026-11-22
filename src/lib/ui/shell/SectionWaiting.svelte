@@ -4,13 +4,14 @@
 	/**
 	 * In place of a section's content while it has nothing to show yet
 	 * (criterion 6213ef4c): why it is empty, in one or two short sentences, and
-	 * the one step that fills it.
+	 * the one step that fills it. Without a title it sits under a head that
+	 * already names the section (Mismatch, EVO-014).
 	 */
-	let { title, wait }: { title: string; wait: SectionWait } = $props();
+	let { title, wait }: { title?: string; wait: SectionWait } = $props();
 </script>
 
-<section class="wait animate-lk-in" aria-labelledby="section-wait-title" data-section-wait>
-	<h1 id="section-wait-title">{title}</h1>
+<section class="wait animate-lk-in" aria-labelledby={title ? 'section-wait-title' : undefined} data-section-wait>
+	{#if title}<h1 id="section-wait-title">{title}</h1>{/if}
 	{#each wait.lines as line, i (i)}<p class:lead={i === 0}>{line}</p>{/each}
 	<a class="step" href={wait.step.href}>{wait.step.label}</a>
 </section>

@@ -50,18 +50,18 @@ describe('a deferred omission reads in the list as a suggestion [criterion:35991
 	});
 });
 
-describe('the roadmap is reached from the Requests view [criterion:ff115da8]', () => {
-	const head = (props: Record<string, unknown>) =>
-		render(BoardReading, { props: { cards: [card('1', 'open')], canEdit: false, productName: 'P', actorId: 'a', members: [], hasProduct: true, specHref: '/s', retroHref: '/r', onOpen: () => {}, onConcurrent: () => {}, onNew: () => {}, ...props } }).body;
+describe('a card reads the order and the conflicts of the requests under way (EVO-005)', () => {
+	const ordered = (order: { after: string[]; conflicts: string[] }, status = 'open') => ({ ...card('1', status), order }) as unknown as BoardCardView;
 
-	it('links to the roadmap beside New change, for a reader too', () => {
-		const html = head({ roadmapHref: '/projects/p/evolution?tab=roadmap' });
-		expect(html).toContain('href="/projects/p/evolution?tab=roadmap"');
-		expect(html).toContain('>Roadmap</a>');
-		expect(html).not.toContain('New change');
+	it('reads after EVO-xxx while the request it is set after has not landed [criterion:ac-leaf-f2108b7e-6d38-4999-a018-4f3d4057afdf]', () => {
+		const html = board([ordered({ after: ['EVO-2'], conflicts: [] }), card('2', 'open')]);
+		expect(html).toContain('After EVO-2');
+		expect(board([ordered({ after: [], conflicts: [] }), card('2', 'open')])).not.toContain('After EVO-');
 	});
 
-	it('shows no link where the page names no roadmap', () => {
-		expect(head({})).not.toContain('>Roadmap</a>');
+	it('reads the conflict with a request under way on the board [criterion:ac-leaf-44f6ec8a-f78f-4488-8a66-0603a4cb4249]', () => {
+		expect(board([ordered({ after: [], conflicts: ['EVO-2'] }), card('2', 'open')])).toContain('Conflict · EVO-2');
+		// A request that left the run reads where it stands, nothing more.
+		expect(board([ordered({ after: [], conflicts: ['EVO-2'] }, 'closed'), card('2', 'open')])).not.toContain('Conflict · EVO-2');
 	});
 });

@@ -242,21 +242,25 @@ describe('OAuth consent and restricted credentials', () => {
     // Revocation and a dead platform session both end the chain.
     await app.request('/mcp/oauth/revoke', post({ token: fourth.refresh_token }))
     expect((await refresh(fourth.refresh_token)).status).toBe(400)
-    const fresh = await (await exchange(await approved())).json()
+    // A second sign-in registers its own client: its id carries the second it was
+    // issued, so its tokens are refreshed under that id, not the first one.
+    const g = await approved()
+    const fresh = await (await exchange(g)).json()
+    const ofG = { client_id: g.clientId }
     session.verify.mockResolvedValue(null)
-    expect((await refresh(fresh.refresh_token)).status).toBe(400)
+    expect((await refresh(fresh.refresh_token, app, ofG)).status).toBe(400)
     session.verify.mockResolvedValue('operator')
     // Used at least once every thirty days, the chain rolls on: each refresh
     // re-arms the window. Idle past thirty days, the sign-in has expired.
     vi.useFakeTimers()
     vi.advanceTimersByTime(29 * 24 * 3600_000)
-    const rolled = await granted(await refresh(fresh.refresh_token))
+    const rolled = await granted(await refresh(fresh.refresh_token, app, ofG))
     expect(rolled.access_token).toMatch(/^lyriks_mcp_/)
     vi.advanceTimersByTime(29 * 24 * 3600_000)
-    const again = await granted(await refresh(rolled.refresh_token))
+    const again = await granted(await refresh(rolled.refresh_token, app, ofG))
     expect(again.access_token).toMatch(/^lyriks_mcp_/)
     vi.advanceTimersByTime(30 * 24 * 3600_000 + 1)
-    expect((await refresh(again.refresh_token)).status).toBe(400)
+    expect((await refresh(again.refresh_token, app, ofG)).status).toBe(400)
   })
   it('binds the code to PKCE, client, redirect and resource', async () => {
     for (const overrides of [{ code_verifier: 'wrong'.repeat(10) }, { client_id: 'another-client' }, { redirect_uri: 'https://another.example/cb' }, { resource: 'https://another.example/mcp' }]) {

@@ -39,12 +39,6 @@ export interface GraphIndex {
 	readonly incoming: ReadonlyMap<string, readonly GraphEdge[]>;
 }
 
-/** A node met during a walk, with how many hops away from the start it sits. */
-export interface ReachedNode {
-	node: GraphNode;
-	hops: number;
-}
-
 const EMPTY: readonly GraphEdge[] = [];
 const INDEXES = new WeakMap<KnowledgeGraph, GraphIndex>();
 
@@ -81,26 +75,6 @@ function keep(edgeKinds: readonly GraphEdgeKind[] | undefined): (edge: GraphEdge
 	if (!edgeKinds || edgeKinds.length === 0) return () => true;
 	const allowed = new Set(edgeKinds);
 	return (edge) => allowed.has(edge.kind);
-}
-
-/** Edges pointing AT a node (what references it), optionally of given kinds. */
-export function edgesInto(
-	source: KnowledgeGraph | GraphIndex,
-	nodeId: string,
-	edgeKinds?: readonly GraphEdgeKind[]
-): readonly GraphEdge[] {
-	const edges = indexOf(source).incoming.get(nodeId) ?? EMPTY;
-	return edgeKinds?.length ? edges.filter(keep(edgeKinds)) : edges;
-}
-
-/** Edges leaving a node (what it references), optionally of given kinds. */
-export function edgesOutOf(
-	source: KnowledgeGraph | GraphIndex,
-	nodeId: string,
-	edgeKinds?: readonly GraphEdgeKind[]
-): readonly GraphEdge[] {
-	const edges = indexOf(source).outgoing.get(nodeId) ?? EMPTY;
-	return edgeKinds?.length ? edges.filter(keep(edgeKinds)) : edges;
 }
 
 /**
@@ -149,40 +123,4 @@ export function reachableIds(
 	options: WalkOptions = {}
 ): Set<string> {
 	return new Set(walk(source, start, options).keys());
-}
-
-function reachedNodes(index: GraphIndex, hops: Map<string, number>, start: string): ReachedNode[] {
-	const out: ReachedNode[] = [];
-	for (const [id, distance] of hops) {
-		if (id === start) continue;
-		const node = index.nodesById.get(id);
-		if (node) out.push({ node, hops: distance });
-	}
-	return out.sort((a, b) => a.hops - b.hops || a.node.id.localeCompare(b.node.id));
-}
-
-/**
- * What depends on a node: everything that points at it, transitively up to
- * `depth` hops, nearest first. Deleting or changing the node reaches these.
- */
-export function dependantsOf(
-	source: KnowledgeGraph | GraphIndex,
-	nodeId: string,
-	options: Omit<WalkOptions, 'direction'> = {}
-): ReachedNode[] {
-	const index = indexOf(source);
-	return reachedNodes(index, walk(index, nodeId, { ...options, direction: 'in' }), nodeId);
-}
-
-/**
- * What a node depends on: everything it points at, transitively up to `depth`
- * hops, nearest first. These must exist for the node to make sense.
- */
-export function dependenciesOf(
-	source: KnowledgeGraph | GraphIndex,
-	nodeId: string,
-	options: Omit<WalkOptions, 'direction'> = {}
-): ReachedNode[] {
-	const index = indexOf(source);
-	return reachedNodes(index, walk(index, nodeId, { ...options, direction: 'out' }), nodeId);
 }

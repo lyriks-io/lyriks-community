@@ -53,9 +53,6 @@ function sampleDraft(projectId: string): ProjectFeaturesDraft {
 		{ id: 'f1', name: 'Invoice', coreId: 'core-bill', parentFamilyId: 'fam-rec', description: 'bill', unspaghettitFeatureId: 'f1' },
 		{ id: 'f2', name: 'Dunning', coreId: 'core-bill', parentFamilyId: null, description: '', unspaghettitFeatureId: 'f2' }
 	];
-	d.releases = [{ id: 'rel-1', name: 'MVP', version: 'V1', weekStart: 1, weekEnd: 6, order: 0, description: '' }];
-	d.mvpAssignments = [{ featureId: 'f1', tier: 'must' }];
-	d.roadmapAssignments = [{ featureId: 'f1', releaseId: 'rel-1' }];
 	d.lastSavedAt = '2026-01-01T00:00:00.000Z';
 	return d;
 }
@@ -79,7 +76,7 @@ describe('KernelFeaturesDraftRepository (Phase 1 Features flip)', () => {
 		const before = structuredClone([...mem.features.entries()]);
 		const draft = (await repo.load('p1'))!;
 		draft.leafMeta ??= {};
-		draft.leafMeta.f1 = { ...draft.leafMeta.f1, status: 'in-progress', sourceIds: ['source-new'] };
+		draft.leafMeta.f1 = { ...draft.leafMeta.f1, objective: 'Bill on time.', sourceIds: ['source-new'] };
 		draft.lastSavedAt = now = '2026-01-02T00:00:00.000Z';
 		await repo.save(draft);
 		expect([...mem.features.entries()]).toEqual(before);
@@ -100,8 +97,6 @@ describe('KernelFeaturesDraftRepository (Phase 1 Features flip)', () => {
 		expect(back!.cores).toEqual([{ id: 'core-bill', name: 'Billing', description: 'money', tone: 'invoicing' }]);
 		const f1 = back!.features.find((f) => f.id === 'f1')!;
 		expect(f1).toMatchObject({ coreId: 'core-bill', parentFamilyId: 'fam-rec', name: 'Invoice' });
-		expect(back!.mvpAssignments).toEqual([{ featureId: 'f1', tier: 'must' }]);
-		expect(back!.roadmapAssignments).toEqual([{ featureId: 'f1', releaseId: 'rel-1' }]);
 		expect(back!.lastSavedAt).toBe('2026-01-01T00:00:00.000Z');
 	});
 
@@ -139,11 +134,10 @@ describe('KernelFeaturesDraftRepository (Phase 1 Features flip)', () => {
 		expect(shell.tags).toEqual(
 			expect.arrayContaining([
 				{ type: 'core', value: 'Billing' },
-				{ type: 'family', value: 'Recurring' },
-				{ type: 'mvp', value: 'must' },
-				{ type: 'phase', value: 'V1' }
+				{ type: 'family', value: 'Recurring' }
 			])
 		);
+		for (const retired of ['phase', 'mvp']) expect(shell.tags).not.toContainEqual(expect.objectContaining({ type: retired }));
 		expect(mem.projects.get('p1')!.project.featureIds).toEqual(['f1', 'f2']);
 	});
 

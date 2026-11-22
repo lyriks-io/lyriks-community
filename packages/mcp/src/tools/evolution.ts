@@ -26,6 +26,10 @@ export const DOSSIER_PARTS = [
   'texts',
   'coherence',
   'points',
+  // Every item the Specification gate counts, each with its key as validate_field takes it.
+  'specification',
+  // The block Not validated in Knowledge of the request's Simulation, whole and not paged (EVO-003).
+  'knowledge',
   // Without request_id: the board's own lists, paged.
   'leaves',
   'sources',
@@ -123,6 +127,7 @@ function pagedList(answer: unknown): { block: Record<string, unknown>; rows: unk
   return null
 }
 
+// The knowledge part is not here: the platform sends that block whole, never paged.
 const LIST_HOMES: ReadonlyArray<readonly [string, string]> = [
   ['drafts', 'entries'],
   ['fields', 'entries'],
@@ -135,6 +140,7 @@ const LIST_HOMES: ReadonlyArray<readonly [string, string]> = [
   ['texts', 'entries'],
   ['points', 'entries'],
   ['coherence', 'findings'],
+  ['specification', 'items'],
 ]
 
 /**

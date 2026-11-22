@@ -7,7 +7,7 @@
 	import { Icon, floatInView, hoverWithin, pushToast } from '$ui/design-system';
 	import type { DossierReading, HistoryPart, ReportPart } from '$lib/server/evolution-view.server';
 	import { AI_ACTIVITY_EVENT, type AiActivity } from '$lib/shared/ai-activity';
-	import { aiCallWords, buildFiles, buildPackages, buildProgress, buildStatus, codePlaceOf, implementationBrief, isRequirement, lineLabels, ownLines, readLine, remainingBrief, requirementParts } from './report-board';
+	import { aiCallWords, buildFiles, buildPackages, buildProgress, buildStatus, codePlaceOf, briefSubject, briefToCopy, isRequirement, lineLabels, ownLines, readLine, requirementParts } from './report-board';
 	import CodePlace from '$ui/spec360/CodePlace.svelte';
 	import BlockControls from './BlockControls.svelte';
 	import LineCodeSource from './LineCodeSource.svelte';
@@ -46,10 +46,12 @@
 		onImpact: () => void;
 		// Still passed by the page; the design has no place for them on this step.
 		canEdit?: boolean;
+		/** The roster, so the card of the code names who approved. */
+		members?: readonly { id: string; name: string }[];
 		testKit?: Snippet;
 		gate?: Snippet;
 	}
-	let { projectId, dossier, report, history, onReport, onImpact, canEdit = false }: Props = $props();
+	let { projectId, dossier, report, history, onReport, onImpact, canEdit = false, members = [] }: Props = $props();
 
 	const frozen = $derived(dossier.stage === 'implementation' || dossier.stage === 'acceptance' || dossier.stage === 'delivered');
 	const own = $derived(ownLines(report?.lines ?? []));
@@ -137,17 +139,18 @@
 	/** The branch the briefs name, once the project names a deployment branch (feat-evo-code-branch). */
 	const branchOf = (d: DossierReading) => (d.code ? { name: d.code.expectedBranch, deploymentBranch: d.code.deploymentBranch, bound: !!d.code.branch } : null);
 	const key = $derived(dossier.key ?? 'EVO');
+	/** What the briefs say about the request: the version it hands out, and the one in correction (EVO-012). */
+	const subject = $derived(briefSubject(dossier, { id: projectId, name: projectName }, branchOf(dossier)));
 	const brief = $derived(
-		implementationBrief(
-			{ key, title: dossier.title, projectId, projectName, requestId: dossier.id, specVersion: dossier.specVersion, branch: branchOf(dossier) },
+		briefToCopy(
+			'whole',
+			subject,
 			report?.lines ?? [],
 			taken.map((p) => ({ label: p.label, reason: p.risk?.reason ?? '' }))
 		)
 	);
 	/** What is still open, for the AI to finish from where the build stands. */
-	const remaining = $derived(
-		remainingBrief({ key, title: dossier.title, projectId, projectName, requestId: dossier.id, specVersion: dossier.specVersion, branch: branchOf(dossier) }, report?.lines ?? [])
-	);
+	const remaining = $derived(briefToCopy('open_points', subject, report?.lines ?? []));
 	const inSession = $derived(live?.isOpen ?? false);
 	const buildClick = $derived(live?.buildClick ?? null);
 	const aiOnBuild = $derived(buildClick?.state === 'waiting' || buildClick?.state === 'taken' ? buildClick.state : null);
@@ -165,9 +168,9 @@
 	let copied = $state(false);
 	async function copyBrief() {
 		try {
-			await navigator.clipboard.writeText(brief);
+			await navigator.clipboard.writeText(brief.text);
 			copied = true;
-			pushToast({ level: 'success', message: 'Brief copied: paste it into your LLM' });
+			pushToast({ level: 'success', message: brief.copied });
 		} catch {
 			pushToast({ level: 'error', message: 'The clipboard is not available here.' });
 		}
@@ -333,6 +336,12 @@
 	{/each}
 {/snippet}
 
+{#if dossier.correction}
+	<!-- Version N+1 in correction: the build still reads version N until N+1 is validated and frozen (EVO-012, criterion 6103617d). -->
+	<p class="m-0 mb-5 rounded-evo-btn border-l-[6px] border-orange bg-orange-tint px-3.5 py-2.5 text-sm text-orange-ink" role="status">
+		Version {dossier.correction.version} in correction waits for its validation: this reads the report of version {dossier.correction.builtAgainst} until version {dossier.correction.version} is frozen.
+	</p>
+{/if}
 {#if !frozen}
 	<!-- The go-ahead comes from the impact analysis: nothing is developed against a version that is not frozen. -->
 	<ImplementationWaitingCard title="Waiting for the go-ahead from the impact analysis" text={waiting}>
@@ -342,7 +351,7 @@
 	</ImplementationWaitingCard>
 {:else if !following}
 	<div class="flex flex-col gap-5">
-		<CodeBranchCard {projectId} {dossier} {canEdit} />
+		<CodeBranchCard {projectId} {dossier} {canEdit} {members} />
 		{#if !dossier.waiver}
 			<div class="animate-lk-in flex items-center gap-3.5 rounded-xl border border-transparent bg-green-tint px-[18px] py-4 shadow-[inset_6px_0_0_var(--color-green)]">
 				<span aria-hidden="true" class="flex size-9 flex-none items-center justify-center bg-green text-lg font-bold text-ink">✓</span>
@@ -373,7 +382,7 @@
 					<div class="flex flex-wrap items-center gap-2">
 						<button type="button" class={SECONDARY_44} onclick={copyBrief}>{copied ? 'Copied ✓' : 'Copy brief'}</button>
 						{#if inSession}
-							<button type="button" class="{PRIMARY_48} {WRAP} inline-flex items-center gap-2" disabled={sending} onclick={() => sendToAi(brief)}
+							<button type="button" class="{PRIMARY_48} {WRAP} inline-flex items-center gap-2" disabled={sending} onclick={() => sendToAi(brief.text)}
 								><Icon name="sparkles" size={16} />Send to my AI</button
 							>
 						{/if}
@@ -382,7 +391,7 @@
 				{#if inSession}
 					<p class="m-0 text-sm text-ink-2">Your AI is in session: it takes the brief from here, nothing to paste.</p>
 				{/if}
-				<pre class="m-0 rounded-evo-btn bg-evo-ink px-5 py-[18px] font-evo-mono text-[0.8125rem] leading-relaxed whitespace-pre-wrap wrap-anywhere text-paper">{brief}</pre>
+				<pre class="m-0 rounded-evo-btn bg-evo-ink px-5 py-[18px] font-evo-mono text-[0.8125rem] leading-relaxed whitespace-pre-wrap wrap-anywhere text-paper">{brief.text}</pre>
 			</section>
 		{:else}
 			<section class="flex flex-col gap-3 rounded-evo-card border border-transparent bg-surface p-6" aria-label="Developer checklist">
@@ -405,7 +414,7 @@
 	<div class="flex flex-col gap-5">
 		<!-- What Lyriks read opens the step, first under the step bar, above the branch (ac-evo-form-step-note). -->
 		{#if note}<EditorialNote {note} readKey={noteReadKey(dossier.id, 'development', note)} onGo={goTo} />{/if}
-		<CodeBranchCard {projectId} {dossier} {canEdit} />
+		<CodeBranchCard {projectId} {dossier} {canEdit} {members} />
 		<div class="flex flex-wrap items-stretch gap-4">
 			<div class="{TILE} transition-[box-shadow] duration-300 border-transparent {progress.finished ? 'shadow-[inset_6px_0_0_var(--color-green)]' : ''}">
 				<span class={KICKER}>PROGRESS</span>
@@ -462,7 +471,7 @@
 				{/if}
 				{#if status.kind === 'waiting_code'}
 					{#if inSession}
-						<button type="button" class="{SECONDARY_44} {WRAP} inline-flex items-center gap-2 self-start" disabled={sending} onclick={() => sendToAi(remaining)}
+						<button type="button" class="{SECONDARY_44} {WRAP} inline-flex items-center gap-2 self-start" disabled={sending} onclick={() => sendToAi(remaining.text)}
 							><Icon name="sparkles" size={16} />Ask my AI to finish</button
 						>
 					{:else}
@@ -471,8 +480,8 @@
 							class="{SECONDARY_44} {WRAP} self-start"
 							title="No session with your AI: the brief of the open points is copied, to paste in your LLM."
 							onclick={async () => {
-								await navigator.clipboard.writeText(remaining).catch(() => null);
-								pushToast({ level: 'success', message: 'Brief of the open points copied: paste it into your LLM' });
+								await navigator.clipboard.writeText(remaining.text).catch(() => null);
+								pushToast({ level: 'success', message: remaining.copied });
 							}}>Copy the open points</button
 						>
 					{/if}

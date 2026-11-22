@@ -13,8 +13,6 @@ export const ARCH_LAYERS = [
 	{ code: 'infra', label: 'Infra' }
 ] as const satisfies readonly Option[];
 export type ArchLayer = (typeof ARCH_LAYERS)[number]['code'];
-export const isArchLayer = (v: unknown): v is ArchLayer =>
-	typeof v === 'string' && (ARCH_LAYERS as readonly Option[]).some((l) => l.code === v);
 
 export const DOC_KINDS = [
 	{ code: 'docs', label: 'Docs' },

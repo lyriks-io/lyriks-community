@@ -132,29 +132,6 @@ function modelFields(entity: DataEntity, fields: EntityField[]): BackendField[] 
 }
 
 /**
- * Add to an existing collection the model fields it does not have yet, in
- * place, and answer their names.
- *
- * Purely additive: a field the author added, renamed or re-typed on the
- * collection is left alone, and nothing is removed. That is the difference with
- * a refresh, which makes the collection follow the model wholesale. What it
- * fixes is the case an import-once rule made silent: a field declared on the
- * entity AFTER its first import never reached the prototype, and the answer
- * said `skipped` with nothing else to read.
- */
-export function addMissingFieldsFromModel(
-	col: BackendCollection,
-	entity: DataEntity,
-	fields: EntityField[]
-): string[] {
-	const present = new Set(col.fields.map((f) => f.name.trim().toLowerCase()));
-	const missing = modelFields(entity, fields).filter((f) => !present.has(f.name.trim().toLowerCase()));
-	if (missing.length === 0) return [];
-	col.fields = [...col.fields, ...missing];
-	return missing.map((f) => f.name);
-}
-
-/**
  * Import-or-refresh one entity into a collection list, in place: matched by
  * recorded provenance first, then by (case-insensitive) name for collections
  * imported before provenance existed. Name and fields follow the model; seed

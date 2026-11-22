@@ -63,6 +63,17 @@ describe('every MCP tool declares its effect to the client [criterion:ac-leaf-ac
     expect(byName.get('link_data_fields')).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: true })
   })
 
+  // The one place the tool list is pinned: every tool a client can call has a
+  // declared effect, and every declared effect belongs to a tool a client can
+  // call, but those an edition or a switch deliberately holds back.
+  it('lists every tool it declares an effect for, but the solver proofs on Community and the switched-off screen prototype', async () => {
+    const prototype = ['build_screen', 'wire_element', 'add_element']
+    const proofs = ['what_if', 'what_if_project', 'prove_project_invariants']
+    const declared = Object.keys(TOOL_EFFECTS).filter((name) => !prototype.includes(name)).sort()
+    expect((await listedTools(overlay())).map((t) => t.name).sort()).toEqual(declared)
+    expect((await listedTools(null)).map((t) => t.name).sort()).toEqual(declared.filter((name) => !proofs.includes(name)))
+  })
+
   it('names every effect once, in a closed world', () => {
     for (const name of Object.keys(TOOL_EFFECTS)) expect(annotationsFor(name)?.openWorldHint, name).toBe(false)
     expect(annotationsFor('no_such_tool')).toBeNull()

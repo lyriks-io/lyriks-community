@@ -1,7 +1,7 @@
 import type { Actor, EvolutionRequest, ImplementationFinding } from './draft';
 import type { DerivationSource, ImplementationVerdict } from './enums';
 import { firstRefusal, guard, type Guarded } from './guard';
-import { NBSP, type SpecLanguage } from '$domain/language';
+import { isDataChangeRequirement } from './report-requirement';
 
 /**
  * The five-verdict implementation report, and the decisions that dispose of it.
@@ -48,47 +48,6 @@ export function deriveVerdict(input: {
 	return input.acceptanceTestPassing ? 'conform' : 'non_conform';
 }
 
-/** A verdict with no file behind it cannot be reviewed, so it is never emitted. */
-export function isReviewable(finding: ImplementationFinding): boolean {
-	return finding.filePath.trim() !== '';
-}
-
-/** The diff opens only on a line that carries its file path. */
-export function canUnfoldDiff(finding: ImplementationFinding): Guarded {
-	return guard(
-		!isReviewable(finding),
-		'This line has no file behind it.',
-		'A diff can only be opened against a file path and a line range. A line without them is not reviewable and should never have been emitted.'
-	);
-}
-
-/** Conform means the code was proven to do what the spec says. */
-export function canMarkConform(finding: ImplementationFinding): Guarded {
-	return guard(
-		!finding.acceptanceTestPassing,
-		'No passing acceptance test is attached to this line.',
-		'Conform means the code was proven to do what the spec says. Without a passing test the claim rests on nobody word.'
-	);
-}
-
-/** Only a span with no requirement anchor can be flagged out of scope. */
-export function canFlagOutOfScope(finding: ImplementationFinding): Guarded {
-	return guard(
-		finding.hasRequirementAnchor,
-		'This span is anchored to a requirement, so it is in scope.',
-		'Out of scope is derived from code spans that carry no requirement anchor. An anchored span belongs in the demanded-versus-realised crossing instead.'
-	);
-}
-
-/** Only a touched span anchored to another leaf can be flagged as a regression. */
-export function canFlagRegression(finding: ImplementationFinding): Guarded {
-	return guard(
-		!finding.anchorForeignLeaf,
-		'This span belongs to the request own leaf, so it is not a regression.',
-		'Regression concerns neighbouring features. It is detected by comparing touched spans against the code anchors of other leaves, not by the demanded-versus-realised matrix.'
-	);
-}
-
 /** A line this request answers for: everything but what the touched features already held. */
 export const isRequestLine = (line: ImplementationFinding): boolean => line.scope !== 'inherited';
 
@@ -120,22 +79,35 @@ export function toBuildCount(request: EvolutionRequest): number {
 	return currentLines(request).filter((l) => holdsReportOpen(l) && l.verdict === 'missing').length;
 }
 
+/**
+ * A line of the request that waits for the code or a passing test, not for a
+ * person: not built yet, or found and not proven yet (stale, moved, failing).
+ * It closes at the next index sync after the code or its test moved (feat-25
+ * f27ab2f8, 127dba2b); a person may still rule it, nobody has to. A table
+ * change the code cannot locate is a person's to confirm.
+ */
+export function waitsOnCode(line: ImplementationFinding): boolean {
+	return holdsReportOpen(line) && (line.verdict === 'non_conform' || (line.verdict === 'missing' && !isDataChangeRequirement(line.requirement)));
+}
+
+/** The lines of the request that close on the code or a test, at the next index sync (criterion 4913a449). */
+export function awaitingCodeCount(request: EvolutionRequest): number {
+	return currentLines(request).filter(waitsOnCode).length;
+}
+
+/** The lines of the request only a person settles: an addition out of scope, a regression, a table change to confirm (criterion 4913a449). */
+export function awaitingPersonCount(request: EvolutionRequest): number {
+	return currentLines(request).filter((l) => holdsReportOpen(l) && !waitsOnCode(l)).length;
+}
+
 /** Inherited lines still undecided: context, never a gate. */
 export function inheritedUndecidedCount(request: EvolutionRequest): number {
 	return currentLines(request).filter((l) => !isRequestLine(l) && l.decision === 'undecided').length;
 }
 
 /** The report lines of the iteration in flight. Past iterations keep their own. */
-export function currentLines(request: EvolutionRequest): ImplementationFinding[] {
+export function currentLines(request: Pick<EvolutionRequest, 'implementationFindings' | 'iteration'>): ImplementationFinding[] {
 	return request.implementationFindings.filter((l) => l.iteration === request.iteration);
-}
-
-/** The lines of one bucket, which is the only batch the panel ever offers. */
-export function linesInBucket(
-	request: EvolutionRequest,
-	verdict: ImplementationVerdict
-): ImplementationFinding[] {
-	return currentLines(request).filter((l) => l.verdict === verdict);
 }
 
 const reportStatus = (request: EvolutionRequest): 'building' | 'ready' | 'closed' =>
@@ -230,97 +202,8 @@ export function canCloseReport(request: EvolutionRequest): Guarded {
 		),
 		guard(
 			rechallengePending(request),
-			'An adoption amended the spec. Run the Challenge check again, coherence and docking, before closing this report.',
-			'A report that changed the spec is not settled until the changed spec was challenged again.'
-		)
-	);
-}
-
-/**
- * The brief for the next attempt, for ONE refused line, machine-written from
- * what the report already holds: what the spec expects, what the code does,
- * where, and what to do. Sits under the verdict, ready to copy for the coding
- * agent. The conform lines are named as untouchable, because the second
- * attempt otherwise tends to break what the first one got right.
- */
-export function lineBrief(
-	request: EvolutionRequest,
-	line: ImplementationFinding,
-	lang: SpecLanguage = 'en'
-): string {
-	const untouched = protectedLineIds(request);
-	if (lang === 'fr') return lineBriefFr(request, line, untouched);
-	const what =
-		line.verdict === 'missing'
-			? 'Implement it: nothing was located for this requirement.'
-			: line.verdict === 'regression'
-				? 'Undo the change to this span: it belongs to another feature and was not asked for.'
-				: line.verdict === 'out_of_scope'
-					? 'Remove it: nothing in the spec asked for it.'
-					: 'Make the code do what the spec says, then attach the passing acceptance test.';
-	return [
-		`Request: ${request.title} (iteration ${request.iteration}, spec version ${request.specVersion || 'unversioned'})`,
-		`Line: ${line.id} [${line.verdict.replace('_', ' ')}]`,
-		`Where: ${line.filePath}${line.lineRange ? `:${line.lineRange}` : ''}`,
-		`The spec expects: ${line.specStatement || line.requirement}`,
-		`The code does: ${line.codeStatement || 'nothing was located'}`,
-		`What to do: ${what}`,
-		untouched.length > 0
-			? `Leave untouched (conform): ${untouched.join(', ')}`
-			: 'Leave untouched: nothing is conform yet.'
-	].join('\n');
-}
-
-/** A verdict as the French brief names it. */
-const VERDICT_FR: Readonly<Record<ImplementationFinding['verdict'], string>> = {
-	conform: 'conforme',
-	non_conform: 'non conforme',
-	missing: 'manquant',
-	out_of_scope: 'hors périmètre',
-	regression: 'régression'
-};
-
-/** The same brief for a spec written in French: the typography keeps its spaces before colons. */
-function lineBriefFr(request: EvolutionRequest, line: ImplementationFinding, untouched: readonly string[]): string {
-	const colon = `${NBSP}:`;
-	const what =
-		line.verdict === 'missing'
-			? `L'implémenter${colon} rien n'a été localisé pour cette exigence.`
-			: line.verdict === 'regression'
-				? `Annuler la modification de cet emplacement${colon} il appartient à une autre fonctionnalité et n'était pas demandé.`
-				: line.verdict === 'out_of_scope'
-					? `Le retirer${colon} rien dans la spec ne le demandait.`
-					: "Faire faire au code ce que dit la spec, puis joindre le test d'acceptation qui passe.";
-	return [
-		`Demande${colon} ${request.title} (itération ${request.iteration}, version de spec ${request.specVersion || 'sans version'})`,
-		`Ligne${colon} ${line.id} [${VERDICT_FR[line.verdict]}]`,
-		`Où${colon} ${line.filePath}${line.lineRange ? `:${line.lineRange}` : ''}`,
-		`La spec attend${colon} ${line.specStatement || line.requirement}`,
-		`Le code fait${colon} ${line.codeStatement || "rien n'a été localisé"}`,
-		`À faire${colon} ${what}`,
-		untouched.length > 0
-			? `Laisser intact (conforme)${colon} ${untouched.join(', ')}`
-			: `Laisser intact${colon} rien n'est encore conforme.`
-	].join('\n');
-}
-
-/**
- * The rebrief: the refused lines become the instruction for the next attempt,
- * and the conform lines are named as untouchable, because the second attempt
- * otherwise tends to break what the first one got right.
- */
-export function canComposeRebrief(request: EvolutionRequest): Guarded {
-	const refused = currentLines(request).filter((l) => l.decision === 'invalidated').length;
-	return firstRefusal(
-		guard(
-			undecidedCount(request) > 0,
-			'The report still holds undecided lines.',
-			'A rebrief is built out of decisions. Composing one before every line is disposed of would ask for changes nobody has agreed to.'
-		),
-		guard(
-			refused < 1,
-			'No line was refused, so there is nothing to rebrief.',
-			'A brief with no refused line carries no instruction; it would only repeat a request that was already honoured.'
+			'An adoption amended the spec. Run the readings of the Impact analysis again, coherence and docking, before closing this report.',
+			'A report that changed the spec is not settled until the changed spec was read against the product again.'
 		)
 	);
 }
@@ -332,40 +215,30 @@ export function protectedLineIds(request: EvolutionRequest): string[] {
 		.map((l) => l.id);
 }
 
+const VERDICT_WORDS: readonly [ImplementationVerdict, string][] = [
+	['conform', 'conform'],
+	['missing', 'to build'],
+	['non_conform', 'found, not tested yet'],
+	['out_of_scope', 'out of scope'],
+	['regression', 'regression']
+];
+
 /**
- * Amending the spec sends the request back to stage 1 and CLOSES the coherence
- * gate again, so the amended spec is challenged before anything is implemented
- * against it. Implementing against a spec that skipped that challenge is what
- * produced the refused lines in the first place.
+ * What a built report says in one sentence (criterion:46dc1372): the request's
+ * own lines first, conform and to build always said, the other verdicts when it
+ * holds some; then the inherited lines, the backlog of the features touched,
+ * which never hold the gate. Counted on the lines the report keeps, so the two
+ * add up to what part "report" lists.
  */
-export function canAmendSpec(request: EvolutionRequest): Guarded {
-	return guard(
-		undecidedCount(request) > 0,
-		'The report still holds undecided lines.',
-		'Amending the spec on top of an undecided report would lose the link between what was refused and what is asked next.'
-	);
-}
-
-/** No new implementation starts while the stage 2 gate is closed. */
-export function canSendBackForImplementation(request: EvolutionRequest): Guarded {
-	return guard(
-		request.coherenceGateClosed,
-		'The amended spec has not been challenged yet.',
-		'Returning to stage 1 re-closes the coherence gate. Implementing against a spec that skipped that challenge is what produced the refused lines in the first place.'
-	);
-}
-
-/** An earlier report opens once the request has been through more than one iteration. */
-export function canOpenPreviousReport(request: EvolutionRequest): Guarded {
-	return guard(
-		request.iterations.length < 2,
-		'This request has only had one iteration.',
-		'There is no earlier report to compare against; the current one is the first.'
-	);
-}
-
-/** Every recorded verdict names the iteration that produced it. */
-export function verdictsWithoutIteration(request: EvolutionRequest): number {
-	return request.implementationFindings.filter((l) => !Number.isFinite(l.iteration) || l.iteration < 1)
-		.length;
+export function reportSummary(specVersion: number, lines: readonly ImplementationFinding[]): string {
+	const own = lines.filter(isRequestLine);
+	const inherited = lines.filter((l) => !isRequestLine(l));
+	const count = (of: readonly ImplementationFinding[], verdict: ImplementationVerdict) => of.filter((l) => l.verdict === verdict).length;
+	const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+	const ownCounts = VERDICT_WORDS.filter(([v]) => v === 'conform' || v === 'missing' || count(own, v) > 0).map(([v, word]) => `${count(own, v)} ${word}`);
+	const inheritedCounts = VERDICT_WORDS.filter(([v]) => count(inherited, v) > 0).map(([v, word]) => `${count(inherited, v)} ${word}`);
+	const head = `Report for version ${specVersion}: ${plural(own.length, 'line')} of this request: ${ownCounts.join(', ')}.`;
+	return inherited.length === 0
+		? head
+		: `${head} ${plural(inherited.length, 'inherited line')}, the backlog of the features touched, never hold the gate: ${inheritedCounts.join(', ')}.`;
 }

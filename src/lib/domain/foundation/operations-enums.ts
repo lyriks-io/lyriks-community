@@ -14,8 +14,6 @@ export const OPERATIONS_SECTIONS = [
 	{ code: 'fixtures', label: 'Test fixtures' }
 ] as const satisfies readonly Option[];
 export type OperationsSection = (typeof OPERATIONS_SECTIONS)[number]['code'];
-export const isOperationsSection = (v: unknown): v is OperationsSection =>
-	OPERATIONS_SECTIONS.some((s) => s.code === v);
 
 /** How a change rolls out to production. */
 export const MIGRATION_STRATEGIES = [

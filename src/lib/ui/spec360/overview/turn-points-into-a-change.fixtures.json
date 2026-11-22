@@ -1,0 +1,381 @@
+[
+	{
+		"featureId": "feat-lyriks-copy-a52881-123",
+		"surfaceId": "915b7319",
+		"actionId": "b3fdea10",
+		"scenarioId": "cbfb401c",
+		"scenarioName": "An editor turns a point into a change",
+		"titleToken": "[unspa:915b7319:b3fdea10:cbfb401c]",
+		"personaName": null,
+		"initialState": {
+			"installation": {
+				"signInRequired": true,
+				"edition": "enterprise"
+			},
+			"session": {
+				"workspaceRole": "designer"
+			},
+			"point": {
+				"decision": "pending",
+				"isIssue": true,
+				"blocking": false,
+				"listedInHealth": true,
+				"fixToConfirm": false,
+				"origin": "specification"
+			},
+			"request": {
+				"frozen": false,
+				"holdsOnlyThisPoint": false
+			},
+			"view": {
+				"severity": "all",
+				"origin": "all"
+			}
+		},
+		"parameters": {},
+		"steps": [],
+		"expectedStatus": "success",
+		"expectedAssertions": [
+			{
+				"operator": "equals",
+				"path": "point.decision",
+				"value": "sent"
+			},
+			{
+				"operator": "is_true",
+				"path": "request.holdsOnlyThisPoint"
+			}
+		],
+		"specVersion": "2026-11-11T22:19:26.693Z"
+	},
+	{
+		"featureId": "feat-lyriks-copy-a52881-123",
+		"surfaceId": "915b7319",
+		"actionId": "b3fdea10",
+		"scenarioId": "182bfd8b",
+		"scenarioName": "Several picked points go to one new change",
+		"titleToken": "[unspa:915b7319:b3fdea10:182bfd8b]",
+		"personaName": null,
+		"initialState": {
+			"installation": {
+				"signInRequired": true,
+				"edition": "enterprise"
+			},
+			"session": {
+				"workspaceRole": "designer"
+			},
+			"point": {
+				"decision": "pending",
+				"isIssue": true,
+				"blocking": false,
+				"listedInHealth": true,
+				"fixToConfirm": false,
+				"origin": "specification"
+			},
+			"request": {
+				"frozen": false,
+				"holdsOnlyThisPoint": false
+			},
+			"view": {
+				"severity": "all",
+				"origin": "all"
+			}
+		},
+		"parameters": {
+			"pointCount": 3
+		},
+		"steps": [],
+		"expectedStatus": "success",
+		"expectedAssertions": [
+			{
+				"operator": "equals",
+				"path": "point.decision",
+				"value": "sent"
+			},
+			{
+				"operator": "is_false",
+				"path": "request.holdsOnlyThisPoint"
+			}
+		],
+		"specVersion": "2026-11-11T22:19:26.693Z"
+	},
+	{
+		"featureId": "feat-lyriks-copy-a52881-123",
+		"surfaceId": "915b7319",
+		"actionId": "b3fdea10",
+		"scenarioId": "745b8c79",
+		"scenarioName": "A blocking point is fixed through a change",
+		"titleToken": "[unspa:915b7319:b3fdea10:745b8c79]",
+		"personaName": null,
+		"initialState": {
+			"installation": {
+				"signInRequired": true,
+				"edition": "enterprise"
+			},
+			"session": {
+				"workspaceRole": "designer"
+			},
+			"point": {
+				"decision": "pending",
+				"isIssue": true,
+				"blocking": true,
+				"listedInHealth": true,
+				"fixToConfirm": false,
+				"origin": "specification"
+			},
+			"request": {
+				"frozen": false,
+				"holdsOnlyThisPoint": false
+			},
+			"view": {
+				"severity": "all",
+				"origin": "all"
+			}
+		},
+		"parameters": {},
+		"steps": [],
+		"expectedStatus": "success",
+		"expectedAssertions": [
+			{
+				"operator": "equals",
+				"path": "point.decision",
+				"value": "sent"
+			}
+		],
+		"specVersion": "2026-11-11T22:19:26.693Z"
+	},
+	{
+		"featureId": "feat-lyriks-copy-a52881-123",
+		"surfaceId": "915b7319",
+		"actionId": "b3fdea10",
+		"scenarioId": "4116ecc4",
+		"scenarioName": "A point the health does not list cannot be sent",
+		"titleToken": "[unspa:915b7319:b3fdea10:4116ecc4]",
+		"personaName": null,
+		"initialState": {
+			"installation": {
+				"signInRequired": true,
+				"edition": "enterprise"
+			},
+			"session": {
+				"workspaceRole": "designer"
+			},
+			"point": {
+				"decision": "pending",
+				"isIssue": true,
+				"blocking": false,
+				"listedInHealth": false,
+				"fixToConfirm": false,
+				"origin": "specification"
+			},
+			"request": {
+				"frozen": false,
+				"holdsOnlyThisPoint": false
+			},
+			"view": {
+				"severity": "all",
+				"origin": "all"
+			}
+		},
+		"parameters": {},
+		"steps": [],
+		"expectedStatus": "blocked",
+		"expectedAssertions": [],
+		"specVersion": "2026-11-11T22:19:26.693Z"
+	},
+	{
+		"featureId": "feat-lyriks-copy-a52881-123",
+		"surfaceId": "915b7319",
+		"actionId": "b3fdea10",
+		"scenarioId": "02dd78bb",
+		"scenarioName": "A rejected point cannot be sent",
+		"titleToken": "[unspa:915b7319:b3fdea10:02dd78bb]",
+		"personaName": null,
+		"initialState": {
+			"installation": {
+				"signInRequired": true,
+				"edition": "enterprise"
+			},
+			"session": {
+				"workspaceRole": "designer"
+			},
+			"point": {
+				"decision": "rejected",
+				"isIssue": true,
+				"blocking": false,
+				"listedInHealth": true,
+				"fixToConfirm": false,
+				"origin": "specification"
+			},
+			"request": {
+				"frozen": false,
+				"holdsOnlyThisPoint": false
+			},
+			"view": {
+				"severity": "all",
+				"origin": "all"
+			}
+		},
+		"parameters": {},
+		"steps": [],
+		"expectedStatus": "blocked",
+		"expectedAssertions": [],
+		"specVersion": "2026-11-11T22:19:26.693Z"
+	},
+	{
+		"featureId": "feat-lyriks-copy-a52881-123",
+		"surfaceId": "915b7319",
+		"actionId": "b3fdea10",
+		"scenarioId": "44437e0e",
+		"scenarioName": "A point already sent is not sent twice",
+		"titleToken": "[unspa:915b7319:b3fdea10:44437e0e]",
+		"personaName": null,
+		"initialState": {
+			"installation": {
+				"signInRequired": true,
+				"edition": "enterprise"
+			},
+			"session": {
+				"workspaceRole": "designer"
+			},
+			"point": {
+				"decision": "sent",
+				"isIssue": true,
+				"blocking": false,
+				"listedInHealth": true,
+				"fixToConfirm": false,
+				"origin": "specification"
+			},
+			"request": {
+				"frozen": false,
+				"holdsOnlyThisPoint": false
+			},
+			"view": {
+				"severity": "all",
+				"origin": "all"
+			}
+		},
+		"parameters": {},
+		"steps": [],
+		"expectedStatus": "blocked",
+		"expectedAssertions": [],
+		"specVersion": "2026-11-11T22:19:26.693Z"
+	},
+	{
+		"featureId": "feat-lyriks-copy-a52881-123",
+		"surfaceId": "915b7319",
+		"actionId": "b3fdea10",
+		"scenarioId": "a47877ef",
+		"scenarioName": "A viewer cannot open a change",
+		"titleToken": "[unspa:915b7319:b3fdea10:a47877ef]",
+		"personaName": "Viewer",
+		"initialState": {
+			"installation": {
+				"signInRequired": true,
+				"edition": "enterprise"
+			},
+			"session": {
+				"workspaceRole": "viewer"
+			},
+			"point": {
+				"decision": "pending",
+				"isIssue": true,
+				"blocking": false,
+				"listedInHealth": true,
+				"fixToConfirm": false,
+				"origin": "specification"
+			},
+			"request": {
+				"frozen": false,
+				"holdsOnlyThisPoint": false
+			},
+			"view": {
+				"severity": "all",
+				"origin": "all"
+			}
+		},
+		"parameters": {},
+		"steps": [],
+		"expectedStatus": "blocked",
+		"expectedAssertions": [],
+		"specVersion": "2026-11-11T22:19:26.693Z"
+	},
+	{
+		"featureId": "feat-lyriks-copy-a52881-123",
+		"surfaceId": "915b7319",
+		"actionId": "b3fdea10",
+		"scenarioId": "2c81af7f",
+		"scenarioName": "Someone outside the workspace cannot open a change",
+		"titleToken": "[unspa:915b7319:b3fdea10:2c81af7f]",
+		"personaName": "Outside the workspace",
+		"initialState": {
+			"installation": {
+				"signInRequired": true,
+				"edition": "enterprise"
+			},
+			"session": {
+				"workspaceRole": "none"
+			},
+			"point": {
+				"decision": "pending",
+				"isIssue": true,
+				"blocking": false,
+				"listedInHealth": true,
+				"fixToConfirm": false,
+				"origin": "specification"
+			},
+			"request": {
+				"frozen": false,
+				"holdsOnlyThisPoint": false
+			},
+			"view": {
+				"severity": "all",
+				"origin": "all"
+			}
+		},
+		"parameters": {},
+		"steps": [],
+		"expectedStatus": "blocked",
+		"expectedAssertions": [],
+		"specVersion": "2026-11-11T22:19:26.693Z"
+	},
+	{
+		"featureId": "feat-lyriks-copy-a52881-123",
+		"surfaceId": "915b7319",
+		"actionId": "b3fdea10",
+		"scenarioId": "a813a92c",
+		"scenarioName": "Community shows the Solo Builder offer instead of opening a change",
+		"titleToken": "[unspa:915b7319:b3fdea10:a813a92c]",
+		"personaName": null,
+		"initialState": {
+			"installation": {
+				"signInRequired": true,
+				"edition": "community"
+			},
+			"session": {
+				"workspaceRole": "designer"
+			},
+			"point": {
+				"decision": "pending",
+				"isIssue": true,
+				"blocking": false,
+				"listedInHealth": true,
+				"fixToConfirm": false,
+				"origin": "specification"
+			},
+			"request": {
+				"frozen": false,
+				"holdsOnlyThisPoint": false
+			},
+			"view": {
+				"severity": "all",
+				"origin": "all"
+			}
+		},
+		"parameters": {},
+		"steps": [],
+		"expectedStatus": "blocked",
+		"expectedAssertions": [],
+		"specVersion": "2026-11-20T00:42:28.211Z"
+	}
+]

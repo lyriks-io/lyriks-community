@@ -1,4 +1,4 @@
-import { shortSha, type ChangeNoun, type ClosingChange, type LandingCheck, type VersionStep } from '$domain/evolution';
+import { shortSha, type ChangeNoun, type ClosingChange, type KnowledgeReading, type LandingCheck, type VersionStep } from '$domain/evolution';
 
 /**
  * What the success dialog of a live evolution says (ac-evo-verd-live-celebration):
@@ -13,6 +13,8 @@ export interface LiveCelebration {
 	readonly figures: readonly { readonly value: number; readonly label: string }[];
 	/** Whether everything the request carried is in the specification; null when it could not be read. */
 	readonly check: { readonly whole: boolean; readonly text: string } | null;
+	/** What the landing validated in Knowledge, and a link to what stays to review (criterion eb7b058a); null before it was recorded. */
+	readonly knowledge: { readonly whole: boolean; readonly text: string; readonly href: string | null } | null;
 	readonly next: string;
 }
 
@@ -28,6 +30,8 @@ export interface LiveCelebrationInput {
 	readonly branchLeft: boolean;
 	/** Index entries still held for the change; none once the merge report synced the index. */
 	readonly heldEntries: number;
+	/** What the landing did in Knowledge (EVO-002). */
+	readonly knowledge?: KnowledgeReading | null;
 }
 
 const NOUNS: readonly ChangeNoun[] = ['feature', 'screen', 'action', 'rule', 'table', 'field'];
@@ -40,6 +44,17 @@ function nextOf(input: LiveCelebrationInput): string {
 	if (sync) return 'Next: Lyriks syncs the index again, from What comes next.';
 	if (input.branchLeft) return 'The index is synced. Left to you: delete the merged branch when you like, from What comes next.';
 	return 'The index is synced: nothing is left to do.';
+}
+
+const elements = (n: number) => `${n} element${n === 1 ? '' : 's'}`;
+
+/** How many elements the landing validated in Knowledge and how many stay to review (criterion eb7b058a). */
+function knowledgeOf(reading: KnowledgeReading | null | undefined): LiveCelebration['knowledge'] {
+	if (!reading) return null;
+	if (reading.failure) return { whole: false, text: `Knowledge could not record the validation (${reading.failure.replace(/\.$/, '')}): what the change wrote reads To review.`, href: reading.reviewHref };
+	if (reading.specValidated) return { whole: true, text: 'The specification stays validated: nothing was validated element by element in Knowledge.', href: null };
+	const text = `${elements(reading.validated)} validated in Knowledge, ${reading.toReview} to review.`;
+	return { whole: reading.toReview === 0, text, href: reading.toReview > 0 ? reading.reviewHref : null };
 }
 
 export function liveCelebrationOf(input: LiveCelebrationInput): LiveCelebration {
@@ -61,6 +76,7 @@ export function liveCelebrationOf(input: LiveCelebrationInput): LiveCelebration 
 				? { whole: true, text: `Checked in Knowledge: all ${check.carried} changes are there.` }
 				: { whole: false, text: `${check.carried - check.found} of ${check.carried} changes are not in Knowledge: What happened lists them.` }
 			: null,
+		knowledge: knowledgeOf(input.knowledge),
 		next: nextOf(input)
 	};
 }

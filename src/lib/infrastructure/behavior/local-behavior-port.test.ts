@@ -75,14 +75,14 @@ describe('LocalBehaviorPort.apply (engine-off write path)', () => {
 		const port = new LocalBehaviorPort(repo, clock);
 
 		await port.apply('p1', [
-			{ kind: 'upsertFeatureShell', featureId: 'f1', name: 'New', description: 'n', tags: [{ type: 'mvp', value: 'must' }] }
+			{ kind: 'upsertFeatureShell', featureId: 'f1', name: 'New', description: 'n', tags: [{ type: 'family', value: 'Recurring' }] }
 		]);
 
 		const feat = (await port.readFeature('p1', 'f1'))!.feature as Record<string, unknown>;
 		expect(feat.surfaces).toEqual([{ id: 's1' }]); // preserved
 		expect(feat.createdAt).toBe('orig'); // preserved
 		expect(feat.name).toBe('New'); // refreshed
-		expect(feat.tags).toEqual([{ type: 'mvp', value: 'must' }]);
+		expect(feat.tags).toEqual([{ type: 'family', value: 'Recurring' }]);
 	});
 
 	it('renames, retags, and delists', async () => {
@@ -142,6 +142,30 @@ describe('LocalBehaviorPort.apply (engine-off write path)', () => {
 			'chat.resumed',
 			'chat.pinned'
 		]);
+	});
+
+	it('drops the reachability goals that named a state of a Lyriks surface the mirror removed', async () => {
+		const repo = new MemRepo();
+		repo.features.set('p1/f1', {
+			format: 'unspaghettit',
+			version: 1,
+			feature: {
+				id: 'f1',
+				name: 'Checkout',
+				surfaces: [{ id: 'srf-journey-old', name: 'Old step', stateDefinitions: [{ id: 'sd1', path: 'cart.open' }] }],
+				reachabilityGoals: [
+					{ id: 'g-cart', condition: { left: 'cart.open', op: 'eq', right: true } },
+					{ id: 'g-clock', condition: { left: 'clock.now', op: 'gt', right: 0 } }
+				]
+			}
+		} as unknown as UnspaFeatureSnapshot);
+		const port = new LocalBehaviorPort(repo, clock);
+
+		await port.apply('p1', [{ kind: 'mirrorFeatureBehavior', featureId: 'f1', surfaces: [{ id: 'srf-journey-new', name: 'New step', actions: [] }], personas: [], events: [] }]);
+
+		const feat = (await port.readFeature('p1', 'f1'))!.feature as Record<string, unknown>;
+		expect((feat.surfaces as Array<{ id: string }>).map((s) => s.id)).toEqual(['srf-journey-new']);
+		expect((feat.reachabilityGoals as Array<{ id: string }>).map((g) => g.id)).toEqual(['g-clock']);
 	});
 
 	it('mirrors data onto a leaf without erasing entities authored in unspa', async () => {

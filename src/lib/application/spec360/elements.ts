@@ -33,6 +33,8 @@ export interface SpecElementsInput {
 	readonly outline: SpecOutline;
 	readonly actions: FeatureActionIndex;
 	readonly rules: KernelRulesReadModel;
+	/** The features disabled as a whole, by id: each leaves the counts with everything it holds. */
+	readonly disabledFeatures?: Readonly<Record<string, unknown>>;
 	readonly experience: ExperienceView;
 	readonly entityCount: number;
 	readonly dataFacts: readonly FactItem[];
@@ -138,14 +140,20 @@ export function specElements(input: SpecElementsInput): SpecElement[] {
 
 	for (const core of input.outline.cores) {
 		for (const feature of core.features) {
+			// A feature disabled as a whole is read, not validated (criterion 8642c6f0).
+			if (input.disabledFeatures?.[feature.id]) continue;
 			add(anchorOf('feature', feature.id), feature.name, undefined, { place: core.name });
 			const place = `${core.name} › ${feature.name}`;
 			const own = input.actions[feature.id] ?? [];
 			const rules = input.rules.groups.find((g) => g.featureId === feature.id)?.rules ?? [];
+			// A disabled element is read, not validated: it leaves the counts while
+			// it is disabled, and comes back with its validations when enabled (criterion 8642c6f0).
 			for (const action of own) {
+				if (action.disabled) continue;
 				const under = anchorOf('action', feature.id, action.id);
 				add(under, text(action.name) || action.id, action, { place });
 				for (const rule of rules) {
+					if (rule.disabled) continue;
 					if (rule.origin.kind === 'action' && rule.origin.actionId === action.id) add(anchorOf('rule', feature.id, rule.nodeId), rule.statement, rule, { place, under });
 				}
 			}

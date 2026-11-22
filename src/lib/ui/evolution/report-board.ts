@@ -377,7 +377,10 @@ export function buildLineOf(l: ReportLineLike): BuildLine {
 			return state('found', 'Found · stale', 'border-orange bg-orange-tint text-orange-ink', 'Found, but the spec changed since that code was indexed.', `Check the code against the spec again. ${sync}`);
 		if (code.startsWith('Its last result failed'))
 			return state('failing', '✕ Test fails', 'border-red-ink bg-red-ink text-paper', 'Its last test result failed.', `Make the test pass. ${sync}`);
+		// What a screen declares is proven by its screen (criterion:127dba2b), a state by the actions that touch it (criterion:ad059df9).
 		if (type === 'state')
+			return state('found', 'Found · not tested', 'border-orange bg-orange-tint text-orange-ink', 'Found in the code, but the actions that read or write it are not all tested yet.', `Every action of its screen that reads or writes it (every action of the screen when none does) has to pass all its scenarios. ${sync}`);
+		if (type === 'surface_rule' || type === 'surface_invariant')
 			return state('found', 'Found · not tested', 'border-orange bg-orange-tint text-orange-ink', 'Found in the code, but its screen is not fully tested yet.', `Every action of its screen has to pass all its scenarios. ${sync}`);
 		return state('found', 'Found · not tested', 'border-orange bg-orange-tint text-orange-ink', 'Found in the code, but no test of it has passed yet.', `A test of its scenarios has to pass. ${sync}`);
 	}
@@ -545,6 +548,15 @@ export interface Subject {
 	readonly specVersion: number;
 	/** The branch the code is written on, when the project names a deployment branch (feat-evo-code-branch). */
 	readonly branch?: { readonly name: string; readonly deploymentBranch: string; readonly bound: boolean } | null;
+	/** The version in correction while one is open in the Build (EVO-012): the brief still hands out version `specVersion`. */
+	readonly correcting?: number | null;
+}
+
+/** While version N+1 is in correction the brief says the code is still built against version N (criterion 3baf05de). */
+function correctionLines(s: Subject): string[] {
+	return s.correcting
+		? [`Version ${s.correcting} is in correction and waits for its validation: build against v${s.specVersion} until it is frozen. The drafts get_evolution shows are corrected, not yet the version to build.`]
+		: [];
 }
 
 /** Where the code goes, said in a brief: on the request's own branch, committed before the tests run (ac-evo-branch-name). */
@@ -567,6 +579,7 @@ export function implementationBrief(s: Subject, lines: readonly ReportLineLike[]
 	return [
 		`Implement evolution ${s.key} “${s.title}” (${s.projectName} project).`,
 		`Reference spec: Lyriks › ${s.key} v${s.specVersion}, readable via the Lyriks MCP (project ${s.projectId}, request ${s.requestId.slice(0, 8)}).`,
+		...correctionLines(s),
 		...branchLines(s),
 		...(decisions.length > 0 ? ['', 'Validated decisions:', ...decisions.map((d) => `- ${d.label}: ${d.reason}`)] : []),
 		'',
@@ -591,6 +604,7 @@ export function remainingBrief(s: Subject, lines: readonly ReportLineLike[]): st
 	return [
 		`Finish evolution ${s.key} “${s.title}” (${s.projectName} project): the points of spec v${s.specVersion} no passing test covers yet.`,
 		`Reference spec: Lyriks › ${s.key} v${s.specVersion}, readable via the Lyriks MCP (project ${s.projectId}, request ${s.requestId.slice(0, 8)}).`,
+		...correctionLines(s),
 		...branchLines(s),
 		'',
 		`Points still open (${open.length}), with what the last reading of the code says:`,
@@ -603,6 +617,48 @@ export function remainingBrief(s: Subject, lines: readonly ReportLineLike[]): st
 		'Cover each one with a test named by its [criterion:…] or [unspa:…] token, record the results with ingest-results.mjs, then sync the index: Lyriks reads the code again at each sync.',
 		'Do not modify what the product does outside these requirements.'
 	].join('\n');
+}
+
+/** The request a brief is written for, as the dossier reads it. */
+export interface BriefRequest {
+	readonly key?: string | null;
+	readonly title: string;
+	readonly id: string;
+	readonly specVersion: number;
+	/** Version N+1 in correction in the Build (EVO-012), as `correctionReading` gives it. */
+	readonly correction?: { readonly version: number } | null;
+}
+
+/** What every brief of a request says about it: the version it hands out, and the one in correction, if any. */
+export function briefSubject(request: BriefRequest, project: { readonly id: string; readonly name: string }, branch: Subject['branch'] = null): Subject {
+	return {
+		key: request.key ?? 'EVO',
+		title: request.title,
+		projectId: project.id,
+		projectName: project.name,
+		requestId: request.id,
+		specVersion: request.specVersion,
+		branch,
+		correcting: request.correction?.version ?? null
+	};
+}
+
+/** Which brief a copy button hands over: the whole brief, or the points still open once the build waits on the code. */
+export type BriefPart = 'whole' | 'open_points';
+
+/**
+ * What Copy the brief hands to the clipboard, and what the toast says once it
+ * is there (action bba7e1cd). The page only writes the text to the clipboard.
+ */
+export function briefToCopy(
+	part: BriefPart,
+	s: Subject,
+	lines: readonly ReportLineLike[],
+	decisions: readonly { readonly label: string; readonly reason: string }[] = []
+): { readonly text: string; readonly copied: string } {
+	return part === 'whole'
+		? { text: implementationBrief(s, lines, decisions), copied: 'Brief copied: paste it into your LLM' }
+		: { text: remainingBrief(s, lines), copied: 'Brief of the open points copied: paste it into your LLM' };
 }
 
 /** One correction the fix prompt carries. */

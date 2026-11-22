@@ -8,6 +8,7 @@
 // in the repo, versioned with the code it describes.
 
 import type { LyriksClient } from '../lyriks-client.js'
+import { HttpStatusError } from '../util/http-error.js'
 import { RESULT_CAP } from '../util/shape.js'
 
 type Row = Record<string, unknown>
@@ -38,8 +39,15 @@ export async function seedIndexHandler(args: SeedIndexArgs, lyriks: LyriksClient
 
 export interface SyncIndexArgs {
   project_id: string
-  index: Record<string, unknown>
+  /** Required unless `command` asks for the sync command instead. */
+  index?: Record<string, unknown>
   verbose?: boolean
+  /** Send the entries as places only (feat-100, action f20cf75e): no report is replaced, coverage stays. */
+  positions_only?: boolean
+  /** The revision of the project's index the caller wrote against (criterion 93abb7df). */
+  expected_revision?: number
+  /** Hand out the exact command that sends the index from the disk (feat-100, action aa15bfce). */
+  command?: boolean
 }
 
 /**
@@ -59,7 +67,44 @@ export const SYNC_SEMANTICS = {
   shared: 'Keys that SEVERAL features declare (a state path is not unique across features): the index holds one entry per key, so its file and line describe one of them and the others resolve to that same location. Reported, never fatal, and it does not affect ok.',
   incomplete: 'Action and surface entries you sent WITHOUT some of the children the spec declares under them ({ key, featureId, missing: [child keys] }). Those children are reported missing, so the coverage of that action or surface drops: send them with their parent. Never fatal, and it does not affect ok. Absent on an older engine.',
   orphans: 'Index keys that match no spec entity (typo, renamed or removed entity, or wrong key format). ok is false while any remain.',
+  revision: 'The revision of the project\'s index after this write: it grows by one at each sync, move of lines or report that lands. Pass it back as expected_revision (sync-index.mjs --expect) and a write is refused, with nothing written, where another checkout wrote one of the same actions, surfaces or criteria since.',
 } as const
+
+/** What each counter of a move of lines (positions_only) means. */
+export const POSITIONS_SEMANTICS = {
+  ok: 'true only when every key sent was located and moved, none is an orphan and no report was refused.',
+  sent: 'Entries you sent.',
+  moved: 'Keys whose file, line and code line Lyriks updated.',
+  units: 'The action and surface reports (and criterion records) landed again with exactly what they located before, their places updated: no report gains or loses a key, so coverage does not move.',
+  notLocated: 'Keys a feature declares but Lyriks holds no place for (never located by a sync, or a kind no report keeps: an entity, an exposure, a feature-level invariant or event). A move adds no coverage: sync them with their action or surface. ok is false while any remain.',
+  orphans: 'Keys no feature declares (typo, renamed or removed element). ok is false while any remain.',
+  revision: SYNC_SEMANTICS.revision,
+} as const
+
+/**
+ * A write refused because another checkout wrote some of the same units since
+ * the revision it names (platform 409): the answer, not an error, so a caller
+ * reads the units and the current revision and sends again. Anything else
+ * thrown passes through.
+ */
+async function orRevisionRefusal(write: () => Promise<unknown>): Promise<unknown> {
+  try {
+    return await write()
+  } catch (error) {
+    if (!(error instanceof HttpStatusError) || error.status !== 409) throw error
+    let body: unknown
+    try {
+      body = JSON.parse(error.body)
+    } catch {
+      throw error
+    }
+    if (!isRow(body) || typeof body.currentRevision !== 'number') throw error
+    return { ok: false, refused: 'revision', ...body }
+  }
+}
+
+/** The expected revision as the platform reads it, left out when not given. */
+const expectedOf = (revision: number | undefined) => (revision === undefined ? {} : { expectedRevision: revision })
 
 /** Keep the head of a `{ total, entries }` block; `total` still says how many there are. */
 function headEntries(block: unknown): unknown {
@@ -148,13 +193,156 @@ function criteriaOfSent(criteria: unknown, keys: readonly string[]): unknown {
   return { ...criteria, entries: entries.slice(0, LIST_HEAD), entriesScope: 'the criterion keys you sent; verbose:true lists the project' }
 }
 
-/** Push coverage for a whole project from the index you hold. */
-export async function syncIndexHandler(args: SyncIndexArgs, lyriks: LyriksClient): Promise<unknown> {
-  const answer = await lyriks.post('/api/behavior/implementation/index', {
-    projectId: args.project_id,
-    index: args.index,
-  })
-  return shapeSyncAnswer(answer, args.verbose === true, Object.keys(args.index ?? {}))
+/** A move of lines an agent can read: the counters, the lists cut to their head, and what each one means. */
+export function shapePositionsAnswer(answer: unknown): unknown {
+  if (!isRow(answer) || answer.positionsOnly !== true) return answer
+  return { ...answer, semantics: POSITIONS_SEMANTICS }
+}
+
+/**
+ * Where the sync command reaches this server and how it signs in (criterion
+ * 2452b3d7): `ticket` answers the token the command carries (null where this
+ * server asks for none), or null when none can be issued now.
+ */
+export interface SyncCommander {
+  mcpUrl: string
+  ticket: (projectId: string) => { token: string | null; expiresAt?: string } | null
+}
+
+/** The exact command that sends the index of a repository, ready to run as given. */
+export function syncCommand(o: { mcpUrl: string; projectId: string; token: string | null }): string {
+  const quote = (value: string) => (/^[\w./:@=,+-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`)
+  const parts = ['node', '.lyriks/tools/sync-index.mjs', '--project', quote(o.projectId), '--url', quote(o.mcpUrl)]
+  if (o.token) parts.push('--token', quote(o.token))
+  return parts.join(' ')
+}
+
+/**
+ * Hand out the sync command (feat-100, action aa15bfce). The ticket writes the
+ * coverage the whole team reads, so the platform is asked first whether the
+ * caller may write the project: a viewer is refused (403) and someone outside
+ * the workspace finds no project (404) before any ticket exists.
+ */
+export async function syncCommandHandler(projectId: string, lyriks: LyriksClient, commander?: SyncCommander): Promise<unknown> {
+  if (!commander) {
+    throw new Error('This gateway cannot hand out the sync command: run node .lyriks/tools/sync-index.mjs --url <this MCP address> in the repository yourself.')
+  }
+  const { revision } = await lyriks.get<{ revision?: number }>(`/api/behavior/implementation/index/revision?${new URLSearchParams({ projectId }).toString()}`)
+  const signIn = commander.ticket(projectId)
+  if (!signIn) throw new Error('No sign-in can be issued for the sync command right now: try again in a moment.')
+  const command = syncCommand({ mcpUrl: commander.mcpUrl, projectId, token: signIn.token })
+  const ticket = signIn.token ? 'ticket' : 'none_needed'
+  return {
+    command,
+    ticket,
+    ...(signIn.expiresAt ? { expiresAt: signIn.expiresAt } : {}),
+    ...(typeof revision === 'number' ? { revision } : {}),
+    next:
+      `Run \`command\` as given, in the repository root that holds .unspa.json: it sends the whole index to this server${ticket === 'ticket' ? ' and signs in by itself until expiresAt (its sign-in reads where index keys belong, sends this project\'s index and reports the branch to the request built on it, nothing else), nothing to set' : ', which asks for no sign-in'}. ` +
+      'Add --since <commit> to send only the actions and surfaces whose keys changed since that commit, --feature <featureId> for one feature, --positions when lines only moved (coverage stays), ' +
+      `--expect <revision> with the revision the last answer printed${typeof revision === 'number' ? ` (now ${revision})` : ''} so another checkout's write is never replaced in silence. It prints the counters and what each one means, and exits 1 when the answer is not ok.`,
+  }
+}
+
+/** Push coverage for a whole project from the index you hold, move located lines, or hand out the command that does. */
+export async function syncIndexHandler(args: SyncIndexArgs, lyriks: LyriksClient, commander?: SyncCommander): Promise<unknown> {
+  if (args.command === true) return syncCommandHandler(args.project_id, lyriks, commander)
+  if (!isRow(args.index)) {
+    throw new Error('index is required: the `index` object of your .unspa.json (or command:true for the command that sends it from the disk).')
+  }
+  const body = { projectId: args.project_id, index: args.index, ...expectedOf(args.expected_revision) }
+  if (args.positions_only === true) {
+    return orRevisionRefusal(async () => shapePositionsAnswer(await lyriks.post('/api/behavior/implementation/index/positions', body)))
+  }
+  return orRevisionRefusal(async () =>
+    shapeSyncAnswer(await lyriks.post('/api/behavior/implementation/index', body), args.verbose === true, Object.keys(args.index ?? {})),
+  )
+}
+
+export interface KeyOwnersArgs {
+  project_id: string
+  keys: string[]
+}
+
+/** What the answer of a key lookup says, sent with it. */
+export const KEY_OWNERS_SEMANTICS = {
+  features: 'One row per feature declaring a key you asked: `units` the actions and surfaces holding those keys, each with EVERY key of its unit (a sync replaces what a unit located, so send the unit whole), `alone` the keys asked that travel on their own (criteria, entities, exposures, feature-level invariants and events). A key several features declare is under each of them.',
+  requests: 'One row per draft of an open Evolution request that adds a key you asked: `requestId`, `draftId`, the `units` its model places those keys in (with every key of each) and `alone`. Send them like any other unit: the sync holds those keys on the request until the change lands. Absent when no request adds a key asked.',
+  orphans: 'Keys asked that no feature declares and no open request adds (typo, renamed or removed element).',
+  requestsNotRead: 'Open requests whose drafts could not be read now: a key one of them adds may be listed under orphans. Ask again once the engine answers.',
+  remainingKeys: 'Keys not answered yet because the answer would no longer fit: ask again with them. Never a key cut in half: each key comes back with all of its units, or not at all.',
+} as const
+
+const size = (value: unknown) => JSON.stringify(value).length
+
+/** The lists of a lookup answer whose rows carry units, and how a row is told from another. */
+const OWNER_LISTS = [
+  { list: 'features', id: (row: Row) => String(row.featureId), head: (row: Row) => ({ featureId: row.featureId }) },
+  { list: 'requests', id: (row: Row) => `${String(row.requestId)}\u0000${String(row.draftId)}`, head: (row: Row) => ({ requestId: row.requestId, draftId: row.draftId }) },
+] as const
+
+/**
+ * A lookup answer under the result cap, never sampled: whole keys while they
+ * fit, each with every unit that holds it (in every feature that declares it
+ * and every request draft that adds it), the rest named under
+ * `remainingKeys`. A state many features declare comes back with every surface
+ * declaring it, which can outweigh hundreds of other keys; the first key is
+ * always answered, whatever it weighs, so asking again always progresses.
+ */
+export function packKeyOwners(answer: unknown, asked: readonly string[], cap = RESULT_CAP): unknown {
+  if (!isRow(answer) || !Array.isArray(answer.features)) return answer
+  const whole = { ...answer, semantics: KEY_OWNERS_SEMANTICS }
+  if (size(whole) <= cap) return whole
+  const orphanSet = new Set(Array.isArray(answer.orphans) ? answer.orphans : [])
+  const keys = [...new Set(asked)]
+  const { features: _f, requests: _r, orphans: _o, ...head } = answer
+  let room = cap - size({ ...head, semantics: KEY_OWNERS_SEMANTICS, orphans: [], remainingKeys: [], answered: 0 }) - 256
+  const kept = new Map<string, { list: string; head: Row; units: Map<string, Row>; alone: string[] }>()
+  const orphans: string[] = []
+  let answered = 0
+  for (const key of keys) {
+    let cost = size(key) + 1
+    const adds: Array<() => void> = []
+    for (const { list, id, head: rowHead } of OWNER_LISTS) {
+      for (const row of (Array.isArray(answer[list]) ? (answer[list] as unknown[]) : []).filter(isRow)) {
+        const units = (Array.isArray(row.units) ? row.units : []).filter((u): u is Row => isRow(u) && Array.isArray(u.keys) && u.keys.includes(key))
+        const alone = Array.isArray(row.alone) && row.alone.includes(key)
+        if (units.length === 0 && !alone) continue
+        const rowId = `${list}\u0000${id(row)}`
+        const held = kept.get(rowId)
+        if (!held) cost += size({ ...rowHead(row), units: [], alone: [] }) + 1
+        for (const unit of units) if (!held?.units.has(String(unit.unit))) cost += size(unit) + 1
+        adds.push(() => {
+          const into = kept.get(rowId) ?? { list, head: rowHead(row), units: new Map<string, Row>(), alone: [] as string[] }
+          for (const unit of units) into.units.set(String(unit.unit), unit)
+          if (alone) into.alone.push(key)
+          kept.set(rowId, into)
+        })
+      }
+    }
+    if (answered > 0 && cost > room) break
+    room -= cost
+    adds.forEach((add) => add())
+    if (orphanSet.has(key)) orphans.push(key)
+    answered += 1
+  }
+  const rowsOf = (list: string) => [...kept.values()].filter((row) => row.list === list).map((row) => ({ ...row.head, units: [...row.units.values()], alone: row.alone }))
+  const requests = rowsOf('requests')
+  return {
+    ...head,
+    answered,
+    features: rowsOf('features'),
+    ...(requests.length > 0 ? { requests } : {}),
+    orphans,
+    remainingKeys: keys.slice(answered),
+    semantics: KEY_OWNERS_SEMANTICS,
+  }
+}
+
+/** Which feature declares each index key, or which open request adds it, and the unit it travels with (feat-100, action af8d9001). */
+export async function keyOwnersHandler(args: KeyOwnersArgs, lyriks: LyriksClient): Promise<unknown> {
+  const answer = await lyriks.post('/api/behavior/implementation/index/owners', { projectId: args.project_id, keys: args.keys })
+  return packKeyOwners(answer, args.keys)
 }
 
 export interface FoundEntityArg {
@@ -168,6 +356,8 @@ export interface ReportStatusArgs {
   feature_id: string
   action_id?: string
   surface_id?: string
+  /** The revision of the project's index the caller wrote against (rule fc406a24). */
+  expected_revision?: number
   found_entities?: FoundEntityArg[]
   entries?: Array<{
     action_id?: string
@@ -185,9 +375,10 @@ const toFoundEntities = (entities: FoundEntityArg[]) =>
 
 /** Report where spec entities live in code — one scope, or many via `entries`. */
 export async function reportStatusHandler(args: ReportStatusArgs, lyriks: LyriksClient): Promise<unknown> {
-  return lyriks.post('/api/behavior/implementation/status', {
+  return orRevisionRefusal(() => lyriks.post('/api/behavior/implementation/status', {
     projectId: args.project_id,
     featureId: args.feature_id,
+    ...expectedOf(args.expected_revision),
     ...(args.entries
       ? {
           entries: args.entries.map((entry) => ({
@@ -201,7 +392,7 @@ export async function reportStatusHandler(args: ReportStatusArgs, lyriks: Lyriks
           ...(args.surface_id ? { surfaceId: args.surface_id } : {}),
           foundEntities: toFoundEntities(args.found_entities ?? []),
         }),
-  })
+  }))
 }
 
 export interface GetStatusArgs {

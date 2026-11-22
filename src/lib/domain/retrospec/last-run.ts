@@ -12,16 +12,6 @@ import { reviewCounts, runSourceOf, type RetrospecStatus } from './status';
 
 export type LastRunState = 'running' | 'paused' | 'partial' | 'complete' | 'review' | 'validated' | 'not_launched';
 
-export const LAST_RUN_WORD: Readonly<Record<LastRunState, string>> = {
-	running: 'Running',
-	paused: 'Paused',
-	partial: 'Partial',
-	complete: 'Complete',
-	review: 'In review',
-	validated: 'Validated',
-	not_launched: 'Not launched'
-};
-
 export interface LastRun {
 	readonly state: LastRunState;
 	readonly title: string;

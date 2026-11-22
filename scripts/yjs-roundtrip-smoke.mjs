@@ -1,20 +1,18 @@
-// Quick smoke test: open two Yjs clients to the standalone y-websocket server,
+// Quick smoke test: open two Yjs clients to the standalone relay,
 // set a snapshot from client A, observe it arriving on client B.
-// Run after: `node node_modules/y-websocket/bin/server.cjs` (port 3002).
+// Run after: `PORT=3002 node node_modules/@y/websocket-server/src/server.js`.
+// The clients use Node's built-in WebSocket (Node 22 and later).
 
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
-import { createRequire } from 'node:module';
-const require = createRequire(import.meta.url);
-const WS = require('ws');
 
 const WS_URL = 'ws://127.0.0.1:3002';
 const ROOM = 'feature:f-create-customer';
 
 const docA = new Y.Doc();
 const docB = new Y.Doc();
-const provA = new WebsocketProvider(WS_URL, ROOM, docA, { WebSocketPolyfill: WS });
-const provB = new WebsocketProvider(WS_URL, ROOM, docB, { WebSocketPolyfill: WS });
+const provA = new WebsocketProvider(WS_URL, ROOM, docA);
+const provB = new WebsocketProvider(WS_URL, ROOM, docB);
 
 const mapA = docA.getMap('snapshot');
 const mapB = docB.getMap('snapshot');

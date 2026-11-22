@@ -1,14 +1,2 @@
-/**
- * A UUID v4 the page mints for what it adds, so the new element shows under
- * its real id before the server answers. `crypto.randomUUID` only exists on a
- * secure origin; an install served over plain http still has
- * `crypto.getRandomValues`.
- */
-export function mintUuid(): string {
-	if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
-	const b = crypto.getRandomValues(new Uint8Array(16));
-	b[6] = (b[6] & 0x0f) | 0x40;
-	b[8] = (b[8] & 0x3f) | 0x80;
-	const hex = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
-	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
+/** The page mints ids with the domain's minter, which also works on a plain-http install. */
+export { mintUuid } from '$domain/shared';

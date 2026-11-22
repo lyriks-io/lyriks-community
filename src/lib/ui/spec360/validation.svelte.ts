@@ -7,6 +7,7 @@ import { initials } from '$ui/team/team-style';
 import { bringNextToValidate } from '$ui/evolution/evo-scroll';
 import type { Stamp, ValidateControl, ValidateLook } from '$ui/evolution/BlockControls.svelte';
 import { anchorDomId } from '$domain/discussions';
+import { throughBadge } from './through-request';
 import type { Baseline } from '$domain/baselines';
 import { sectionSyncKey } from '$lib/shared/section-sync';
 import {
@@ -104,12 +105,12 @@ export class SpecValidation {
 	readonly draft = $derived(this.board.summary.state === 'draft');
 
 	/**
-	 * The board as it will read once the validations being saved are confirmed: what the band counts, so its count
-	 * moves the moment a validation is sent and drops back if the server refuses it (criterion c509fa9c). The
-	 * elements' own controls keep reading the confirmed board (criterion 3d83e291).
+	 * The board as it will read once the validations and withdrawals being saved are confirmed: what the band counts,
+	 * so its count moves the moment one is sent and comes back if the server refuses it (criterion c509fa9c, EVO-007).
+	 * The elements' own controls keep reading the confirmed board (criterion 3d83e291).
 	 */
 	readonly shownBoard = $derived.by((): SpecValidationBoard => {
-		const acts = this.#pending.flatMap((p) => p.acts.filter((act) => act.op === 'validate' || act.op === 'clear_flag'));
+		const acts = this.#pending.flatMap((p) => p.acts.filter((act) => act.op === 'validate' || act.op === 'clear_flag' || act.op === 'withdraw'));
 		if (acts.length === 0) return this.board;
 		const { elements, team, me, canWrite, baselines, teamAvailable } = this.#source();
 		const outcome = applyRetrospecActs(this.doc, acts, { actor: me, now: new Date().toISOString(), reviewOnly: !canWrite });
@@ -165,33 +166,42 @@ export class SpecValidation {
 		// The reader's own pending initials validate like the check (criterion 8d6c8ec0); someone else's pending ones
 		// send a reminder; validated initials only say who validated.
 		const validateMine = canReview && !saving && !mine && awaits === 'me' ? () => void this.validate(anchor) : null;
+		const what = this.element(anchor)?.title?.trim() || 'this element';
 		const stamps: Stamp[] = people.map((p) => {
 			const ok = s.validatedBy.some((v) => samePersonRef(v, p));
 			const isMe = samePersonRef(p, me);
 			const title = `${p.name} · ${ok ? 'validated' : isMe ? (validateMine ? 'click to validate' : 'to validate') : 'pending, click to send a reminder'}`;
 			const onclick = ok ? null : isMe ? validateMine : !canWrite || saving ? null : () => void this.remind(anchor, p);
 			// A click on initials is confirmed first (criterion 8d6c8ec0).
-			const what = this.element(anchor)?.title?.trim() || 'this element';
 			const confirm = !onclick ? null : isMe ? { question: `Validate ${what}?`, act: 'Validate' } : { question: `Send a reminder to ${p.name}?`, act: 'Send' };
 			return { id: p.id, initials: isMe ? 'YOU' : initials(p.name), title: isMe ? title.replace(p.name, 'You') : title, ok, onclick, name: p.name, me: isMe, confirm };
 		});
+		// Validated through the request that delivered it, which a person it waits on takes back (EVO-002).
+		const through = s.through ? { ...throughBadge(this.#source().projectId, s.through), withdraw: canReview && !saving ? () => void this.withdrawThrough(anchor) : null } : null;
 		return {
+			through,
 			look,
 			held: this.#source().teamAvailable === false ? 'The project team is unavailable. Try again when it is available.' : null,
 			title: saving ? 'Saving your validation' : mine ? 'You validated this element · click to withdraw' : 'Validate this element',
 			run: !canReview || saving ? null : mine ? () => void this.withdraw(anchor) : awaits === 'me' ? () => void this.validate(anchor) : null,
 			saving,
 			withdraws: mine,
+			// One click on the reader's own check asks first, then Withdraw takes it back (EVO-007, criterion 00d0d300).
+			withdrawConfirm: mine ? { question: `Withdraw your validation of ${what}?`, act: 'Withdraw' } : null,
 			stamps,
 			settled: s.state === 'ok',
 			awaits
 		};
 	}
 
-	async #act(acts: RetrospecAct[], wire: Record<string, unknown>[], what = 'Your validation'): Promise<boolean> {
+	/**
+	 * `refused` leads what the page refuses itself, as the server's refusal is led (`post`): a withdrawal says it was
+	 * not saved before its reason (EVO-007).
+	 */
+	async #act(acts: RetrospecAct[], wire: Record<string, unknown>[], what = 'Your validation', refused = ''): Promise<boolean> {
 		const refusal = this.#refusal(acts);
 		if (refusal) {
-			pushToast({ level: 'info', message: refusal });
+			pushToast({ level: 'info', message: `${refused}${refusal}` });
 			return false;
 		}
 		if (acts.some((act) => 'itemId' in act && this.saving(act.itemId))) return false;
@@ -201,7 +211,7 @@ export class SpecValidation {
 			return await this.#queue.run(() => {
 				const refusal = this.#refusal(acts);
 				if (refusal) {
-					pushToast({ level: 'info', message: refusal });
+					pushToast({ level: 'info', message: `${refused}${refusal}` });
 					return Promise.resolve(false);
 				}
 				return post(this.#source().projectId, wire, what);
@@ -217,13 +227,13 @@ export class SpecValidation {
 		if (!source.canWrite) {
 			const ownReview = acts.length > 0 && acts.every((act) => {
 				if (!('itemId' in act) || !this.canReview(act.itemId)) return false;
-				return act.op === 'validate' || act.op === 'withdraw' ||
+				return act.op === 'validate' || act.op === 'withdraw' || act.op === 'withdraw_request_validation' ||
 					(act.op === 'clear_flag' && acts.some((other) => other.op === 'validate' && other.itemId === act.itemId));
 			});
 			if (!ownReview) return 'You can read this specification, not validate it: ask a project editor.';
 		}
 		for (const act of acts) {
-			if (['validate', 'withdraw', 'reject', 'publish'].includes(act.op) && !this.draft) return 'The specification is already validated.';
+			if (['validate', 'withdraw', 'withdraw_request_validation', 'reject', 'publish'].includes(act.op) && !this.draft) return 'The specification is already validated.';
 			if ('itemId' in act && !this.element(act.itemId)) return 'This element is no longer in the specification. Reload the page.';
 			if (act.op === 'validate' && !this.canReview(act.itemId)) return 'This question does not require your validation.';
 			if (act.op === 'publish' && !this.board.complete) return 'Validate every element before validating the specification definitively.';
@@ -311,8 +321,20 @@ export class SpecValidation {
 		return done;
 	}
 
+	/**
+	 * Take back the reader's own validation (action 4f151e72). Refused or failed, it says Your withdrawal was not
+	 * saved. with the reason, the check stays green and the band's count comes back (EVO-007).
+	 */
 	withdraw(anchor: string) {
-		return this.#act([{ op: 'withdraw', itemId: anchor }], [{ op: 'withdraw', itemId: anchor }], 'Your withdrawal');
+		return this.#act([{ op: 'withdraw', itemId: anchor }], [{ op: 'withdraw', itemId: anchor }], 'Your withdrawal', 'Your withdrawal was not saved. ');
+	}
+
+	/**
+	 * Take back the validation a landed change request gave the element (EVO-002): it stands on its people's
+	 * validations alone again; a refusal puts it back as it was and says why.
+	 */
+	withdrawThrough(anchor: string) {
+		return this.#act([{ op: 'withdraw_request_validation', itemId: anchor }], [{ op: 'withdraw_request_validation', itemId: anchor }], 'Your withdrawal');
 	}
 
 	async remind(anchor: string, person: PersonRef) {

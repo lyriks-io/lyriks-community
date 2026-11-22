@@ -135,11 +135,6 @@ export function segmentText(text: string, terms: GlossaryTerm[]): Segment[] {
 	return out;
 }
 
-/** True when any governed word appears in the text (cheap pre-check for callers). */
-export function hasGovernedWord(text: string, terms: GlossaryTerm[]): boolean {
-	return segmentText(text, terms).some((s) => s.mark);
-}
-
 /**
  * Replace every whole-word, case-insensitive occurrence of `original` with
  * `canonical` — the write-back behind the glossary tooltip's "use the canonical

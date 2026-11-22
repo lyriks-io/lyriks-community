@@ -1,32 +1,29 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { createEmptyFeaturesDraft, createFeature } from '$domain/features';
+import { UNSPA_FEATURE_FORMAT, UNSPA_VERSION, type UnspaFeatureSnapshot } from '$lib/unspa-schema';
 import { LoadImplementationCoverageUseCase } from './load-implementation-coverage';
 import type { BehaviorRepositoryPort, CodeAdoptionPort } from '../ports';
 
-/** Two leaves under one core; ids are what the engine is asked for. */
+type Shells = Pick<BehaviorRepositoryPort, 'loadFeature'>;
+type Engine = Pick<CodeAdoptionPort, 'available' | 'getImplementationStatus'>;
+
+/** Two leaves; ids are what the engine is asked for. */
 const FEATURES = {
-	features: [
-		{ id: 'feat-a', name: 'Send invoices', parentId: null },
-		{ id: 'feat-b', name: 'Archive invoices', parentId: null }
-	],
-	cores: [],
-	releases: [],
-	roadmapAssignments: []
+	...createEmptyFeaturesDraft('project-1'),
+	features: [createFeature('', null, { id: 'feat-a', name: 'Send invoices' }), createFeature('', null, { id: 'feat-b', name: 'Archive invoices' })]
 };
 
 /** A behavior store whose shells carry the given spec stamps. */
-function shells(updatedAt: Record<string, string | undefined> = {}) {
+function shells(updatedAt: Record<string, string | undefined> = {}): Shells {
 	return {
-		loadFeature: async (_projectId: string, featureId: string) =>
-			featureId in updatedAt ? { feature: { id: featureId, updatedAt: updatedAt[featureId] } } : null
-	} as unknown as BehaviorRepositoryPort;
+		loadFeature: async (_projectId: string, featureId: string): Promise<UnspaFeatureSnapshot | null> =>
+			featureId in updatedAt ? { format: UNSPA_FEATURE_FORMAT, version: UNSPA_VERSION, feature: { id: featureId, updatedAt: updatedAt[featureId] } } : null
+	};
 }
 
-function useCase(port: Partial<CodeAdoptionPort>, behavior: BehaviorRepositoryPort = shells()) {
-	return new LoadImplementationCoverageUseCase(
-		{ execute: async () => FEATURES } as never,
-		{ available: true, ...port } as CodeAdoptionPort,
-		behavior
-	);
+function useCase(port: Partial<Engine>, behavior: Shells = shells()) {
+	const engine: Engine = { available: true, getImplementationStatus: async () => null, ...port };
+	return new LoadImplementationCoverageUseCase({ execute: async () => FEATURES }, engine, behavior);
 }
 
 const sidecar = (value: Record<string, unknown>) => ({ ok: true as const, value });
@@ -138,7 +135,8 @@ describe('LoadImplementationCoverageUseCase', () => {
 								{ criterionId: 'c2', standing: 'active, but superseded by c1', state: 'failing' },
 								{ criterionId: 'c3', standing: 'draft', state: 'verified' },
 								{ criterionId: 'c4', standing: 'superseded by c1', state: 'failing' },
-								{ criterionId: 'c5', state: 'none' }
+								{ criterionId: 'c5', state: 'none' },
+								{ criterionId: 'c6', standing: 'active', state: 'failing' }
 							]
 						})
 					: sidecar({ actions: [{ actionId: 'act-9', foundEntities: [{}], expectedEntities: [{}] }], surfaces: [] })
@@ -147,10 +145,44 @@ describe('LoadImplementationCoverageUseCase', () => {
 		expect(coverage['feat-a']?.actions?.['act-1']?.provenAt).toBe('2026-11-02T08:00:00.000Z');
 		// Located is not proven: no stamp, no provenAt.
 		expect(coverage['feat-a']?.actions?.['act-2']).not.toHaveProperty('provenAt');
-		// Draft and superseded criteria hold nothing yet; a row without a standing is active.
-		expect(coverage['feat-a']?.criteria).toEqual({ total: 3, verified: 1, failing: 1 });
+		// Draft and superseded criteria hold nothing yet; a row without a standing is active,
+		// and a criterion never run is neither verified nor failing.
+		expect(coverage['feat-a']?.criteria).toEqual({ total: 4, verified: 1, failing: 2 });
 		// An engine that sends no criteria block says nothing, which is not zero.
 		expect(coverage['feat-b']).not.toHaveProperty('criteria');
+	});
+
+	it('keeps the last result of each scenario the sync carried with the action, the unreadable ones left out [criterion:d0f1688f]', async () => {
+		const at = '2026-11-20T01:00:00.000Z';
+		const coverage = await useCase({
+			getImplementationStatus: async () =>
+				sidecar({
+					actions: [
+						{
+							actionId: 'act-1',
+							foundEntities: [{}],
+							expectedEntities: [{}],
+							auditMeta: {
+								scenarioResults: {
+									'sc-1': { passed: true, at, revision: 'abc1234' },
+									'sc-2': { passed: false, at, dirty: true },
+									'sc-3': { passed: 'yes', at },
+									'sc-4': { passed: true }
+								}
+							}
+						},
+						{ actionId: 'act-2', foundEntities: [{}], expectedEntities: [{}], auditMeta: { verifiedAt: at } }
+					],
+					surfaces: []
+				})
+		}).execute('project-1');
+
+		const actions = coverage['feat-a']?.actions ?? {};
+		expect(actions['act-1']?.scenarioResults).toEqual({ 'sc-1': { passed: true, at, revision: 'abc1234' }, 'sc-2': { passed: false, at } });
+		// A failing scenario leaves no proof stamp on its action.
+		expect(actions['act-1']).not.toHaveProperty('provenAt');
+		// An engine or an index that kept no result per scenario says nothing, which is not a failure.
+		expect(actions['act-2']).not.toHaveProperty('scenarioResults');
 	});
 
 	it('falls back to found+missing when a legacy row lacks expectedEntities', async () => {
@@ -164,14 +196,14 @@ describe('LoadImplementationCoverageUseCase', () => {
 	});
 
 	it('returns {} without touching the engine when it is unavailable', async () => {
-		const spy = vi.fn();
+		let asked = 0;
 		const coverage = await useCase({
 			available: false,
-			getImplementationStatus: spy
-		} as Partial<CodeAdoptionPort>).execute('project-1');
+			getImplementationStatus: async () => (asked++, null)
+		}).execute('project-1');
 
 		expect(coverage).toEqual({});
-		expect(spy).not.toHaveBeenCalled();
+		expect(asked).toBe(0);
 	});
 
 	it('swallows per-feature engine failures instead of failing the page', async () => {
@@ -222,7 +254,7 @@ describe('LoadImplementationCoverageUseCase spec stamps', () => {
 			loadFeature: async () => {
 				throw new Error('kernel folder gone');
 			}
-		} as unknown as BehaviorRepositoryPort).execute('project-1');
+		}).execute('project-1');
 		expect(broken['feat-a']?.percent).toBe(100);
 		expect(broken['feat-a']?.specUpdatedAt).toBeNull();
 	});

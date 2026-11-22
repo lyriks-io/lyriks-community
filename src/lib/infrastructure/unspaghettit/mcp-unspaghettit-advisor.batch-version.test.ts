@@ -63,6 +63,14 @@ describe('McpUnspaghettitAdvisor versioned batch', () => {
 		expect(batchArgs()).toMatchObject({ featureId: 'feat-x', expectedUpdatedAt: STAMP });
 	});
 
+	it('asks the engine for its verbose report only when the caller asks for it', async () => {
+		await makeAdvisor().applyBehaviorBatch('feat-x', [{ kind: 'add_event' }]);
+		expect(batchArgs()).toMatchObject({ verbose: false, dryRun: false });
+		calls.length = 0;
+		await makeAdvisor().applyBehaviorBatch('feat-x', [{ kind: 'add_event' }], { verbose: true });
+		expect(batchArgs()).toMatchObject({ verbose: true });
+	});
+
 	it('passes the version on the commit path too, beside the token alone', async () => {
 		await makeAdvisor().applyBehaviorBatch('', [], { commit: 'tok-1', expectedUpdatedAt: STAMP });
 		expect(batchArgs()).toEqual({ commit: 'tok-1', expectedUpdatedAt: STAMP });

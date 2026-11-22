@@ -26,8 +26,8 @@ export const UI_LOCATION: Record<Section, string> = {
 	users: 'Specification 360° › Users (roles: name and description, add, delete; one page per user) and Users › Permission matrix (the access ticks)',
 	features:
 		'Specification 360° › Features: the tree of cores and features (names and descriptions editable, a core added or deleted there) and one page per feature and per action. ' +
-		'Releases, sprints and assignments show on Evolutions › Roadmap (written with apply_roadmap_batch). The feature details (`leafMeta`: objective, problem, value, acceptance criteria) are read there, not edited. ' +
-		'NOT SHOWN in the interface: the work queue.',
+		'The feature details (`leafMeta`: objective, problem, value, acceptance criteria) are read there, not edited. ' +
+		'Whether a feature is built is not stored: it is read from the coverage the implementation index records.',
 	experience: 'Specification 360° › Experience: the design system (design.md sources), the journeys and their steps, the screen inventory and the components (journey and component names and descriptions editable there)',
 	rules:
 		'Specification 360° › Overview › What Lyriks noticed shows `issues[]`: each one is a point a person keeps as it is or reopens. ' +
@@ -44,5 +44,5 @@ export const UI_LOCATION: Record<Section, string> = {
 		'Evolutions › Requests: the board, and one page per request ' +
 		'(Specification | Coherence and impact | Implementation quality | Acceptance). ' +
 		'The request gathers fields that BELONG to other sections and writes them there; ' +
-		'this section stores only the request, its reports, its proposals and its timeline. Evolutions › Roadmap shows the releases and sprints.'
+		'this section stores only the request, its reports, its proposals and its timeline.'
 };

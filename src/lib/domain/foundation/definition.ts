@@ -1,3 +1,4 @@
+import { mintUuid } from '../shared';
 import type { CustomizableCode } from '$domain/shared';
 import { createKpi, createCompetitor } from './identity';
 import type { CompetitorEntry, KpiEntry } from './identity';
@@ -321,14 +322,14 @@ export function createEmptyDefinitionDraft(projectId: string): FoundationDefinit
 
 export const createSla = (): SlaEntry => ({ metric: '', commitment: '', penalty: '' });
 export const createConstraint = (theme = '', description = ''): ConstraintEntry => ({
-	id: crypto.randomUUID(),
+	id: mintUuid(),
 	theme,
 	description
 });
 
 /** A fresh pain point with no users linked yet. */
 export const createPainPointLink = (text = ''): PainPointLink => ({
-	id: crypto.randomUUID(),
+	id: mintUuid(),
 	text,
 	roleIds: []
 });

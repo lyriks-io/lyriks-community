@@ -74,8 +74,6 @@ export const PROJECT_STAGES = [
 
 export type ProjectStage = (typeof PROJECT_STAGES)[number]['code'];
 
-export const DEFAULT_STAGE: ProjectStage = 'ideation';
-
 export function stageLabel(code: string): string {
 	return PROJECT_STAGES.find((s) => s.code === code)?.label ?? code;
 }

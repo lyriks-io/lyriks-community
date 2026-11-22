@@ -67,6 +67,19 @@ export interface ActionImplementationCoverage {
 	 * entry (`verifiedAt`). Absent when nothing has proven it: located is not proven.
 	 */
 	provenAt?: string;
+	/**
+	 * How each scenario of the action last went against the code, by scenario id
+	 * (the entry's `scenarioResults`, carried by a newer engine). Absent when no
+	 * run recorded one: then nothing tells a failing scenario from an unrun one.
+	 */
+	scenarioResults?: Readonly<Record<string, ScenarioRunResult>>;
+}
+
+/** One scenario's last result against the code: passed or failed, when, on which commit. */
+export interface ScenarioRunResult {
+	passed: boolean;
+	at: string;
+	revision?: string;
 }
 
 /**
@@ -131,6 +144,19 @@ function provenAtOf(row: Record<string, unknown>): string | undefined {
 	return typeof stamp === 'string' && stamp !== '' ? stamp : undefined;
 }
 
+/** Each scenario's last result the row carries, the unreadable ones left out; undefined when none. */
+function scenarioResultsOf(row: Record<string, unknown>): Record<string, ScenarioRunResult> | undefined {
+	const raw = recordOf(row.auditMeta).scenarioResults;
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+	const out: Record<string, ScenarioRunResult> = {};
+	for (const [scenarioId, value] of Object.entries(raw as Record<string, unknown>)) {
+		const result = recordOf(value);
+		if (typeof result.passed !== 'boolean' || !str(result.at)) continue;
+		out[scenarioId] = { passed: result.passed, at: str(result.at), ...(str(result.revision) ? { revision: str(result.revision) } : {}) };
+	}
+	return Object.keys(out).length > 0 ? out : undefined;
+}
+
 /**
  * The engine's `criteria` block folded into a tally of the active ones; undefined
  * when the engine sent no block. The engine's standing reads `active` (or
@@ -175,12 +201,14 @@ function coverageOf(value: Readonly<Record<string, unknown>>): {
 		const actionId = typeof counts.row.actionId === 'string' ? counts.row.actionId : '';
 		if (!actionId || counts.expected === 0) continue;
 		const provenAt = provenAtOf(counts.row);
+		const scenarioResults = scenarioResultsOf(counts.row);
 		actions[actionId] = {
 			found: counts.found,
 			expected: counts.expected,
 			percent: Math.round((counts.found / counts.expected) * 100),
 			elements: elementsOf(counts.row),
-			...(provenAt ? { provenAt } : {})
+			...(provenAt ? { provenAt } : {}),
+			...(scenarioResults ? { scenarioResults } : {})
 		};
 	}
 	const criteria = criteriaOf(value);
@@ -202,9 +230,9 @@ function coverageOf(value: Readonly<Record<string, unknown>>): {
  */
 export class LoadImplementationCoverageUseCase {
 	constructor(
-		private readonly loadFeatures: LoadFeaturesDraftUseCase,
-		private readonly adoption: CodeAdoptionPort,
-		private readonly behavior: BehaviorRepositoryPort
+		private readonly loadFeatures: Pick<LoadFeaturesDraftUseCase, 'execute'>,
+		private readonly adoption: Pick<CodeAdoptionPort, 'available' | 'getImplementationStatus'>,
+		private readonly behavior: Pick<BehaviorRepositoryPort, 'loadFeature'>
 	) {}
 
 	async execute(projectId: string): Promise<Record<string, FeatureImplementationCoverage>> {

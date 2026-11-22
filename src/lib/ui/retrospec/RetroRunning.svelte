@@ -7,7 +7,7 @@
 	import { PRIMARY_44 } from '$ui/evolution/evo-look';
 	import FigureTiles from './FigureTiles.svelte';
 	import CheckMark from './CheckMark.svelte';
-	import { runPaused } from '$domain/retrospec';
+	import { RESUME_COPIED, runPaused } from '$domain/retrospec';
 	import { copyPrompt } from '$ui/evolution/copy-prompt';
 	import { clockOf } from './look';
 
@@ -67,7 +67,7 @@
 	const silent = $derived((started || aiSeenAt !== null) && !finished && !summary && runPaused(aiSeenAt, now));
 	let copied = $state(false);
 	async function copyRelaunch() {
-		await copyPrompt(relaunchPrompt, 'Prompt copied: paste it in your LLM session to reconnect it and resume the analysis');
+		await copyPrompt(relaunchPrompt, RESUME_COPIED);
 		copied = true;
 	}
 

@@ -64,12 +64,11 @@
 
 	/* The coverage matrix is one row per requirement and grows with the project,
 	   so it filters live on the two columns a reader can actually name: the
-	   requirement and its core, plus the release, which is how people ask ("what
-	   is still missing in V1?"). The summary tiles above stay whole-project on
+	   requirement and its core. The summary tiles above stay whole-project on
 	   purpose: they are the coverage figures, not a view of the filter. */
 	let search = $state('');
 	const visibleRows = $derived(
-		rows.filter((r) => matchesQuery(search, r.name, r.coreName, r.releaseName))
+		rows.filter((r) => matchesQuery(search, r.name, r.coreName))
 	);
 </script>
 
@@ -120,7 +119,7 @@
 				<div class="mb-3">
 					<SearchInput
 						bind:value={search}
-						placeholder="Search a requirement, core or release…"
+						placeholder="Search a requirement or core…"
 						size="md"
 						class="max-w-sm"
 						resultLabel="{visibleRows.length} of {rows.length} requirements"
@@ -142,7 +141,6 @@
 								<th class="px-3 py-2 text-center">Behavior</th>
 								<th class="px-3 py-2 text-center">Source</th>
 								<th class="px-3 py-2 text-center">Deps</th>
-								<th class="px-3 py-2 text-left">Release</th>
 							</tr>
 						</thead>
 						<tbody class="divide-y divide-line">
@@ -177,9 +175,6 @@
 										{/if}
 									</td>
 									<td class="px-3 py-2 text-center text-ink-700">{r.dependencyCount || '-'}</td>
-									<td class="px-3 py-2 text-[0.75rem] {r.releaseName ? 'text-ink-700' : 'text-danger-500'}">
-										{r.releaseName ?? 'unassigned'}
-									</td>
 								</tr>
 							{/each}
 						</tbody>

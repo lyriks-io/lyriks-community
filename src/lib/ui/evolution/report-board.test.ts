@@ -116,8 +116,13 @@ describe('the implementation report as the design reads it', () => {
 		expect(found.why).toBe('Found in the code, but no test of it has passed yet.');
 		expect(buildLineOf(line('m', 'non_conform', 'undecided', { codeStatement: 'x (unverified: the signature no longer matches)' })).word).toBe('Found · code moved');
 		expect(buildLineOf(line('t', 'non_conform', 'undecided', { requirement: 'Cart › Basket › state "cart.count"', codeStatement: 'x (no passing result proves it yet)' })).next).toBe(
-			'Every action of its screen has to pass all its scenarios. Closes once the index is synced after it.'
+			'Every action of its screen that reads or writes it (every action of the screen when none does) has to pass all its scenarios. Closes once the index is synced after it.'
 		);
+		// A screen's rule or always-true statement waits on its screen too [criterion:127dba2b].
+		expect(buildLineOf(line('v', 'non_conform', 'undecided', { requirement: 'Cart › Basket › surface_invariant "Never negative"', codeStatement: 'x (no passing result proves it yet)' }))).toMatchObject({
+			kind: 'Screen invariant',
+			next: 'Every action of its screen has to pass all its scenarios. Closes once the index is synced after it.'
+		});
 		expect(buildLineOf(line('f', 'non_conform', 'undecided', { requirement: 'Cart › criterion "Ten at most"', codeStatement: 'Its last result failed.' }))).toMatchObject({ state: 'failing', kind: 'Criterion' });
 		expect(buildLineOf(line('s', 'missing', 'undecided', { requirement: 'Use the API › Calls with the key › state "account.verified"' }))).toMatchObject({
 			state: 'todo',
@@ -200,5 +205,21 @@ describe('the implementation report as the design reads it', () => {
 		expect(prompt).toContain('Instruction: Keep the cache.');
 		expect(prompt).toContain('Do not modify what is compliant: E1.');
 		expect(prompt).toContain('run sync_implementation_index so Lyriks can re-verify.');
+	});
+});
+
+describe('while a correction is open, the build brief reads version N [criterion:ac-leaf-3baf05de-369c-4eb6-9874-c53253590160]', () => {
+	const lines = [line('a', 'missing'), line('c', 'non_conform', 'undecided', { filePath: 'src/a.js', lineRange: '12' })];
+
+	it('hands out the version built and says the corrected one waits for its validation', () => {
+		for (const brief of [implementationBrief({ ...subject, correcting: 3 }, lines, []), remainingBrief({ ...subject, correcting: 3 }, lines)]) {
+			expect(brief).toContain('Lyriks › EVO-016 v2');
+			expect(brief).toContain('Version 3 is in correction and waits for its validation: build against v2 until it is frozen.');
+		}
+	});
+
+	it('says nothing of a correction when none is open', () => {
+		expect(implementationBrief(subject, lines, [])).not.toContain('in correction');
+		expect(implementationBrief({ ...subject, correcting: null }, lines, [])).not.toContain('in correction');
 	});
 });

@@ -5,7 +5,7 @@ import type { ProjectFeaturesDraft } from '$domain/features';
 const SECTION = 'features';
 
 /**
- * Persist a SERVER-COMPOSED features draft (reconcile, roadmap batch) with the
+ * Persist a SERVER-COMPOSED features draft (an edit made in place) with the
  * same legacy save protocol `saveSectionDraft` runs for a client body:
  * unconditional revision bump, kernel+residue write with rollback
  * compensation, then the section-change notify that refreshes open tabs. The

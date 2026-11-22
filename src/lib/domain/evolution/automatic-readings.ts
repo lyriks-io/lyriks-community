@@ -1,6 +1,7 @@
 import type { EvolutionRequest } from './draft';
 import type { ImpactHypothesis } from './enums';
 import { currentLines } from './implementation';
+import { inCorrection } from './correction';
 
 /**
  * What the platform computes on its own for a request as it stands
@@ -39,19 +40,24 @@ function lastDraftChange(request: Pick<EvolutionRequest, 'history'>): string | n
 	return latest;
 }
 
+/** The impact or the coherence never ran, or ran before the drafts last changed. */
+export function readingsBehindDrafts(request: Pick<EvolutionRequest, 'history' | 'impactReport' | 'coherenceReport'>): boolean {
+	const changed = lastDraftChange(request);
+	const stale = (ranAt: string | null) => ranAt === null || (changed !== null && ranAt < changed);
+	return stale(request.impactReport.ranAt) || stale(request.coherenceReport.ranAt);
+}
+
 export function dueReadings(request: EvolutionRequest): DueReadings {
 	if (request.status !== 'open') return NOTHING_DUE;
-	if (request.stage === 'coherence') {
-		const changed = lastDraftChange(request);
-		const stale = (ranAt: string | null) => ranAt === null || (changed !== null && ranAt < changed);
-		return stale(request.impactReport.ranAt) || stale(request.coherenceReport.ranAt) ? { impact: askedWalks(request), report: false } : NOTHING_DUE;
-	}
+	if (request.stage === 'coherence') return readingsBehindDrafts(request) ? { impact: askedWalks(request), report: false } : NOTHING_DUE;
 	if (request.stage === 'implementation') {
+		// A version in correction reads its impact and its coherence again on its own, and keeps the report of the version built (EVO-012).
+		const correcting = inCorrection(request);
 		const iteration = request.iterations.find((i) => i.number === request.iteration);
 		const closed = iteration?.reportStatus === 'closed';
 		const lines = currentLines(request);
 		const outdated = lines.some((l) => l.specVersion !== request.specVersion);
-		return { impact: [], report: !closed && (lines.length === 0 || outdated) };
+		return { impact: correcting && readingsBehindDrafts(request) ? askedWalks(request) : [], report: !correcting && !closed && (lines.length === 0 || outdated) };
 	}
 	return NOTHING_DUE;
 }

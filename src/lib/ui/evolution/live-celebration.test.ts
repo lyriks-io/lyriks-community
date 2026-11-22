@@ -59,3 +59,27 @@ describe('the success dialog of a live evolution [criterion:ac-leaf-ac-evo-verd-
 		expect(liveCelebrationOf({ ...base, branchLeft: false }).next).toBe('The index is synced: nothing is left to do.');
 	});
 });
+
+describe('the success dialog says what the landing did in Knowledge (EVO-002)', () => {
+	const knowledge = { validated: 13, toReview: 2, specValidated: false, failure: null, reviewHref: '/projects/p/spec/features/f#kbt-rule_f_r2' };
+
+	it('counts the elements validated in Knowledge and those that stay to review, with a link to them [criterion:ac-leaf-eb7b058a-2d86-45f8-b1fa-8fcc62a357d6]', () => {
+		expect(liveCelebrationOf({ ...base, knowledge }).knowledge).toEqual({
+			whole: false,
+			text: '13 elements validated in Knowledge, 2 to review.',
+			href: '/projects/p/spec/features/f#kbt-rule_f_r2'
+		});
+		expect(liveCelebrationOf({ ...base, knowledge: { ...knowledge, toReview: 0, reviewHref: null } }).knowledge).toEqual({ whole: true, text: '13 elements validated in Knowledge, 0 to review.', href: null });
+	});
+
+	it('says why when Knowledge could not be written, the change staying live', () => {
+		const said = liveCelebrationOf({ ...base, knowledge: { ...knowledge, validated: 0, failure: 'Knowledge did not answer.' } }).knowledge;
+		expect(said?.text).toBe('Knowledge could not record the validation (Knowledge did not answer): what the change wrote reads To review.');
+		expect(said?.whole).toBe(false);
+		expect(liveCelebrationOf({ ...base, knowledge: { ...knowledge, specValidated: true } }).knowledge?.text).toBe('The specification stays validated: nothing was validated element by element in Knowledge.');
+	});
+
+	it('says nothing of Knowledge on a request that landed before it was recorded', () => {
+		expect(liveCelebrationOf(base).knowledge).toBeNull();
+	});
+});

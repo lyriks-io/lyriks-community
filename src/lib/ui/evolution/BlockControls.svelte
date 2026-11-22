@@ -27,6 +27,16 @@
 	 * for a page that names it itself.
 	 */
 	export type ValidateLook = 'grey' | 'mine' | 'done' | 'next';
+	/** The landed change request an element stands validated through (EVO-002): its key opens the request. */
+	export interface ThroughControl {
+		readonly label: string;
+		readonly key: string;
+		readonly href: string;
+		/** Who approved the request and when. */
+		readonly detail: string;
+		/** Takes that validation back; null when the reader is not among the people the element waits on. */
+		readonly withdraw: (() => void) | null;
+	}
 	export interface ValidateControl {
 		/** The server has not confirmed the requested validation change yet. */
 		readonly saving?: boolean;
@@ -37,6 +47,12 @@
 		readonly run: (() => void) | null;
 		/** A click takes a validation back: pointed at, the pill says Withdraw. */
 		readonly withdraws?: boolean;
+		/**
+		 * What the check of the four acts asks before it takes the validation back (EVO-007): a click opens this
+		 * confirmation at once, with no wait of the pointer. The pill and the strip of the Evolution pages arm on rest
+		 * instead (withdraw-arm) and never ask.
+		 */
+		readonly withdrawConfirm?: { readonly question: string; readonly act: string } | null;
 		readonly stamps: readonly Stamp[];
 		/** Every person waited on validated: the pill sits on green. */
 		readonly settled: boolean;
@@ -46,6 +62,8 @@
 		 * from `look`: grey and next await the reader, mine waits on the others still unticked, done is validated.
 		 */
 		readonly awaits?: 'me' | 'others' | null;
+		/** Validated through a landed change request, while that validation stands (criterion a6174f4b). */
+		readonly through?: ThroughControl | null;
 	}
 	export interface CommentControl {
 		/** Topics not resolved. */
@@ -118,8 +136,19 @@
 	const TALL = 'h-7';
 	const ICON = 14;
 	const view = $derived(validate ? validationView(validate) : null);
-	/** The initials whose act waits for its confirmation, if any. */
+	/** The initials whose act waits for its confirmation, or the check's withdrawal (WITHDRAWING), if any. */
 	let confirming = $state<string | null>(null);
+	// Never a person's id: theirs are emails and ids.
+	const WITHDRAWING = ' withdraw';
+	const WITHDRAW_ASK = { question: 'Withdraw your validation?', act: 'Withdraw' } as const;
+	// A stray click confirms nothing (criteria 8d6c8ec0, EVO-007); Escape or a click outside the box and its button cancels.
+	function dismissOutside(node: HTMLElement) {
+		const outside = (e: PointerEvent) => { if (!node.parentElement?.contains(e.target as Node)) confirming = null; };
+		const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') confirming = null; };
+		window.addEventListener('pointerdown', outside, true);
+		window.addEventListener('keydown', escape);
+		return () => { window.removeEventListener('pointerdown', outside, true); window.removeEventListener('keydown', escape); };
+	}
 	function pressStamp(stamp: Stamp, target: HTMLElement) {
 		if (stamp.confirm) {
 			confirming = confirming === stamp.id ? null : stamp.id;
@@ -140,8 +169,8 @@
 	const sourcesLabel = (s: SourcesControl) => (s.open ? 'Hide the sources' : `${s.count} ${s.count === 1 ? 'source' : 'sources'}`);
 
 	const LABEL: Record<ValidateLook, string> = { grey: 'Validate', next: 'Validate', mine: 'Validated', done: 'Validated' };
-	// A validation the reader can take back: armed a moment after it is pointed at, its pill says so, and only then
-	// does a click take it back (withdraw-arm).
+	// A validation the reader can take back. The pill and the strip arm a moment after they are pointed at, say so, and
+	// only then does a click take it back (withdraw-arm); the check of the four acts asks first instead (EVO-007).
 	const undoable = $derived(!!validate?.withdraws && !!validate.run && view?.state !== 'validate');
 	// One control, three states, always in words (criterion aba60be7): the filled blue button while the reader's
 	// validation is awaited, a quiet outline while only others' are, green with its check once it is validated.
@@ -242,6 +271,19 @@
 	</span>
 {/snippet}
 
+{#snippet confirmation(ask: { readonly question: string; readonly act: string }, run: (e: MouseEvent & { currentTarget: HTMLButtonElement }) => void)}
+	<!-- Under what it confirms: its act runs only from here (criteria 8d6c8ec0, EVO-007). -->
+	<span role="dialog" aria-label={ask.question} data-confirm
+		class="absolute top-full right-0 z-40 mt-1 flex w-max max-w-[280px] flex-col gap-2 border-[1.5px] border-ink bg-paper p-2.5 text-left text-[0.8125rem] text-ink shadow-lg"
+		{@attach dismissOutside}>
+		<span class="font-semibold">{ask.question}</span>
+		<span class="flex justify-end gap-1.5">
+			<button type="button" class="border-[1.5px] border-ink bg-paper px-2 py-0.5 text-[0.75rem] font-semibold hover:bg-toner-1" onclick={() => (confirming = null)}>Cancel</button>
+			<button type="button" class="border-[1.5px] border-ink bg-ink px-2 py-0.5 text-[0.75rem] font-semibold text-paper hover:opacity-90" data-confirm-act onclick={run}>{ask.act}</button>
+		</span>
+	</span>
+{/snippet}
+
 {#snippet people()}
 {#if view && view.shown.length > 0}
 	<span class="flex flex-none gap-0.75">
@@ -255,22 +297,7 @@
 						><span data-stamp-initials>{stamp.initials}</span>{#if stamp.ai}<span class="absolute -right-1 -bottom-1 grid size-3.5 place-items-center bg-violet-ink text-paper ring-2 ring-paper" aria-hidden="true"><Icon name="sparkles" size={8} /></span>{/if}</button
 					>
 					{#if stamp.confirm && confirming === stamp.id}
-						<!-- A stray click confirms nothing (criterion 8d6c8ec0); Escape or a click outside cancels. -->
-						<span role="dialog" aria-label={stamp.confirm.question} data-stamp-confirm
-							class="absolute top-full right-0 z-40 mt-1 flex w-max max-w-[280px] flex-col gap-2 border-[1.5px] border-ink bg-paper p-2.5 text-left text-[0.8125rem] text-ink shadow-lg"
-							{@attach (node) => {
-								const outside = (e: PointerEvent) => { if (!node.parentElement?.contains(e.target as Node)) confirming = null; };
-								const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') confirming = null; };
-								window.addEventListener('pointerdown', outside, true);
-								window.addEventListener('keydown', escape);
-								return () => { window.removeEventListener('pointerdown', outside, true); window.removeEventListener('keydown', escape); };
-							}}>
-							<span class="font-semibold">{stamp.confirm.question}</span>
-							<span class="flex justify-end gap-1.5">
-								<button type="button" class="border-[1.5px] border-ink bg-paper px-2 py-0.5 text-[0.75rem] font-semibold hover:bg-toner-1" onclick={() => (confirming = null)}>Cancel</button>
-								<button type="button" class="border-[1.5px] border-ink bg-ink px-2 py-0.5 text-[0.75rem] font-semibold text-paper hover:opacity-90" data-stamp-confirm-act onclick={(e) => runStamp(stamp, (e.currentTarget.closest('.relative') as HTMLElement | null)?.querySelector('button') ?? e.currentTarget)}>{stamp.confirm.act}</button>
-							</span>
-						</span>
+						{@render confirmation(stamp.confirm, (e) => runStamp(stamp, (e.currentTarget.closest('.relative') as HTMLElement | null)?.querySelector('button') ?? e.currentTarget))}
 					{/if}
 				</span>
 			{:else}
@@ -311,23 +338,43 @@
 		{@render reject?.()}
 		{#if validate && view}
 			{@const check = view.state === 'validate' ? 'border-ink bg-paper text-ink hover:bg-blue-tint hover:text-blue-ink' : view.state === 'validated' ? 'border-ink bg-green text-ink' : 'border-evo-line bg-transparent text-ink-4'}
-			{#if view.state === 'validate' || undoable}
+			{#if undoable}
+				{@const ask = validate.withdrawConfirm ?? WITHDRAW_ASK}
+				<!-- The reader's own check takes their validation back with one click and one confirmation, never on its
+				     own and with no wait of the pointer (EVO-007). -->
+				<span class="relative inline-flex flex-none">
+					<button
+						type="button"
+						class="relative isolate grid {SQUARE} flex-none place-items-center border-[1.5px] transition-colors duration-200 disabled:cursor-default {check}"
+						title={validate.title}
+						aria-label="{view.label}: {view.title}"
+						aria-haspopup="dialog"
+						aria-expanded={confirming === WITHDRAWING}
+						data-evo-validate
+						data-validation-state={view.state}
+						disabled={disabled || !validate.run}
+						onclick={() => (confirming = confirming === WITHDRAWING ? null : WITHDRAWING)}><Icon name="check" size={ICON} /></button
+					>
+					{#if confirming === WITHDRAWING}
+						{@render confirmation(ask, () => {
+							confirming = null;
+							validate?.run?.();
+						})}
+					{/if}
+				</span>
+			{:else if view.state === 'validate'}
 				<button
 					type="button"
-					class="relative isolate grid {SQUARE} flex-none place-items-center border-[1.5px] transition-colors duration-200 disabled:cursor-default {check} {undoable ? 'withdrawable overflow-hidden' : ''}"
-					title={undoable ? 'You validated: rest on it to withdraw' : view.title}
+					class="relative isolate grid {SQUARE} flex-none place-items-center border-[1.5px] transition-colors duration-200 disabled:cursor-default {check}"
+					title={view.title}
 					aria-label="{view.label}: {view.title}"
 					data-evo-validate
 					data-validation-state={view.state}
-					{@attach undoable && armWithdraw}
 					disabled={disabled || !validate.run}
 					onclick={(e) => {
-						if (view?.state === 'validate') celebrateValidation(e.currentTarget, e.currentTarget.parentElement);
+						celebrateValidation(e.currentTarget, e.currentTarget.parentElement);
 						validate?.run?.();
-					}}
-					>{#if undoable}<span class="withdraw-swap"
-							><span class="withdraw-rest"><Icon name="check" size={ICON} /></span><span aria-hidden="true" class="withdraw-hover"><Icon name="undo" size={14} /></span></span
-						>{:else}<Icon name="check" size={ICON} />{/if}</button
+					}}><Icon name="check" size={ICON} /></button
 				>
 			{:else}
 				<span class="grid {SQUARE} flex-none place-items-center border-[1.5px] {check}" role="status" title={view.title} aria-label="{view.label}: {view.title}" data-validation-state={view.state}
@@ -368,6 +415,20 @@
 			</button>
 		{/if}
 		{#if validate && view}{@render people()}{/if}
+		{#if validate?.through}
+			{@const through = validate.through}
+			<!-- Validated through the request that delivered it (criterion a6174f4b): the key opens the request. -->
+			<span class="inline-flex {TALL} flex-none items-center gap-1 border-[1.5px] border-green bg-green-tint px-2 text-[0.75rem] text-green-ink" title="{through.label} {through.key}, {through.detail}" data-validated-through>
+				<span class="font-semibold">{through.label}</span>
+				<a class="font-evo-mono font-bold underline underline-offset-2" href={through.href}>{through.key}</a>
+				<span class="text-ink-2">{through.detail}</span>
+				{#if through.withdraw}
+					<button type="button" class="ml-0.5 grid size-5 place-items-center text-ink-2 hover:text-ink disabled:cursor-default" title="Withdraw this validation" aria-label="Withdraw this validation" {disabled} onclick={through.withdraw}
+						><Icon name="undo" size={12} /></button
+					>
+				{/if}
+			</span>
+		{/if}
 	</span>
 {/snippet}
 

@@ -73,6 +73,22 @@ describe('the need is asked once, for the request', () => {
 		expect(maturity.criticalEmptyFields).toContain('00-need.objectives');
 	});
 
+	it('weighs the critical answers of the Need in the share, so an empty one never reads 100 [criterion:64443f02]', () => {
+		// No block is read: the Need's critical answers are the whole share.
+		const empty = readRequestMaturity(open(), new Set(), []);
+		expect(empty.criticalEmptyFields).toEqual(['00-need.situation', '00-need.objectives']);
+		expect(empty.score).toBe(0);
+		const half = ok(updateNeedAct(ctxFor(ana), open(), { description: 'People wrap gifts by hand.', situation: 'Support wraps 40 orders a week by hand.' }));
+		expect(readRequestMaturity(half, new Set(), []).score).toBe(50);
+		expect(readRequestMaturity(half, new Set(), []).tier).not.toBe('ready');
+		const whole = ok(updateNeedAct(ctxFor(ana), half, { objectives: 'Wrap at checkout' }));
+		const read = readRequestMaturity(whole, new Set(), []);
+		expect([read.score, read.criticalEmptyCount, read.tier]).toEqual([100, 0, 'ready']);
+		// A Need marked not applicable before that rule owes nothing and weighs nothing.
+		const legacy = open({ skippedSteps: [{ step: 'need', reason: 'A typo fix.', by: 'ana', at: 't' }] });
+		expect(readRequestMaturity(legacy, new Set(), []).score).toBe(100);
+	});
+
 	it('never marks the Need not applicable as a whole, yet reads and lifts a mark set before (ac-evo-req-16)', () => {
 		expect(reasonOf(markStepNotApplicableAct(ctxFor(ana), open(), { step: 'need', notApplicable: true, reason: 'A typo fix.' }))).toBe(
 			'Only Functional spec and Technical spec can be marked not applicable.'
@@ -129,19 +145,10 @@ describe('a subject is asked only what is its own', () => {
 });
 
 describe('every important step is validated by its people', () => {
-	it('freezes once the Solution is validated, the Need, the Functional and the Technical spec left unvalidated', () => {
-		let request = open({ need: NEED, coherenceReport: { status: 'ready', projectScore: 90, requestDelta: 0, ranAt: 'now' }, stage: 'coherence' });
-		expect(reasonOf(crossStageAct(ctxFor(ana), request, { criticalEmptyCount: 0 }))).toBe(
-			'The Solution is not validated yet: a person validates it before the build.'
-		);
-		// Validating the other steps does not stand in for the Solution.
-		for (const step of ['need', 'technical_spec']) request = ok(validateStepAct(ctxFor(ana), request, step));
-		expect(reasonOf(crossStageAct(ctxFor(ana), request, { criticalEmptyCount: 0 }))).toBe(
-			'The Solution is not validated yet: a person validates it before the build.'
-		);
-		const onlySolution = ok(validateStepAct(ctxFor(ana), open({ need: NEED, coherenceReport: { status: 'ready', projectScore: 90, requestDelta: 0, ranAt: 'now' }, stage: 'coherence' }), 'solution'));
-		expect(unvalidatedSpecSteps(onlySolution)).toEqual(['need', 'functional_spec', 'technical_spec']);
-		const frozen = ok(crossStageAct(ctxFor(ana), onlySolution, { criticalEmptyCount: 0 }));
+	it('freezes with no step validated: the build waits for the Specification only [criterion:0b1de710]', () => {
+		const request = open({ need: NEED, coherenceReport: { status: 'ready', projectScore: 90, requestDelta: 0, ranAt: 'now' }, stage: 'coherence' });
+		expect(unvalidatedSpecSteps(request)).toEqual(['need', 'solution', 'functional_spec', 'technical_spec']);
+		const frozen = ok(crossStageAct(ctxFor(ana), request, { criticalEmptyCount: 0 }));
 		expect(frozen.stage).toBe('implementation');
 	});
 
@@ -159,21 +166,25 @@ describe('every important step is validated by its people', () => {
 		expect(reasonOf(validateStepAct(ctxFor(ana), request, 'impact_analysis'))).toBe('Need, Solution, Functional spec, Technical spec and Approval are validated.');
 	});
 
-	it('says what the Technical spec holds: its prose, the constraints and the data it moves', () => {
+	it('says what the Technical spec holds: its prose, the constraints and the data it moves, none of it owed', () => {
 		const tech = (request: EvolutionRequest) => readPath(request, { questionsOwed: 0, pendingProposals: 0 }).find((s) => s.step === 'technical_spec')!;
-		expect(tech(open()).progress).toBe('todo');
+		// Offered, never owed (EVO-013, criterion e5ba6571).
+		expect(tech(open())).toMatchObject({ progress: 'done', detail: 'Optional: nothing written.' });
 		const described = open({ stepDescriptions: { solution: 'Wrap a gift.', functional_spec: '', technical_spec: 'Texts go through our SMS provider.' } });
-		// Its diagram is drawn from it before the step stands (ac-evo-tech-uml-sync).
-		expect(tech(described)).toMatchObject({ progress: 'in_progress', detail: 'Written; the diagram is behind the description, to redraw from it.' });
+		// No diagram drawn: nothing to keep in step.
+		expect(tech(described)).toMatchObject({ progress: 'done', detail: 'Written.' });
 		const drawn: EvolutionRequest = {
 			...described,
 			stepAnswers: { ...described.stepAnswers, technical_spec: { ...described.stepAnswers.technical_spec, diagram: 'system SMS provider' } },
 			technicalAlignment: { description: 'Texts go through our SMS provider.', at: 't' }
 		};
 		expect(tech(drawn)).toMatchObject({ progress: 'done', detail: 'Written.' });
-		// The data is said in prose; the tables are declared at the Impact analysis (ac-evo-tech-prose).
+		// A diagram once drawn follows its description before the step stands (ac-evo-tech-uml-sync).
+		const moved = { ...drawn, stepDescriptions: { ...drawn.stepDescriptions, technical_spec: 'Texts go through a second SMS provider.' } };
+		expect(tech(moved)).toMatchObject({ progress: 'in_progress', detail: 'Written; the diagram is behind the description, to redraw from it.' });
+		// The data is said in prose; the tables are declared at the Impact analysis (ac-evo-tech-prose); no description is owed.
 		const dataOnly = open({ stepAnswers: { ...SOLUTION.stepAnswers, technical_spec: { data: 'Orders get a "text sent at" date.' } } });
-		expect(tech(dataOnly)).toMatchObject({ progress: 'in_progress', detail: 'The technical constraints and risks are not described yet.' });
+		expect(tech(dataOnly)).toMatchObject({ progress: 'done', detail: 'Written.' });
 	});
 
 	it('lets anyone with access validate, a viewer excepted, and one validation is enough by default', () => {
@@ -240,9 +251,13 @@ describe('the path opens on the first step not done', () => {
 		expect(empty.map((s) => s.step)).toEqual(['need', 'solution', 'functional_spec', 'technical_spec', 'impact_analysis', 'build', 'approval', 'deployment']);
 		expect(empty.find((s) => s.current)?.step).toBe('need');
 		const request = ok(updateNeedAct(ctxFor(ana), open(), { description: 'd', situation: 's', objectives: 'o' }));
-		// The Solution is written already: the request reads at the Functional spec, nobody having validated anything.
-		expect(readPath(request, { questionsOwed: 0, pendingProposals: 0 }).find((s) => s.current)?.step).toBe('functional_spec');
-		expect(readPath(ok(validateStepAct(ctxFor(ana), request, 'need')), { questionsOwed: 0, pendingProposals: 0 }).find((s) => s.current)?.step).toBe('functional_spec');
+		// The Solution is written already and the specs are offered, never owed (EVO-013): the request reads at
+		// the Impact analysis, where what it changes is named, nobody having validated anything.
+		expect(readPath(request, { questionsOwed: 0, pendingProposals: 0 }).find((s) => s.current)?.step).toBe('impact_analysis');
+		expect(readPath(ok(validateStepAct(ctxFor(ana), request, 'need')), { questionsOwed: 0, pendingProposals: 0 }).find((s) => s.current)?.step).toBe('impact_analysis');
+		// A Solution still to write is where it reads.
+		const unwritten = { ...request, stepDescriptions: { ...request.stepDescriptions, solution: '' }, stepAnswers: { ...request.stepAnswers, solution: { examples: '', out_of_scope: '' } } };
+		expect(readPath(unwritten, { questionsOwed: 0, pendingProposals: 0 }).find((s) => s.current)?.step).toBe('solution');
 	});
 });
 
@@ -340,17 +355,19 @@ describe('the freeze carries the need into a new feature', () => {
 describe('the Functional spec is written in prose (ac-evo-func-prose)', () => {
 	const functional = (request: EvolutionRequest) => readPath(request, { questionsOwed: 0, pendingProposals: 0 }).find((s) => s.step === 'functional_spec')!;
 
-	it('asks how it goes and what it refuses before anyone validates it; what goes wrong stays optional', () => {
+	it('owes no text: how it goes and what it refuses are offered, and a diagram once drawn follows them', () => {
 		let request = open();
-		expect(functional(request).progress).toBe('todo');
-		expect(reasonOf(validateStepAct(ctxFor(ana), request, 'functional_spec'))).toBe('The Functional spec still owes its description or what the product refuses.');
+		// Offered, never owed (EVO-013, criterion e5ba6571).
+		expect(functional(request)).toMatchObject({ progress: 'done', detail: 'Optional: nothing written.' });
 		request = ok(updateStepDescriptionAct(ctxFor(ana), request, { step: 'functional_spec', description: 'The baker marks the bag ready; the customer gets a text.' }));
-		expect(functional(request)).toMatchObject({ progress: 'in_progress', detail: 'Still to write: its rules.' });
+		// Its rules are not owed, and no diagram drawn leaves nothing to keep in step.
+		expect(functional(request)).toMatchObject({ progress: 'done', detail: 'Written.' });
+		request = ok(redrawDiagramAct(ctxFor(client), request, { diagram: 'actor Baker\nuse case Mark a bag ready: Baker' }));
 		request = ok(answerStepAct(ctxFor(ana), request, { step: 'functional_spec', question: 'refusals', answer: 'No text without a phone number.' }));
 		expect(request.stepAnswers.functional_spec.refusals).toBe('No text without a phone number.');
-		// The diagram follows the texts before the step stands (ac-evo-func-uml-sync).
+		// The diagram, once drawn, follows the texts before the step stands (ac-evo-func-uml-sync).
 		expect(functional(request)).toMatchObject({ progress: 'in_progress', detail: 'Written; the diagram is behind the texts, to redraw from them.' });
-		request = ok(redrawDiagramAct(ctxFor(client), request, { diagram: 'actor Baker\nuse case Mark a bag ready: Baker' }));
+		request = ok(redrawDiagramAct(ctxFor(client), request, { diagram: 'actor Baker\nuse case Mark a bag ready: Baker\nuse case Refuse a text: Baker' }));
 		// No behaviour model is asked for: the text is enough (ac-evo-func-model).
 		expect(functional(request)).toMatchObject({ progress: 'done', detail: 'Written.' });
 		request = ok(validateStepAct(ctxFor(ana), request, 'functional_spec'));
@@ -379,24 +396,29 @@ describe('the Functional spec is written in prose (ac-evo-func-prose)', () => {
 describe('the Solution is written in prose (ac-evo-sol-prose)', () => {
 	const solution = (request: EvolutionRequest) => readPath(request, { questionsOwed: 0, pendingProposals: 0 }).find((s) => s.step === 'solution')!;
 
-	it('asks what changes and how we will know it works, never the features it touches', () => {
+	it('asks what changes, how we will know it works being offered, never the features it touches', () => {
 		const blank = open({ stepDescriptions: { solution: '', functional_spec: '', technical_spec: '' }, stepAnswers: { ...SOLUTION.stepAnswers, solution: { examples: '', out_of_scope: '' } } });
-		expect(solution(blank).progress).toBe('todo');
-		expect(reasonOf(validateStepAct(ctxFor(ana), blank, 'solution'))).toBe('The Solution still owes its description or how we will know it works.');
-		let request = ok(updateStepDescriptionAct(ctxFor(ana), blank, { step: 'solution', description: 'Wrap a gift at checkout.' }));
-		expect(solution(request)).toMatchObject({ progress: 'in_progress', detail: 'Still to write: how we will know it works.' });
-		request = ok(answerStepAct(ctxFor(ana), request, { step: 'solution', question: 'examples', answer: 'A wrapped order shows a ribbon.' }));
+		expect(solution(blank)).toMatchObject({ progress: 'todo', detail: 'Say what changes in the product.' });
+		expect(reasonOf(validateStepAct(ctxFor(ana), blank, 'solution'))).toBe('The Solution still owes its description.');
+		// Examples alone leave the description owed.
+		const examplesOnly = ok(answerStepAct(ctxFor(ana), blank, { step: 'solution', question: 'examples', answer: 'A wrapped order shows a ribbon.' }));
+		expect(solution(examplesOnly)).toMatchObject({ progress: 'in_progress', detail: 'Still to write: what changes.' });
+		// The Solution owes its description only (EVO-013, criterion c1db73b7).
+		const request = ok(updateStepDescriptionAct(ctxFor(ana), blank, { step: 'solution', description: 'Wrap a gift at checkout.' }));
 		// No feature named, and the Solution is done: what it touches is read at the Impact analysis.
 		expect(request.leafIds).toEqual([]);
 		expect(solution(request)).toMatchObject({ progress: 'done', detail: 'Written.' });
 		expect(readPath(request, { questionsOwed: 0, pendingProposals: 0 }).find((s) => s.step === 'impact_analysis')?.detail).toBe('Name the features the change touches, from the Solution.');
 	});
 
-	it('discusses and postpones each of its questions like the Need, a postponed required one counting as owed (ac-evo-form-question-acts)', () => {
+	it('discusses and postpones each of its questions like the Need, a postponed owed one counting as owed (ac-evo-form-question-acts)', () => {
 		let request = ok(postOnFieldAct(ctxFor(bo), open(), 'step.solution.examples', null, 'One example per kind of order?'));
 		expect(request.fieldThreads.map((t) => t.key)).toEqual(['step.solution.examples']);
+		// An offered text postponed owes nothing (EVO-013); the description postponed is owed like an empty one.
 		request = ok(markOpenQuestionAct(ctxFor(bo), request, 'step.solution.examples', null));
-		expect(reasonOf(validateStepAct(ctxFor(ana), request, 'solution'))).toBe('The Solution still owes its description or how we will know it works.');
+		expect(solution(request).progress).toBe('done');
+		request = ok(markOpenQuestionAct(ctxFor(bo), request, 'step.solution.description', null));
+		expect(reasonOf(validateStepAct(ctxFor(ana), request, 'solution'))).toBe('The Solution still owes its description.');
 		expect(reasonOf(markOpenQuestionAct(ctxFor(bo), open(), 'step.solution.nothing', null))).toMatch(/^No field is named "step.solution.nothing"/);
 	});
 

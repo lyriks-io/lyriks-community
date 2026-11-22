@@ -22,7 +22,7 @@ describe('the code of a request at a glance', () => {
 		expect(codeSummary(code({ clean: false }))).toMatchObject({ word: 'uncommitted changes', tone: 'warn' });
 		expect(codeSummary(code({ proofsOnOtherCommits: 2 })).word).toBe('2 tests on another commit');
 		expect(codeSummary(code({ validatedCommit: '6767ffac' })).word).toBe('validated at 6767ffa');
-		expect(codeSummary(code({ validatedCommit: '6767ffac', validationSetAside: true, clean: false })).word).toBe('moved since the validation: validate again');
+		expect(codeSummary(code({ validatedCommit: '6767ffac', validationSetAside: true, clean: false })).word).toBe('moved since the approval: approve again');
 		expect(codeSummary(code({ mergedCommit: 'm3r6e01aa', mergedInto: 'main' })).word).toBe('merged into main@m3r6e01 · official');
 		expect(codeSummary(code({ proofsChecked: 0 }))).toMatchObject({ word: 'committed · 6767ffa', tone: 'muted' });
 	});

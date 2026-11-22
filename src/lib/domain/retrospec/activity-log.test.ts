@@ -51,6 +51,24 @@ describe('the activity log of a run', () => {
 		expect(log.map((l) => l.text)).toEqual(['The prompt was handed to your LLM', 'Ana P. started the Reverse-Specification']);
 	});
 
+	it('keeps what happened at the very instant the run started: it belongs to the run', () => {
+		const log = activityLog(
+			{ ...run, launchedAt: null },
+			[{ at: at(0), act: 'write', section: 'data' }],
+			[{ performedAt: at(0), score: 90, blockingIssues: 0 }],
+			[{ at: at(0), kind: 'table', names: ['Order'] }]
+		);
+		expect(log.map((l) => l.text).sort()).toEqual(
+			[
+				'Ana P. started the Reverse-Specification',
+				'Final check passed (score 90): the specification is rebuilt',
+				'Lyriks detected the table “Order”',
+				'Your LLM plugged into Lyriks through the MCP',
+				'Your LLM sketched the data model'
+			].sort()
+		);
+	});
+
 	it('says a section once per burst, even when the LLM goes back and forth between two', () => {
 		const log = activityLog(
 			run,

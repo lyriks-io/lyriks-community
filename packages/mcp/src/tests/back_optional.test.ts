@@ -1,6 +1,6 @@
 /**
  * Tests: the gateway without a Back (Community).
- * BO01 to BO08: portfolio tools answer from the platform, the Enterprise
+ * BO02 to BO08: portfolio tools answer from the platform, the Enterprise
  * tools explain the edition, nothing tries to reach a service that is not there.
  */
 
@@ -38,14 +38,6 @@ async function call(server: ReturnType<typeof createMcpServer>, name: string, ar
 }
 
 describe('the gateway without a Back', () => {
-  it('BO01 registers the whole tool set without an overlay', () => {
-    const server = createMcpServer(null)
-    // @ts-expect-error accessing internal _registeredTools
-    const tools = Object.keys(server._registeredTools as Record<string, unknown>)
-    for (const name of ['list_workspaces', 'list_projects', 'get_project', 'create_project', 'get_model', 'apply_rule'])
-      expect(tools).toContain(name)
-  })
-
   it('BO02 list_workspaces is empty and says why', async () => {
     const result = await call(createMcpServer(null), 'list_workspaces', {})
     expect(result.workspaces).toEqual([])

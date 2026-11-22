@@ -1,4 +1,5 @@
 import {
+	NEED_BLOCK,
 	SPEC_BLOCKS,
 	fieldKey,
 	fieldsOf,
@@ -10,7 +11,7 @@ import {
 } from './blocks';
 import type { BlockState, MaturityTier } from './enums';
 import { touchedLeafIds, type EvolutionRequest } from './draft';
-import { needCriticalEmpty } from './path';
+import { needCriticalEmpty, skipOf } from './path';
 
 /**
  * Which touched features ask a leaf-scoped field: a subject is asked only what
@@ -167,7 +168,9 @@ export function readMaturity(
 	openQuestionKeys: readonly string[] = [],
 	leafIds: readonly string[] = [],
 	blocks: readonly SpecBlock[] = SPEC_BLOCKS,
-	asks?: AskedOn
+	asks?: AskedOn,
+	/** Answers the request owes outside the blocks read (the Need's critical ones), weighed in the same share. */
+	owed: { readonly earned: number; readonly available: number } = { earned: 0, available: 0 }
 ): MaturityReading {
 	const open = new Set(openQuestionKeys);
 	// A field no touched feature is asked is not part of this request's page: it
@@ -176,8 +179,8 @@ export function readMaturity(
 		!isLeafScoped(field) || leafIds.length === 0 || askingLeaves(field, leafIds, asks).length > 0;
 	const shown = blocks.map((block) => ({ ...block, fields: block.fields.filter(counted) }));
 	blocks = shown;
-	let earned = 0;
-	let available = 0;
+	let earned = owed.earned;
+	let available = owed.available;
 	let openQuestionCount = 0;
 	const criticalEmptyFields: string[] = [];
 
@@ -223,21 +226,6 @@ export function readMaturity(
 }
 
 /**
- * The first field left empty or open behind the author, read across the whole
- * page in block order. This is where Resume sends the focus; an empty string
- * means no hole is left, and Resume is then not offered at all.
- */
-export function firstEmptyFieldPath(
-	filled: FilledFields,
-	leafIds: readonly string[] = [],
-	openQuestionKeys: readonly string[] = [],
-	blocks: readonly SpecBlock[] = SPEC_BLOCKS
-): string {
-	const open = new Set(openQuestionKeys);
-	return fieldsOf(blocks).find((f) => !isFieldFilled(f, filled, open, leafIds))?.path ?? '';
-}
-
-/**
  * The maturity of one request as the gate reads it: the fields each subject is
  * asked, plus the critical questions of the need (ac-evo-gate-need), which
  * belong to the request rather than to any feature.
@@ -250,8 +238,15 @@ export function readRequestMaturity(
 	const asks: AskedOn = (field, leafId) => isAskedOn(field, subjectKindOf(request.drafts, leafId));
 	// A question skipped on purpose is settled: it is neither a hole nor critical (ac-evo-form-question-skip).
 	const settled = new Set([...filled, ...(request.skippedQuestions ?? []).map((s) => s.key)]);
-	const reading = readMaturity(settled, request.openQuestionKeys, [...touchedLeafIds(request)], blocks, asks);
 	const need = needCriticalEmpty(request);
+	// The Need's critical answers are answers of the request: they weigh in the share with
+	// the touched features' own, so a request missing one never reads 100 (criterion 64443f02).
+	const needCritical = skipOf(request, 'need') ? [] : NEED_BLOCK.fields.filter((f) => f.critical);
+	const owed = needCritical.reduce(
+		(sum, f) => ({ earned: sum.earned + (need.includes(f.path) ? 0 : f.weight), available: sum.available + f.weight }),
+		{ earned: 0, available: 0 }
+	);
+	const reading = readMaturity(settled, request.openQuestionKeys, [...touchedLeafIds(request)], blocks, asks, owed);
 	if (need.length === 0) return reading;
 	const criticalEmptyFields = [...need, ...reading.criticalEmptyFields];
 	return {

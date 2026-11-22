@@ -15,6 +15,8 @@ import {
 	withDraftNames,
 	type ClosingChange,
 	type EvolutionRequest,
+	knowledgeReadingOf,
+	type KnowledgeReading,
 	type LandedFeature,
 	type LandingCheck,
 	type RequirementCompliance,
@@ -43,6 +45,8 @@ export interface ClosingReading {
 	readonly specHref: string;
 	/** Whether everything the request carried is in the official specification, read again now. */
 	readonly landed: LandingCheck | null;
+	/** What the landing validated in Knowledge and what stays to review (EVO-002); null before a landing recorded it. */
+	readonly knowledge: KnowledgeReading | null;
 }
 
 /** The validation baseline and every baseline of the project, or none when they cannot be read. */
@@ -77,7 +81,8 @@ export async function closingReadingOf(services: AppServices, view: EvolutionVie
 		ticketKey: request.ticketPost?.ticketKey ?? ticketKeyIn(citedTexts(request, view.sources)),
 		ticketPost: request.ticketPost ?? null,
 		specHref: `/projects/${encodeURIComponent(view.projectId)}/spec`,
-		landed: await landedCheckOf(services, view, request).catch(() => null)
+		landed: await landedCheckOf(services, view, request).catch(() => null),
+		knowledge: knowledgeReadingOf(view.projectId, request.knowledgeLanding)
 	};
 }
 

@@ -1,7 +1,21 @@
-import { describe, expect, it } from 'vitest';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { describe, expect, it, vi } from 'vitest';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { SECTIONS, SECTION_AUDIENCE, SECTION_REVISION_STORAGE, isAgentAuthorable, isSection } from './sections';
+import { requestEvent, type TestEvent } from '$lib/server/request-event.fixture';
+
+/** The spec the last draft route handed to the save protocol, which stores nothing here. */
+const saved = vi.hoisted(() => ({ spec: null as { readonly atomic?: boolean } | null }));
+vi.mock('$lib/server/section-save.server', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/server/section-save.server')>()),
+	saveSectionDraft: async (_event: unknown, spec: { readonly atomic?: boolean }) => {
+		saved.spec = spec;
+		return new Response(null, { status: 204 });
+	}
+}));
+/** Read through a call, so the reset to null before each route does not narrow what the route then set. */
+const lastSpec = () => saved.spec;
+const draftRoute = import.meta.glob<{ PUT: (event: TestEvent) => unknown }>('/src/routes/api/draft/*/+server.ts');
 
 /**
  * The wire vocabulary must cover exactly what the app can save. A section with a
@@ -32,21 +46,19 @@ describe('the authorable section vocabulary', () => {
 		expect(existsSync('src/routes/api/evolution/+server.ts')).toBe(true);
 	});
 
-	it('reads revisions from the same channel as each public save endpoint', () => {
-		// A route may take its write spec from the shared registry, the one a request's landing writes through too.
-		const registry = readFileSync('src/lib/server/section-write-specs.server.ts', 'utf8');
-		const specOf = (route: string) => {
-			const name = /saveSectionDraft\(event, ([A-Z_]+)\)/.exec(route)?.[1];
-			if (!name) return route;
-			const start = registry.indexOf(`export const ${name} = {`);
-			return registry.slice(start, registry.indexOf('} satisfies', start));
-		};
-		for (const section of raw) {
-			const route = readFileSync(join('src/routes/api/draft', section, '+server.ts'), 'utf8');
-			const atomic = /atomic:\s*true/.test(specOf(route));
-			expect(SECTION_REVISION_STORAGE[section], section).toBe(atomic ? 'document' : 'legacy');
+	it('reads revisions from the same channel as each public save endpoint', async () => {
+		// What each route really hands the save protocol: the spec it saves with,
+		// whether written inline or taken from the shared registry a landing uses too.
+		const routes = await Promise.all(raw.map((section) => draftRoute[`/src/routes/api/draft/${section}/+server.ts`]()));
+		for (const [i, section] of raw.entries()) {
+			const route = routes[i];
+			saved.spec = null;
+			await route.PUT(requestEvent({ path: `/api/draft/${section}`, method: 'PUT' }));
+			const spec = lastSpec();
+			expect(spec, section).not.toBeNull();
+			expect(SECTION_REVISION_STORAGE[section], section).toBe(spec?.atomic ? 'document' : 'legacy');
 		}
-	});
+	}, 60_000);
 
 	it('rejects anything else', () => {
 		expect(isSection('foundation')).toBe(true);

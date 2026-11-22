@@ -71,7 +71,8 @@ describe('Running now tells what Lyriks is doing for the reader [criterion:ee8ad
 		const delivered = req({ id: 'r4', stage: 'delivered' });
 		const runs = homeRuns([source({ requests: [live, asked, idle, delivered], keys: { r9: 'EVO-077' } })], ctx);
 		expect(runs.map((r) => [r.label, r.state, r.line])).toEqual([
-			['EVO-002', 'waiting', 'Step 2 of 6 · Finish the Solution · waiting for you'],
+			// Its Functional spec owes no text (EVO-013): written as it is, it waits for its validation.
+			['EVO-002', 'waiting', 'Step 2 of 6 · Validate the Solution · waiting for you'],
 			['EVO-077', 'running', 'Lyriks for Léa P. is working on the Briefing']
 		]);
 		expect(runs[0]).toMatchObject({ kind: 'evolution', href: '/projects/fac/evolution?request=r2' });

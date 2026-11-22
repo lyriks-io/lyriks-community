@@ -15,9 +15,7 @@ const LEAVES = {
 		{ id: 'feat-tags', name: 'Tag bookmarks', parentId: null },
 		{ id: 'feat-feeds', name: 'Feeds', parentId: null }
 	],
-	cores: [],
-	releases: [],
-	roadmapAssignments: []
+	cores: []
 };
 
 const action = (id: string, opts: { located: boolean; verifiedAt?: string }) => ({

@@ -25,7 +25,7 @@ import {
 	setInitialState,
 	updateStep
 } from './functional-diagram-edits';
-import { answerStepAct, redrawDiagramAct, type ActContext, type ActOutcome } from './acts';
+import { answerStepAct, redrawDiagramAct, updateStepDescriptionAct, type ActContext, type ActOutcome } from './acts';
 import { coachOf, type CoachFacts } from './coach';
 import { createEvolutionRequest, type Actor, type EvolutionRequest } from './draft';
 import { readPath } from './path';
@@ -258,7 +258,7 @@ describe('the diagram is an answer of the Functional spec [criterion:ac-leaf-ac-
 		expect(step.detail).not.toMatch(/diagram/i);
 	});
 
-	it('is drawn by the AI from the texts once the description is written, never asked of the person [criterion:ac-leaf-ac-evo-func-uml-ai]', () => {
+	it('is redrawn by the AI from the texts once drawn, never asked of the person, and never owed undrawn [criterion:ac-leaf-ac-evo-func-uml-ai]', () => {
 		const base = createEvolutionRequest({ status: 'open', stage: 'specification' });
 		const described: EvolutionRequest = {
 			...base,
@@ -277,15 +277,19 @@ describe('the diagram is an answer of the Functional spec [criterion:ac-leaf-ac-
 			undecidedLines: 0,
 			solo: true
 		});
-		const next = coachOf(described, facts(described));
-		expect(next.step).toBe('functional_spec');
-		expect(next.then[0]).toMatch(/^Draw the Functional spec's diagram from its texts first: redraw_diagram \{diagram\}/);
-		// Whatever step the request stands on, the act that catches the diagram up comes first.
-		const atNeed: EvolutionRequest = { ...described, stepValidations: [] };
-		expect(coachOf(atNeed, facts(atNeed)).then[0]).toMatch(/^Draw the Functional spec's diagram/);
-		expect(next.ask.join(' ')).not.toMatch(/Draw it/);
+		// Never drawn, the diagram is offered, never owed: nothing asks for it (EVO-013).
+		expect(coachOf(described, facts(described)).then.join(' ')).not.toMatch(/raw the Functional spec's diagram/);
 		const drawn = ok(redrawDiagramAct(ctx, described, { diagram: BAKERY }));
-		expect(coachOf(drawn, facts(drawn)).then.join(' ')).not.toMatch(/raw the diagram/);
+		expect(coachOf(drawn, facts(drawn)).then.join(' ')).not.toMatch(/raw the Functional spec's diagram/);
+		// Once drawn, it follows its texts: a text written after it puts the redraw first.
+		const moved = ok(updateStepDescriptionAct(ctx, drawn, { step: 'functional_spec', description: 'The baker marks the bag ready; the customer gets one text.' }));
+		const next = coachOf(moved, facts(moved));
+		expect(next.step).toBe('functional_spec');
+		expect(next.then[0]).toMatch(/^Redraw the Functional spec's diagram from its texts first: redraw_diagram \{diagram\}/);
+		// Whatever step the request stands on, the act that catches the diagram up comes first.
+		const atNeed: EvolutionRequest = { ...moved, stepValidations: [] };
+		expect(coachOf(atNeed, facts(atNeed)).then[0]).toMatch(/^Redraw the Functional spec's diagram/);
+		expect(next.ask.join(' ')).not.toMatch(/Draw it/);
 	});
 });
 

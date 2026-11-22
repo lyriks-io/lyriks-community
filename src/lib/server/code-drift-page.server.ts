@@ -1,7 +1,6 @@
 import type { AppServices } from '$composition/container.server';
 import { withCarriedGrants } from '$application/specification/capability-registry';
 import { indexFeatureRules } from '$application/specification/index-feature-rules';
-import { loadRetrospecDocument } from '$application/retrospec/retrospec-store';
 import { summarizeAction } from '$application/specification/summarize-action';
 import { locateInOutline, specOutline } from '$application/spec360/outline';
 import { text } from '$application/spec360/labels';
@@ -11,13 +10,20 @@ import { actionCapabilityId } from '$domain/users';
 import {
 	analysisOver,
 	codeChangeHead,
+	nextRunOf,
+	nextRunOffer,
+	resumePromptOfRun,
+	runPreview,
+	runUnderWay,
 	reportCards,
 	reportCounts,
 	reworkRejectedPrompt,
-	nextRunReads,
 	writeValidatedPrompt,
 	writesHeld,
 	type ElementReading,
+	type RetrospecFacts,
+	currentRun,
+	retrospecStatus,
 	driftImpact,
 	lastPublishedRun,
 	followSpecPrompt,
@@ -33,12 +39,14 @@ import {
 	type CodeChange,
 	type DriftSpecReading,
 	type RetrospecDocument,
-	type RetrospecRun
+	type RetrospecRun,
+	type RetrospecStatus
 } from '$domain/retrospec';
 import type { UnspaFeatureSnapshot } from '$lib/unspa-schema';
-import type { DriftChangeView, DriftPageData, HeldReportView, RunReportView, SpecEditView } from '$lib/shared/code-drift-page';
+import type { DriftChangeView, DriftPageData, HeldReportView, RunPreviewView, RunReportView, SpecEditView } from '$lib/shared/code-drift-page';
 import { readBehavior } from './behavior-read.server';
-import { nextRunScope, readRetrospecStatus } from './retrospec-status.server';
+import { aiLastSeenOf } from './retrospec-ai.server';
+import { readRetrospecFacts } from './retrospec-status.server';
 import { readCodeChanges } from './spec-code-drift.server';
 import { readSpecElements } from './spec-elements.server';
 
@@ -130,9 +138,8 @@ function specEditView(edit: SpecEdit, featureNames: ReadonlyMap<string, string>,
 }
 
 /** What a later run not validated yet reads and, once its analysis is over, what it changed (criterion f61f8c94). */
-async function readRunReport(services: AppServices, projectId: string, doc: RetrospecDocument, run: RetrospecRun, product: { name: string; id: string }): Promise<RunReportView> {
+async function readRunReport(services: AppServices, projectId: string, doc: RetrospecDocument, run: RetrospecRun, product: { name: string; id: string }, status: RetrospecStatus): Promise<RunReportView> {
 	const scope = scopeLine(run.mode, runReach(run.complementary && { ...run.complementary, handEdits: specEditLines(doc.specEdits).length }), writesHeld(run));
-	const status = await readRetrospecStatus(services, projectId);
 	if (!analysisOver(status.status)) return { scope, delta: null, held: null };
 	if (run.holds) return { scope, delta: null, held: await readHeldReport(services, projectId, run, product) };
 	return { scope, delta: runDelta(doc, run, await readSpecElements(services, projectId).catch(() => null)), held: null };
@@ -160,18 +167,39 @@ async function readHeldReport(services: AppServices, projectId: string, run: Ret
 	return { cards: reportCards(run.report ?? {}, readOf, elements.map((e) => e.id), product), counts, writing: !!run.writingOpenedAt, writePrompt: writeValidatedPrompt(counts.validated, product), reworkPrompt: reworkRejectedPrompt(counts.rejected, product) };
 }
 
+/**
+ * Where the runs stand on Mismatch (EVO-014): while one is under way, its
+ * preview in place of the waiting card; otherwise the next analysis offered,
+ * with the option ticked by default; after a first analysis, the way to
+ * Knowledge to validate what it wrote.
+ */
+function readRunsOnMismatch(facts: RetrospecFacts, projectId: string, productName: string, now: string): Pick<DriftPageData, 'next' | 'preview' | 'firstWritten'> {
+	const next = nextRunOf(facts);
+	const run = currentRun(facts.doc);
+	const handEdits = specEditLines(facts.doc.specEdits).length;
+	if (runUnderWay(next.status) && run) {
+		const preview = runPreview(facts, next.status, handEdits);
+		const view: RunPreviewView | null = preview ? { ...preview, aiLastSeenAt: aiLastSeenOf(projectId), resumePrompt: resumePromptOfRun(run, productName, projectId) } : null;
+		return { next: null, preview: view, firstWritten: false };
+	}
+	const firstWritten = !!run && !run.complementary && !run.publishedAt && analysisOver(next.status.status);
+	return { next: nextRunOffer(next, productName, projectId, handEdits, now), preview: null, firstWritten };
+}
+
 export async function readDriftPage(services: AppServices, projectId: string): Promise<DriftPageData> {
-	const [{ doc }, identity, features, baselinesDraft] = await Promise.all([
-		loadRetrospecDocument(services.sectionDocuments, projectId),
+	const [facts, identity, features, baselinesDraft] = await Promise.all([
+		readRetrospecFacts(services, projectId),
 		services.loadFoundationDraft.loadIdentity(projectId),
 		services.loadFeaturesDraft.execute(projectId),
 		services.loadBaselinesDraft.execute(projectId).catch(() => null)
 	]);
+	const { doc } = facts;
 	const productName = text(identity.productName) || 'Untitled project';
 	const validated = lastPublishedRun(doc);
 	const last = doc.runs.at(-1);
-	const unfollowed = { productName, version: null, lastSyncAt: null, followed: 0, changes: [], specEdits: [], next: null };
-	if (last?.complementary && !last.publishedAt) return { state: 'report', ...unfollowed, report: await readRunReport(services, projectId, doc, last, { name: productName, id: projectId }) };
+	const runs = readRunsOnMismatch(facts, projectId, productName, services.clock.nowIso());
+	const unfollowed = { productName, version: null, lastSyncAt: null, followed: 0, changes: [], specEdits: [], ...runs };
+	if (last?.complementary && !last.publishedAt) return { state: 'report', ...unfollowed, report: await readRunReport(services, projectId, doc, last, { name: productName, id: projectId }, retrospecStatus(facts)) };
 	if (!validated || last !== validated) return { state: 'draft', ...unfollowed, report: null };
 	const baselines = baselinesDraft?.baselines ?? [];
 	const { changes, lastSyncAt, followed } = await readCodeChanges(services, projectId, doc);
@@ -215,6 +243,6 @@ export async function readDriftPage(services: AppServices, projectId: string): P
 		changes: views,
 		specEdits: specEditLines(doc.specEdits).map((e) => specEditView(e, featureNames, projectId, product)),
 		report: null,
-		next: { scope: await nextRunScope(services, projectId), reads: nextRunReads(doc, true) }
+		...runs
 	};
 }

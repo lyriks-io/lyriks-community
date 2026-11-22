@@ -2,6 +2,7 @@ import type { SpecLanguage } from '$domain/language';
 import { actionContextOf, earsOfInvariant, earsOfRule, featureConstants, featureLanguage, featureProperNames } from '$lib/unspa-schema/requirement-sentences';
 import type { DataDraft } from './data-drafts';
 import type { DraftLeafKind, EvolutionRequest } from './draft';
+import { stableId } from './ids';
 
 /**
  * The request drawn as its own graph (ac-evo-graph-local, -status, -folded).
@@ -53,6 +54,11 @@ export interface LocalNode {
 	 * the one the Features page reads under it (ac-evo-graph-ears).
 	 */
 	readonly statement?: string;
+	/**
+	 * What an action holds (its rules, effects, parameters and scenarios), as a
+	 * short digest: what a validation of the action stands behind (criterion c0a6eef3).
+	 */
+	readonly content?: string;
 }
 
 export interface LocalGraph {
@@ -102,9 +108,6 @@ const optional = (v: unknown): string | null => (typeof v === 'string' && v.trim
 const actorOf = (action: Record<string, unknown>): string =>
 	optional(action.actor) ?? (optional(action.triggeredByEvent) ? 'event' : 'user');
 
-const without = (row: Record<string, unknown>, keys: readonly string[]) =>
-	JSON.stringify(Object.fromEntries(Object.entries(row).filter(([k]) => !keys.includes(k))));
-
 /** Every element a feature snapshot holds, under the feature node `featureNode`. */
 function elementsOf(feature: Snapshot, featureNode: string, lang?: SpecLanguage): Element[] {
 	const out: Element[] = [];
@@ -141,8 +144,9 @@ function elementsOf(feature: Snapshot, featureNode: string, lang?: SpecLanguage)
 				label: text(action.name, idOf(action)),
 				parentId: sid,
 				variant: actorOf(action),
-				// An action changes when what it does changes, not when a scenario does.
-				signature: without(action, ['scenarios'])
+				// An action changes when anything a person reviews of it changes: its rules,
+				// effects, parameters and scenarios alike (criterion c0a6eef3).
+				signature: JSON.stringify(action)
 			});
 			const context = actionContextOf(action, properNames);
 			for (const rule of list(action.rules))
@@ -261,7 +265,8 @@ export function localGraphOf(input: LocalGraphInput): LocalGraph {
 			folded: FOLDED_KINDS.includes(e.kind),
 			featureId: null,
 			variant: e.variant,
-			...(e.statement ? { statement: e.statement } : {})
+			...(e.statement ? { statement: e.statement } : {}),
+			...(e.kind === 'action' ? { content: stableId('content', e.signature) } : {})
 		});
 
 	const standIns = new Set(request.drafts.map((d) => d.baseLeafId).filter((id): id is string => !!id));

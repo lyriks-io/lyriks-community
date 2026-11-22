@@ -145,6 +145,14 @@ export interface RunProgressInput {
 	 * the run: the features phase is half the tree, half what the features do.
 	 */
 	readonly behavior?: { readonly authored: number; readonly leaves: number };
+	/** The phases the run a Resume analysis picks up read whole: they read done from the start (EVO-014, criterion faad6b0a). */
+	readonly readBefore?: readonly string[];
+	/**
+	 * The phase the run's AI last said it reads (EVO-014, criterion a9c3387c): a
+	 * run that holds its changes writes nothing as it reads, so the phases before
+	 * it read done and it reads in progress.
+	 */
+	readonly reported?: string | null;
 }
 
 export interface RunProgress {
@@ -169,14 +177,19 @@ export function runProgress(input: RunProgressInput): RunProgress {
 			return share === null ? [] : [{ key: part.key, label: part.label, share, state: partState(share) }];
 		})
 	);
+	const reportedAt = input.reported ? RETROSPEC_PHASES.findIndex((p) => p.key === input.reported) : -1;
 	const shares = RETROSPEC_PHASES.map((p, i) => {
 		if (p.sections.length === 0) return input.checked ? 1 : 0;
+		// Read by the run this one resumes, or passed by the phase its AI said it reads.
+		if (input.readBefore?.includes(p.key) || (reportedAt >= 0 && i < reportedAt)) return 1;
 		const parts = partsOf[i];
 		if (parts.length > 0) return parts.reduce((sum, part) => sum + part.share, 0) / parts.length;
 		return p.sections.filter((s) => written.has(s)).length / p.sections.length;
 	});
 	const last = input.lastWritten ? sectionOf(input.lastWritten) : null;
-	const lastPhase = last ? RETROSPEC_PHASES.findIndex((p) => p.sections.includes(last)) : -1;
+	const wroteLast = last ? RETROSPEC_PHASES.findIndex((p) => p.sections.includes(last)) : -1;
+	// The phase the AI said it reads wins over the one it wrote last: it writes nothing while it holds its changes.
+	const lastPhase = reportedAt >= 0 ? reportedAt : wroteLast;
 	// One phase reads in progress: the one the AI wrote last, else the first one
 	// it started without finishing, else the first one it has not reached.
 	let current = -1;
@@ -193,7 +206,7 @@ export function runProgress(input: RunProgressInput): RunProgress {
 		parts: partsOf[i]
 	}));
 	const pct = input.checked ? 100 : Math.round((100 * shares.reduce((a, b) => a + b, 0)) / shares.length);
-	return { phases, pct, started: written.size > 0 || input.checked };
+	return { phases, pct, started: written.size > 0 || input.checked || reportedAt >= 0 };
 }
 
 /** The final check ran during the run: an audit or a completion entry dated at or after its start. */

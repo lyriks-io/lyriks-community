@@ -18,7 +18,7 @@ const snapshot = (id: string, name: string, featureIds: string[] = []) =>
  * second file for the same id is how two rival project records get created.
  */
 describe('LocalFsBehaviorRepository project file resolution', () => {
-	it('reads a project file the engine named after the project, not the id', () => {
+	it('reads a project file the engine named after the project, not the id', async () => {
 		const root = mkdtempSync(join(tmpdir(), 'lyriks-behavior-'));
 		mkdirSync(join(root, 'p1'));
 		writeFileSync(
@@ -27,7 +27,7 @@ describe('LocalFsBehaviorRepository project file resolution', () => {
 		);
 		const repository = new LocalFsBehaviorRepository(root);
 
-		expect(repository.loadProject('p1')).resolves.toMatchObject({
+		await expect(repository.loadProject('p1')).resolves.toMatchObject({
 			project: { id: 'p1', featureIds: ['f1'] }
 		});
 	});

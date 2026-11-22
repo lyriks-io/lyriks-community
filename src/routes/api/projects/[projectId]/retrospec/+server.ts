@@ -1,11 +1,10 @@
 import { error, json } from '@sveltejs/kit';
 import { parseRetrospecActs } from '$application/retrospec/parse-retrospec-acts';
-import { loadRetrospecDocument, readSectionRevisions, saveRetrospecActs } from '$application/retrospec/retrospec-store';
-import { RETROSPEC_SECTIONS, applyRetrospecActs, retrospecBaseline, type ActContext, type RetrospecAct, type RetrospecScope } from '$domain/retrospec';
-import { analysisOver } from '$domain/retrospec/reverse-page';
+import { loadRetrospecDocument, saveRetrospecActs } from '$application/retrospec/retrospec-store';
+import { applyRetrospecActs, type ActContext, type RetrospecAct } from '$domain/retrospec';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { readSpecElements } from '$lib/server/spec-elements.server';
-import { nextRunScope, readRetrospecEvents, readRetrospecStatus, retrospecActor } from '$lib/server/retrospec-status.server';
+import { readNextRun, readRetrospecEvents, readRetrospecStatus, retrospecActor } from '$lib/server/retrospec-status.server';
 import { callerKind } from '$lib/server/caller.server';
 import { readValidationGuards } from '$lib/server/spec-validation.server';
 import type { RequestHandler } from './$types';
@@ -24,7 +23,9 @@ const GUARDED_OPS: ReadonlySet<string> = new Set(['validate', 'withdraw', 'publi
  *        reject, set aside, share, comment, publish…) and answers `{ ok, revision }`.
  *
  * A start records the specification's revisions as the run's baseline, read
- * here, never from the body. Validate, withdraw and publish answer to the same
+ * here, never from the body. What it reads is the person's choice (Full,
+ * Delta or Resume analysis, EVO-014) or, left out, the default the server
+ * reads; where the last run stopped is read here too. Validate, withdraw and publish answer to the same
  * guards as Knowledge's validation: a validation only from someone the element
  * waits on, a publication only once every element is validated. A publish first
  * captures a baseline of the specification (the immutable snapshot Traceability
@@ -57,20 +58,24 @@ export const POST: RequestHandler = async (event) => {
 	const ctx: ActContext = { actor, now, ...guards };
 
 	const needsBaseline = parsed.acts.some((a) => a.op === 'start');
-	const baseline = needsBaseline
-		? retrospecBaseline(await readSectionRevisions(services.sectionDocuments, services.draftLock, projectId, RETROSPEC_SECTIONS))
-		: {};
+	// The baseline, what the next run reads by default, where the last run stopped and whether it closes, read once (EVO-014).
+	const next = needsBaseline ? await readNextRun(services, projectId) : null;
+	const baseline = next?.baseline ?? {};
 	// What each element reads as the run starts: the validations it carries stand against it when the last validated run recorded nothing (criterion 0c87480c).
 	const elements = needsBaseline ? await readSpecElements(services, projectId).catch(() => []) : [];
 	const fingerprints = fingerprintsOf(elements);
 	// Their names too: an element a later run removes has nothing else left to be named by (criterion 03192a6e).
 	const titles = Object.fromEntries(elements.map((e) => [e.id, e.title]));
-	// What a later run reads unless the person chooses otherwise: the whole product when the last run stopped short or no delta can be read (criterion 98612117).
-	const scope: RetrospecScope = needsBaseline ? await nextRunScope(services, projectId) : 'delta';
 	// Whether the analysis of the last run is over, read here, never from the body: a start then closes that run (criterion 2dbed801).
-	const closesRun = needsBaseline && analysisOver((await readRetrospecStatus(services, projectId)).status);
+	const closesRun = next?.closesRun ?? false;
 	const resolve = (baselineId: string | null): RetrospecAct[] =>
-		parsed.acts.map((a): RetrospecAct => (a.op === 'start' ? { op: 'start', mode: a.mode, baseline, fingerprints, titles, scope, closesRun } : a.op === 'publish' ? { op: 'publish', baselineId } : a));
+		parsed.acts.map((a): RetrospecAct =>
+			a.op === 'start'
+				? { op: 'start', mode: a.mode, baseline, fingerprints, titles, scope: a.scope ?? next?.scope ?? 'delta', resumable: next?.resumable ?? null, closesRun }
+				: a.op === 'publish'
+					? { op: 'publish', baselineId }
+					: a
+		);
 
 	let baselineId: string | null = null;
 	if (parsed.acts.some((a) => a.op === 'publish')) {

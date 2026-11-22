@@ -1,18 +1,18 @@
 /**
- * Tests: applySectionPatch — id-keyed and keyless (match-addressed) collections,
+ * Tests: applySectionPatchReport, id-keyed and keyless (match-addressed) collections,
  * dotted collection paths, and the no-id-injection rule on match inserts.
  */
 
 import { describe, it, expect } from 'vitest'
-import { applySectionPatch, applySectionPatchReport, type PatchOp } from '../tools/sections.js'
+import { applySectionPatchReport, type PatchOp } from '../tools/sections.js'
 
-describe('applySectionPatch', () => {
+describe('applySectionPatchReport', () => {
   it('merges into an id-keyed item and stamps id on insert', () => {
     const draft: Record<string, unknown> = { screens: [{ id: 's1', name: 'Home' }] }
-    const applied = applySectionPatch(draft, [
+    const applied = applySectionPatchReport(draft, [
       { op: 'merge', collection: 'screens', id: 's1', value: { name: 'Start' } },
       { op: 'merge', collection: 'screens', id: 's2', insert: true, value: { name: 'Detail' } },
-    ])
+    ]).applied
     expect(applied).toBe(2)
     expect(draft.screens).toEqual([
       { id: 's1', name: 'Start' },
@@ -31,7 +31,7 @@ describe('applySectionPatch', () => {
       { op: 'merge', collection: 'permissions', match: { roleId: 'admin', capabilityId: 'cap-a' }, value: { level: 'full' } },
       { op: 'merge', collection: 'permissions', match: { roleId: 'editor', capabilityId: 'cap-a' }, insert: true, value: { roleId: 'editor', capabilityId: 'cap-a', level: 'edit' } },
     ]
-    expect(applySectionPatch(draft, ops)).toBe(2)
+    expect(applySectionPatchReport(draft, ops).applied).toBe(2)
     const rows = draft.permissions as Record<string, unknown>[]
     expect(rows[0].level).toBe('full')
     expect(rows[2]).toEqual({ roleId: 'editor', capabilityId: 'cap-a', level: 'edit' })
@@ -45,7 +45,7 @@ describe('applySectionPatch', () => {
         { roleId: 'viewer', capabilityId: 'cap-a' },
       ],
     }
-    expect(applySectionPatch(draft, [{ op: 'remove', collection: 'permissions', match: { roleId: 'viewer' } }])).toBe(1)
+    expect(applySectionPatchReport(draft, [{ op: 'remove', collection: 'permissions', match: { roleId: 'viewer' } }]).applied).toBe(1)
     expect(draft.permissions).toEqual([{ roleId: 'admin', capabilityId: 'cap-a' }])
   })
 
@@ -53,9 +53,9 @@ describe('applySectionPatch', () => {
     const draft: Record<string, unknown> = {
       builder: { collections: [{ id: 'c0', fields: [{ id: 'f0', name: 'status' }] }] },
     }
-    const applied = applySectionPatch(draft, [
+    const applied = applySectionPatchReport(draft, [
       { op: 'merge', collection: 'builder.collections.0.fields', id: 'f0', value: { options: ['on', 'off'] } },
-    ])
+    ]).applied
     expect(applied).toBe(1)
     const field = ((draft.builder as { collections: { fields: Record<string, unknown>[] }[] }).collections[0].fields)[0]
     expect(field.options).toEqual(['on', 'off'])
@@ -63,10 +63,10 @@ describe('applySectionPatch', () => {
 
   it('is a no-op (not an error) on a missing collection or unmatched row without insert', () => {
     const draft: Record<string, unknown> = { permissions: [] }
-    const applied = applySectionPatch(draft, [
+    const applied = applySectionPatchReport(draft, [
       { op: 'merge', collection: 'nope', id: 'x', value: {} },
       { op: 'merge', collection: 'permissions', match: { roleId: 'ghost' }, value: { level: 'full' } },
-    ])
+    ]).applied
     expect(applied).toBe(0)
   })
 })
@@ -187,8 +187,8 @@ describe('incremental ops: add to a list or a text without resending it', () => 
     [{ op: 'replace_text', path: 'brief', find: '', value: 'x' }, 'nonempty find'],
   ])('refuses %j before touching the draft', (op, why) => {
     const draft = { tags: ['a'], brief: 'text' }
-    expect(() => applySectionPatch(draft, [{ op: 'set', path: 'brief', value: 'changed' }, op as unknown as PatchOp])).toThrow(`Invalid patch operation 1: `)
-    expect(() => applySectionPatch(draft, [op as unknown as PatchOp])).toThrow(why)
+    expect(() => applySectionPatchReport(draft, [{ op: 'set', path: 'brief', value: 'changed' }, op as unknown as PatchOp]).applied).toThrow(`Invalid patch operation 1: `)
+    expect(() => applySectionPatchReport(draft, [op as unknown as PatchOp]).applied).toThrow(why)
     expect(draft).toEqual({ tags: ['a'], brief: 'text' })
     expect(({} as Record<string, unknown>).polluted).toBeUndefined()
   })
@@ -209,9 +209,9 @@ describe('append', () => {
 
   it('adds a keyless row verbatim, injecting no id', () => {
     const draft: Record<string, unknown> = { permissions: [{ roleId: 'admin', capabilityId: 'cap-a' }] }
-    expect(applySectionPatch(draft, [
+    expect(applySectionPatchReport(draft, [
       { op: 'append', collection: 'permissions', value: { roleId: 'viewer', capabilityId: 'cap-a', capabilitySource: 'feature' } },
-    ])).toBe(1)
+    ]).applied).toBe(1)
     const rows = draft.permissions as Record<string, unknown>[]
     expect(rows[1]).toEqual({ roleId: 'viewer', capabilityId: 'cap-a', capabilitySource: 'feature' })
     expect(rows.every((r) => !('id' in r))).toBe(true)
@@ -219,9 +219,9 @@ describe('append', () => {
 
   it('creates the collection when the section holds none yet', () => {
     const draft: Record<string, unknown> = { builder: {} }
-    expect(applySectionPatch(draft, [
+    expect(applySectionPatchReport(draft, [
       { op: 'append', collection: 'builder.screens', id: 'scr-1', value: { name: 'Home' } },
-    ])).toBe(1)
+    ]).applied).toBe(1)
     expect((draft.builder as { screens: unknown[] }).screens).toEqual([{ id: 'scr-1', name: 'Home' }])
   })
 
@@ -249,12 +249,12 @@ describe('append', () => {
 
   it('refuses an append that carries a row selector or a non-object value', () => {
     const draft: Record<string, unknown> = { capabilities: [] }
-    expect(() => applySectionPatch(draft, [
+    expect(() => applySectionPatchReport(draft, [
       { op: 'append', collection: 'capabilities', match: { name: 'x' }, value: { name: 'x' } },
-    ])).toThrow(/append takes a collection and a value/)
-    expect(() => applySectionPatch(draft, [
+    ]).applied).toThrow(/append takes a collection and a value/)
+    expect(() => applySectionPatchReport(draft, [
       { op: 'append', collection: 'capabilities', value: 'Sign out' as unknown as Record<string, unknown> },
-    ])).toThrow(/append requires a safe object value/)
+    ]).applied).toThrow(/append requires a safe object value/)
   })
 
   describe('an op that would empty a whole list is held unless it says so [criterion:3eb55075]', () => {

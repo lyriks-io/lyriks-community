@@ -1,3 +1,4 @@
+import { mintUuid } from '../shared';
 import type { AiDelegation } from './ai-delegation';
 import type { DiagramAlignment, TechnicalAlignment, TextAlignment } from './functional-sync';
 import type { AiClick, LiveSession } from './live-session';
@@ -186,6 +187,15 @@ export interface ImplementationFinding {
 	codeStatement: string;
 	/** The touched feature the line was read on, when the derivation knows it. */
 	leafId?: string;
+	/**
+	 * The element the line is about, keyed the way the engine keys it
+	 * (`action:<id>`, `rule:<id>`, `criterion:<id>`, `extra:<tag>`...), and the
+	 * action or screen it was read under (`action:<id>`, `surface:<id>`): what
+	 * the landing maps a line to its element of Knowledge with (EVO-002).
+	 * Absent on a line derived before they were recorded.
+	 */
+	key?: string;
+	owner?: string;
 	/** False when the span carries no requirement anchor: that is an out-of-scope addition. */
 	hasRequirementAnchor: boolean;
 	/** True when the touched span belongs to another leaf: that is a regression. */
@@ -623,7 +633,7 @@ export interface DraftLeaf {
 
 export function createDraftLeaf(overrides: Partial<DraftLeaf> = {}): DraftLeaf {
 	return {
-		id: `${DRAFT_LEAF_PREFIX}${crypto.randomUUID()}`,
+		id: `${DRAFT_LEAF_PREFIX}${mintUuid()}`,
 		kind: 'add',
 		baseLeafId: null,
 		name: '',
@@ -716,6 +726,8 @@ export interface EvolutionRequest {
 	/** True between a freeze and an amendment. Verify implies a frozen spec. */
 	frozen: boolean;
 	frozenVersions: FrozenVersion[];
+	/** Version N+1 in correction in the Build, while the code is still built against N (EVO-012); absent otherwise. */
+	correction?: import('./correction').SpecCorrection;
 	/**
 	 * The elements the touched features already held at the FIRST freeze, keyed
 	 * `<entityType>:<entityId>` as the implementation index resolves them. It is
@@ -737,6 +749,14 @@ export interface EvolutionRequest {
 	 * before anything was written: what the product already carried.
 	 */
 	coherenceBaseline?: string[];
+	/**
+	 * The touched features `coherenceBaseline` covers: those of the first check,
+	 * then each feature that joined the request since, its findings added to the
+	 * baseline at the first complete reading after it joined (criterion dd8db104).
+	 * Absent on requests baselined before it existed: the features owning a finding
+	 * of the baseline are read as covered then.
+	 */
+	coherenceBaselineLeafIds?: string[];
 	createdAt: string;
 	/**
 	 * The fields the author marked as questions they cannot answer yet, keyed
@@ -851,6 +871,8 @@ export interface EvolutionRequest {
 	heldImplementation: Record<string, Readonly<Record<string, unknown>>>;
 	/** Where the request's code stands in git, as its AI reports it, from its branch to its merge (feat-evo-code-branch). */
 	code?: CodeTrack;
+	/** Why the last validation of the Specification froze nothing, said by the foot while the request stands at the Impact analysis (EVO-011). */
+	freezeHeld?: import('./crossings-on-their-own').FreezeHeld;
 	/** The live sessions people opened with their AI on this request, oldest first (ac-evo-live-start). */
 	liveSessions: LiveSession[];
 	/** The people who delegated validation to their own AI on this request (ac-evo-llm-delegation). */
@@ -867,6 +889,20 @@ export interface EvolutionRequest {
 	closingBaselineId?: string;
 	/** What the person's AI did on the ticket the closed request came from, as it reported it. */
 	ticketPost?: TicketPost;
+	/** What its landing validated in Knowledge and what stays to review (EVO-002); absent on a request that never landed since. */
+	knowledgeLanding?: import('./landed-elements').KnowledgeLanding;
+	/**
+	 * The elements of Knowledge the change touches that were set to Validate at
+	 * the landing, by element id, with who chose it and when (EVO-003): carried
+	 * in the frozen version and read by the landing.
+	 */
+	landingChoices?: Readonly<Record<string, import('./touched-validation').LandingChoice>>;
+	/** The requests under way this one lands after, set at its freeze or by a person (EVO-005); absent while it is ordered after none. */
+	landsAfter?: string[];
+	/** What a person decided on a pair of overlapping requests: an order, or a conflict accepted as a risk (EVO-005). */
+	pairDecisions?: import('./landing-order').PairDecision[];
+	/** The other requests that landed on what this one shares, newest last (EVO-005, action d632b48b). */
+	otherLandings?: import('./landing-order').OtherLanding[];
 }
 
 /** The steps that open on a description of their own, beside the Need's. */
@@ -891,7 +927,8 @@ export const STEP_QUESTIONS = [
 		step: 'solution',
 		key: 'examples',
 		label: 'How we will know it works',
-		required: true,
+		// Offered, never owed: the Solution owes its description only (EVO-013, criterion c1db73b7).
+		required: false,
 		question: 'How will we know it works? Give a few concrete examples.',
 		example: 'A customer whose bag is ready gets one text within a minute; a customer with no phone number gets none.',
 		whyItMatters: 'The examples become the acceptance criteria the code is checked against.'
@@ -910,7 +947,8 @@ export const STEP_QUESTIONS = [
 		step: 'functional_spec',
 		key: 'refusals',
 		label: 'Its rules',
-		required: true,
+		// The Functional spec owes no text (EVO-013, criterion e5ba6571).
+		required: false,
 		question: 'What does the product allow or refuse, and why?',
 		example: 'No text without a phone number: the baker sees "no number on file". Never two texts for one order.',
 		whyItMatters: 'The rules are what the code enforces and the tests check.'
@@ -1115,7 +1153,7 @@ export type SkippableStep = (typeof SKIPPABLE_STEPS)[number];
 export const isSkippableStep = (v: unknown): v is SkippableStep =>
 	typeof v === 'string' && (SKIPPABLE_STEPS as readonly string[]).includes(v);
 
-/** The declaration that the change is live, with the roadmap release it shipped in when one was named. */
+/** The declaration that the change is live, with the release it shipped in when one was named. */
 export interface Deployment {
 	releaseId: string | null;
 	note: string;
@@ -1149,7 +1187,7 @@ export function createEvolutionRequest(
 	overrides: Partial<EvolutionRequest> = {}
 ): EvolutionRequest {
 	return {
-		id: crypto.randomUUID(),
+		id: mintUuid(),
 		title: '',
 		origin: null,
 		requester: '',
@@ -1228,7 +1266,7 @@ export const draftFor = (request: EvolutionRequest, leafId: string): DraftLeaf |
 
 export function createObservation(overrides: Partial<Observation> = {}): Observation {
 	return {
-		id: crypto.randomUUID(),
+		id: mintUuid(),
 		type: 'defect',
 		target: 'prototype',
 		body: '',
@@ -1252,7 +1290,7 @@ export function createObservation(overrides: Partial<Observation> = {}): Observa
 
 export function createProposal(overrides: Partial<Proposal> = {}): Proposal {
 	return {
-		id: crypto.randomUUID(),
+		id: mintUuid(),
 		targetField: '',
 		canonicalSection: 'features',
 		canonicalPath: '',

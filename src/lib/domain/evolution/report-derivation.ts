@@ -71,6 +71,34 @@ export interface SpecElements {
 	 * What a baseline is taken of when nothing was indexed yet.
 	 */
 	readonly elementKeys?: readonly string[];
+	/**
+	 * The actions of its screen that read or write each state, by state id: what
+	 * proves the state once each passed all its scenarios (criterion ad059df9).
+	 */
+	readonly stateTouchedBy?: Readonly<Record<string, readonly string[]>>;
+}
+
+/**
+ * The state paths an action reads or writes: an effect's path, a state read by a
+ * rule or an expression, a required state, a parameter bound to a state. Its
+ * scenarios set and assert states without the action touching them, so they
+ * are left out.
+ */
+function statePathsOf(action: Readonly<Record<string, unknown>>): Set<string> {
+	const paths = new Set<string>();
+	const walk = (value: unknown): void => {
+		if (Array.isArray(value)) return value.forEach(walk);
+		if (!value || typeof value !== 'object') return;
+		for (const [key, inner] of Object.entries(value)) {
+			if (key === 'scenarios') continue;
+			if ((key === 'path' || key === 'left' || key === 'bindToStatePath') && typeof inner === 'string') paths.add(inner);
+			else if (key === 'requiredStates' && Array.isArray(inner)) {
+				for (const p of inner) if (typeof p === 'string') paths.add(p);
+			} else walk(inner);
+		}
+	};
+	walk(action);
+	return paths;
 }
 
 /** The surfaces and actions a feature snapshot declares, structurally. */
@@ -78,6 +106,7 @@ export function specElementsOf(feature: Readonly<Record<string, unknown>> | null
 	const surfaces: { id: string; name: string }[] = [];
 	const actions: { id: string; name: string; surfaceName: string }[] = [];
 	const elementKeys = new Set<string>();
+	const stateTouchedBy: Record<string, string[]> = {};
 	const rows = (value: unknown): Record<string, unknown>[] =>
 		Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
 	const keyAll = (type: string, value: unknown) => {
@@ -91,10 +120,13 @@ export function specElementsOf(feature: Readonly<Record<string, unknown>> | null
 		keyAll('state', surface.stateDefinitions);
 		keyAll('surface_rule', surface.rules);
 		keyAll('surface_invariant', surface.invariants);
+		const states = rows(surface.stateDefinitions).filter((sd) => typeof sd.id === 'string' && typeof sd.path === 'string');
 		for (const action of rows(surface.actions)) {
 			const actionId = typeof action?.id === 'string' ? action.id : '';
 			if (!actionId) continue;
 			actions.push({ id: actionId, name: typeof action.name === 'string' && action.name ? action.name : actionId, surfaceName: name });
+			const touched = statePathsOf(action);
+			for (const sd of states) if (touched.has(sd.path as string)) (stateTouchedBy[sd.id as string] ??= []).push(actionId);
 			keyAll('rule', action.rules);
 			keyAll('invariant', action.invariants);
 			keyAll('transition', action.transitions);
@@ -102,7 +134,7 @@ export function specElementsOf(feature: Readonly<Record<string, unknown>> | null
 				if (typeof event === 'string' && event) elementKeys.add(`event:${event}`);
 		}
 	}
-	return { surfaces, actions, elementKeys: [...elementKeys] };
+	return { surfaces, actions, elementKeys: [...elementKeys], stateTouchedBy };
 }
 
 export interface ReportDerivationInput {
@@ -118,6 +150,14 @@ export interface ReportDerivationInput {
 	 * absent, every line is the request's.
 	 */
 	readonly baseline?: ReadonlySet<string> | null;
+	/**
+	 * What the request's drafts bring or change on each touched feature
+	 * (`<entityType>:<entityId>`, see broughtKeys): where it is known, a line is
+	 * the request's on those elements only, and anything else the feature holds,
+	 * a direct change made after the freeze included, is inherited (criterion
+	 * 28d5a69c). A feature absent or null here falls back to the baseline.
+	 */
+	readonly brought?: Readonly<Record<string, ReadonlySet<string> | null>>;
 	/** What the spec declares on each touched feature; a feature the index has no row for still reports. */
 	readonly spec?: Readonly<Record<string, SpecElements | null>>;
 	/** The language of the spec: the statements are stored, so they are written in it. */
@@ -133,6 +173,9 @@ const LINE_TEXTS = {
 		unverified: ' (unverified: the signature no longer matches)',
 		stale: ' (stale)',
 		unproven: ' (no passing result proves it yet)',
+		screenProvenState: ' (proven by its screen: every action of the screen passed all its scenarios)',
+		touchProvenState: ' (proven by the actions that read or write it: each passed all its scenarios)',
+		screenProvenCheck: " (proven by its screen: the engine checks it in every scenario of the screen's actions, and they all passed)",
 		nothingLocated: 'Nothing was located for it in the synced index.',
 		extraRequirement: (leaf: string, tag: string) => `${leaf} › tag "${tag}" in the code`,
 		notAsked: 'Nothing in the spec asks for this.',
@@ -150,6 +193,9 @@ const LINE_TEXTS = {
 		unverified: ` (non vérifié${NBSP}: la signature ne correspond plus)`,
 		stale: ' (périmé)',
 		unproven: " (aucun résultat réussi ne le prouve encore)",
+		screenProvenState: ` (prouvé par son écran${NBSP}: chaque action de l'écran a réussi tous ses scénarios)`,
+		touchProvenState: ` (prouvé par les actions qui le lisent ou l'écrivent${NBSP}: chacune a réussi tous ses scénarios)`,
+		screenProvenCheck: ` (prouvé par son écran${NBSP}: le moteur le vérifie dans chaque scénario des actions de l'écran, et tous ont réussi)`,
 		nothingLocated: "Rien n'a été localisé pour cet élément dans l'index synchronisé.",
 		extraRequirement: (leaf: string, tag: string) => `${leaf} › balise ${quoteName('fr', tag)} dans le code`,
 		notAsked: 'Rien dans la spec ne demande cela.',
@@ -164,7 +210,7 @@ const LINE_TEXTS = {
 /** The line of code a located line's statement opens on, its standing taken off; empty when it holds none. */
 export function recordedCodeLine(statement: string): string {
 	const texts = Object.values(LINE_TEXTS);
-	const standings = texts.flatMap((t) => [t.unverified, t.stale, t.unproven]);
+	const standings = texts.flatMap((t) => [t.unverified, t.stale, t.unproven, t.screenProvenState, t.screenProvenCheck, t.touchProvenState]);
 	const standing = standings.find((s) => statement.endsWith(s)) ?? '';
 	const line = statement.slice(0, statement.length - standing.length).trim();
 	return texts.some((t) => line === t.located || line === t.nothingLocated) ? '' : line;
@@ -267,7 +313,9 @@ export function deriveImplementationReport(input: ReportDerivationInput): Implem
 	for (const leafId of request.leafIds) {
 		const leaf = input.leafNames[leafId] ?? leafId;
 		const status = input.statuses[leafId] ?? null;
-		const scopeOf = (key: string) => (input.baseline?.has(key) ? 'inherited' : 'request') as 'inherited' | 'request';
+		const brought = input.brought?.[leafId] ?? null;
+		const scopeOf = (key: string) =>
+			(brought ? (brought.has(key) ? 'request' : 'inherited') : input.baseline?.has(key) ? 'inherited' : 'request') as 'inherited' | 'request';
 		// The floor: every surface and action the spec declares that the index has
 		// no row for is missing, so a feature nobody indexed yet is all to build.
 		const rowed = new Set(rowsOf(status).flatMap((r) => [r.actionId ? `action:${r.actionId}` : '', r.surfaceId ? `surface:${r.surfaceId}` : '']));
@@ -281,6 +329,7 @@ export function deriveImplementationReport(input: ReportDerivationInput): Implem
 				line(request, `${leafId}:${element.key}`, {
 					verdict: 'missing',
 					leafId,
+					key: element.key,
 					requirement: `${leaf} › ${element.kind} "${element.name}"`,
 					filePath: '',
 					lineRange: '',
@@ -301,6 +350,7 @@ export function deriveImplementationReport(input: ReportDerivationInput): Implem
 				line(request, `${leafId}:${key}`, {
 					verdict: passed ? 'conform' : criterion.state === 'failing' ? 'non_conform' : 'missing',
 					leafId,
+					key,
 					requirement: `${leaf} › criterion "${criterion.title ?? criterion.criterionId}"`,
 					filePath: '',
 					lineRange: '',
@@ -319,9 +369,11 @@ export function deriveImplementationReport(input: ReportDerivationInput): Implem
 				})
 			);
 		}
-		// A state is proven by the screen that declares it: once every action of
-		// that screen passed all its scenarios against the code, nothing else
-		// proves it, since no scenario names a state on its own.
+		// What a screen declares (its states, its rules, its always-true statements)
+		// is proven by the screen: no scenario names it on its own, but the engine
+		// runs the screen's rules and checks its always-true statements in every
+		// scenario of its actions, and no sync ever stamps a screen row itself
+		// (criterion:127dba2b).
 		const verifiedActions = new Set(rowsOf(status).filter((r) => r.actionId && r.auditMeta?.verifiedAt).map((r) => r.actionId as string));
 		const screenProven = (row: StatusRow): boolean => {
 			if (row.actionId || !row.surfaceId) return false;
@@ -332,6 +384,7 @@ export function deriveImplementationReport(input: ReportDerivationInput): Implem
 			return actions.size > 0 && [...actions].every((id) => verifiedActions.has(id));
 		};
 		for (const row of rowsOf(status)) {
+			const owner = row.actionId ? `action:${row.actionId}` : row.surfaceId ? `surface:${row.surfaceId}` : undefined;
 			const found = new Map((row.foundEntities ?? []).map((e) => [`${e.entityType}:${e.entityId}`, e]));
 			for (const e of row.foundEntities ?? [])
 				for (const l of e.locations ?? []) if (l.file) touchedFiles.add(l.file);
@@ -345,9 +398,23 @@ export function deriveImplementationReport(input: ReportDerivationInput): Implem
 			for (const entity of expected) {
 				const key = `${entity.entityType}:${entity.entityId}`;
 				const hit = found.get(key);
-				const testPassing = rowPassing || (entity.entityType === 'state' && screenPassing);
+				// A state the screen's actions read or write is proven by those actions alone (criterion ad059df9).
+				const touching = entity.entityType === 'state' ? (spec?.stateTouchedBy?.[entity.entityId] ?? []) : [];
+				const touchPassing = touching.length > 0 && touching.every((id) => verifiedActions.has(id));
+				const testPassing = rowPassing || (touching.length > 0 ? touchPassing : screenPassing);
 				const at = firstLocation(hit);
 				const name = entity.entityName ?? hit?.entityName ?? entity.entityId;
+				const byScreen = rowPassing
+					? ''
+					: touching.length > 0
+						? touchPassing
+							? say.touchProvenState
+							: ''
+						: screenPassing
+							? entity.entityType === 'state'
+								? say.screenProvenState
+								: say.screenProvenCheck
+							: '';
 				lines.push(
 					line(request, `${leafId}:${key}`, {
 						verdict: deriveVerdict({
@@ -357,13 +424,15 @@ export function deriveImplementationReport(input: ReportDerivationInput): Implem
 							acceptanceTestPassing: proven(hit, testPassing)
 						}),
 						leafId,
+						key,
+						...(owner ? { owner } : {}),
 						requirement: say.requirement(leaf, ownerOf(row), entity.entityType, name),
 						filePath: at?.file ?? '',
 						lineRange: at?.line !== undefined ? String(at.line) : '',
 						specStatement: say.declares(entity.entityType, name, ownerOf(row) || leaf),
 						codeStatement: at
 							? `${at.snippet?.trim() || say.located}${
-									at.unverified ? say.unverified : at.stale ? say.stale : proven(hit, testPassing) ? '' : say.unproven
+									at.unverified ? say.unverified : at.stale ? say.stale : proven(hit, testPassing) ? byScreen : say.unproven
 								}`
 							: say.nothingLocated,
 						hasRequirementAnchor: true,
@@ -379,6 +448,8 @@ export function deriveImplementationReport(input: ReportDerivationInput): Implem
 					line(request, `${leafId}:extra:${extra.tag}`, {
 						verdict: 'out_of_scope',
 						leafId,
+						key: `extra:${extra.tag}`,
+						...(owner ? { owner } : {}),
 						requirement: say.extraRequirement(leaf, extra.tag),
 						filePath: at?.file ?? '',
 						lineRange: at?.line !== undefined ? String(at.line) : '',
@@ -427,7 +498,23 @@ export function deriveImplementationReport(input: ReportDerivationInput): Implem
 		out_of_scope: 3,
 		conform: 4
 	};
-	return lines.sort((a, b) => order[a.verdict] - order[b.verdict] || a.requirement.localeCompare(b.requirement));
+	return oneLinePerElement(lines).sort((a, b) => order[a.verdict] - order[b.verdict] || a.requirement.localeCompare(b.requirement));
+}
+
+/**
+ * One line per element (criterion:46dc1372). Two rows may carry the same
+ * element, an event two actions emit: it is one requirement, proven once any of
+ * them proves it. Two lines under one id were counted twice by the summary and
+ * kept once by the dossier, which reads one line per id.
+ */
+function oneLinePerElement(lines: readonly ImplementationFinding[]): ImplementationFinding[] {
+	const proof: Record<ImplementationFinding['verdict'], number> = { conform: 0, non_conform: 1, missing: 2, out_of_scope: 3, regression: 3 };
+	const kept = new Map<string, ImplementationFinding>();
+	for (const l of lines) {
+		const before = kept.get(l.id);
+		if (!before || proof[l.verdict] < proof[before.verdict]) kept.set(l.id, l);
+	}
+	return [...kept.values()];
 }
 
 /**

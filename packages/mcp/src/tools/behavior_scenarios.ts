@@ -16,6 +16,7 @@
 import type { LyriksClient } from '../lyriks-client.js'
 import { RESULT_CAP, summarize } from '../util/shape.js'
 import { availableIds, featureOf, isRow, rows, type Row } from './behavior.js'
+import { scenarioLeftOut } from './disabled.js'
 
 export interface ExportBehaviorScenariosArgs {
   project_id: string
@@ -31,11 +32,11 @@ const SCENARIO_PAGE = { default: 50, max: 200 } as const
 // Short on purpose: it rides along with every page.
 export const ADAPTER_CONTRACT =
   'One adapter: invoke(input) => { status: "success" | "blocked", finalState }, input: one fixture. ' +
-  'Start the real code from initialState (nested by dotted path: persona, then scenario, then surface ' +
+  'Start the real code from initialState (nested by dotted path: persona, scenario, then surface ' +
   'defaults) and parameters (by name). Replay steps first, in order, each against its expectedStatus and ' +
-  'expectedAssertions; apply timeAdvance before acting. Assert status, then on success each expectedAssertions ' +
+  'expectedAssertions; apply timeAdvance first. Assert status, then on success each expectedAssertions ' +
   'path against finalState: only asserted paths need to be returned. Each test title must contain its ' +
-  'fixture\'s titleToken: .lyriks/tools/ingest-results.mjs finds it in a JSON test report.'
+  'fixture\'s titleToken: .lyriks/tools/ingest-results.mjs finds it in a JSON test report. Skip skip:true ones.'
 
 /**
  * The token the engine's result ingester recognises a test by, in its title:
@@ -129,6 +130,7 @@ export function scenarioFixture(feature: Row, surface: Row, action: Row, scenari
   })
   const versions = isRow(feature.elementVersions) ? feature.elementVersions : {}
   const stamp = versions[`scenario:${String(scenario.id)}`]
+  const leftOut = scenarioLeftOut(feature, action, scenario)
   return {
     featureId: feature.id,
     featureName: feature.name,
@@ -152,6 +154,8 @@ export function scenarioFixture(feature: Row, surface: Row, action: Row, scenari
     ...(scenario.expectedTransition !== undefined ? { expectedTransition: scenario.expectedTransition } : {}),
     // A feature written before element stamps only knows when anything in it moved.
     specVersion: typeof stamp === 'string' ? stamp : feature.updatedAt ?? null,
+    // No reading runs the scenario of a disabled element: its test is written skipped.
+    ...(leftOut ? { skip: true, disabled: leftOut } : {}),
   }
 }
 

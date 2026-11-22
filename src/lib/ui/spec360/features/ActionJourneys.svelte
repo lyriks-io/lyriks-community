@@ -1,8 +1,11 @@
 <script lang="ts">
+	import { mintUuid } from '$ui/shell/mint-id';
 	import { canLink, journeyThrough, journeysOnFeature, layoutJourney, stepNumbers, type ActionJourney, type JourneyAct, type JourneyLink, type JourneyPosition } from '$domain/features';
 	import type { FeatureActionView } from '$application/spec360/features';
 	import { Icon } from '$ui/design-system';
 	import { BTN, LINK, META, TAG } from '$ui/spec360/page/look';
+	import { trackSave } from '$ui/shell/pending-saves.svelte';
+	import { JourneySaves, type JourneySaveAnswer } from './journey-saves';
 
 	/**
 	 * A feature's journeys (actions f3bbf419, 2d9a8378): one diagram, the
@@ -14,7 +17,8 @@
 	 * an arrow is pulled from a connector onto another card or drawn by clicking
 	 * a connector then the card, one card may lead to several, a card is dragged
 	 * aside while drawing, and Done puts every card back where the arrows place
-	 * it and saves that arrangement. Each change is saved at once and changes nothing the actions do.
+	 * it and saves that arrangement. Each change shows at once and is saved behind it, in the order
+	 * made (criterion a8a7f1d5), and changes nothing the actions do.
 	 */
 	interface Props {
 		projectId: string;
@@ -25,7 +29,7 @@
 		/** The action read under the diagram, clicked on its card (action 6f38e6ed). */
 		picked?: string | null;
 		onpick?: (actionId: string) => void;
-		/** Told each time the journeys are saved, so the page reads the same steps as the diagram. */
+		/** Told each time the journeys on screen change, so the page reads the same steps as the diagram. */
 		onsaved?: (journeys: readonly ActionJourney[]) => void;
 	}
 	let { projectId, featureId, actions, journeys: stored, canArrange, picked = null, onpick, onsaved }: Props = $props();
@@ -41,10 +45,9 @@
 	/** Room left around the cards so one can be dragged further out. */
 	const ROOM = 140;
 
-	// What the server last answered; the page's own read until the first change.
+	// What the diagram shows: the changes made, ahead of the server; the page's own read until the first change.
 	let saved = $state<readonly ActionJourney[] | null>(null);
 	let refusal = $state<string | null>(null);
-	let busy = $state(false);
 	/** The arrow being drawn: from which card and which side, to where the pointer is. */
 	let drawing = $state<{ at: string; side: 'out' | 'in'; x: number; y: number; moved: boolean; held: boolean } | null>(null);
 	/** The card being dragged, where it stands now. */
@@ -76,39 +79,46 @@
 	/** The action whose journey the diagram is narrowed to, while reading. */
 	const focused = $derived(!editing && picked && named.has(picked) ? picked : null);
 
-	async function act(change: JourneyAct): Promise<boolean> {
-		if (busy) return false;
-		busy = true;
-		refusal = null;
-		try {
-			const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/features/${encodeURIComponent(featureId)}/journeys`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ act: change })
-			});
-			const body = await res.json().catch(() => ({}));
-			if (res.ok) {
-				saved = body.journeys as ActionJourney[];
-				onsaved?.(saved);
+	const url = () => `/api/projects/${encodeURIComponent(projectId)}/features/${encodeURIComponent(featureId)}/journeys`;
+	const saves = new JourneySaves({
+		send: async (change) => {
+			try {
+				const res = await fetch(url(), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ act: change }) });
+				const body = await res.json().catch(() => ({}));
+				return (res.ok ? { ok: true, journeys: body.journeys as ActionJourney[] } : { ok: false, refusal: body.refusal ?? body.message ?? 'The change was not saved.' }) as JourneySaveAnswer;
+			} catch {
+				return { ok: false, refusal: 'The change was not saved: the server could not be reached.' };
 			}
-			else refusal = body.refusal ?? body.message ?? 'The change was not saved.';
-			return res.ok;
-		} catch {
-			refusal = 'The change was not saved: the server could not be reached.';
-			return false;
-		} finally {
-			busy = false;
-		}
+		},
+		reread: async () => {
+			const res = await fetch(url()).catch(() => null);
+			const body = res?.ok ? await res.json().catch(() => null) : null;
+			return Array.isArray(body?.journeys) ? (body.journeys as ActionJourney[]) : null;
+		},
+		onview: (journeys, refused) => {
+			saved = journeys;
+			refusal = refused;
+			onsaved?.(journeys ?? stored);
+		},
+		track: trackSave
+	});
+
+	/** Shows a change at once and saves it behind (criterion a8a7f1d5); false when the rules refuse it, which then says why. */
+	function act(change: JourneyAct): boolean {
+		refusal = null;
+		const refused = saves.apply(saved ?? stored, change, new Set(ids));
+		if (refused) refusal = refused;
+		return !refused;
 	}
 
 	/** A change to the diagram; the first one saves it, holding every action of the feature. */
-	async function change(make: (journeyId: string) => JourneyAct) {
+	function change(make: (journeyId: string) => JourneyAct) {
 		let id = diagram.id;
 		if (!id) {
-			id = crypto.randomUUID();
-			if (!(await act({ kind: 'declare', id, name: 'Journeys', nodes: ids }))) return;
+			id = mintUuid();
+			if (!act({ kind: 'declare', id, name: 'Journeys', nodes: ids })) return;
 		}
-		await act(make(id));
+		act(make(id));
 	}
 
 	/** Where every card stands, which show, the arrows between them and the numbers they read. */
@@ -170,7 +180,7 @@
 
 	// Drawing an arrow: pull from a connector and let go on a card, or click a connector and then the card.
 	function startArrow(e: PointerEvent, at: string, side: 'out' | 'in') {
-		if (!canEdit || busy) return;
+		if (!canEdit) return;
 		e.preventDefault();
 		e.stopPropagation();
 		canvas = (e.currentTarget as HTMLElement).closest('[data-canvas]');
@@ -204,7 +214,7 @@
 		const other = target?.dataset.node;
 		if (!d || !other || other === d.at) return;
 		const [from, to] = d.side === 'out' ? [d.at, other] : [other, d.at];
-		void change((journeyId) => ({ kind: 'link', journeyId, from, to }));
+		change((journeyId) => ({ kind: 'link', journeyId, from, to }));
 	}
 	function stopDrawing() {
 		drawing = null;
@@ -214,7 +224,7 @@
 
 	// Moving a card: drag it by its body; a press that does not move is not a move.
 	function startDrag(e: PointerEvent, actionId: string, from: JourneyPosition) {
-		if (!canEdit || busy || drawing || e.button !== 0) return;
+		if (!canEdit || drawing || e.button !== 0) return;
 		if ((e.target as HTMLElement).closest('button')) return;
 		canvas = (e.currentTarget as HTMLElement).closest('[data-canvas]');
 		if (!canvas) return;
@@ -230,14 +240,14 @@
 		const y = Math.max(0, p.y - dragging.dy);
 		dragging = { ...dragging, x, y, moved: dragging.moved || Math.hypot(x - dragging.x, y - dragging.y) > 3 };
 	}
-	async function drop() {
+	function drop() {
 		window.removeEventListener('pointermove', drag);
 		const d = dragging;
 		if (!d || !d.moved) {
 			dragging = null;
 			return;
 		}
-		await change((journeyId) => ({ kind: 'move', journeyId, actionId: d.actionId, x: d.x, y: d.y }));
+		change((journeyId) => ({ kind: 'move', journeyId, actionId: d.actionId, x: d.x, y: d.y }));
 		dragging = null;
 	}
 
@@ -245,7 +255,7 @@
 	function toggleEdit() {
 		stopDrawing();
 		selected = null;
-		if (editing && diagram.id && Object.keys(diagram.positions ?? {}).length) void act({ kind: 'tidy', journeyId: diagram.id });
+		if (editing && diagram.id && Object.keys(diagram.positions ?? {}).length) act({ kind: 'tidy', journeyId: diagram.id });
 		editing = !editing;
 	}
 
@@ -255,7 +265,7 @@
 	}
 	function unlink(link: JourneyLink) {
 		selected = null;
-		void act({ kind: 'unlink', journeyId: diagram.id, from: link.from, to: link.to });
+		act({ kind: 'unlink', journeyId: diagram.id, from: link.from, to: link.to });
 	}
 	function onKey(e: KeyboardEvent) {
 		if ((e.target as HTMLElement | null)?.closest('input, select, textarea, [contenteditable]')) return;
@@ -288,8 +298,8 @@
 			{#if diagram.origin === 'ai' && stored1}
 				<span class="{TAG} border-violet text-violet-ink"><Icon name="sparkles" size={12} />Suggested by AI</span>
 				{#if canArrange}
-					<button type="button" class={LINK} disabled={busy} onclick={() => act({ kind: 'keep', journeyId: diagram.id })}><Icon name="check" size={14} />Keep</button>
-					<button type="button" class={LINK} disabled={busy} onclick={() => act({ kind: 'remove', journeyId: diagram.id })}><Icon name="x" size={14} />Dismiss</button>
+					<button type="button" class={LINK} onclick={() => act({ kind: 'keep', journeyId: diagram.id })}><Icon name="check" size={14} />Keep</button>
+					<button type="button" class={LINK} onclick={() => act({ kind: 'remove', journeyId: diagram.id })}><Icon name="x" size={14} />Dismiss</button>
 				{/if}
 			{/if}
 		</div>
@@ -329,7 +339,7 @@
 
 			{#each drawn.arrows as arrow (arrow.link.from + '>' + arrow.link.to)}
 				{#if canEdit && isSelected(arrow.link)}
-					<button type="button" class="absolute z-30 flex size-6 -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center border-[1.5px] border-ink bg-paper text-ink hover:bg-ink hover:text-paper" style="left:{arrow.mid.x}px;top:{arrow.mid.y}px" title="Remove this arrow (Delete)" aria-label="Remove the arrow" disabled={busy} onclick={(e) => { e.stopPropagation(); unlink(arrow.link); }}>
+					<button type="button" class="absolute z-30 flex size-6 -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center border-[1.5px] border-ink bg-paper text-ink hover:bg-ink hover:text-paper" style="left:{arrow.mid.x}px;top:{arrow.mid.y}px" title="Remove this arrow (Delete)" aria-label="Remove the arrow" onclick={(e) => { e.stopPropagation(); unlink(arrow.link); }}>
 						<Icon name="x" size={14} />
 					</button>
 				{/if}
@@ -367,8 +377,8 @@
 					<span class="line-clamp-2 min-w-0 flex-1 [overflow-wrap:anywhere]" title={named.get(actionId)}>{named.get(actionId)}</span>
 					{#if canEdit}
 						<!-- Its two connectors: shown when loose, else only those in use, all of them on hover or while an arrow is drawn. -->
-						<button type="button" class="{DOT} -left-[9px] {inOn ? 'opacity-100' : drawing ? 'pointer-events-none opacity-0' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'} {fill(source && drawing?.side === 'in', hasIn)}" title="Pull an arrow into this action" aria-label="Draw an arrow into {named.get(actionId)}" disabled={busy} onpointerdown={(e) => startArrow(e, actionId, 'in')} onclick={(e) => e.stopPropagation()}></button>
-						<button type="button" class="{DOT} -right-[9px] {outOn ? 'opacity-100' : drawing ? 'pointer-events-none opacity-0' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'} {fill(source && drawing?.side === 'out', hasOut)}" title="Pull an arrow to the next action" aria-label="Draw an arrow from {named.get(actionId)}" disabled={busy} onpointerdown={(e) => startArrow(e, actionId, 'out')} onclick={(e) => e.stopPropagation()}></button>
+						<button type="button" class="{DOT} -left-[9px] {inOn ? 'opacity-100' : drawing ? 'pointer-events-none opacity-0' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'} {fill(source && drawing?.side === 'in', hasIn)}" title="Pull an arrow into this action" aria-label="Draw an arrow into {named.get(actionId)}" onpointerdown={(e) => startArrow(e, actionId, 'in')} onclick={(e) => e.stopPropagation()}></button>
+						<button type="button" class="{DOT} -right-[9px] {outOn ? 'opacity-100' : drawing ? 'pointer-events-none opacity-0' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'} {fill(source && drawing?.side === 'out', hasOut)}" title="Pull an arrow to the next action" aria-label="Draw an arrow from {named.get(actionId)}" onpointerdown={(e) => startArrow(e, actionId, 'out')} onclick={(e) => e.stopPropagation()}></button>
 					{/if}
 				</div>
 			{/each}

@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
-import { readFileSync, existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import type { RunCard } from '$domain/retrospec/run-history';
 import RetroHistory from './RetroHistory.svelte';
 import RetroSummary from './RetroSummary.svelte';
+import { load as overviewLoad } from '../../../routes/projects/[projectId]/spec/+page.server';
 
 /** The Reverse page is the one place of the product's runs (feat-ai-session, design v3). */
 
@@ -22,7 +21,6 @@ const card = (id: string, over: Partial<RunCard> = {}): RunCard => ({
 	history: [{ label: 'Reverse-Specification started', at: '2026-11-05T20:33:00.000Z', by: 'Ana Lopez' }],
 	...over
 });
-const src = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
 
 describe('the history of the Reverse page lists every run as a table [criterion:2dbed801]', () => {
 	it('reads Date, Source, Commit and Result, newest first, each row folded', () => {
@@ -48,13 +46,6 @@ describe('the history of the Reverse page lists every run as a table [criterion:
 	it('shows nothing while the product has no run', () => {
 		expect(render(RetroHistory, { props: { runs: [] } }).body).not.toContain('History');
 	});
-
-	it('is shown under the live analysis and the summary, with the line saying what the page does', () => {
-		const page = src('../../../routes/projects/[projectId]/retrospec/+page.svelte');
-		expect(page).toContain('<RetroHistory runs={history} />');
-		expect(page).toContain('{lead}</p>');
-		expect(page).toContain('withSilence(data.runs');
-	});
 });
 
 describe('Relaunch the analysis sits beside the way to Knowledge once the analysis is over [criterion:2dbed801] [unspa:8c76cb65:e296dd4f]', () => {
@@ -75,25 +66,11 @@ describe('Relaunch the analysis sits beside the way to Knowledge once the analys
 	it('offers nothing when none may start', () => {
 		expect(summary(null)).not.toContain('Relaunch the analysis');
 	});
-
-	it('asks first with the words of the next run, then shows its source step', () => {
-		const page = src('../../../routes/projects/[projectId]/retrospec/+page.svelte');
-		expect(page).toContain("relaunchQuestion(data.next, status !== 'done')");
-		expect(page).toContain("moveRun('source', [{ op: 'start', mode: 'repo' }]");
-		expect(page).toContain('relaunchOffered(data.canWrite, status)');
-	});
 });
 
-describe('every way to the runs opens the Reverse page, and the drawer over the Overview is gone [criterion:2dbed801] [criterion:9359cb3c] [criterion:8e942b12] [criterion:a0959413]', () => {
-	it('links the navigation, the version line of Knowledge and Home to the Reverse page', () => {
-		expect(src('../shell/SideProjectNav.svelte')).not.toContain('?retro');
-		expect(src('../spec360/KnowledgeBar.svelte')).toContain('href="{base}/retrospec"');
-		expect(src('../../server/home.server.ts')).not.toContain('?retro');
-	});
-
-	it('has no drawer of runs, and an older link to it lands on the Reverse page', () => {
-		expect(existsSync(fileURLToPath(new URL('../spec360/overview/RetroDrawer.svelte', import.meta.url)))).toBe(false);
-		expect(src('../../../routes/projects/[projectId]/spec/+page.svelte')).not.toContain('RetroDrawer');
-		expect(src('../../../routes/projects/[projectId]/spec/+page.server.ts')).toContain("if (url.searchParams.has('retro')) redirect(303, `/projects/${encodeURIComponent(params.projectId)}/retrospec`);");
+describe('the drawer of runs over the Overview is gone: an older link to it lands on the Reverse page [criterion:2dbed801]', () => {
+	it('sends `?retro` on the Overview to the Reverse page', async () => {
+		const event = { params: { projectId: 'p 1' }, url: new URL('https://x.test/projects/p%201/spec?retro'), depends: () => {}, locals: {} };
+		await expect(overviewLoad(event as never)).rejects.toMatchObject({ status: 303, location: '/projects/p%201/retrospec' });
 	});
 });

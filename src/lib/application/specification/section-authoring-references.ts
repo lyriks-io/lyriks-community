@@ -14,7 +14,7 @@ import type { SectionValidationIssue } from './section-authoring-schema';
  */
 
 interface ReferenceCheck {
-	/** Collection holding the reference, e.g. `mvpAssignments`. */
+	/** Collection holding the reference, e.g. `families`. */
 	readonly from: string;
 	/** Field on each item that carries the id. */
 	readonly field: string;
@@ -31,10 +31,7 @@ const SECTION_REFERENCES: Readonly<Record<string, readonly ReferenceCheck[]>> = 
 		{ from: 'families', field: 'coreId', to: 'cores', label: 'core' },
 		{ from: 'families', field: 'parentFamilyId', to: 'families', label: 'family', optional: true },
 		{ from: 'features', field: 'coreId', to: 'cores', label: 'core' },
-		{ from: 'features', field: 'parentFamilyId', to: 'families', label: 'family', optional: true },
-		{ from: 'mvpAssignments', field: 'featureId', to: 'features', label: 'leaf feature' },
-		{ from: 'roadmapAssignments', field: 'featureId', to: 'features', label: 'leaf feature' },
-		{ from: 'roadmapAssignments', field: 'releaseId', to: 'releases', label: 'release' }
+		{ from: 'features', field: 'parentFamilyId', to: 'families', label: 'family', optional: true }
 	],
 	data: [
 		{ from: 'databases', field: 'hostId', to: 'hosts', label: 'host' },

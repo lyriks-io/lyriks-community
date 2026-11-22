@@ -10,28 +10,6 @@ import { firstRefusal, guard, type Guarded } from './guard';
  * draft from something a person typed.
  */
 
-/** One proposal per empty field: the reader judges rather than compares variants. */
-export const PROPOSALS_PER_EMPTY_FIELD = 1;
-
-/** Only one completion run at a time on a request, and only when there is a hole to fill. */
-export function canGenerateProposals(
-	status: 'idle' | 'running' | 'offered',
-	emptyFieldCount: number
-): Guarded {
-	return firstRefusal(
-		guard(
-			status === 'running',
-			'A run is already in flight.',
-			'Two runs over the same request would produce competing proposals for the same field, so the second is refused until the first returns.'
-		),
-		guard(
-			emptyFieldCount < 1,
-			'There is no empty field left to complete.',
-			'The run has nothing to propose on a request whose fields are all filled.'
-		)
-	);
-}
-
 /**
  * Acceptance needs a source in the evidence register, a reasoning that separates
  * what was read from what was inferred, and a home to write to. Those three hold
@@ -137,22 +115,6 @@ export function canSaveField(input: {
 	);
 }
 
-/** Opening a block for editing requires write access on the request. */
-export function canOpenBlock(canEdit: boolean, blockExists: boolean): Guarded {
-	return firstRefusal(
-		guard(
-			!canEdit,
-			'You can read this request but not write on it.',
-			'A reader without write access on the request cannot open a block for editing.'
-		),
-		guard(
-			!blockExists,
-			'This block does not exist on the page.',
-			'Only the ten known blocks can be opened; no block is ever refused because another block is unfinished.'
-		)
-	);
-}
-
 /** Skip only applies to a block that is still empty, in progress or complete. */
 /**
  * Say that a field cannot be answered yet. It turns amber, counts as open, and
@@ -202,14 +164,5 @@ export function canAnswerOpenQuestion(input: { canEdit: boolean; isOpen: boolean
 			'This field is not an open question; just edit it.',
 			'Answering applies to an amber field.'
 		)
-	);
-}
-
-/** Resume is only offered when at least one empty field was left behind. */
-export function canResume(firstEmptyFieldPath: string): Guarded {
-	return guard(
-		firstEmptyFieldPath === '',
-		'No empty or open field is left behind you.',
-		'Resume has nowhere to go when every field the author walked past is filled and none is an open question.'
 	);
 }

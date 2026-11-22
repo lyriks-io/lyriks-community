@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { projectTabs, type ProjectTabFacts } from '$domain/portfolio/project-tabs';
 import { sectionWait } from './section-wait';
@@ -56,17 +55,6 @@ describe('a section with nothing to show yet says why, and the one step that fil
 
 	it('shows the page as it is when what the project holds is not known', () => {
 		expect(sectionWait('changes', null, 'p')).toBeNull();
-	});
-});
-
-describe('the navigation offers the same five entries whatever the project holds [criterion:b2f17eef]', () => {
-	it('renders Reverse, Knowledge, Changes, Mismatch and Health with no condition', () => {
-		const nav = readFileSync(new URL('./SideProjectNav.svelte', import.meta.url), 'utf8');
-		const block = nav.slice(nav.indexOf('<nav bind:this={nav}'), nav.indexOf('</nav>'));
-		expect(block).not.toContain('{#if');
-		const order = ["entry('retro', 'Reverse'", "entry('knowledge', 'Knowledge'", "entry('evolutions', 'Changes'", "'Mismatch'", "entry('noticed', 'Health'"].map((e) => block.indexOf(e));
-		expect(order.every((i) => i >= 0)).toBe(true);
-		expect([...order].sort((a, b) => a - b)).toEqual(order);
 	});
 });
 

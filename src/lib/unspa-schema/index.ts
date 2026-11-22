@@ -38,3 +38,5 @@ export interface UnspaFeatureSnapshot {
 	version: typeof UNSPA_VERSION;
 	feature: Record<string, unknown>;
 }
+
+export { disabledMarkerOf, operativeSnapshotFeature, type DisabledMarker } from './disabled';

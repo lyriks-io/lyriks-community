@@ -4,26 +4,36 @@ import { retrospecFinishedAt } from '$domain/retrospec';
 import type { AppServices } from '$composition/container.server';
 import {
 	advanceStepPrefill,
+	askAnotherAi,
+	clicksFor,
 	closeProjectTurn,
 	closeTurn,
 	endProjectSession,
+	expireQuestion,
 	handToWaitingCall,
 	isProjectIdle,
 	projectSessionEnding,
 	lastProjectSessionOf,
 	LIVE_SESSION,
-	nextClickOf,
 	openProjectSessionOf,
+	openProjectSessionsOf,
 	openSessionOf,
 	pendingProjectClicksOf,
+	questionStanding,
 	requestPagePath,
+	RUN_CLICK_KINDS,
 	sendProjectClick,
+	sessionHolding,
+	sessionName,
 	sessionWorkDone,
 	startProjectSession,
 	takeProjectClick,
 	withdrawProjectClick,
 	withMirror,
 	type AiClick,
+	type SessionHolding,
+	type SessionOpening,
+	type SessionStanding,
 	type EvolutionRequest,
 	type LiveSession,
 	type ProjectClick,
@@ -35,7 +45,8 @@ import {
 } from '$domain/evolution';
 import { placeOfAnchor, anchorKind } from '$domain/discussions';
 import { conversationOf } from '$domain/ai-conversations';
-import { subscribeSectionChanges } from './sync-bus.server';
+import { subscribeSectionChanges, type ProjectLiveSignal } from './sync-bus.server';
+import { runHandover } from './retrospec-handover.server';
 import {
 	contextOf,
 	ensureWatching,
@@ -43,6 +54,7 @@ import {
 	onProjectSessionGone,
 	presenceOf,
 	PROJECT_SESSION_KEY,
+	projectPresencesOf,
 	progressContextOf,
 	say,
 	sayEnded,
@@ -54,13 +66,14 @@ import {
 } from './evolution-live.server';
 
 /**
- * The session of the person's own AI on the whole project (feat-ai-session):
- * opened from the prompt Ask my AI copies (or by the AI itself in a
- * bound repository), it hands the AI the person's clicks
- * from every page of the project, in the order they were made. A click on a
- * request is handed through that request's own session logic, the request
- * getting a session of the same id (withMirror); a question on a block of the
- * Specification 360° and a re-reading of the code are clicks of the project.
+ * The sessions of the person's own AIs on the whole project (feat-ai-session):
+ * each opened from the prompt Ask my AI copies (or by the AI itself in a
+ * bound repository), beside the person's other AIs (EVO-015). Each hands its
+ * AI the person's clicks that go to it (click-routing), from every page of the
+ * project, in the order they were made. A click on a request is handed through
+ * that request's own session logic, the request getting a session of the same
+ * id (withMirror); a question on a block of the Specification 360°, a
+ * re-reading of the code and a question of another AI are clicks of the project.
  */
 
 type Base = { readonly projectId: string; readonly personId: string; readonly sessionId: string };
@@ -80,16 +93,16 @@ async function changeDraft<T>(services: AppServices, projectId: string, change: 
 }
 
 /**
- * The calls of each person's AI held on this server right now, and when the
+ * The calls of each session's AI held on this server right now, and when the
  * last one ended (ac-ai-session-end): what tells an AI that waits from one whose
  * conversation was closed between two waits. Per node, like presence; a server
- * that restarts counts from its own start.
+ * that restarts counts from its own start (criterion 8181d158).
  */
 const SERVER_STARTED_MS = Date.now();
 const heldCalls = new Map<string, { calls: number; lastMs: number }>();
-const callKey = (projectId: string, personId: string) => `${projectId}::${personId.trim().toLowerCase()}`;
-function holdCall(projectId: string, personId: string): () => void {
-	const key = callKey(projectId, personId);
+const callKey = (projectId: string, sessionId: string) => `${projectId}::${sessionId}`;
+function holdCall(projectId: string, sessionId: string): () => void {
+	const key = callKey(projectId, sessionId);
 	const now = heldCalls.get(key) ?? { calls: 0, lastMs: Date.now() };
 	heldCalls.set(key, { calls: now.calls + 1, lastMs: Date.now() });
 	return () => {
@@ -99,57 +112,100 @@ function holdCall(projectId: string, personId: string): () => void {
 }
 
 /**
- * Ends the person's open session when Ask my AI reads it and it is over
- * ("Mark the AI gone", "End an idle session"): nobody did anything for half an
- * hour, or no call of its AI was held nor heard for disconnectAfterSeconds.
- * Without it a session its conversation left read 'listening' forever.
+ * What one session's AI is doing now, as the routing reads it (EVO-015): free
+ * while its waiting call is held and was heard within heardWithinSeconds, at
+ * work while it is on a click. Read off the bus, so every node agrees.
  */
-export async function settleProjectSession(services: AppServices, projectId: string, personId: string): Promise<void> {
-	const draft = await services.loadEvolutionDraft.execute(projectId);
-	const open = openProjectSessionOf(draft, personId);
-	if (!open) return;
-	const now = services.clock.nowIso();
-	const signal = presenceOf(projectId, PROJECT_SESSION_KEY, personId);
-	const heard = signal && signal.sessionId === open.id ? signal : null;
-	const held = heldCalls.get(callKey(projectId, personId));
-	// Every act of its AI on the project counts, its writes and reads included, not only the calls of the session (criterion 122ab5c8).
-	const worked = aiWorkedAt(projectId, personId);
-	const reason = projectSessionEnding({
-		idle: isProjectIdle(draft, personId, now, aiActsOf(projectId, personId)),
-		callHeld: (held?.calls ?? 0) > 0,
-		working: heard?.status === 'thinking' || heard?.status === 'writing' || heard?.status === 'cancelled',
-		quietSinceMs: Math.max(Date.parse(open.startedAt), SERVER_STARTED_MS, held?.lastMs ?? 0, heard ? Date.parse(heard.at) : 0, worked ? Date.parse(worked) : 0),
-		nowMs: Date.parse(now)
-	});
-	if (reason) await closeProjectSession(services, projectId, personId, reason, open.id);
-}
-
-/** The person's session on the project and what their AI is doing now, as Ask my AI reads it (criterion 4cb97f74). */
-export function projectSessionReading(draft: ProjectEvolutionDraft, projectId: string, personId: string) {
-	const last = lastProjectSessionOf(draft, personId);
-	const now = presenceOf(projectId, PROJECT_SESSION_KEY, personId);
+export function standingOf(projectId: string, personId: string, sessionId: string, nowMs: number): SessionStanding {
+	const signal = presenceOf(projectId, PROJECT_SESSION_KEY, personId, sessionId);
+	if (!signal) return { free: false, working: false };
+	const fresh = nowMs - Date.parse(signal.at) <= LIVE_SESSION.heardWithinSeconds * 1000;
 	return {
-		session: last ? { id: last.id, open: !last.endedAt, startedAt: last.startedAt, endedAt: last.endedAt ?? null, endReason: last.endReason ?? null } : null,
-		presence: now && last && now.sessionId === last.id ? now : null,
-		clicks: (draft.clicks ?? []).filter((c) => c.personId.trim().toLowerCase() === personId.trim().toLowerCase())
+		free: signal.status === 'listening' && signal.callHeld === true && fresh,
+		working: signal.status === 'thinking' || signal.status === 'writing' || signal.status === 'cancelled'
 	};
 }
 
-/** The AI opens the person's session on the project ("Open the session on the project"). */
-export async function openProjectSession(services: AppServices, projectId: string, personId: string) {
+/**
+ * Ends each open session of the person that is over when Ask my AI reads it
+ * ("Mark a silent AI gone", "End an idle session"): nobody did anything for
+ * half an hour, or no call of its AI was held nor heard for
+ * disconnectAfterSeconds. Without it a session its conversation left read
+ * 'listening' forever.
+ */
+export async function settleProjectSession(services: AppServices, projectId: string, personId: string): Promise<void> {
+	const draft = await services.loadEvolutionDraft.execute(projectId);
+	const now = services.clock.nowIso();
+	// Every act of its AI on the project counts, its writes and reads included, not only the calls of the session (criterion 122ab5c8).
+	const worked = aiWorkedAt(projectId, personId);
+	for (const open of openProjectSessionsOf(draft, personId)) {
+		const heard = presenceOf(projectId, PROJECT_SESSION_KEY, personId, open.id);
+		const held = heldCalls.get(callKey(projectId, open.id));
+		const reason = projectSessionEnding({
+			idle: isProjectIdle(draft, personId, now, aiActsOf(projectId, personId), open.id),
+			callHeld: (held?.calls ?? 0) > 0,
+			working: heard?.status === 'thinking' || heard?.status === 'writing' || heard?.status === 'cancelled',
+			quietSinceMs: Math.max(Date.parse(open.startedAt), SERVER_STARTED_MS, held?.lastMs ?? 0, heard ? Date.parse(heard.at) : 0, worked ? Date.parse(worked) : 0),
+			nowMs: Date.parse(now)
+		});
+		if (reason) await closeProjectSession(services, projectId, personId, reason, open.id);
+	}
+}
+
+/** One session as Ask my AI and the person's other AIs read it (criteria 39e1abc1, 4536271d). */
+export interface SessionReading {
+	readonly id: string;
+	readonly name: string;
+	readonly client: string | null;
+	readonly holds: SessionHolding;
+	readonly startedAt: string;
+	/** What its AI does now, never saved; null when nothing was heard of it on this node. */
+	readonly presence: ProjectLiveSignal | null;
+}
+
+/** The person's open sessions on the project, newest first, each with its name and what its AI does now. */
+export function openSessionsReading(draft: ProjectEvolutionDraft, projectId: string, personId: string): SessionReading[] {
+	return openProjectSessionsOf(draft, personId)
+		.map((s) => ({
+			id: s.id,
+			name: sessionName(draft, personId, s),
+			client: s.client ?? null,
+			holds: sessionHolding(draft, personId, s),
+			startedAt: s.startedAt,
+			presence: presenceOf(projectId, PROJECT_SESSION_KEY, personId, s.id)
+		}))
+		.reverse();
+}
+
+/** The person's sessions on the project and what each of their AIs is doing now, as Ask my AI reads them (criteria 4cb97f74, 39e1abc1). */
+export function projectSessionReading(draft: ProjectEvolutionDraft, projectId: string, personId: string) {
+	// The newest open session, else the last one, so the chip can still say why it ended.
+	const last = openProjectSessionOf(draft, personId) ?? lastProjectSessionOf(draft, personId);
+	const now = last ? presenceOf(projectId, PROJECT_SESSION_KEY, personId, last.id) : null;
+	return {
+		session: last ? { id: last.id, open: !last.endedAt, startedAt: last.startedAt, endedAt: last.endedAt ?? null, endReason: last.endReason ?? null } : null,
+		presence: now,
+		sessions: openSessionsReading(draft, projectId, personId),
+		clicks: (draft.clicks ?? []).filter((c) => c.personId.trim().toLowerCase() === personId.trim().toLowerCase() && c.kind !== 'question')
+	};
+}
+
+/** One AI opens its own session on the project, beside the person's other AIs ("Open the session", rule edea94b0). */
+export async function openProjectSession(services: AppServices, projectId: string, personId: string, opening: SessionOpening = {}) {
 	const now = services.clock.nowIso();
 	const opened = await changeDraft(services, projectId, (draft) => {
-		const outcome = startProjectSession(draft, personId, crypto.randomUUID(), now);
+		const outcome = startProjectSession(draft, personId, crypto.randomUUID(), now, opening);
 		if (!outcome.ok) return { draft: null, result: null };
 		const waiting = pendingProjectClicksOf(outcome.draft, personId).length + outcome.draft.requests.reduce((n, r) => n + (r.aiClicks ?? []).filter((c) => c.personId === personId && c.state === 'waiting').length, 0);
-		return { draft: outcome.draft, result: { session: outcome.session, waiting } };
+		const others = openSessionsReading(outcome.draft, projectId, personId).filter((s) => s.id !== outcome.session.id);
+		return { draft: outcome.draft, result: { session: outcome.session, waiting, others } };
 	});
 	if (!opened) throw new Error('The session could not be saved: try again.');
 	sayOpened(services, onProject({ projectId, personId, sessionId: opened.session.id }));
 	return opened;
 }
 
-/** The person ends their session from the box of Ask my AI, or it ends idle or gone ("End the session"). */
+/** The person ends one AI's session from the box of Ask my AI, or it ends idle or gone ("End the session"); their other AIs stay. */
 export async function closeProjectSession(services: AppServices, projectId: string, personId: string, reason: SessionEndReason, sessionId?: string): Promise<LiveSession | null> {
 	const now = services.clock.nowIso();
 	const ended = await changeDraft(services, projectId, (draft) => {
@@ -193,6 +249,8 @@ export interface ProjectClickContext {
 	readonly conversation?: readonly { readonly from: 'person' | 'you' | 'lyriks'; readonly at: string; readonly text: string; readonly change?: string }[];
 	/** The page the conversation was asked from, or null for a conversation about the product as a whole. */
 	readonly askedFrom?: { readonly title: string; readonly href: string; readonly anchor: string | null } | null;
+	/** A question of another AI of the person: who asked it (EVO-015). */
+	readonly from?: { readonly sessionId: string; readonly name: string };
 	readonly read: string;
 	readonly answerWith: string;
 }
@@ -234,8 +292,31 @@ const CHAT_ANSWER = (clickId: string) =>
 	].join(' ');
 
 async function projectClickContext(services: AppServices, projectId: string, click: ProjectClick): Promise<ProjectClickContext> {
-	const href = click.page === 'spec' ? `/projects/${projectId}/spec/${placeOfAnchor(click.anchor)}` : `/projects/${projectId}/retrospec`;
+	// A run handed from Mismatch: the prompt of the run to follow (EVO-014, action 077fe5e2).
+	if (RUN_CLICK_KINDS.has(click.kind)) {
+		const runHref = click.page === 'drift' ? `/projects/${projectId}/drift` : `/projects/${projectId}/retrospec`;
+		const handed = await runHandover(services, projectId, click);
+		return { id: click.id, kind: click.kind, page: click.page, place: { anchor: click.anchor, title: click.title, href: runHref }, read: handed.read, answerWith: handed.answerWith };
+	}
 	const answer = (sentence: string) => `apply_evolution_batch [{ op: "answer_click", clickId: "${click.id}", text }] (no requestId): ${sentence}`;
+	if (click.kind === 'question') {
+		const draft = await services.loadEvolutionDraft.execute(projectId);
+		const asker = lastProjectSessionOf(draft, click.personId, click.fromSessionId);
+		const name = asker ? sessionName(draft, click.personId, asker) : 'your other AI';
+		return {
+			id: click.id,
+			kind: click.kind,
+			page: click.page,
+			place: { anchor: '', title: `a question of ${name}`, href: `/projects/${projectId}` },
+			question: click.text ?? '',
+			from: { sessionId: click.fromSessionId ?? '', name },
+			read: `read_evolution_sessions({ project_id: "${projectId}", session_id: <your session> }) says what each AI of the person holds and does`,
+			answerWith: answer(
+				`your answer goes back to ${name}, the other AI of the same person that asked it, and to nobody else. Answer from what you hold and know of the work you are on, briefly; change nothing in the specification for it. It waits ${LIVE_SESSION.peerAnswerSeconds} s at most: after that the asker was told no answer came and your answer is refused.`
+			)
+		};
+	}
+	const href = click.page === 'spec' ? `/projects/${projectId}/spec/${placeOfAnchor(click.anchor)}` : click.page === 'drift' ? `/projects/${projectId}/drift` : `/projects/${projectId}/retrospec`;
 	if (click.kind === 'chat') {
 		const document = await services.aiConversations.load(projectId).catch(() => null);
 		const conversation = document && click.conversationId ? conversationOf(document, click.personId, click.conversationId) : null;
@@ -286,6 +367,20 @@ async function projectClickContext(services: AppServices, projectId: string, cli
 	};
 }
 
+/** What Ask my AI and the place of the click read while the AI is on a click outside a request. */
+function thinkingAboutProjectClick(click: ProjectClick): string {
+	switch (click.kind) {
+		case 'chat':
+			return `your message in ${click.title}`;
+		case 'ask_block':
+			return `your question on ${click.title}`;
+		case 'question':
+			return click.title;
+		default:
+			return `re-reading the code of ${click.title}`;
+	}
+}
+
 export type ProjectAwaitAnswer = Notice &
 	(
 		| { readonly kind: 'click'; readonly requestId: string; readonly click: ClickContext }
@@ -311,6 +406,18 @@ const mirrored = (draft: ProjectEvolutionDraft, personId: string, sessionId: str
  * idle session ends, the oldest click of the person on any page is handed over,
  * else the progress of a request the session reached.
  */
+/**
+ * The draft with each request passed through `change`, the very same draft when
+ * none changed: a look that finds nothing to do must write nothing. A new object
+ * for an unchanged draft made every 30 s look of a waiting AI save the whole
+ * Evolution document, which moved the project's revision, emptied every reading
+ * cached on it and reloaded every open page of the project.
+ */
+export function withRequests(draft: ProjectEvolutionDraft, change: (request: EvolutionRequest) => EvolutionRequest): ProjectEvolutionDraft {
+	const requests = draft.requests.map(change);
+	return requests.some((r, i) => r !== draft.requests[i]) ? { ...draft, requests } : draft;
+}
+
 async function look(services: AppServices, base: Base, first: boolean): Promise<Step> {
 	const now = services.clock.nowIso();
 	const { personId, sessionId } = base;
@@ -319,37 +426,36 @@ async function look(services: AppServices, base: Base, first: boolean): Promise<
 		.then(({ status, doc }) => retrospecFinishedAt(status, doc))
 		.catch(() => null);
 	const step = await changeDraft<Step>(services, base.projectId, (stored) => {
-		const open = openProjectSessionOf(stored, personId);
-		if (!open || open.id !== sessionId) {
-			const last = lastProjectSessionOf(stored, personId);
-			return { draft: null, result: { kind: 'ended', reason: last?.id === sessionId ? (last.endReason ?? 'ended_by_person') : 'replaced' } };
+		const open = openProjectSessionOf(stored, personId, sessionId);
+		if (!open) {
+			const last = lastProjectSessionOf(stored, personId, sessionId);
+			return { draft: null, result: { kind: 'ended', reason: last?.endReason ?? 'ended_by_person' } };
 		}
 		let draft = stored;
 		let cancelled: AiClick | null = null;
 		if (first) {
-			draft = closeProjectTurn(draft, personId, now);
-			draft = {
-				...draft,
-				requests: draft.requests.map((r) => {
-					if (openSessionOf(r, personId)?.id !== sessionId) return r;
-					const turn = closeTurn(r, personId, now);
-					cancelled ??= turn?.cancelled ?? null;
-					return turn?.request ?? r;
-				})
-			};
+			draft = closeProjectTurn(draft, personId, now, sessionId);
+			draft = withRequests(draft, (r) => {
+				if (openSessionOf(r, personId)?.id !== sessionId) return r;
+				const turn = closeTurn(r, personId, now);
+				cancelled ??= turn?.cancelled ?? null;
+				return turn?.request ?? r;
+			});
 		}
-		if (isProjectIdle(draft, personId, now, aiActsOf(base.projectId, personId))) {
+		if (isProjectIdle(draft, personId, now, aiActsOf(base.projectId, personId), sessionId)) {
 			const idle = endProjectSession(draft, personId, 'idle', now, sessionId);
 			return { draft: idle.ok ? idle.draft : draft, result: { kind: 'ended', reason: 'idle' } };
 		}
 		// A step prefill of a request the session reached moves on once its section is settled.
-		draft = { ...draft, requests: draft.requests.map((r) => (openSessionOf(r, personId)?.id === sessionId ? advanceStepPrefill(r, personId, now, () => crypto.randomUUID()) : r)) };
-		const next = nextClickOf(draft, personId);
-		if (next?.where === 'project') {
-			const taken = takeProjectClick(draft, next.click.id, now);
-			if (taken) return { draft: taken.draft, result: { kind: 'project-click', click: taken.click, cancelled } };
-		}
-		if (next?.where === 'request') {
+		draft = withRequests(draft, (r) => (openSessionOf(r, personId)?.id === sessionId ? advanceStepPrefill(r, personId, now, () => crypto.randomUUID()) : r));
+		// The oldest click that goes to this AI: the one holding what it touches, else the free AI opened last (EVO-015).
+		const nowMs = Date.parse(now);
+		for (const next of clicksFor(draft, personId, sessionId, (id) => standingOf(base.projectId, personId, id, nowMs))) {
+			if (next.where === 'project') {
+				const taken = takeProjectClick(draft, next.click.id, now, sessionId);
+				if (taken) return { draft: taken.draft, result: { kind: 'project-click', click: taken.click, cancelled } };
+				continue;
+			}
 			const request = withMirror(draft.requests.find((r) => r.id === next.requestId)!, personId, open, now);
 			const handed = handToWaitingCall(request, personId, now, first);
 			if (handed.kind === 'click') {
@@ -388,7 +494,7 @@ export async function awaitProjectEvent(
 	let first = true;
 	let notice: Notice = {};
 	// While this call waits, the AI is there; once it returns, its silence counts (ac-ai-session-end).
-	const release = holdCall(input.projectId, input.personId);
+	const release = holdCall(input.projectId, input.sessionId);
 	try {
 	for (;;) {
 		const step = await look(services, base, first);
@@ -399,12 +505,7 @@ export async function awaitProjectEvent(
 			return { ...notice, kind: 'ended', reason: step.reason };
 		}
 		if (step.kind === 'project-click') {
-			say(services, onProject(base), 'thinking', { thinkingAbout:
-					step.click.kind === 'chat'
-						? `your message in ${step.click.title}`
-						: step.click.kind === 'ask_block'
-							? `your question on ${step.click.title}`
-							: `re-reading the code of ${step.click.title}`, saying: null, step: null });
+			say(services, onProject(base), 'thinking', { thinkingAbout: thinkingAboutProjectClick(step.click), saying: null, step: null });
 			return { ...notice, kind: 'click', requestId: null, click: await projectClickContext(services, base.projectId, step.click) };
 		}
 		if (step.kind === 'request-click') {
@@ -417,8 +518,13 @@ export async function awaitProjectEvent(
 		if (step.kind === 'progress')
 			return { ...notice, kind: 'progress', requestId: step.request.id, progress: await progressContextOf(services, base.projectId, step.request, base.personId, step.progress) };
 		const left = limit * 1000 - (Date.now() - started);
-		if (left <= 0) return { ...notice, kind: 'nothing', waitedSeconds: Math.round((Date.now() - started) / 1000) };
-		say(services, onProject(base), 'listening', { thinkingAbout: null });
+		if (left <= 0) {
+			// Between two waits the AI is not free: a click nobody holds goes to an AI whose call is held (EVO-015).
+			say(services, onProject(base), 'listening', { thinkingAbout: null });
+			return { ...notice, kind: 'nothing', waitedSeconds: Math.round((Date.now() - started) / 1000) };
+		}
+		// Said at every beat of the wait: free while this is fresh, on every node (criterion 8181d158).
+		say(services, onProject(base), 'listening', { thinkingAbout: null, callHeld: true });
 		const woke = await new Promise<'look' | 'abort'>((resolve) => {
 			const unsubscribe = subscribeSectionChanges((change) => {
 				if (change.projectId === input.projectId) finish('look');
@@ -438,5 +544,86 @@ export async function awaitProjectEvent(
 	}
 	} finally {
 		release();
+	}
+}
+
+/** What an AI reads of its person's sessions on the project ("Read my other AIs", criterion 4536271d): its own marked you. */
+export function sessionsForAi(draft: ProjectEvolutionDraft, projectId: string, personId: string, sessionId: string) {
+	return openSessionsReading(draft, projectId, personId).map(({ presence, ...session }) => ({
+		...session,
+		you: session.id === sessionId,
+		doing: presence
+			? { status: presence.status, thinkingAbout: presence.thinkingAbout, saying: presence.saying, step: presence.step, at: presence.at }
+			: null
+	}));
+}
+
+/** One AI asks another of the person's AIs a question ("Ask another AI of mine"): it waits in the other's wait like a click. */
+export async function askOnProject(services: AppServices, projectId: string, personId: string, input: { readonly from: string; readonly to: string; readonly question: string }) {
+	const now = services.clock.nowIso();
+	return changeDraft(services, projectId, (draft) => {
+		const outcome = askAnotherAi(draft, personId, input, crypto.randomUUID(), now);
+		return { draft: outcome.ok ? outcome.draft : null, result: outcome };
+	});
+}
+
+/** What the asking call answers: the other AI's answer, or that none came. */
+export type PeerAnswer =
+	| { readonly kind: 'answer'; readonly questionId: string; readonly answer: string; readonly from: { readonly sessionId: string; readonly name: string }; readonly waitedSeconds: number }
+	| {
+			readonly kind: 'no_answer';
+			readonly questionId: string;
+			readonly from: { readonly sessionId: string; readonly name: string };
+			readonly message: string;
+			readonly waitedSeconds: number;
+	  };
+
+/**
+ * Hold the asking call until the other AI answers, or until peerAnswerSeconds
+ * passed or the other session ended ("Another AI answers my question", "My
+ * question runs out"): an answer is a write on the project, so every change of
+ * it is a reason to look again. A question that runs out leaves the other AI's
+ * queue; one whose asker hung up runs out at once.
+ */
+export async function awaitPeerAnswer(
+	services: AppServices,
+	input: { readonly projectId: string; readonly personId: string; readonly questionId: string; readonly to: string; readonly waitSeconds: number },
+	hooks: { readonly aborted: () => boolean; readonly onAbort: (listener: () => void) => void }
+): Promise<PeerAnswer> {
+	const limit = Math.max(1, Math.min(input.waitSeconds, LIVE_SESSION.peerAnswerSeconds));
+	const started = Date.now();
+	const waited = () => Math.round((Date.now() - started) / 1000);
+	const nameOf = (draft: ProjectEvolutionDraft) => {
+		const to = lastProjectSessionOf(draft, input.personId, input.to);
+		return { sessionId: input.to, name: to ? sessionName(draft, input.personId, to) : 'your other AI' };
+	};
+	const runOut = async (): Promise<PeerAnswer> => {
+		const from = await changeDraft(services, input.projectId, (draft) => {
+			const expired = expireQuestion(draft, input.questionId);
+			return { draft: expired === draft ? null : expired, result: nameOf(draft) };
+		});
+		const named = from ?? { sessionId: input.to, name: 'your other AI' };
+		return { kind: 'no_answer', questionId: input.questionId, from: named, message: `No answer from ${named.name} within ${LIVE_SESSION.peerAnswerSeconds} s`, waitedSeconds: waited() };
+	};
+	for (;;) {
+		const draft = await services.loadEvolutionDraft.execute(input.projectId);
+		const standing = questionStanding(draft, input.personId, input.questionId, services.clock.nowIso());
+		if (standing.state === 'answered') return { kind: 'answer', questionId: input.questionId, answer: standing.answer, from: nameOf(draft), waitedSeconds: waited() };
+		if (standing.state === 'expired') return runOut();
+		const left = limit * 1000 - (Date.now() - started);
+		if (left <= 0) return runOut();
+		const woke = await new Promise<'look' | 'abort'>((resolve) => {
+			const unsubscribe = subscribeSectionChanges((change) => {
+				if (change.projectId === input.projectId) finish('look');
+			});
+			const timer = setTimeout(() => finish('look'), Math.min(left, LIVE_SESSION.progressIntervalSeconds * 1000));
+			hooks.onAbort(() => finish('abort'));
+			function finish(why: 'look' | 'abort') {
+				clearTimeout(timer);
+				unsubscribe();
+				resolve(why);
+			}
+		});
+		if (woke === 'abort' || hooks.aborted()) return runOut();
 	}
 }

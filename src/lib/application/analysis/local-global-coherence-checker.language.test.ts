@@ -1,21 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
-import { createEmptyArchitectureDraft } from '$domain/architecture';
-import { createEmptyDataDraft } from '$domain/data';
-import { createEmptyExperienceDraft } from '$domain/experience';
+import { describe, expect, it } from 'vitest';
 import { createCore, createEmptyFeaturesDraft, createFeature } from '$domain/features';
-import {
-	createEmptyDefinitionDraft,
-	createEmptyIdentityDraft,
-	createEmptyOperationsDraft
-} from '$domain/foundation';
-import { createEmptyGlossaryDraft } from '$domain/glossary';
-import { createEmptyRulesDraft } from '$domain/rules';
-import { createEmptyUsersDraft } from '$domain/users';
+import { createEmptyOperationsDraft } from '$domain/foundation';
 import { LOCAL_CHECK_IDS, PROSE_LANGUAGE_CHECK_ID } from '$domain/coherence';
 import { NBSP } from '$domain/language';
-import { LocalGlobalCoherenceChecker } from './local-global-coherence-checker';
-
-const loader = <T>(value: T) => ({ execute: vi.fn(async () => value) });
+import { localCoherenceChecker } from './local-global-coherence-checker.fixture';
 
 const FRENCH_DESCRIPTION =
 	"Le joueur crée une partie privée et la partage avec ses amis pour qu'ils la rejoignent dans le salon.";
@@ -30,23 +18,8 @@ function checker(primaryLocale: string, description: string, snapshot: Record<st
 	];
 	const operations = createEmptyOperationsDraft('project-1');
 	operations.i18n.primaryLocale = primaryLocale;
-	const foundation = {
-		loadIdentity: vi.fn(async () => createEmptyIdentityDraft('project-1')),
-		loadDefinition: vi.fn(async () => createEmptyDefinitionDraft('project-1')),
-		loadOperations: vi.fn(async () => operations)
-	};
-	return new LocalGlobalCoherenceChecker(
-		foundation as never,
-		loader(createEmptyUsersDraft('project-1')) as never,
-		loader(features) as never,
-		loader(createEmptyExperienceDraft('project-1')) as never,
-		loader(createEmptyRulesDraft('project-1')) as never,
-		loader(createEmptyDataDraft('project-1')) as never,
-		loader(createEmptyArchitectureDraft('project-1')) as never,
-		loader(createEmptyGlossaryDraft('project-1')) as never,
-		{ loadFeature: vi.fn(async () => (snapshot ? { feature: snapshot } : null)) } as never,
-		{ score: (s: unknown) => (s ? 90 : 0) } as never
-	);
+	const shells: Record<string, Record<string, unknown>> = snapshot ? { 'feat-private-match': snapshot } : {};
+	return localCoherenceChecker({ features, operations, shells }, 'project-1').checker;
 }
 
 describe('the Control Center in the spec language (382e5227)', () => {

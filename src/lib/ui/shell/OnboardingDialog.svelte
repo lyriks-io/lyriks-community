@@ -12,6 +12,7 @@
 	import { closeOnboarding, onboardingOpen, openOnboarding } from './onboarding.svelte';
 	import { keepEditMode } from '$ui/spec360/edit-mode-memory.client';
 	import CommunityLock from './CommunityLock.svelte';
+	import { PROJECT_NOT_CREATED, refusalToast } from './offer-refusal';
 
 	// "Create your project", in four steps (the design's onboarding): its name;
 	// an existing product or a new one; how Lyriks learns it (codebase,
@@ -165,7 +166,8 @@
 
 	async function failed(res: Response, fallback: string): Promise<boolean> {
 		if (res.ok) return false;
-		pushToast({ level: 'error', message: (await res.text().catch(() => '')) || fallback });
+		// A refusal reads in the server's words, never its raw answer; Community's is an offer with View plans (EVO-006).
+		pushToast(await refusalToast(res, fallback, !!page.data.onlineHelp));
 		return true;
 	}
 
@@ -177,7 +179,7 @@
 			const res = created
 				? await fetch(`/api/projects/${encodeURIComponent(created.id)}`, json('PATCH', { name: name.trim() }))
 				: await fetch('/api/projects', json('POST', { name: name.trim(), sourceMode: sourceModeOf(w), ...switcherWorkspace() }));
-			if (await failed(res, created ? 'The project was not renamed' : 'The project was not created')) return false;
+			if (await failed(res, created ? 'The project was not renamed.' : PROJECT_NOT_CREATED)) return false;
 			created = created ? { ...created, name: styled } : { id: ((await res.json()) as { projectId: string }).projectId, name: styled };
 			return true;
 		} finally {

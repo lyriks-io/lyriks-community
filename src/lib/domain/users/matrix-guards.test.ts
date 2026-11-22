@@ -66,6 +66,29 @@ describe('conditionUnderRole', () => {
 	});
 });
 
+describe('conditionUnderRole on numbers, lists and composites', () => {
+	const env = new Map<string, string | number | boolean | null>([['seats', 5], ['plan', 'team'], ['trial', true], ['owner', null]]);
+	const read = (operator: string, right?: unknown, left = 'seats') => conditionUnderRole({ left, operator, right }, env, new Map());
+
+	it('compares a number at its bound the way the operator says', () => {
+		expect([read('greater_than', 5), read('greater_or_equal', 5), read('lower_than', 5), read('lower_or_equal', 5)]).toEqual(['F', 'T', 'F', 'T']);
+		expect([read('greater_than', 4), read('lower_than', 6)]).toEqual(['T', 'T']);
+		expect(read('greater_than', 'five')).toBe('U');
+	});
+
+	it('reads presence and booleans whatever the right side, and text inclusion', () => {
+		expect([read('is_true', undefined, 'trial'), read('is_false', undefined, 'trial'), read('exists', undefined, 'owner'), read('does_not_exist', undefined, 'owner')]).toEqual(['T', 'F', 'F', 'T']);
+		expect([read('contains', 'tea', 'plan'), read('contains', 'pro', 'plan'), read('contains', ['team'], 'plan')]).toEqual(['T', 'F', 'U']);
+	});
+
+	it('decides an all when any part refuses, and an any only when every part is decided', () => {
+		const all = (...conditions: unknown[]) => conditionUnderRole({ kind: 'all', conditions }, env, new Map());
+		expect(all({ left: 'seats', operator: 'equals', right: 4 }, { left: 'unknown.path', operator: 'equals', right: 1 })).toBe('F');
+		expect(all({ left: 'seats', operator: 'equals', right: 5 }, { left: 'plan', operator: 'equals', right: 'team' })).toBe('T');
+		expect(conditionUnderRole({ kind: 'any', conditions: [{ left: 'seats', operator: 'equals', right: 4 }, { left: 'plan', operator: 'equals', right: 'pro' }] }, env, new Map())).toBe('F');
+	});
+});
+
 describe('readMatrixAgainstGuards [criterion:26262450]', () => {
 	it('names nothing to compare while no role says how the behaviour reads it', () => {
 		const reading = readMatrixAgainstGuards(

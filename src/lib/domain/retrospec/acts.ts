@@ -12,11 +12,15 @@ import {
 	type ItemComment,
 	type ItemVerdict,
 	type PersonRef,
+	type RequestValidation,
 	type RetrospecDocument,
 	type RetrospecMode,
 	type RetrospecRun,
-	type RetrospecScope
+	type RetrospecScope,
+	type RunResume
 } from './document';
+import { RETROSPEC_PHASES } from './progress';
+import { landedValidationRefusal } from './landed-validation';
 import {
 	checkSpecEdits,
 	dropSpecEdit,
@@ -48,13 +52,19 @@ export type RetrospecAct =
 			readonly baseline: Readonly<Record<string, number>>;
 			readonly fingerprints?: Readonly<Record<string, string>>;
 			readonly titles?: Readonly<Record<string, string>>;
-			/** What a later run reads by default (criterion 98612117); the delta when omitted. */
+			/** What a later run reads: the person's choice, or the default the server read (EVO-014); the delta when omitted. */
 			readonly scope?: RetrospecScope;
+			/** Where the last run stopped, when a person closed it before its final check: what Resume analysis reads (EVO-014). */
+			readonly resumable?: RunResume | null;
 			readonly closesRun?: boolean;
 	  }
 	| { readonly op: 'choose_mode'; readonly mode: RetrospecMode }
-	/** A later run reads what changed or the whole product again, until its prompt runs (criterion 98612117). */
+	/** A later run reads what changed, the whole product again or where the last run stopped, until its prompt runs (EVO-014). */
 	| { readonly op: 'choose_scope'; readonly scope: RetrospecScope }
+	/** The run's AI says the phase of the order of work it reads now (EVO-014, action 83ba020b). */
+	| { readonly op: 'report_phase'; readonly phase: string }
+	/** The run's AI says the features it finished re-reading (EVO-014, action ef746636). */
+	| { readonly op: 'report_read'; readonly featureIds: readonly string[] }
 	/** Where the documentation the run reads is: on this computer or at links, until the prompt runs (criterion b6ad9ca2). */
 	| { readonly op: 'choose_docs'; readonly at: DocsLocation }
 	/** The run's AI received the prompt, or the person said so on the last step of creating the project. */
@@ -71,6 +81,20 @@ export type RetrospecAct =
 	| { readonly op: 'share'; readonly itemId: string; readonly title: string; readonly tab: string; readonly to: PersonRef; readonly total?: number }
 	/** Lift a rejection, a set-aside or a share. */
 	| { readonly op: 'clear_flag'; readonly itemId: string; readonly total?: number }
+	/**
+	 * A landed change request validates an element it wrote and its code proved
+	 * (EVO-002): the validation counts as every validation the element waits on.
+	 */
+	| {
+			readonly op: 'validate_through_request';
+			readonly itemId: string;
+			readonly title: string;
+			readonly tab: string;
+			readonly validation: Omit<RequestValidation, 'withdrawn'>;
+			readonly total?: number;
+	  }
+	/** A person the element waits on takes back the validation a request gave it: it stands on its people alone again. */
+	| { readonly op: 'withdraw_request_validation'; readonly itemId: string; readonly total?: number }
 	| { readonly op: 'comment'; readonly itemId: string; readonly commentId: string; readonly text: string }
 	| { readonly op: 'resolve_comment'; readonly itemId: string; readonly commentId: string }
 	/** Publish the run; `baselineId` names the specification baseline captured for it. */
@@ -172,18 +196,66 @@ const same = (a: PersonRef, b: PersonRef) => a.id.trim().toLowerCase() === b.id.
 export const gatheredIn = (baseline: Readonly<Record<string, number>>): boolean =>
 	(['documents', 'scope', 'features'] as const).some((s) => sectionRevision(baseline, s) > 0);
 
+/** The refusals of a scope a run cannot read (EVO-014, rules 641955ca, 75808701, 2efd4585). */
+export const NO_SPEC_TO_COMPARE = 'There is no specification yet: a first Reverse-Specification reads the whole product.';
+export const NOTHING_TO_RESUME = 'Resume analysis is offered only after a run closed before its final check.';
+export const NO_RUN_UNDER_WAY = 'No Reverse-Specification is under way: launch one before reporting what it reads.';
+
 /**
- * What a later run reads unless the person chooses otherwise (criterion
- * 98612117): the whole product again when the last run was closed by a person
- * before its AI's final check, or when no delta can be read (no commit to
- * start from and no source text stored); what changed otherwise.
+ * The last run was closed by a person before its AI's final check (EVO-014):
+ * neither an audit since its start nor its AI's end of reading came before the
+ * person closed its analysis.
  */
-export function defaultScope(doc: RetrospecDocument, auditTimes: readonly string[], storesText: boolean): RetrospecScope {
+export function closedBeforeFinalCheck(doc: RetrospecDocument, auditTimes: readonly string[]): boolean {
 	const last = doc.runs.at(-1) ?? null;
-	const closedShort = !!last?.analysisEndedAt && !auditTimes.some((at) => at >= last.startedAt);
-	const noDelta = !lastPublishedRun(doc)?.commit && !storesText;
-	return closedShort || noDelta ? 'whole' : 'delta';
+	return !!last?.analysisEndedAt && !last.readingDoneAt && !auditTimes.some((at) => at >= last.startedAt);
 }
+
+/**
+ * The next run starts from a specification already gathered (criterion
+ * 2dbed801): a validated run, a run closed or about to close, or sources,
+ * scope or features already written. Only then is it complementary, and only
+ * then may it read the delta or resume.
+ */
+export function nextRunGathered(doc: RetrospecDocument, baseline: Readonly<Record<string, number>>, closesRun: boolean): boolean {
+	const last = doc.runs.at(-1);
+	return !!lastPublishedRun(doc) || !!last?.closedAt || (closesRun && !!last && !last.publishedAt) || gatheredIn(baseline);
+}
+
+/**
+ * What the next run reads unless the person chooses otherwise, by one rule
+ * (EVO-014, rules aac52bf2, 1aee7a97, 81df23c8 of feat-119; 677e27ab, 555bad90
+ * of feat-146): Full analysis on a product with no specification yet; Resume
+ * analysis when a person closed the last run before its final check; Delta
+ * analysis otherwise, with or without a commit to start from.
+ */
+export function defaultScope(doc: RetrospecDocument, auditTimes: readonly string[], gathered: boolean): RetrospecScope {
+	if (!gathered) return 'whole';
+	return closedBeforeFinalCheck(doc, auditTimes) ? 'resume' : 'delta';
+}
+
+/**
+ * Where a run a person closed before its final check stopped (EVO-014), from
+ * its phases as its board reads them: the ones read whole are not read again,
+ * the ones it stopped in are continued without rewriting what is written, the
+ * ones it never reached are read. Its code delta starts from the commit it
+ * recorded, else from the one it started from.
+ */
+export function resumeOf(run: RetrospecRun, phases: readonly { readonly key: string; readonly state: string }[]): RunResume {
+	const keys = (keep: (state: string) => boolean) => phases.filter((p) => keep(p.state)).map((p) => p.key);
+	return {
+		fromRunId: run.id,
+		read: keys((s) => s === 'done'),
+		interrupted: keys((s) => s === 'current' || s === 'started'),
+		left: keys((s) => s === 'pending'),
+		fromCommit: run.commit?.sha ?? run.complementary?.fromCommit ?? null
+	};
+}
+
+const PHASE_KEYS: ReadonlySet<string> = new Set(RETROSPEC_PHASES.map((p) => p.key));
+
+/** The current run while it is not validated: what the AI reports belongs to it. */
+const underWay = (run: RetrospecRun | null): RetrospecRun | null => (run && !run.publishedAt ? run : null);
 
 /** The commit the next run reads the delta from: the last validated run's, for a run that reads the code. */
 const deltaCommit = (doc: RetrospecDocument, mode: RetrospecMode): string | null => {
@@ -208,7 +280,7 @@ export function cancelRefusal(doc: RetrospecDocument): string | null {
 }
 
 /** What a start knows of the specification as the run begins. */
-type StartReading = Pick<Extract<RetrospecAct, { readonly op: 'start' }>, 'fingerprints' | 'titles' | 'scope'>;
+type StartReading = Pick<Extract<RetrospecAct, { readonly op: 'start' }>, 'fingerprints' | 'titles' | 'scope' | 'resumable'>;
 
 /**
  * What a run closed before its validation hands on (criterion 0c87480c): what it
@@ -230,6 +302,18 @@ function carriedPastClosedRun(
 }
 
 /**
+ * The validations landed requests gave that a later run carries (EVO-002):
+ * each one still standing, while its element reads as it landed.
+ */
+function requestValidationsCarried(runs: readonly (RetrospecRun | null | undefined)[], now: Readonly<Record<string, string>>): Pick<RetrospecRun, 'throughRequests'> {
+	const carried: Record<string, RequestValidation> = {};
+	for (const run of runs)
+		for (const [id, given] of Object.entries(run?.throughRequests ?? {}))
+			if (!given.withdrawn && run?.verdicts[id]?.flag?.kind !== 'rejected' && now[id] === given.fingerprint) carried[id] = given;
+	return Object.keys(carried).length > 0 ? { throughRequests: carried } : {};
+}
+
+/**
  * What a new run starts from (criteria 2dbed801, 0c87480c of feat-ai-session).
  * Every run after the first is complementary, whatever it reads: it starts
  * from the specification already gathered, erases nothing and reads the delta,
@@ -242,8 +326,8 @@ function complementaryStart(
 	doc: RetrospecDocument,
 	mode: RetrospecMode,
 	baseline: Readonly<Record<string, number>>,
-	{ fingerprints: startFingerprints = {}, titles = {}, scope = 'delta' }: StartReading
-): Pick<RetrospecRun, 'complementary' | 'carried' | 'atStart' | 'holds'> {
+	{ fingerprints: startFingerprints = {}, titles = {}, scope = 'delta', resumable = null }: StartReading
+): Pick<RetrospecRun, 'complementary' | 'carried' | 'throughRequests' | 'atStart' | 'holds'> {
 	const last = lastPublishedRun(doc);
 	const previous = doc.runs.at(-1);
 	const closed = previous?.closedAt ? previous : null;
@@ -256,8 +340,9 @@ function complementaryStart(
 	}
 	return {
 		holds: true,
-		complementary: { fromRunId: last?.id ?? null, fromCommit: deltaCommit(doc, mode), scope },
+		complementary: { fromRunId: last?.id ?? null, fromCommit: deltaCommit(doc, mode), scope, ...(resumable ? { resumable } : {}) },
 		carried: closed ? carriedPastClosedRun(carried, closed, startFingerprints) : carried,
+		...requestValidationsCarried([last, closed], startFingerprints),
 		// Elements that could not be read leave no reference: nothing would then read as new by mistake.
 		...(Object.keys(startFingerprints).length > 0 ? { atStart: { fingerprints: startFingerprints, titles } } : {})
 	};
@@ -320,6 +405,24 @@ function setVerdict(run: RetrospecRun, itemId: string, next: ItemVerdict | null,
 
 function emptyVerdict(title: string, tab: string): ItemVerdict {
 	return { title, tab, validatedBy: [], flag: null };
+}
+
+/** A new run, the current one closing or starting over as its stage asks (criterion 2dbed801). */
+function startOf(doc: RetrospecDocument, act: Extract<RetrospecAct, { readonly op: 'start' }>, ctx: ActContext, run: RetrospecRun | null): ActOutcome {
+	// Its analysis over, a run not validated closes and stays in the history (criterion 2dbed801).
+	if (run && !run.publishedAt && act.closesRun) {
+		const closed = withRun(doc, { ...run, closedAt: ctx.now, closedBy: ctx.actor });
+		return { ok: true, doc: withRun(closed, newRun(closed, act.mode, act.baseline, ctx, false, act)) };
+	}
+	// A run nobody handed to the AI yet starts over; one under way is never dropped.
+	if (run && !run.publishedAt && (run.launchedAt || run.reviewStartedAt || Object.keys(run.verdicts).length > 0)) {
+		return refuse('A Reverse-Specification is already under way on this project: finish it before starting another.');
+	}
+	if (run && !run.publishedAt) {
+		const rest: RetrospecDocument = { ...doc, runs: doc.runs.slice(0, -1) };
+		return { ok: true, doc: { ...rest, runs: [...rest.runs, newRun(rest, act.mode, act.baseline, ctx, false, act)] } };
+	}
+	return { ok: true, doc: withRun(doc, newRun(doc, act.mode, act.baseline, ctx, false, act)) };
 }
 
 /** An act on the document; what took effect also goes to the history of actions (criterion 64d191d6). */
@@ -399,22 +502,17 @@ function actOn(doc: RetrospecDocument, act: RetrospecAct, ctx: ActContext): ActO
 		}
 		case 'start': {
 			if (!isRetrospecMode(act.mode)) return refuse('Choose where the Reverse-Specification starts from: your repo or your documentation.');
-			// Its analysis over, a run not validated closes and stays in the history (criterion 2dbed801).
-			if (run && !run.publishedAt && act.closesRun) {
-				const closed = withRun(doc, { ...run, closedAt: ctx.now, closedBy: ctx.actor });
-				return { ok: true, doc: withRun(closed, newRun(closed, act.mode, act.baseline, ctx, false, act)) };
-			}
-			// A run nobody handed to the AI yet starts over; one under way is never dropped.
-			if (run && !run.publishedAt && (run.launchedAt || run.reviewStartedAt || Object.keys(run.verdicts).length > 0)) {
-				return refuse('A Reverse-Specification is already under way on this project: finish it before starting another.');
-			}
-			if (run && !run.publishedAt) {
-				const rest: RetrospecDocument = { ...doc, runs: doc.runs.slice(0, -1) };
-				return { ok: true, doc: { ...rest, runs: [...rest.runs, newRun(rest, act.mode, act.baseline, ctx, false, act)] } };
-			}
-			return { ok: true, doc: withRun(doc, newRun(doc, act.mode, act.baseline, ctx, false, act)) };
+			if (act.scope !== undefined && !isRetrospecScope(act.scope)) return refuse('Choose Full analysis, Delta analysis or Resume analysis.');
+			if (act.scope === 'resume' && !act.resumable) return refuse(NOTHING_TO_RESUME);
+			const started = startOf(doc, act, ctx, run);
+			if (!started.ok) return started;
+			// A first run has nothing gathered to compare or resume: it reads the whole product (rule 641955ca).
+			const fresh = started.doc.runs.at(-1);
+			if ((act.scope === 'delta' || act.scope === 'resume') && !fresh?.complementary) return refuse(NO_SPEC_TO_COMPARE);
+			return started;
 		}
 		case 'choose_mode': {
+
 			if (!run || run.launchedAt || run.publishedAt) return refuse('The starting point can only change before the prompt runs.');
 			if (!isRetrospecMode(act.mode)) return refuse('Choose your repo or your documentation.');
 			// What it reads changes only the commit its delta starts from: a run from the documentation reads none.
@@ -430,8 +528,25 @@ function actOn(doc: RetrospecDocument, act: RetrospecAct, ctx: ActContext): ActO
 		case 'choose_scope': {
 			if (!run || run.launchedAt || run.publishedAt) return refuse('What the run reads can only change before the prompt runs.');
 			if (!run.complementary) return refuse('A first Reverse-Specification reads the whole product: there is nothing gathered to start from yet.');
-			if (!isRetrospecScope(act.scope)) return refuse('Choose what changed or the whole product.');
+			if (!isRetrospecScope(act.scope)) return refuse('Choose Delta analysis, Full analysis or Resume analysis.');
+			// Only a run started after a run closed before its final check resumes it (rule 2efd4585).
+			if (act.scope === 'resume' && !run.complementary.resumable) return refuse(NOTHING_TO_RESUME);
 			return { ok: true, doc: withRun(doc, { ...run, complementary: { ...run.complementary, scope: act.scope } }) };
+		}
+		case 'report_phase': {
+			// A phase says where a run's reading is: with no run under way it belongs to none (rule 2d4bc8ba).
+			const reading = underWay(run);
+			if (!reading) return refuse(NO_RUN_UNDER_WAY);
+			if (!PHASE_KEYS.has(act.phase)) return refuse(`Unknown phase "${act.phase}": say one of ${[...PHASE_KEYS].join(', ')}.`);
+			return { ok: true, doc: reading.phaseReported === act.phase ? doc : withRun(doc, { ...reading, phaseReported: act.phase }) };
+		}
+		case 'report_read': {
+			// A feature re-read belongs to a run under way (rule f898c54d).
+			const rereading = underWay(run);
+			if (!rereading) return refuse(NO_RUN_UNDER_WAY);
+			// Each feature counts once, however often it is reported (criterion 62846d95).
+			const read = [...new Set([...(rereading.featuresRead ?? []), ...act.featureIds.map((id) => id.trim()).filter(Boolean)])];
+			return { ok: true, doc: read.length === (rereading.featuresRead ?? []).length ? doc : withRun(doc, { ...rereading, featuresRead: read }) };
 		}
 		case 'launch': {
 			if (!run || run.publishedAt) return refuse('Start a Reverse-Specification first.');
@@ -490,7 +605,24 @@ function actOn(doc: RetrospecDocument, act: RetrospecAct, ctx: ActContext): ActO
 				validatedBy: kind === 'rejected' ? [] : before.validatedBy,
 				flag: { kind, by: ctx.actor, at: ctx.now }
 			};
-			return { ok: true, doc: withRun(doc, setVerdict(target, act.itemId, next, act.total)) };
+			const verdicted = setVerdict(target, act.itemId, next, act.total);
+			// A change requested takes back the validation a request gave too: the element waits on its people again.
+			return { ok: true, doc: withRun(doc, kind === 'rejected' ? withdrawnRequestValidation(verdicted, act.itemId, ctx) : verdicted) };
+		}
+		case 'validate_through_request': {
+			const refusal = landedValidationRefusal(doc, act.validation.requestId, { id: act.itemId, inSpec: true, proved: true });
+			if (refusal) return refuse(refusal);
+			const target = started(reviewedRun(doc, ctx), ctx);
+			const throughRequests = { ...target.throughRequests, [act.itemId]: { ...act.validation, approvedBy: [...act.validation.approvedBy] } };
+			return { ok: true, doc: withRun(doc, { ...target, throughRequests, itemTotal: totalOf(act.total, target.itemTotal) }) };
+		}
+		case 'withdraw_request_validation': {
+			if (ctx.canReview && !ctx.canReview(doc, act.itemId)) return refuse('This question does not require your validation.');
+			const target = reviewedRun(doc, ctx);
+			if (target.publishedAt) return refuse('The specification is already validated.');
+			const given = target.throughRequests?.[act.itemId];
+			if (!given || given.withdrawn) return refuse('No change request validated this element.');
+			return { ok: true, doc: withRun(doc, { ...withdrawnRequestValidation(target, act.itemId, ctx), itemTotal: totalOf(act.total, target.itemTotal) }) };
 		}
 		case 'share': {
 			if (!act.to?.id?.trim()) return refuse('Choose who to share it with.');
@@ -647,6 +779,13 @@ function withSpecEdits(doc: RetrospecDocument, specEdits: RetrospecDocument['spe
 }
 
 /** Acting on an item is reviewing: the review starts with the first act if it had not. */
+/** The run with the validation a request gave the element taken back by the actor; kept, so the request never gives it again. */
+function withdrawnRequestValidation(run: RetrospecRun, itemId: string, ctx: ActContext): RetrospecRun {
+	const given = run.throughRequests?.[itemId];
+	if (!given || given.withdrawn) return run;
+	return { ...run, throughRequests: { ...run.throughRequests, [itemId]: { ...given, withdrawn: { by: ctx.actor, at: ctx.now } } } };
+}
+
 function started(run: RetrospecRun, ctx: ActContext): RetrospecRun {
 	return run.reviewStartedAt ? run : { ...run, reviewStartedAt: ctx.now };
 }

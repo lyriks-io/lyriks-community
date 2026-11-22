@@ -1,20 +1,14 @@
 /**
- * Tests: create_wizard_project (Fix #4) + apply_behavior_batch commit token (Fix #8)
+ * Tests: what the behaviour tools make of the platform's answers (the batch
+ * verdict lifted out of `raw`, conflicts, paged operation reference, focused
+ * reads). The requests they send are pinned in wire-contract.test.ts.
  */
 
 import { describe, it, expect, vi } from 'vitest'
-import { createWizardProjectHandler } from '../tools/sections.js'
 import {
   applyBehaviorBatchHandler,
   getBehaviorOperationsHandler,
   readBehaviorFeatureHandler,
-  scoreBehaviorFeatureHandler,
-  simulateBehaviorHandler,
-  whatIfHandler,
-  applyProjectBehaviorBatchHandler,
-  readProjectBehaviorHandler,
-  findStateReferencesHandler,
-  generateBehaviorTypesHandler,
 } from '../tools/behavior.js'
 import { createMcpServer } from '../server.js'
 import type { LyriksClient } from '../lyriks-client.js'
@@ -26,106 +20,6 @@ function makeLyriks(response: unknown) {
   const body = () => post.mock.calls.at(-1)?.[1] as Record<string, unknown>
   return { lyriks, post, body }
 }
-
-describe('createWizardProjectHandler (Fix #4)', () => {
-  it('POSTs the lyriks project route and maps snake_case args to the wizard app camelCase', async () => {
-    const { lyriks, post, body } = makeLyriks({ projectId: 'returnly-2', workspaceId: 'ws-1' })
-
-    const res = await createWizardProjectHandler(
-      { name: 'Returnly 2', description: 'RMA portal', workspace_id: 'ws-1', domain_id: 'dom-1', stage: 'build' },
-      lyriks,
-    )
-
-    expect(post).toHaveBeenCalledWith('/api/projects', expect.any(Object))
-    expect(body()).toEqual({
-      name: 'Returnly 2',
-      description: 'RMA portal',
-      workspaceId: 'ws-1',
-      domainId: 'dom-1',
-      stage: 'build',
-    })
-    expect(res).toEqual({ projectId: 'returnly-2', workspaceId: 'ws-1' })
-  })
-
-  it('forwards the origin as sourceMode, so the card says the project was started from a codebase', async () => {
-    const { lyriks, body } = makeLyriks({ projectId: 'ingested', workspaceId: null })
-    await createWizardProjectHandler({ name: 'Ingested', source_mode: 'code_to_spec' }, lyriks)
-    expect(body()).toMatchObject({ name: 'Ingested', sourceMode: 'code_to_spec' })
-  })
-
-  it('omits optional fields as undefined when not supplied', async () => {
-    const { lyriks, body } = makeLyriks({ projectId: 'p', workspaceId: null })
-    await createWizardProjectHandler({ name: 'Solo' }, lyriks)
-    expect(body()).toEqual({
-      name: 'Solo',
-      description: undefined,
-      workspaceId: undefined,
-      domainId: undefined,
-      stage: undefined,
-    })
-  })
-
-  it('propagates a lyriks error (e.g. 403 not a member)', async () => {
-    const post = vi.fn().mockRejectedValue(new Error('lyriks 403 on POST /api/projects: not a member'))
-    const lyriks = { post } as unknown as LyriksClient
-    await expect(createWizardProjectHandler({ name: 'X', workspace_id: 'ws-x' }, lyriks)).rejects.toThrow('403')
-  })
-})
-
-describe('applyBehaviorBatchHandler — commit token (Fix #8)', () => {
-  it('forwards operations + dryRun on a normal apply', async () => {
-    const { lyriks, body } = makeLyriks({ available: true, batch: { ok: true } })
-    await applyBehaviorBatchHandler(
-      { project_id: 'returnly', feature_id: 'returnly__experience', operations: [{ kind: 'add_state_definition' }], dry_run: true },
-      lyriks,
-    )
-    expect(body()).toEqual({
-      projectId: 'returnly',
-      featureId: 'returnly__experience',
-      operations: [{ kind: 'add_state_definition' }],
-      dryRun: true,
-    })
-  })
-
-  it('forwards a commit token (and no ops) so a dry-run is saved without resending', async () => {
-    const { lyriks, body } = makeLyriks({ available: true, batch: { ok: true, dryRun: false } })
-    await applyBehaviorBatchHandler(
-      { project_id: 'returnly', feature_id: 'returnly__experience', commit: 'tok-123' },
-      lyriks,
-    )
-    const sent = body()
-    expect(sent.commit).toBe('tok-123')
-    expect(sent.operations).toEqual([]) // omitted → [], lyriks ignores them on the commit path
-    expect(sent.dryRun).toBe(false)
-  })
-
-  it('leaves commit off the body when not supplied', async () => {
-    const { lyriks, body } = makeLyriks({ available: true, batch: { ok: true } })
-    await applyBehaviorBatchHandler(
-      { project_id: 'p', feature_id: 'p__experience', operations: [{ kind: 'x' }] },
-      lyriks,
-    )
-    expect('commit' in body()).toBe(false)
-  })
-
-  it('passes verbose:true through to the wizard app (per-issue verification report, Fix #6)', async () => {
-    const { lyriks, body } = makeLyriks({ available: true, batch: { ok: true } })
-    await applyBehaviorBatchHandler(
-      { project_id: 'p', feature_id: 'p__experience', operations: [{ kind: 'x' }], dry_run: true, verbose: true },
-      lyriks,
-    )
-    expect(body().verbose).toBe(true)
-  })
-
-  it('leaves verbose off the body when not supplied (aggregate counts only)', async () => {
-    const { lyriks, body } = makeLyriks({ available: true, batch: { ok: true } })
-    await applyBehaviorBatchHandler(
-      { project_id: 'p', feature_id: 'p__experience', operations: [{ kind: 'x' }] },
-      lyriks,
-    )
-    expect('verbose' in body()).toBe(false)
-  })
-})
 
 describe('applyBehaviorBatchHandler scenario results', () => {
   const scenarios = {
@@ -173,16 +67,6 @@ describe('applyBehaviorBatchHandler written against a version', () => {
   const MOVED_AT = '2026-09-20T08:04:30.000Z'
   const apply = (response: unknown) =>
     applyBehaviorBatchHandler({ project_id: 'p', feature_id: 'f', operations: [{ kind: 'x' }], expected_updated_at: READ_AT }, makeLyriks(response).lyriks)
-
-  it('forwards the version the client read as expectedUpdatedAt, and only when given', async () => {
-    const { lyriks, body } = makeLyriks({ available: true, batch: { ok: true } })
-    await applyBehaviorBatchHandler({ project_id: 'p', feature_id: 'f', operations: [{ kind: 'x' }], expected_updated_at: READ_AT }, lyriks)
-    expect(body()).toEqual({ projectId: 'p', featureId: 'f', operations: [{ kind: 'x' }], dryRun: false, expectedUpdatedAt: READ_AT })
-    await applyBehaviorBatchHandler({ project_id: 'p', feature_id: 'f', operations: [{ kind: 'x' }], expected_updated_at: '' }, lyriks)
-    expect('expectedUpdatedAt' in body()).toBe(false)
-    await applyBehaviorBatchHandler({ project_id: 'p', feature_id: 'f', commit: 'tok-1', expected_updated_at: READ_AT }, lyriks)
-    expect(body()).toMatchObject({ commit: 'tok-1', expectedUpdatedAt: READ_AT })
-  })
 
   it('surfaces a conflict out of batch.raw: nothing was written, and what moved is named', async () => {
     const errors = [`The feature changed since ${READ_AT}: nothing was written.`]
@@ -295,19 +179,6 @@ describe('behavior read and maturity handlers', () => {
     })
   })
 
-  it('forwards maturity filters and includes actionable issues by default', async () => {
-    const { lyriks, get } = makeGetLyriks({ report: { percentage: 60 } })
-    await scoreBehaviorFeatureHandler(
-      { project_id: 'p', feature_id: 'f', area: 'scenarios', severity: 'critical' },
-      lyriks,
-    )
-    const url = String(get.mock.calls[0]?.[0])
-    expect(url).toContain('/api/behavior/score?')
-    expect(url).toContain('includeIssues=true')
-    expect(url).toContain('area=scenarios')
-    expect(url).toContain('severity=critical')
-  })
-
   it('searches the engine-owned operation reference instead of copying its schema', async () => {
     const { lyriks } = makeGetLyriks({
       reference: '# Operations\n\n## ADD ops\nadd_scenario { featureId }\nmore guidance\n',
@@ -318,94 +189,6 @@ describe('behavior read and maturity handlers', () => {
     ) as { matches: number; reference: string }
     expect(result.matches).toBe(1)
     expect(result.reference).toContain('add_scenario')
-  })
-})
-
-describe('simulateBehaviorHandler', () => {
-  it('POSTs the walk to the platform, camelCased, and leaves out what was not asked', async () => {
-    const { lyriks, post, body } = makeLyriks({ ok: true, persisted: false, steps: [] })
-
-    await simulateBehaviorHandler(
-      {
-        project_id: 'p1',
-        feature_id: 'draft:abc',
-        steps: [{ actionRef: 'checkout', parameters: { $channel: 'webmcp' } }],
-        operations: [{ kind: 'add_surface', ref: 'cart' }],
-        persona_id: 'buyer',
-        stop_on_blocked: true,
-      },
-      lyriks,
-    )
-    expect(post).toHaveBeenCalledWith('/api/behavior/simulate', expect.any(Object))
-    expect(body()).toEqual({
-      projectId: 'p1',
-      featureId: 'draft:abc',
-      steps: [{ actionRef: 'checkout', parameters: { $channel: 'webmcp' } }],
-      operations: [{ kind: 'add_surface', ref: 'cart' }],
-      personaId: 'buyer',
-      stopOnBlocked: true,
-    })
-
-    await simulateBehaviorHandler({ project_id: 'p1', feature_id: 'f1', steps: [{ actionId: 'a1' }], operations: [] }, lyriks)
-    expect(body()).toEqual({ projectId: 'p1', featureId: 'f1', steps: [{ actionId: 'a1' }] })
-
-    // A full simulation without steps: every scenario and a bounded model check.
-    await simulateBehaviorHandler(
-      { project_id: 'p1', feature_id: 'draft:abc', run_scenarios: true, model_check: { max_depth: 4 } },
-      lyriks,
-    )
-    expect(body()).toEqual({
-      projectId: 'p1',
-      featureId: 'draft:abc',
-      runScenarios: true,
-      modelCheck: { maxDepth: 4 },
-    })
-  })
-})
-
-describe('project-level behavior relays', () => {
-  it('posts the project batch and reads the project, references and types', async () => {
-    const post = vi.fn().mockResolvedValue({ ok: true })
-    const get = vi.fn().mockResolvedValue({ ok: true })
-    const lyriks = { post, get } as unknown as LyriksClient
-
-    await applyProjectBehaviorBatchHandler(
-      { project_id: 'p1', operations: [{ kind: 'add_project_invariant' }], dry_run: true },
-      lyriks,
-    )
-    expect(post).toHaveBeenCalledWith('/api/behavior/project', {
-      projectId: 'p1',
-      operations: [{ kind: 'add_project_invariant' }],
-      dryRun: true,
-    })
-
-    await readProjectBehaviorHandler({ project_id: 'p1' }, lyriks)
-    await findStateReferencesHandler({ project_id: 'p1', feature_id: 'f1', state_path: 'cart.items' }, lyriks)
-    await generateBehaviorTypesHandler({ project_id: 'p1', feature_id: 'f1' }, lyriks)
-    expect(get.mock.calls.map((c) => c[0])).toEqual([
-      '/api/behavior/project?projectId=p1',
-      '/api/behavior/references?projectId=p1&featureId=f1&statePath=cart.items',
-      '/api/behavior/types?projectId=p1&featureId=f1',
-    ])
-  })
-})
-
-// Criterion b64a6410: an AI client asks what a change would do before writing it.
-describe('whatIfHandler', () => {
-  it('POSTs the change to the platform, camelCased, and leaves out what was not asked', async () => {
-    const { lyriks, post, body } = makeLyriks({ ok: true, persisted: false, unchanged: true })
-    await whatIfHandler(
-      { project_id: 'p1', feature_id: 'draft:abc', operations: [{ kind: 'remove_action_rule', ruleId: 'r1' }] },
-      lyriks,
-    )
-    expect(post).toHaveBeenCalledWith('/api/behavior/what-if', expect.any(Object))
-    expect(body()).toEqual({
-      projectId: 'p1',
-      featureId: 'draft:abc',
-      operations: [{ kind: 'remove_action_rule', ruleId: 'r1' }],
-    })
-    await whatIfHandler({ project_id: 'p1', feature_id: 'draft:abc', max_steps: 4 }, lyriks)
-    expect(body()).toEqual({ projectId: 'p1', featureId: 'draft:abc', maxSteps: 4 })
   })
 })
 

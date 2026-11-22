@@ -53,6 +53,9 @@ describe('toErDiagram', () => {
 		const out = toErDiagram(d);
 		expect(out).toContain('User ||--o{ Order : orders');
 		expect(out).toContain('Order }o--|| User : owner');
+		// Each relation field is typed by the table it points at.
+		expect(out).toContain('Order orders_list FK');
+		expect(out).toContain('User owner FK');
 	});
 
 	it('sanitizes names with spaces and dedupes entity tokens', () => {

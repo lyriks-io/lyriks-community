@@ -6,6 +6,7 @@
  * state / event / surface / entity), with success/error handlers, played as a
  * clickable wireframe. Pure data + helpers — no UI, no persistence here.
  */
+import { mintUuid } from '../shared';
 import type { Option } from '$domain/shared';
 
 /** The designless HTML primitives the runner can auto-generate. */
@@ -19,11 +20,6 @@ export const PROTOTYPE_ELEMENT_KINDS = [
 	{ code: 'container', label: 'Container' }
 ] as const satisfies readonly Option[];
 export type PrototypeElementKind = (typeof PROTOTYPE_ELEMENT_KINDS)[number]['code'];
-
-/** Interactive kinds may trigger an action; the rest are display/layout only. */
-export function isInteractiveKind(kind: PrototypeElementKind): boolean {
-	return kind === 'button' || kind === 'input' || kind === 'form' || kind === 'link';
-}
 
 /** What an element binds to in the simulator (mirrors the Unspa feature's targetKind). */
 export const BIND_TARGET_KINDS = [
@@ -81,7 +77,7 @@ export function emptyPrototype(): ExperiencePrototype {
 }
 
 export function createPrototypeScreen(order: number, name = 'New screen'): PrototypeScreen {
-	return { id: crypto.randomUUID(), name, order };
+	return { id: mintUuid(), name, order };
 }
 
 export function createPrototypeElement(
@@ -90,7 +86,7 @@ export function createPrototypeElement(
 	kind: PrototypeElementKind
 ): PrototypeElement {
 	return {
-		id: crypto.randomUUID(),
+		id: mintUuid(),
 		screenId,
 		order,
 		kind,
@@ -108,13 +104,4 @@ export function elementsOfScreen(
 	screenId: string
 ): PrototypeElement[] {
 	return p.elements.filter((e) => e.screenId === screenId).sort((a, b) => a.order - b.order);
-}
-
-/** The screen a run begins on: the explicit entry, else the first screen. */
-export function entryScreen(p: ExperiencePrototype): PrototypeScreen | null {
-	if (p.entryScreenId) {
-		const found = p.screens.find((s) => s.id === p.entryScreenId);
-		if (found) return found;
-	}
-	return [...p.screens].sort((a, b) => a.order - b.order)[0] ?? null;
 }

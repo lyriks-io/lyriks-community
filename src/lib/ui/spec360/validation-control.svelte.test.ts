@@ -57,7 +57,7 @@ describe('the Specification 360° says whose validation an element awaits [crite
 	it('reads Waiting for the others once the reader validated, and Validated once everyone did', () => {
 		const one = validated(started(), ana);
 		const mine = controlFor(ana, one, team)!;
-		expect(validationView(mine)).toMatchObject({ state: 'waiting', label: 'Waiting for 1', title: 'Waiting for Bob Li. Point a moment to withdraw yours' });
+		expect(validationView(mine)).toMatchObject({ state: 'waiting', label: 'Waiting for 1', title: 'Waiting for Bob Li. Click to withdraw yours' });
 		const both = validated(one, bob);
 		expect(validationView(controlFor(cleo, both, team)!)).toMatchObject({ state: 'validated', label: 'Validated' });
 	});
@@ -72,6 +72,52 @@ describe('the Specification 360° says whose validation an element awaits [crite
 		expect(body.match(/data-stamp-ok=/g)?.length).toBe(3);
 		expect(body).toMatch(/data-stamp-more[^>]*>\+6</);
 		expect(body).toContain('title="Waiting for Ana Diaz, Bob Li and 7 others"');
+	});
+});
+
+describe("the reader takes their own validation back from its check, and is told when it was not saved [criterion:ac-leaf-f0cea75a-a9d9-4f27-996c-32900a613fa8] [criterion:00d0d300]", () => {
+	const team: TeamMember[] = [{ person: ana, jobIds: ['product'] }, { person: bob, jobIds: ['design'] }];
+	const mine = () => new SpecValidation(() => ({ projectId: 'p', me: bob, canWrite: true, doc: validated(started(), bob), elements, team, baselines: [] }));
+
+	it('asks Withdraw your validation of <element>? on the check, with the tooltip of the action', () => {
+		const control = mine().control('branding')!;
+		expect(control.title).toBe('You validated this element · click to withdraw');
+		expect(control.withdrawConfirm).toEqual({ question: 'Withdraw your validation of Branding?', act: 'Withdraw' });
+		// Nothing to take back on an element the reader has not validated.
+		expect(new SpecValidation(() => ({ projectId: 'p', me: bob, canWrite: true, doc: started(), elements, team, baselines: [] })).control('branding')!.withdrawConfirm).toBeNull();
+	});
+
+	it("counts the withdrawal on the band at once, then takes the count back and says why when the server refuses", async () => {
+		let release!: (response: Response) => void;
+		vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => { release = resolve; })));
+		const validation = mine();
+		const sent = validation.withdraw('branding');
+		expect(validation.shownBoard.standings.branding.validatedBy).toEqual([]);
+		// The check keeps the confirmed validation while it is saved.
+		expect(validation.mine('branding')).toBe(true);
+		await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+		release(Response.json({ message: 'The project team is unavailable. Try again when it is available.' }, { status: 503 }));
+		expect(await sent).toBe(false);
+		expect(validation.mine('branding')).toBe(true);
+		expect(validation.shownBoard.standings.branding.validatedBy).toEqual([bob]);
+		expect(pushToast).toHaveBeenCalledWith({ level: 'error', message: 'Your withdrawal was not saved. The project team is unavailable. Try again when it is available.' });
+	});
+
+	it('says to check the connection when the server cannot be reached', async () => {
+		vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+		const validation = mine();
+		expect(await validation.withdraw('branding')).toBe(false);
+		expect(validation.mine('branding')).toBe(true);
+		expect(pushToast).toHaveBeenCalledWith({ level: 'error', message: 'Your withdrawal was not saved. Check your connection.' });
+	});
+
+	it('says it was not saved, then why, when the page refuses it itself', async () => {
+		const send = vi.fn();
+		vi.stubGlobal('fetch', send);
+		const gone = new SpecValidation(() => ({ projectId: 'p', me: bob, canWrite: true, doc: validated(started(), bob), elements: [], team, baselines: [] }));
+		expect(await gone.withdraw('branding')).toBe(false);
+		expect(send).not.toHaveBeenCalled();
+		expect(pushToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Your withdrawal was not saved. This element is no longer in the specification. Reload the page.' }));
 	});
 });
 

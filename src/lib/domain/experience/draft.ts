@@ -1,3 +1,4 @@
+import { mintUuid } from '../shared';
 import type { ComponentColor, DataMode, OperationKind } from './enums';
 import { emptyPrototype, type ExperiencePrototype, type BindTargetKind } from './prototype';
 import {
@@ -198,7 +199,7 @@ export function createEmptyExperienceDraft(projectId: string): ProjectExperience
 }
 
 function newId(): string {
-	return crypto.randomUUID();
+	return mintUuid();
 }
 
 /** Next order value among siblings — the items already filtered to one parent. */

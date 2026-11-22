@@ -3,6 +3,7 @@ import type { EvolutionRequest, HistoryEntry } from './draft';
 import { firstRefusal, guard, type Guarded } from './guard';
 import { record } from './history';
 import { canCloseRequest } from './lifecycle';
+import { reopenSteps } from './path';
 import {
 	codeReportRefusal,
 	codeReportSummary,
@@ -42,18 +43,32 @@ export function reportCodeStateAct(ctx: ActContext, request: EvolutionRequest, d
 	if (!allowed.ok) return allowed;
 	const moved = withCodeReport(request.code, report, ctx.at);
 	const said = codeReportSummary(moved.code, request.code, deploymentBranch, moved);
-	const next = { ...request, code: moved.code };
+	const next = moved.setAside ? approvalAskedAgain({ ...request, code: moved.code }) : { ...request, code: moved.code };
 	return { ok: true, request: said ? stamp(ctx, next, 'code_commit', said) : next, summary: said ?? `${report.branch} at ${shortSha(report.codeHead)}: nothing moved` };
 }
 
 /** Whether the verification can be validated, read on the code (ac-evo-branch-validate). */
 export const verificationCodeRefusal = (request: EvolutionRequest, deploymentBranch: string): Guarded => validationRefusal(request.code, deploymentBranch, bringsCode(request));
 
-/** The crossing that validated the verification fixes the commit it validated, and says so on the timeline. */
+/**
+ * The last approval awaited fixes the branch's last commit of code as the
+ * validated commit, with who approved it (EVO-011, criteria b8d393ea, e33a838a),
+ * and says so on the timeline. Closing the verification fixes none.
+ */
 export function withValidation(ctx: ActContext, request: EvolutionRequest): EvolutionRequest {
 	if (!request.code) return request;
 	const code = withValidatedCommit(request.code, ctx.actor.id, ctx.at);
-	return stamp(ctx, { ...request, code }, 'code_commit', `Verification validated on ${code.branch}@${shortSha(code.codeHead)}`);
+	return stamp(ctx, { ...request, code }, 'code_commit', `Approval fixed ${code.branch}@${shortSha(code.codeHead)} as the validated commit`);
+}
+
+/**
+ * A commit of code after the one the approval fixed sets the approval aside and
+ * asks for it again (criterion b8d393ea): an approved change stands in Approval
+ * again, nobody's approval counted, until the last one awaited fixes the new commit.
+ */
+export function approvalAskedAgain(request: EvolutionRequest): EvolutionRequest {
+	if (request.stage !== 'delivered') return request;
+	return reopenSteps({ ...request, stage: 'acceptance' }, ['approval']);
 }
 
 /**

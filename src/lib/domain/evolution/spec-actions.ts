@@ -20,9 +20,13 @@ export interface SpecAction {
 	readonly fingerprint: string;
 }
 
-/** What an action says, rules included, as the value its validation is recorded against. */
+/**
+ * What an action says, rules included, as the value its validation is recorded
+ * against: its content too, so a change of an effect, a parameter or a scenario
+ * after the validation sets it waiting again (criterion c0a6eef3).
+ */
 export function actionFingerprint(action: LocalNode, rules: readonly LocalNode[]): string {
-	return JSON.stringify([action.label, action.status, rules.map((r) => [r.label, r.statement ?? '', r.status])]);
+	return JSON.stringify([action.label, action.status, rules.map((r) => [r.label, r.statement ?? '', r.status]), action.content ?? '']);
 }
 
 /** The actions under one feature node of the graph, in the graph's order, each with its rules. */

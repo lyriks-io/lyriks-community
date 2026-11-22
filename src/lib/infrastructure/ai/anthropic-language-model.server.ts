@@ -16,8 +16,12 @@ const TIMEOUT_MS = 120_000;
  * Team subscription draws on the API credits that subscription includes.
  */
 export class AnthropicLanguageModel implements LanguageModelPort {
+	constructor(private readonly fetcher: typeof fetch = fetch) {}
+
 	async complete(connection: LanguageModelConnection, request: LanguageModelRequest): Promise<LanguageModelAnswer> {
-		const client = new Anthropic({ apiKey: connection.apiKey, timeout: TIMEOUT_MS, maxRetries: 1 });
+		// The connected key is the client's only credential: the SDK then reads no
+		// ANTHROPIC_* variable and no profile from the server's disk.
+		const client = new Anthropic({ apiKey: connection.apiKey, timeout: TIMEOUT_MS, maxRetries: 1, fetch: this.fetcher });
 		try {
 			const response = await client.beta.messages.create({
 				model: connection.model,

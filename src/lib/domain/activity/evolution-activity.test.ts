@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createEvolutionRequest, type EvolutionRequest } from '$domain/evolution';
-import { lineFor, notificationsFor } from './activity';
+import { notificationsFor } from './activity';
 import { dossierPlace, evolutionActivity } from './evolution-activity';
 
 const members = [
@@ -79,10 +79,10 @@ describe('evolution activity', () => {
 		const events = evolutionActivity('fac', { requests: [r] }, members);
 		const forDylan = notificationsFor(events, 'dylan@x.io')
 			.filter((e) => e.kind !== 'created')
-			.map((e) => `${e.actor.id} ${lineFor(e, 'dylan@x.io')}`);
-		expect(forDylan).toEqual(['carmen@x.io mentioned you', 'sarah@x.io replied to your comment']);
+			.map((e) => `${e.actor.id} ${e.kind}`);
+		expect(forDylan).toEqual(['carmen@x.io mention', 'sarah@x.io reply']);
 		// Whom a message does not concern reads what was done, not "you".
-		expect(events.filter((e) => e.kind === 'mention').map((e) => lineFor(e, 'sarah@x.io'))).toEqual(['wrote on “Target situation”']);
+		expect(events.filter((e) => e.kind === 'mention').map((e) => e.line)).toEqual(['wrote on “Target situation”']);
 		// The creation of the request is the team's news, not hers.
 		expect(notificationsFor(events, 'sarah@x.io').filter((e) => e.kind !== 'created')).toEqual([]);
 		expect(events.some((e) => e.text === 'secret')).toBe(false);

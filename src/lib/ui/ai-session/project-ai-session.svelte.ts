@@ -21,6 +21,15 @@ import { projectSessionPrompt } from '$ui/evolution/session-prompt';
 /** What the chip of the top bar says (ac-ai-session-band); `open` is a session nothing was heard of yet on this page. */
 export type ProjectAiStatus = 'none' | 'open' | 'listening' | 'thinking' | 'writing' | 'cancelled' | 'gone' | 'ended';
 
+/** One AI of the reader in session on the project, as the server reads it (EVO-015). */
+interface SessionRow {
+	readonly id: string;
+	/** Its client and what it holds, as Claude Code · EVO-014. */
+	readonly name: string;
+	readonly startedAt: string;
+	readonly presence: LiveSessionSignal | null;
+}
+
 interface Reading {
 	readonly session: {
 		readonly id: string;
@@ -29,20 +38,44 @@ interface Reading {
 		readonly endReason: string | null;
 	} | null;
 	readonly presence: LiveSessionSignal | null;
+	/** Every open session of the reader, newest first; absent from a server older than several AIs. */
+	readonly sessions?: readonly SessionRow[];
 	readonly clicks: readonly ProjectClick[];
 }
+
+/** One line of Ask my AI's box: an AI of the reader in session, its name, since when and what it does now (criterion 39e1abc1). */
+export interface AiInSession {
+	readonly id: string;
+	readonly name: string;
+	readonly startedAt: string;
+	readonly status: ProjectAiStatus;
+	readonly thinkingAbout: string | null;
+	readonly saying: string | null;
+}
+
+/** How active a status reads, so Ask my AI's word says the most active AI of the reader (criterion 4cb97f74). */
+const ACTIVITY: Partial<Record<ProjectAiStatus, number>> = { thinking: 3, writing: 3, cancelled: 3, listening: 2, open: 1 };
 
 /** The presence key of the session of the whole project, beside the requests' own. */
 const PROJECT_KEY = '';
 const NO_SESSION = 'No session with your AI yet: a click copies the prompt that opens one.';
 const COPIED = 'Prompt copied: paste it in a new conversation with your AI agent, then stay on the page.';
-const WAITING: Record<ProjectClick['kind'], string> = { chat: 'message in Ask my AI', ask_block: 'question', reread: 'request to re-read the code' };
+const WAITING: Record<ProjectClick['kind'], string> = {
+	chat: 'message in Ask my AI',
+	ask_block: 'question',
+	reread: 'request to re-read the code',
+	run: 'Reverse-Specification to run',
+	resume: 'Reverse-Specification to resume',
+	question: 'question of another AI'
+};
 
 export class ProjectAiSession {
 	reading = $state<Reading | null>(null);
 	presence = $state<LiveSessionSignal | null>(null);
-	/** Ended from this page and not read back yet. */
-	#ended = $state(false);
+	/** What each AI of the reader said last on this page's stream, by session (EVO-015). */
+	#presences = $state<Record<string, LiveSessionSignal>>({});
+	/** Sessions ended from this page and not read back yet. */
+	#endedIds = $state<string[]>([]);
 	/** Clicks sent from this page and not read back yet, so they read waiting at once. */
 	#sent = $state<ProjectClick[]>([]);
 
@@ -51,7 +84,9 @@ export class ProjectAiSession {
 		private readonly projectOf: () => string,
 		private readonly projectName: () => string,
 		/** Whether the reader may edit the project: a re-reading is theirs only. */
-		readonly canEdit: () => boolean
+		readonly canEdit: () => boolean,
+		/** The edition the installation runs: on Community the prompt sends the AI to no playbook it lacks (EVO-008). */
+		private readonly edition: () => string | null = () => null
 	) {}
 
 	get projectId(): string {
@@ -60,21 +95,47 @@ export class ProjectAiSession {
 
 	get session() {
 		const s = this.reading?.session ?? null;
-		return s && this.#ended ? { ...s, open: false, endReason: 'ended_by_person' } : s;
+		return s && this.#endedIds.includes(s.id) ? { ...s, open: false, endReason: 'ended_by_person' } : s;
+	}
+
+	/** The AIs of the reader in session on the project, newest first, each with what it does now (criterion 39e1abc1). */
+	get aiSessions(): AiInSession[] {
+		const rows = this.reading?.sessions ?? [];
+		return rows
+			.filter((row) => !this.#endedIds.includes(row.id))
+			.map((row) => {
+				const now = this.#presences[row.id] ?? row.presence;
+				return {
+					id: row.id,
+					name: row.name,
+					startedAt: row.startedAt,
+					status: (now?.status ?? 'open') as ProjectAiStatus,
+					thinkingAbout: now?.thinkingAbout ?? null,
+					saying: now?.saying ?? null
+				};
+			})
+			.filter((ai) => ai.status !== 'gone' && ai.status !== 'ended');
+	}
+
+	/** The most active AI of the reader in session: the one Ask my AI's word speaks for. */
+	private get leading(): AiInSession | null {
+		return [...this.aiSessions].sort((a, b) => (ACTIVITY[b.status] ?? 0) - (ACTIVITY[a.status] ?? 0))[0] ?? null;
 	}
 
 	private get now(): LiveSessionSignal | null {
 		const s = this.session;
-		const now = this.presence ?? this.reading?.presence ?? null;
+		const now = (s ? this.#presences[s.id] : null) ?? this.presence ?? this.reading?.presence ?? null;
 		return s && now?.sessionId === s.id ? now : null;
 	}
 
 	get status(): ProjectAiStatus {
+		const leading = this.leading;
+		if (leading) return leading.status;
 		const s = this.session;
 		if (!s) return 'none';
 		const now = this.now;
 		if (now && (now.status === 'gone' || now.status === 'ended')) return now.status;
-		if (!s.open) return s.endReason === 'gone' ? 'gone' : 'ended';
+		if (!s.open || this.reading?.sessions) return s.endReason === 'gone' ? 'gone' : 'ended';
 		return now?.status ?? 'open';
 	}
 
@@ -90,11 +151,11 @@ export class ProjectAiSession {
 	}
 
 	get thinkingAbout(): string | null {
-		return this.now?.thinkingAbout ?? null;
+		return this.leading ? this.leading.thinkingAbout : (this.now?.thinkingAbout ?? null);
 	}
 
 	get saying(): string | null {
-		return this.now?.saying ?? null;
+		return this.leading ? this.leading.saying : (this.now?.saying ?? null);
 	}
 
 	/** The latest click of the reader on a place, sent from here or read back. */
@@ -115,7 +176,7 @@ export class ProjectAiSession {
 
 	/** The prompt that opens a session, copied by a click made without one (ac-ai-session-project). */
 	prompt(waiting: string | null = null): string {
-		return projectSessionPrompt(this.projectId, this.projectName(), { waiting });
+		return projectSessionPrompt(this.projectId, this.projectName(), { waiting, edition: this.edition() });
 	}
 
 	async refresh(): Promise<void> {
@@ -128,7 +189,9 @@ export class ProjectAiSession {
 		this.reading = reading;
 		const known = new Set(this.reading.clicks.map((c) => c.at));
 		this.#sent = this.#sent.filter((c) => !known.has(c.at));
-		if (this.reading.session?.open) this.#ended = false;
+		// A session read back is as the server says: still open, or gone from the list.
+		const open = new Set((reading.sessions ?? []).map((s) => s.id));
+		this.#endedIds = this.#endedIds.filter((id) => !open.has(id) && id !== reading.session?.id);
 	}
 
 	async #post(body: Record<string, unknown>): Promise<Record<string, unknown> | null> {
@@ -145,11 +208,15 @@ export class ProjectAiSession {
 		return answer;
 	}
 
-	/** End the session from the chip's panel: it reads ended at once ("End the session"). */
-	async end(): Promise<void> {
-		this.#ended = true;
-		const done = await this.#post({ act: 'end', sessionId: this.session?.id });
-		if (!done) this.#ended = false;
+	/**
+	 * End one AI's session from Ask my AI's box: it leaves the list at once, the
+	 * reader's other AIs stay ("End the session"); the newest when none is named.
+	 */
+	async end(sessionId: string | undefined = this.aiSessions[0]?.id ?? this.session?.id): Promise<void> {
+		if (!sessionId) return;
+		this.#endedIds = [...this.#endedIds, sessionId];
+		const done = await this.#post({ act: 'end', sessionId });
+		if (!done) this.#endedIds = this.#endedIds.filter((id) => id !== sessionId);
 		else pushToast({ level: 'success', message: 'Session ended: your AI stops waiting' });
 		await this.refresh();
 	}
@@ -194,12 +261,16 @@ export class ProjectAiSession {
 		void this.projectId;
 		this.reading = null;
 		this.presence = null;
-		this.#ended = false;
+		this.#presences = {};
+		this.#endedIds = [];
 		this.#sent = [];
 		const onSignal = (event: Event) => {
 			const { detail } = event as CustomEvent<LiveSessionSignal>;
 			if (detail.requestId !== PROJECT_KEY) return;
-			const changed = this.presence?.status !== detail.status || this.presence?.sessionId !== detail.sessionId;
+			const before = this.#presences[detail.sessionId];
+			// Each AI of the reader speaks for its own session (EVO-015); a new one or a new status reads the list again.
+			const changed = before?.status !== detail.status || !(this.reading?.sessions ?? []).some((s) => s.id === detail.sessionId);
+			this.#presences = { ...this.#presences, [detail.sessionId]: detail };
 			this.presence = detail;
 			if (changed) void this.refresh();
 		};

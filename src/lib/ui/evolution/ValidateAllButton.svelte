@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { fade, slide } from 'svelte/transition';
+	import { countOf, type SectionElements } from './section-elements';
 
 	/**
-	 * "Validate all" of a section: validates in the reader's name, in one go,
+	 * Validate the whole section (N), on a section of a change's Specification
+	 * (EVO-009; the step's foot keeps Validate all (N), StepValidateAll): validates in the reader's name, in one go,
 	 * every element of the section still waiting on them. It exists only while
 	 * something does, says how many in its tooltip, and shows only while the
 	 * pointer is on the section (`group/section` on the section's wrapper), so a
@@ -20,7 +22,7 @@
 		/** Elements of the section still waiting on the reader's validation. */
 		count: number;
 		/** How the section names its elements, plural: "features", "actions". */
-		what: string;
+		what: SectionElements;
 		/** Shown at rest, not only while the pointer is on the section. */
 		always?: boolean;
 		/** What the section's elements are, for the tooltip: "of this section" by default. */
@@ -42,10 +44,10 @@
 		transition:comeAndGo
 		type="button"
 		class="inline-flex h-7 flex-none items-center border-[1.5px] border-ink bg-evo-violet px-3 font-evo text-xs font-bold tracking-[0.07em] whitespace-nowrap text-white uppercase disabled:cursor-default {reveal}"
-		title="Validate the {count} {count === 1 ? what.replace(/s$/, '') : what} {of} still waiting on you"
+		title="Validate the {countOf(count, what)} {of} still waiting on you"
 		{disabled}
 		{onclick}
-		>Validate all ({count})</button
+		>Validate the whole section ({count})</button
 	>
 {:else if !always}
 	<!-- Nothing waits: no button, but its height, so its row does not shrink. -->

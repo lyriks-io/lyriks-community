@@ -1,6 +1,6 @@
 // See https://svelte.dev/docs/kit/types#app.d.ts
 import type { Session } from '$application/ports';
-import type { LicenseView } from '$domain/licensing';
+import type { LicenseView, UpgradePlan } from '$domain/licensing';
 import type { AppServices } from '$composition/container.server';
 
 declare global {
@@ -9,6 +9,8 @@ declare global {
 			message: string;
 			/** What opens the refused capability, under the message (EVO-001). */
 			detail?: string;
+			/** The plan that opens what was refused: the refusal is an offer, which a page shows with View plans (EVO-006). */
+			plan?: UpgradePlan;
 			/** A project Community holds inactive: the error page offers to make it the active one. */
 			inactiveProjectId?: string;
 		}

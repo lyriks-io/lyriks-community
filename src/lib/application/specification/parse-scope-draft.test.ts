@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { SCOPE_AUDIT_LOG_LIMIT } from '$domain/scope';
 import { parseScopeDraft } from './parse-scope-draft';
 import { SECTIONS } from '$lib/shared/sections';
 
@@ -56,6 +57,13 @@ describe('parseScopeDraft', () => {
 			draft.sectionAssessments.find((assessment) => assessment.section === 'coherence')
 				?.applicability
 		).toBe('derived');
+	});
+
+	it('reads the audit ledger back: unknown kinds and verdicts read safely, an undated row dropped, at most the cap', () => {
+		const row = { performedAt: '2026-11-17T10:00:00.000Z', scopeFingerprint: 's', modelFingerprint: 'm', kind: 'completion', actor: 'ana@acme.io', score: 88, verdict: 'ready', blockingIssues: 2, failedChecks: ['journeys'] };
+		const draft = parseScopeDraft({ auditLog: [row, { ...row, kind: 'party', verdict: 'shipped', actor: '' }, { ...row, performedAt: '' }, null] }, 'p');
+		expect(draft.auditLog).toEqual([row, { ...row, kind: 'audit', verdict: 'unverified', actor: 'unknown' }]);
+		expect(parseScopeDraft({ auditLog: Array.from({ length: SCOPE_AUDIT_LOG_LIMIT + 5 }, () => row) }, 'p').auditLog).toHaveLength(SCOPE_AUDIT_LOG_LIMIT);
 	});
 
 	it('folds migration-era Foundation assessments into one strict verdict', () => {

@@ -1,6 +1,6 @@
 import type { ExtractedElement } from '../documents';
 import { uncitedElements } from '../documents';
-import type { RetrospecSpec, SpecCounts, RetroTab } from './reading';
+import type { RetrospecSpec, SpecCounts } from './reading';
 
 /**
  * The summary a person reads once the AI is done, and the lines the analysis
@@ -170,27 +170,6 @@ export function summaryNote(counts: SpecCounts, productName: string): RetroNote 
 			...line('EX', `Named ${plural(counts.journeys, 'user journey')}.`, 'experience', counts.journeys > 0)
 		],
 		todo: ['Start the validation, section by section.']
-	};
-}
-
-/** The note above the validation, its last line following the tab a person is on. */
-export function reviewNote(counts: SpecCounts, productName: string, total: number, tab: RetroTab | null): RetroNote {
-	return {
-		author: 'ai',
-		title: `We found ${plural(total, 'item')} in ${productName}.`,
-		takenLabel: 'FOUND IN THE CODE',
-		taken: [
-			...line('FD', 'Described the product and its problem.', 'foundations', counts.roles > 0 || counts.capabilities > 0),
-			...line('FT', `Rebuilt ${plural(counts.features, 'feature')} and ${plural(counts.actions + counts.rules, 'action and rule', 'actions and rules')}.`, 'features', counts.features > 0),
-			...line('DT', 'Mapped the data, stack and infra.', 'data', counts.entities > 0)
-		],
-		suggestedLabel: 'GUESSED BY YOUR AI · TO DOUBLE‑CHECK',
-		suggested: [
-			...line('RG', `Found ${plural(counts.openIssues, 'open rule issue')}.`, 'actions', counts.openIssues > 0),
-			...line('DT', `Found ${plural(counts.orphanTables, 'table')} related to nothing.`, 'data', counts.orphanTables > 0),
-			...line('EX', `Found ${plural(counts.steps - counts.stepsOnScreen, 'journey step')} on no screen.`, 'experience', counts.steps > counts.stepsOnScreen)
-		],
-		todo: [tab?.todo ?? 'Validate this section.']
 	};
 }
 

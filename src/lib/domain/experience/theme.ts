@@ -64,11 +64,6 @@ export const HOVER_CSS: Record<HoverEffect, string> = {
 
 /* ── Spacing density (drives padding + gap = the simulator's margins) ───── */
 export type SimDensity = 'compact' | 'cozy' | 'comfortable';
-export const SIM_DENSITIES = [
-	{ code: 'compact', label: 'Compact' },
-	{ code: 'cozy', label: 'Cozy' },
-	{ code: 'comfortable', label: 'Comfortable' }
-] as const satisfies readonly Option[];
 /** Base spacing unit (px). A group's p-{n}/gap-{n} scale value is multiplied by this. */
 const SPACE_PX: Record<SimDensity, number> = { compact: 3, cozy: 4, comfortable: 6 };
 
@@ -92,17 +87,6 @@ export const SIM_VIEWPORTS = [
 	{ code: 'full', label: 'Full width' },
 	{ code: 'cli', label: 'CLI / Terminal' }
 ] as const satisfies readonly Option[];
-
-/** Max-width (CSS) for each concrete viewport. */
-const VIEWPORT_WIDTH: Record<Exclude<SimViewport, 'auto'>, string> = {
-	mobile: '380px',
-	tablet: '760px',
-	small: '460px',
-	medium: '680px',
-	large: '1024px',
-	full: '100%',
-	cli: '820px'
-};
 
 /**
  * Concrete viewport implied by a project's Step-01 form factors. The array is
@@ -133,15 +117,6 @@ export function resolveViewport(
 	formFactors: readonly string[]
 ): Exclude<SimViewport, 'auto'> {
 	return viewport === 'auto' ? viewportFromFormFactors(formFactors) : viewport;
-}
-
-export function viewportMaxWidth(viewport: Exclude<SimViewport, 'auto'>): string {
-	return VIEWPORT_WIDTH[viewport] ?? VIEWPORT_WIDTH.large;
-}
-
-/** A CLI/terminal frame renders dark + monospace regardless of the color theme. */
-export function isTerminalViewport(viewport: Exclude<SimViewport, 'auto'>): boolean {
-	return viewport === 'cli';
 }
 
 /** CSS-var overrides that re-skin a subtree as a dark terminal (for `cli` viewport). */

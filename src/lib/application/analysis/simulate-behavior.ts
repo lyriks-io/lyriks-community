@@ -5,6 +5,7 @@ import type {
 } from '$application/ports';
 import {
 	behaviourBaseOf,
+	draftsOpen,
 	isDraftLeafId,
 	type DraftBehaviourModel,
 	type DraftLeaf,
@@ -31,7 +32,7 @@ export type WalkTarget =
 			readonly baseLeafId: string | null;
 			/** The draft's runnable behaviour, when one was authored. */
 			readonly model?: DraftBehaviourModel;
-			/** Whether the request is frozen: its drafts can then be read, not written. */
+			/** Whether its drafts are read, not written: past the Build, since a request in Build is corrected (EVO-012). */
 			readonly frozen: boolean;
 	  };
 
@@ -79,7 +80,7 @@ export function resolveWalkTarget(
 				requestId: request.id,
 				baseLeafId: behaviourBaseOf(draft),
 				...(draft.behaviourModel ? { model: draft.behaviourModel } : {}),
-				frozen: request.frozen === true
+				frozen: !draftsOpen(request).ok
 			}
 		};
 	}

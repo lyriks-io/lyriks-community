@@ -98,10 +98,11 @@ describe('no tab waits for a validation before the build', () => {
 		expect(tabLocks({ ...facts, current: 'specification', atImpactAnalysis: true }).impact).toBeNull();
 	});
 
-	it('still reads which written answers wait on a person, an AI client validating itself aside', () => {
+	it('reads which written answers still wait for a validation, a person\'s or their AI\'s in their name', () => {
 		const typedByAi = { filled: true, validation: 'unvalidated' };
 		expect(nothingWaitsOnPeople([byPerson, typedByAi])).toBe(false);
-		expect(nothingWaitsOnPeople([byPerson, { filled: true, validation: 'validated', humanValidated: false }])).toBe(false);
+		expect(nothingWaitsOnPeople([byPerson, { filled: true, validation: 'refused' }])).toBe(false);
+		expect(nothingWaitsOnPeople([byPerson, { filled: true, validation: 'validated', humanValidated: false }])).toBe(true);
 		expect(nothingWaitsOnPeople([byPerson, { filled: false }])).toBe(true);
 		expect(nothingWaitsOnPeople([])).toBe(true);
 	});

@@ -32,7 +32,7 @@ import {
 	UI_STATE_KEYS
 } from '$domain/foundation';
 import { CAPABILITY_SOURCES, ROLE_TONES, SYSTEM_CAPABILITIES } from '$domain/users';
-import { CORE_TONES, MVP_TIERS } from '$domain/features';
+import { CORE_TONES } from '$domain/features';
 import { AUTHORIZATION_MODELS } from '$domain/foundation';
 import { EDGE_OUTCOMES, ISSUE_KINDS, ISSUE_SEVERITIES, ISSUE_STATUSES } from '$domain/rules';
 import { DB_ENGINES, FIELD_TYPES, HOST_KINDS, HOST_REGIONS, ON_DELETE, PROTOCOLS } from '$domain/data';
@@ -224,16 +224,8 @@ const ENUMS: Partial<Record<Section, Record<string, string[]>>> = {
 	},
 	features: {
 		'cores.tone': codes(CORE_TONES),
-		'mvpAssignments.tier': codes(MVP_TIERS),
-		'leafMeta.<featureId>.status': ['backlog', 'in-progress', 'done'],
 		'leafMeta.<featureId>.stage (manual maturity stage override, 1 Idea, 2 Outlined, 3 Specified, 4 Simulated, 5 Complete; leave unset to derive it from the engine maturity score)':
-			['1', '2', '3', '4', '5'],
-		'assignments.kind (work queue — team data, see authoring)': ['core', 'feature', 'action'],
-		'assignments.status (core/action targets only — feature targets derive from leafMeta.status)': [
-			'todo',
-			'in-progress',
-			'done'
-		]
+			['1', '2', '3', '4', '5']
 	},
 	rules: {
 		'issues.kind': codes(ISSUE_KINDS),
@@ -352,10 +344,8 @@ const SAMPLES: Partial<Record<Section, Record<string, unknown>>> = {
 			description: 'Type and send.',
 			unspaghettitFeatureId: 'feat-send'
 		},
-		mvpAssignments: { featureId: 'feat-send', tier: 'must' },
 		'leafMeta (keyed by LEAF FEATURE ID — the drawer behind each leaf; every field optional)': {
 			'feat-send': {
-				status: 'backlog',
 				objective: 'Let a member get an answer without leaving the thread.',
 				problem: 'Answers are copy-pasted from another tool.',
 				expectedEffect: 'Time-to-first-answer drops below 30s.',
@@ -367,23 +357,6 @@ const SAMPLES: Partial<Record<Section, Record<string, unknown>>> = {
 				dependsOn: ['feat-thread'],
 				sourceIds: ['src-product-brief']
 			}
-		},
-		'releases (archivedAt optional: the explicit ship stamp; "done" derives from feature statuses)': {
-			id: 'release-v1',
-			name: 'First release',
-			version: '1.0.0',
-			weekStart: 1,
-			weekEnd: 6,
-			order: 0,
-			description: 'Initial production scope.'
-		},
-		roadmapAssignments: { featureId: 'feat-send', releaseId: 'release-v1' },
-		'sprints (archivedAt optional: the explicit close stamp, set via apply_roadmap_batch)': {
-			id: 'sprint-1',
-			name: 'Sprint 1',
-			startDate: '2026-01-05',
-			endDate: '2026-01-16',
-			order: 0
 		}
 	},
 	rules: {
@@ -753,17 +726,14 @@ const AUTHORING: Record<Section, string> = {
 		'CAPABILITY IDS BY SOURCE: system = the catalog ids; feature = the leaf feature id, or "action:<leafFeatureId>:<actionId>" for one action of it (the rows the Access matrix shows); journey = the journey id; surface = "screen:<screenId>" for an Experience screen (a page) or "surface:<leafFeatureId>:<surfaceId>" for a dialog/panel/form authored in the behavior model; off_structure = your own id. Surfaces are the rows that answer "who may open this page / this dialog": grant them, do not leave them orphaned. ' +
 		'A PERMISSION IS ACCESS, NOTHING ELSE: one permissions[] row {roleId, capabilityId, capabilitySource} says the role has access to that capability, and no row says it has not. There is no verb (no view, create, read, update, delete, execute...): adding, editing or deleting something are actions of the model, each its own capability row, granted like any other. Write ONE row per role and capability you mean to open, never one per verb. A row that still carries `action` (an older playbook) is accepted, the field is ignored and the answer carries a `note` saying so; rows repeating one role and one capability are folded into one. Keyless permissions[] rows are patchable via patch_section merge with match:{roleId,capabilityId}, and removing a row takes the access back.',
 	features:
-		'set_section. The capability TREE and its delivery plan — never the behaviour itself (that is authored per leaf with the behavior tools, and read back as maturity). ' +
+		'set_section. The capability TREE, never the behaviour itself (that is authored per leaf with the behavior tools, and read back as maturity). ' +
 		'\n· Tree tab — cores[] {id, name, description, tone} are the product pillars; families[] {id, name, coreId, parentFamilyId, description} group inside a core and may nest; features[] are the LEAVES {id, name, coreId, parentFamilyId, description, unspaghettitFeatureId}. ' +
 		'A leaf is one capability the product offers ("Send a message"), not a screen ("Chat page" is an Experience screen) and not a scenario ("Given … then …" is a `rules` row). ' +
 		'`unspaghettitFeatureId` MUST equal the leaf `id` — that pair is the binding to the behavior model. Use a project-unique id (`feat-send-invoice`, not `feat-submit`): a generic id collides across projects. ' +
-		'Every coreId/parentFamilyId/featureId/releaseId must resolve inside the SAME payload — an unknown reference is rejected with the collection to author first. ' +
-		'\n· Per-leaf detail (the drawer behind a leaf) — leafMeta, keyed by leaf feature id: objective, problem, expectedEffect, value (the "why" a reader asks for), code (your own reference), acceptanceCriteria[] {id, text} = the testable statements this leaf must satisfy, dependsOn[] = other leaf ids, sourceIds[] = Documents & Sources citations, status backlog|in-progress|done, stage 1-5 (a MANUAL maturity stage override: 1 Idea, 2 Outlined, 3 Specified, 4 Simulated, 5 Complete; omit it and the stage derives from the engine maturity score, which is the honest default). Every field is optional and an empty string is a deliberate "cleared", never a missing value. ' +
+		'Every coreId/parentFamilyId/featureId must resolve inside the SAME payload: an unknown reference is rejected with the collection to author first. ' +
+		'\n· Per-leaf detail (the drawer behind a leaf): leafMeta, keyed by leaf feature id: objective, problem, expectedEffect, value (the "why" a reader asks for), code (your own reference), acceptanceCriteria[] {id, text} = the testable statements this leaf must satisfy, dependsOn[] = other leaf ids, sourceIds[] = Documents & Sources citations, stage 1-5 (a MANUAL maturity stage override: 1 Idea, 2 Outlined, 3 Specified, 4 Simulated, 5 Complete; omit it and the stage derives from the engine maturity score, which is the honest default). Every field is optional and an empty string is a deliberate "cleared", never a missing value. ' +
 		'\n  A leaf criterion is NOT a second list: saving this section carries it into the behavior model under a reserved `ac-leaf-` id, beside the criteria you author with apply_behavior_batch, and everything that counts criteria counts that one list. Write prose here; write status, relations and evidence through the model. ' +
-		'\n· Evolutions › Roadmap — mvpAssignments[] {featureId, tier} and releases[] {id, name, version, weekStart, weekEnd, order, description, archivedAt?} + roadmapAssignments[] {featureId, releaseId}. actionRelease maps ONE kernel action to a different release than its parent leaf, keyed "<featureId>::<actionId>". ' +
-		'\n· Knowledge › a feature\'s page › Actions › Journeys: actionJourneys { <featureId>: [{ id, name, nodes: string[], links: [{ from, to }], positions?: { <actionId>: { x, y } }, origin }] }, the one diagram of a feature\'s actions (send a single entry per feature; the page shows the first, its journeys being the paths its arrows draw): nodes are the action ids the journey holds (each once), links the arrows from one action to the next (one action may lead to several), positions where a person dragged a card (leave them out: a card without one stands where the arrows place it, left to right). A journey never loops: an arrow between two different actions of the journey, drawn once, never leading back to where it started (one that does is dropped). A person decides them: a write through this section never replaces, changes or removes a journey whose origin is "person" (it stays as stored), and every other journey you send is stored as a suggestion (origin "ai") replacing the suggestions before it, which a person keeps, changes or dismisses on the page. Suggest journeys only from what the feature\'s actions really chain (what one makes possible for the next); never claim origin "person". ' +
-		'\n· Evolutions › Roadmap (sprints; the work queue itself is not shown in the interface) — sprints[] {id, name, startDate?, endDate?, order, archivedAt?}, assignments[] (who does what: kind core|feature|action + the ids for that kind, assigneeId, sprintId, order), featureRoles/actionRoles (contributor ids per feature/action), actionAssignments (owner per action). This is the WORKSPACE\'s own delivery data: it names real people. Author it only from what the user explicitly told you — never invent an assignee, a sprint or a due date, and leave these empty when planning was not part of the request. ' +
-		'\n· PREFER THE ROADMAP TOOLS for delivery management: get_roadmap reads releases/sprints with derived lifecycle (planned|in-progress|done|archived), progress % and per-feature implementation coverage in one call; apply_roadmap_batch mutates them with cascades handled (release/sprint removal cleans its assignments); reconcile_roadmap_statuses raises feature statuses to match code-adoption coverage (upgrade-only, also fired automatically after sync_implementation_index). archivedAt is the explicit ship/close stamp: "done" is always DERIVED from statuses, archiving pins it in history.',
+		'\n· Knowledge › a feature\'s page › Actions › Journeys: actionJourneys { <featureId>: [{ id, name, nodes: string[], links: [{ from, to }], positions?: { <actionId>: { x, y } }, origin }] }, the one diagram of a feature\'s actions (send a single entry per feature; the page shows the first, its journeys being the paths its arrows draw): nodes are the action ids the journey holds (each once), links the arrows from one action to the next (one action may lead to several), positions where a person dragged a card (leave them out: a card without one stands where the arrows place it, left to right). A journey never loops: an arrow between two different actions of the journey, drawn once, never leading back to where it started (one that does is dropped). A person decides them: a write through this section never replaces, changes or removes a journey whose origin is "person" (it stays as stored), and every other journey you send is stored as a suggestion (origin "ai") replacing the suggestions before it, which a person keeps, changes or dismisses on the page. Suggest journeys only from what the feature\'s actions really chain (what one makes possible for the next); never claim origin "person". ',
 	experience:
 		'The client-visible product, described and never drawn: what a persona goes through, on which screen, doing what with which data, and the design system a coding agent reads with get_design_system to build the UI (no page hands out a design.md file). ' +
 		'THE PLAN: journeys[] {id, coreId (a features core), name, description, order, actorRoleIds[] = users.roles[] ids} = one end-to-end path a persona takes; steps[] {id, journeyId, name, order, linkedScreenId} = its ordered stops, each on a screen of the inventory. ' +

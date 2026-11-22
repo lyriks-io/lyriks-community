@@ -11,8 +11,6 @@ import {
 	addNode,
 	buildAcceptanceSpec,
 	deriveJourneyFlow,
-	generateAcceptanceTests,
-	generateRepoScaffold,
 	simulate
 } from '$domain/experience';
 
@@ -116,58 +114,6 @@ describe('acceptance spec — prototype as build constraint', () => {
 		expect(spec.gherkin).toContain('Feature: Sign in');
 		expect(spec.gherkin).toContain('Scenario: advances to Home');
 		expect(spec.gherkin).toContain('Then arrived is set');
-	});
-
-	it('generates a Playwright scaffold that gotos the entry route and clicks the nav element', () => {
-		const { draft } = loginToHomeDraft();
-		const tests = generateAcceptanceTests(draft);
-		expect(tests.journeyCount).toBe(1);
-		expect(tests.playwright).toContain("import { test, expect } from '@playwright/test'");
-		expect(tests.playwright).toContain('await page.goto("/login")');
-		// clicks the "Continue" button by role + accessible name, then asserts URL → Home
-		expect(tests.playwright).toContain("page.getByRole('button', { name: \"Continue\" })");
-		expect(tests.playwright).toContain('toHaveURL(/\\/home/)');
-		// no element observes `arrived`, so the scenario stays a manual annotation
-		expect(tests.playwright).toContain('// acceptance (bind manually): arrived is set');
-		expect(tests.annotatedAssertions).toBe(1);
-	});
-
-	it('auto-binds a scenario state to a REAL assertion via visibleWhen, and honors a TargetMap', () => {
-		const { draft, home } = loginToHomeDraft();
-		// An element gated by `arrived` → the scenario "arrived is set" becomes a real
-		// visibility assertion instead of an annotation (mined from the prototype).
-		const welcome = createElementNode(home.id, draft.builder.screenRoots[home.id], 'heading');
-		welcome.label = 'Welcome';
-		welcome.wiring.visibleWhen = { path: 'arrived', op: 'truthy' };
-		addNode(draft.builder, welcome);
-
-		const tests = generateAcceptanceTests(draft, {
-			routes: { Login: '/auth/sign-in' },
-			selectors: { Continue: '[data-testid=continue]' }
-		});
-		expect(tests.playwright).toContain('await expect(page.getByText("Welcome")).toBeVisible();');
-		expect(tests.boundAssertions).toBeGreaterThanOrEqual(1);
-		// TargetMap retargets the same spec onto an existing app:
-		expect(tests.playwright).toContain('await page.goto("/auth/sign-in")');
-		expect(tests.playwright).toContain('page.locator("[data-testid=continue]")');
-	});
-
-	it('repo scaffold: emits the drop-in bundle with a pre-filled map', () => {
-		const { draft } = loginToHomeDraft();
-		const scaffold = generateRepoScaffold(draft);
-		const paths = scaffold.files.map((f) => f.path);
-		expect(paths).toContain('tests/acceptance/acceptance.spec.ts');
-		expect(paths).toContain('playwright.config.ts');
-		expect(paths).toContain('.github/workflows/acceptance.yml');
-		expect(paths).toContain('lyriks.map.json');
-		// the starter map lists the prototype's screens with their current routes
-		const mapFile = scaffold.files.find((f) => f.path === 'lyriks.map.json')!;
-		const parsed = JSON.parse(mapFile.content);
-		expect(parsed.routes.Login).toBe('/login');
-		expect(parsed.routes.Home).toBe('/home');
-		// the nav element label is offered as a selector slot to fill
-		expect(parsed.selectors).toHaveProperty('Continue');
-		expect(scaffold.summary.journeyCount).toBe(1);
 	});
 });
 
@@ -295,18 +241,5 @@ describe('acceptance spec in French (spec language)', () => {
 		const { draft } = loginToHomeDraft();
 		expect(buildAcceptanceSpec(draft).gherkin).toBe(buildAcceptanceSpec(draft, 'en').gherkin);
 		expect(buildAcceptanceSpec(draft).gherkin.startsWith('Feature: Sign in')).toBe(true);
-	});
-
-	it('writes the generated test titles and scaffold prose in French', () => {
-		const { draft } = loginToHomeDraft();
-		const tests = generateAcceptanceTests(draft, {}, 'fr');
-		expect(tests.playwright).toContain(`test("réalise le parcours «${NB}Sign in${NB}»"`);
-		expect(tests.playwright).toContain("// Tests d'acceptation E2E");
-		expect(tests.playwright).toContain(`// acceptation (à relier à la main)${NB}: «${NB}arrived${NB}» a une valeur`);
-		const scaffold = generateRepoScaffold(draft, {}, 'fr');
-		const map = JSON.parse(scaffold.files.find((f) => f.path === 'lyriks.map.json')!.content);
-		expect(map.$comment).toContain('Reciblez les tests');
-		expect(scaffold.files.find((f) => f.path === 'ACCEPTANCE.md')!.content).toContain("# Tests d'acceptation");
-		expect(scaffold.files.find((f) => f.path === 'tests/acceptance/acceptance.feature')!.content).toContain('# language: fr');
 	});
 });

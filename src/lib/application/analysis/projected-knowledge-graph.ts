@@ -28,16 +28,16 @@ import type {
  */
 export class ProjectedKnowledgeGraphProvider implements KnowledgeGraphProviderPort {
 	constructor(
-		private readonly loadFoundation: LoadFoundationDraftUseCase,
-		private readonly loadFeatures: LoadFeaturesDraftUseCase,
-		private readonly loadUsers: LoadUsersDraftUseCase,
-		private readonly loadExperience: LoadExperienceDraftUseCase,
-		private readonly loadData: LoadDataDraftUseCase,
-		private readonly loadRules: LoadRulesDraftUseCase,
-		private readonly loadArchitecture: LoadArchitectureDraftUseCase,
+		private readonly loadFoundation: Pick<LoadFoundationDraftUseCase, 'loadIdentity'>,
+		private readonly loadFeatures: Pick<LoadFeaturesDraftUseCase, 'execute'>,
+		private readonly loadUsers: Pick<LoadUsersDraftUseCase, 'execute'>,
+		private readonly loadExperience: Pick<LoadExperienceDraftUseCase, 'execute'>,
+		private readonly loadData: Pick<LoadDataDraftUseCase, 'execute'>,
+		private readonly loadRules: Pick<LoadRulesDraftUseCase, 'execute'>,
+		private readonly loadArchitecture: Pick<LoadArchitectureDraftUseCase, 'execute'>,
 		private readonly clock: ClockPort,
 		private readonly coherence: GlobalCoherenceCheckerPort,
-		private readonly upstream: UpstreamCapabilityProviderPort
+		private readonly upstream: Pick<UpstreamCapabilityProviderPort, 'listSurfaceCapabilities'>
 	) {}
 
 	async build(projectId: string): Promise<KnowledgeGraph> {

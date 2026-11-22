@@ -20,11 +20,11 @@ describe('CheckProjectCreationUseCase (EVO-001, feat 42)', () => {
 		expect(await new CheckProjectCreationUseCase(() => 'community', catalog).execute()).toEqual({ ok: true });
 	});
 
-	it('refuses a second project on Community, saying Community holds one project', async () => {
+	it('refuses a second project on Community with the offer of Solo Builder [criterion:ac-leaf-343d6e7d-aac1-4ec5-8a47-75da99d08d33]', async () => {
 		const { catalog } = catalogOf([project('a')]);
 		const check = await new CheckProjectCreationUseCase(() => 'community', catalog).execute();
-		expect(check).toMatchObject({ ok: false, plan: 'solo_builder' });
-		expect(!check.ok && check.reason).toBe('Community holds one project. Solo Builder opens several.');
+		expect(check).toMatchObject({ ok: false, plan: 'solo_builder', detail: 'See https://lyriks.io/pricing.' });
+		expect(!check.ok && check.reason).toBe('More active projects are available from the Solo Builder plan. Upgrade to keep building.');
 	});
 
 	it('never counts on any other edition', async () => {

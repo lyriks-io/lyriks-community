@@ -24,6 +24,9 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
  * apply_behavior_batch vocabulary) are applied in memory first and never saved,
  * which is how a draft, whose behaviour is prose, gets a model to walk.
  *
+ * `disable` names elements to disable for this trial only, in memory: the walk,
+ * the scenarios and the model check run without them, and nothing is saved.
+ *
  * READ access is enough: nothing is written, whatever `operations` say.
  */
 export const POST: RequestHandler = async (event) => {
@@ -53,6 +56,11 @@ export const POST: RequestHandler = async (event) => {
 	}
 	const snapshot = body?.snapshot;
 	if (snapshot !== undefined && !isObject(snapshot)) error(400, 'snapshot must be an object');
+	// Elements disabled for this trial only, in memory (criterion 27ca9a00).
+	const disable = body?.disable;
+	if (disable !== undefined && (!Array.isArray(disable) || !disable.every((id) => typeof id === 'string' && id !== ''))) {
+		error(400, 'disable must be an array of element ids');
+	}
 
 	const services = event.locals.services;
 	let resolved: ReturnType<typeof resolveWalkTarget>;
@@ -79,6 +87,7 @@ export const POST: RequestHandler = async (event) => {
 			projectId,
 			...(operations ? { operations: operations as Record<string, unknown>[] } : {}),
 			...(snapshot ? { snapshot } : {}),
+			...(Array.isArray(disable) && disable.length > 0 ? { disable: disable as string[] } : {}),
 			...(typeof body?.personaId === 'string' ? { personaId: body.personaId } : {}),
 			...(body?.stopOnBlocked === true ? { stopOnBlocked: true } : {}),
 			...(runScenarios ? { runScenarios: true } : {}),

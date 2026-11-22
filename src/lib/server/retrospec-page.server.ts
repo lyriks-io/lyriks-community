@@ -7,7 +7,10 @@ import {
 	analysisOf,
 	cancelRefusal,
 	codeCoverage,
+	complementaryPromptOf,
 	currentRun,
+	nextRunOf,
+	nextRunOffer,
 	finalCheckOutcome,
 	foundSoFar,
 	partNotes,
@@ -23,6 +26,7 @@ import {
 	summaryNote,
 	tracedShare,
 	type PersonRef,
+	type RetrospecFacts,
 	type RetrospecFigures,
 	type RetrospecSpec
 } from '$domain/retrospec';
@@ -78,6 +82,12 @@ async function behaviorOf(services: AppServices, projectId: string): Promise<Ret
 }
 
 export type RetrospecPageData = Awaited<ReturnType<typeof loadRetrospecPage>>;
+
+/** The question Relaunch the analysis asks: what the next run reads by default (EVO-014). */
+function relaunchOf(facts: RetrospecFacts, productName: string, projectId: string, handEdits: number): { readonly title: string; readonly message: string } | null {
+	const offer = nextRunOffer(nextRunOf(facts), productName, projectId, handEdits, new Date().toISOString(), true);
+	return offer.choices.find((c) => c.scope === offer.scope)?.question ?? null;
+}
 
 /** Everything a retrospecification is read from: its own record, the specification it rebuilt, the code index. */
 async function loadRetrospecSpec(services: AppServices, projectId: string) {
@@ -159,11 +169,13 @@ export async function loadRetrospecPage(services: AppServices, projectId: string
 		// A later run until its review, a first one on its source step only (criterion 0ec7551b).
 		cancellable: cancelRefusal(store.doc) === null && (!!run?.complementary || status.status === 'source'),
 		// A complementary run's prompt names the commit it starts from and the hand edits that wait on the code (criterion 8c9bfffe).
-		complementary: run?.complementary && !run.publishedAt ? { fromCommit: run.complementary.fromCommit, handEdits: specEditLines(store.doc.specEdits).length, scope: run.complementary.scope, held: !!run.holds } : null,
+		complementary: run?.complementary && !run.publishedAt ? complementaryPromptOf(run, specEditLines(store.doc.specEdits).length) : null,
 		comments: store.doc.comments,
 		// The runs of the product, newest first, and what the next one reads (criterion 2dbed801).
 		runs: runCards(store.doc, status.status, facts.rebuiltFrom),
 		next: nextRunReads(store.doc, status.status !== 'start'),
+		// Relaunch the analysis asks what the next run reads by default; its Source step lets the person choose (EVO-014, criterion bf0ea80c).
+		relaunch: relaunchOf(facts, productName, projectId, specEditLines(store.doc.specEdits).length),
 		analysis: {
 			phases: progress.phases.map((p) => {
 				const withNotes = p.parts.map((part) => ({ ...part, note: part.share > 0 ? (parts[part.key] ?? '') : '' }));

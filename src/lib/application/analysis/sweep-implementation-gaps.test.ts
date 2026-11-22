@@ -8,9 +8,7 @@ const FEATURES = {
 		{ id: 'feat-b', name: 'Archive invoices', parentId: null },
 		{ id: 'feat-c', name: 'Never adopted', parentId: null }
 	],
-	cores: [],
-	releases: [],
-	roadmapAssignments: []
+	cores: []
 };
 
 const gaps = (stats: { total: number; implemented: number; partial: number; missing: number }) => ({

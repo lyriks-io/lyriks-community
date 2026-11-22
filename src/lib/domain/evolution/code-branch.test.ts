@@ -75,7 +75,7 @@ describe('the merge declares the change live [criterion:ac-leaf-ac-evo-branch-me
 		expect(mergeRefusal(atBuild({ stage: 'acceptance', code: validatedCode }), 'main', merge)).toMatchObject({ ok: false, reason: 'The merge comes once the change is approved.' });
 		expect(mergeRefusal(approved, 'main', { ...merge, into: 'staging' })).toMatchObject({ ok: false, reason: 'The change is merged into main.' });
 		expect(mergeRefusal(approved, 'main', { ...merge, containsValidated: false })).toMatchObject({ ok: false, reason: 'git says the validated commit 938f12d is not in this merge.' });
-		expect(mergeRefusal(atBuild({ stage: 'delivered', code: { ...validatedCode, validationSetAside: true } }), 'main', merge)).toMatchObject({ ok: false, reason: 'The branch moved after the validation: validate the verification again.' });
+		expect(mergeRefusal(atBuild({ stage: 'delivered', code: { ...validatedCode, validationSetAside: true } }), 'main', merge)).toMatchObject({ ok: false, reason: 'The branch moved after the approval: approve the change again.' });
 	});
 	it('closes the request with its deployment and the merge commit', () => {
 		const live = declareByMergeAct(ctx, approved, 'main', merge);

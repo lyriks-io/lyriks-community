@@ -1,4 +1,4 @@
-import type { UnspaFeatureSnapshot, UnspaProjectSnapshot } from '$lib/unspa-schema';
+import { disabledMarkerOf, type DisabledMarker, type UnspaFeatureSnapshot, type UnspaProjectSnapshot } from '$lib/unspa-schema';
 import { isAuxFeatureId } from '../projection/aux-feature-ids';
 import {
 	earsOfInvariant,
@@ -82,6 +82,8 @@ export interface KernelRule {
 	refusal?: { lead: string; case: string; message: string; variables?: readonly VariableHint[] };
 	/** Where inside the feature it lives — the action/surface it constrains. */
 	origin: RuleOrigin;
+	/** Set while the rule is disabled, on its own or with the action or feature holding it: who, when and why. */
+	disabled?: DisabledMarker;
 }
 
 /** One feature's (or the project's) rules, in the order the tab renders groups. */
@@ -220,6 +222,15 @@ function projectInvariant(
 	};
 }
 
+/**
+ * A row with the marker that puts it aside: its own, else the one of what holds
+ * it. Its sentence still reads (criterion 1344f0bf), only marked disabled.
+ */
+function marked(row: KernelRule, raw: unknown, held: DisabledMarker | null): KernelRule {
+	const disabled = disabledMarkerOf(raw) ?? held;
+	return disabled ? { ...row, disabled } : row;
+}
+
 /** Every rule + invariant a single feature snapshot holds, own surfaces only. */
 function rulesOfFeature(
 	featureId: string,
@@ -234,6 +245,8 @@ function rulesOfFeature(
 	const constants: Record<string, unknown> = {};
 	for (const c of arr(feature.constants)) constants[str(node(c).name)] = node(c).value;
 	const properNames = featureProperNames(feature);
+	// A disabled feature disables every rule it holds; a disabled action, its own.
+	const featureOff = disabledMarkerOf(feature);
 
 	for (const surfaceRaw of arr(feature.surfaces)) {
 		const surface = node(surfaceRaw);
@@ -261,8 +274,9 @@ function rulesOfFeature(
 				...(str(action.actor) ? { actor: str(action.actor) } : {}),
 				...(str(action.triggeredByEvent) ? { triggeredByEvent: str(action.triggeredByEvent) } : {})
 			};
-			for (const r of arr(action.rules)) rows.push(projectRule(r, origin, key, context, constants, lang));
-			for (const iv of arr(action.invariants)) rows.push(projectInvariant(iv, origin, key, constants, lang));
+			const held = disabledMarkerOf(action) ?? featureOff;
+			for (const r of arr(action.rules)) rows.push(marked(projectRule(r, origin, key, context, constants, lang), r, held));
+			for (const iv of arr(action.invariants)) rows.push(marked(projectInvariant(iv, origin, key, constants, lang), iv, held));
 		}
 
 		const sOrigin: RuleOrigin = {
@@ -273,13 +287,13 @@ function rulesOfFeature(
 			surfaceName
 		};
 		const sKey = `${featureId}:${surfaceId}`;
-		for (const r of arr(surface.rules)) rows.push(projectRule(r, sOrigin, sKey, { surfaceName }, constants, lang));
-		for (const iv of arr(surface.invariants)) rows.push(projectInvariant(iv, sOrigin, sKey, constants, lang));
+		for (const r of arr(surface.rules)) rows.push(marked(projectRule(r, sOrigin, sKey, { surfaceName }, constants, lang), r, featureOff));
+		for (const iv of arr(surface.invariants)) rows.push(marked(projectInvariant(iv, sOrigin, sKey, constants, lang), iv, featureOff));
 	}
 
 	const fOrigin: RuleOrigin = { kind: 'feature', featureId, featureName };
 	for (const iv of arr(feature.featureInvariants)) {
-		rows.push(projectInvariant(iv, fOrigin, `${featureId}:feature`, constants, lang));
+		rows.push(marked(projectInvariant(iv, fOrigin, `${featureId}:feature`, constants, lang), iv, featureOff));
 	}
 	return rows;
 }

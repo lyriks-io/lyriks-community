@@ -1,3 +1,4 @@
+import type { LandingChoice } from './touched-validation';
 import { draftChangeNodes, type GraphNodeLike } from './decision-figures';
 import { NEED_KEYS, type NeedKey } from './blocks';
 import { STEP_QUESTIONS, type DraftCriterion, type DraftLeafKind, type EvolutionRequest, type RequestNeed, type StepAnswers, type StepDescriptions } from './draft';
@@ -49,6 +50,8 @@ export interface VersionSnapshot {
 	readonly rules?: readonly SnapshotRule[];
 	/** The findings of Project health the version settles (ac-evo-draft-findings); absent on copies kept before they existed. */
 	readonly findings?: readonly SnapshotFinding[];
+	/** The elements set to Validate at the landing when it froze (EVO-003); absent on copies kept before they existed. */
+	readonly landingChoices?: Readonly<Record<string, LandingChoice>>;
 }
 
 /** One section change as a version froze it. */
@@ -92,9 +95,11 @@ export function snapshotOf(
 		readonly sectionDrafts?: readonly SectionDraft[];
 		readonly ruleDrafts?: readonly RuleDraft[];
 		readonly findingDrafts?: readonly FindingDraft[];
+		readonly landingChoices?: Readonly<Record<string, LandingChoice>>;
 	}
 ): VersionSnapshot {
 	return {
+		...(request.landingChoices && Object.keys(request.landingChoices).length > 0 ? { landingChoices: { ...request.landingChoices } } : {}),
 		// The other pages of the spec and the rules are part of what a version froze (ac-evo-draft-section-version).
 		sections: (request.sectionDrafts ?? []).map((d) => ({ id: d.id, page: d.page, summary: d.summary, edits: d.edits.map((e) => ({ ...e })) })),
 		rules: (request.ruleDrafts ?? []).map((d) => ({ id: d.id, summary: d.summary, operations: d.operations.map((o) => ({ ...o })) })),
@@ -311,7 +316,7 @@ export interface VersionReading {
  */
 export function readVersions(
 	request: Pick<EvolutionRequest, 'frozenVersions' | 'frozen' | 'need' | 'stepDescriptions' | 'drafts' | 'dataDrafts'> &
-		Partial<Pick<EvolutionRequest, 'sectionDrafts' | 'ruleDrafts' | 'findingDrafts' | 'stepAnswers'>>,
+		Partial<Pick<EvolutionRequest, 'sectionDrafts' | 'ruleDrafts' | 'findingDrafts' | 'stepAnswers' | 'correction'>>,
 	names: LeafNames = ownName
 ): { versions: VersionReading[]; sinceLast: VersionChange[] | null } {
 	const versions = request.frozenVersions.map((v, i) => {
@@ -326,6 +331,8 @@ export function readVersions(
 		};
 	});
 	const last = request.frozenVersions.at(-1);
-	const sinceLast = !request.frozen && last?.snapshot ? versionDiff(last.snapshot, snapshotOf(request), names) : null;
+	// A version in correction in the Build reads what it changed since the version still built (EVO-012).
+	const moving = !request.frozen || (request.correction !== undefined && request.correction.of === last?.version);
+	const sinceLast = moving && last?.snapshot ? versionDiff(last.snapshot, snapshotOf(request), names) : null;
 	return { versions: versions.reverse(), sinceLast };
 }

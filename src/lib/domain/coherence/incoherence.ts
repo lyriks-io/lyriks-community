@@ -248,11 +248,6 @@ export function fixPriority(a: Incoherence, b: Incoherence): number {
 	);
 }
 
-/** The single incoherence to fix now, or none when the product is clean. */
-export function nextBestFix(pc: ProductCoherence): Incoherence | undefined {
-	return [...pc.incoherences].sort(fixPriority)[0];
-}
-
 /**
  * Map a raw CoherenceAnalysis into the bimodal ProductCoherence the Control
  * Center renders. `resolve` turns a source step id into the capability + route
@@ -319,42 +314,6 @@ export interface DimensionCoherence {
 	penalty: number;
 	/** This dimension's own correctness, 0–100 = 100 − its locked points. */
 	score: number;
-}
-
-/**
- * Some gap `sourceStep`s name a sub-area that has no dimension of its own — they
- * are fixed under a parent dimension. Map them so every gap lands somewhere.
- */
-const GAP_SOURCE_ALIAS: Record<string, string> = { permissions: 'users' };
-
-/**
- * Attribute each gap to the dimension that owns its fix, by `sourceStep`. This is
- * what lets the readiness table show CORRECTNESS per row alongside breadth — so a
- * dimension whose breadth bar is fully green still surfaces the gaps it carries,
- * instead of the coherence penalty hiding in a single product-wide number.
- */
-export function coherenceByDimension(
-	dimensions: readonly Dimension[],
-	gaps: readonly Gap[]
-): Map<string, DimensionCoherence> {
-	const byKey = new Map<string, DimensionCoherence>(
-		dimensions.map((d) => [d.key, { gapCount: 0, penalty: 0, score: 100 }])
-	);
-	// First dimension to claim a sourceStep owns the gaps emitted for that step.
-	const keyForStep = new Map<string, string>();
-	for (const d of dimensions) if (!keyForStep.has(d.sourceStep)) keyForStep.set(d.sourceStep, d.key);
-
-	const penalties = effectivePenalties(gaps);
-	gaps.forEach((g, i) => {
-		const step = GAP_SOURCE_ALIAS[g.sourceStep] ?? g.sourceStep;
-		const key = keyForStep.get(step);
-		const entry = key ? byKey.get(key) : undefined;
-		if (!entry) return;
-		entry.gapCount += 1;
-		entry.penalty += penalties[i];
-	});
-	for (const entry of byKey.values()) entry.score = clamp(100 - entry.penalty);
-	return byKey;
 }
 
 /**

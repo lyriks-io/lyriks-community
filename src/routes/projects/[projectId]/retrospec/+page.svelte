@@ -128,10 +128,11 @@
 	 * Starts the next run once the analysis of the last one is over (action
 	 * e296dd4f): a complementary run that erases nothing, asked first since what
 	 * it changes goes back to validation and a last run not validated closes,
-	 * then shown on its source step, where what it reads is chosen.
+	 * then shown on its source step, where what it reads is chosen. The question
+	 * says what it reads by default, the same rule as Mismatch (EVO-014).
 	 */
 	async function relaunch() {
-		const question = relaunchQuestion(data.next, status !== 'done');
+		const question = data.relaunch ?? relaunchQuestion(data.next, status !== 'done');
 		if (!(await confirmDialog({ ...question, confirmLabel: 'Launch' }))) return;
 		watched = false;
 		void moveRun('source', [{ op: 'start', mode: 'repo' }], 'Launching the Reverse-Specification');

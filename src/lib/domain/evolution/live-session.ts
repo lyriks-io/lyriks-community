@@ -4,7 +4,7 @@ import { mergeJournal, type JournalEntry, type JournalSection } from './ai-journ
 import type { EvolutionRequest } from './draft';
 import type { HeardProgress } from './live-progress';
 import { FUNCTIONAL_DIAGRAM_KEY } from './functional-diagram';
-import { diagramBehindTexts, pairedTexts, PAIRED_STEPS, textsBehindDiagram, type PairedStep } from './functional-sync';
+import { drawnDiagramBehind, pairedTexts, PAIRED_STEPS, textsBehindDiagram, type PairedStep } from './functional-sync';
 
 /**
  * A live session between a person on the request page and their own AI client
@@ -32,7 +32,19 @@ export const LIVE_SESSION = {
 	 */
 	disconnectAfterSeconds: 3600,
 	/** PROVISIONAL: how long a session lasts with no act of the person nor of their AI (a wait is not an act). */
-	idleEndSeconds: 1800
+	idleEndSeconds: 1800,
+	/**
+	 * PROVISIONAL: how long an AI's question waits for another AI's answer (EVO-015):
+	 * one turn of the platform's wait, so one held call carries it; measured on real
+	 * exchanges between two AIs before it is settled. At most platformWaitSeconds.
+	 */
+	peerAnswerSeconds: 240,
+	/**
+	 * How recently a waiting AI must have been heard to count as free or as holding
+	 * what a click touches (EVO-015): two beats of progressIntervalSeconds, the pace
+	 * at which a held call says it still listens.
+	 */
+	heardWithinSeconds: 60
 } as const;
 
 /**
@@ -55,7 +67,11 @@ export const isDrawableStep = (v: unknown): v is DrawableStep =>
 	typeof v === 'string' && (DRAWABLE_STEPS as readonly string[]).includes(v);
 
 export type AiClickState = 'waiting' | 'taken' | 'answered' | 'withdrawn' | 'cancelled';
-/** `finished`: the AI's work is done and nothing waits for it (criterion 45933ee4 of feat-ai-session). */
+/**
+ * `finished`: the AI's work is done and nothing waits for it (criterion 45933ee4 of feat-ai-session).
+ * `replaced` is only read back from sessions that ended before a person could keep
+ * several AIs in session (EVO-015): nothing writes it any more.
+ */
 export type SessionEndReason = 'ended_by_person' | 'idle' | 'gone' | 'replaced' | 'finished';
 export const isSessionEndReason = (v: unknown): v is SessionEndReason =>
 	v === 'ended_by_person' || v === 'idle' || v === 'gone' || v === 'replaced' || v === 'finished';
@@ -66,6 +82,10 @@ export interface LiveSession {
 	readonly startedAt: string;
 	readonly endedAt?: string;
 	readonly endReason?: SessionEndReason;
+	/** What the AI is, as the person knows it (Claude Code, Codex): with what it holds, it names the session (EVO-015). */
+	readonly client?: string;
+	/** The request the session was opened on: it holds that request from its opening (EVO-015). */
+	readonly startsOn?: string;
 	/** The click the AI is on: from taking it until it calls again ("turn.onClick"). */
 	readonly currentClickId?: string;
 	/** The click the person cancelled while the AI was on it; every act of the AI is refused until it calls again. */
@@ -362,8 +382,8 @@ export function sendClick(request: EvolutionRequest, personId: string, input: Cl
 	return { ok: true, click, request: { ...request, aiClicks: pruned([...clicksOf(request), click]) } };
 }
 
-/** Whether a step's texts and diagram are apart: the diagram behind the texts, or a text behind the diagram. */
-const apart = (request: EvolutionRequest, step: PairedStep): boolean => diagramBehindTexts(request, step) || textsBehindDiagram(request, step).length > 0;
+/** Whether a step's texts and diagram are apart: a drawn diagram behind the texts, or a text behind the diagram; one never drawn is drawn on demand (EVO-013). */
+const apart = (request: EvolutionRequest, step: PairedStep): boolean => drawnDiagramBehind(request, step) || textsBehindDiagram(request, step).length > 0;
 /** What a write may move on a step: its texts and its diagram. */
 const sidesOf = (request: EvolutionRequest, step: PairedStep): string =>
 	JSON.stringify([pairedTexts(request, step), request.stepAnswers[step]?.[FUNCTIONAL_DIAGRAM_KEY] ?? '']);

@@ -33,12 +33,18 @@ describe('what happens next on the verification [criterion:ac-leaf-ac-evo-verd-n
 		expect(stepNow(at('delivered', { status: 'closed' }))).toBeNull();
 	});
 
-	it('names the commit acceptance fixes, nothing official yet', () => {
-		expect(stepNow(at('implementation'))?.text).toBe('Closes the verification and fixes the commit it validates: 6767ffa on evo/EVO-001-fix. Nothing is official yet.');
+	it('says the verification closes on its own and fixes no commit, nothing official yet', () => {
+		expect(stepNow(at('implementation'))).toMatchObject({
+			title: 'Verification closes',
+			text: 'Every line of the request is settled: the evolution moves to acceptance testing on its own. Nothing is official yet.'
+		});
 	});
 
-	it('says who still signs the approval', () => {
-		expect(stepNow(at('acceptance', { awaited: ['Bo', 'Ana'] }))?.text).toBe('Walk the change as its users would, then approve it: Bo, Ana still to sign.');
+	it('says who still signs the approval, and the commit the last approval fixes', () => {
+		expect(stepNow(at('acceptance', { awaited: ['Bo', 'Ana'] }))?.text).toBe(
+			"Walk the change as its users would, then approve it: Bo, Ana still to sign. The last approval awaited fixes 6767ffa on evo/EVO-001-fix, the branch's last commit of code."
+		);
+		expect(stepNow(at('acceptance', { code: null }))?.text).toBe('Walk the change as its users would, then approve it.');
 	});
 
 	it('with a deployment branch, ends on the merge and its commands, never on closing by hand', () => {
@@ -52,7 +58,7 @@ describe('what happens next on the verification [criterion:ac-leaf-ac-evo-verd-n
 		const next = at('delivered', { code: null });
 		expect(stepNow(next)).toMatchObject({ id: 'live', title: 'Close the evolution' });
 		expect(next?.commands).toBeNull();
-		expect(stepNow(at('implementation', { code: null }))?.text).toBe('Closes the verification. Nothing is official yet.');
+		expect(stepNow(at('implementation', { code: null }))?.title).toBe('Verification closes');
 	});
 });
 
@@ -68,8 +74,8 @@ const live = (over: Partial<Parameters<typeof nextStepsOf>[0]> = {}) =>
 describe('what happened, then what comes next [criterion:ac-leaf-ac-evo-verd-next-steps-done]', () => {
 	it('a step done reads in the past tense with its facts, never that nothing is official yet', () => {
 		const [accept, approve] = at('delivered', { code: { ...merged, mergedCommit: null }, approvedBy: ['Ana', 'Bo'] })?.steps ?? [];
-		expect(accept).toMatchObject({ title: 'Verification closed', text: `Closed on ${momentOf(validatedAt)}: it validated 6767ffa on evo/EVO-001-fix.` });
-		expect(approve).toMatchObject({ title: 'Change approved', text: 'Approved by Ana, Bo.' });
+		expect(accept).toMatchObject({ title: 'Verification closed', text: 'Verification closed: the evolution moves to acceptance testing.' });
+		expect(approve).toMatchObject({ title: 'Change approved', text: 'Approved by Ana, Bo: it fixed 6767ffa on evo/EVO-001-fix.' });
 		for (const step of live()?.steps ?? []) expect(step.text).not.toContain('Nothing is official yet');
 	});
 

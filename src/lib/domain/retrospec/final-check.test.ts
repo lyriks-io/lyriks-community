@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { finalCheckOutcome } from './summary';
-import { failedCheckFindings, finalCheckFindings } from './findings';
+import { finalCheckFindings } from './findings';
 
 // Owner feedback 2026-10-27: a summary showing 100 % found in the code read as
 // complete while the final check was blocked; the person must be told.
@@ -63,9 +63,5 @@ describe('the blocking points of the final check, as findings', () => {
 		const findings = finalCheckFindings([other, { ...other, id: 'g2', blocking: false }]);
 		expect(findings).toHaveLength(1);
 		expect(findings[0].sheet.sections.find((s) => s.heading === 'WHAT YOU CAN DO')?.text).toBe('Grant it to a role');
-	});
-
-	it('turns the other failed checks into findings, project health aside', () => {
-		expect(failedCheckFindings(['coherence', 'sections']).map((f) => f.text)).toEqual(['Not confirmed: some parts of the specification were not reviewed']);
 	});
 });

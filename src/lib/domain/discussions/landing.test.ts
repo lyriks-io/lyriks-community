@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
 	aiAnswerAuthor,
-	aiAnswerTo,
 	applyDiscussionAct,
 	discussionEvents,
 	discussionHref,
@@ -41,26 +40,5 @@ describe('a link to a conversation names the message it lands on [criterion:0bdc
 		expect(events.find((e) => e.kind === 'reply')!.href).toBe('/projects/shop-1/spec?discussion=t1&message=m1');
 		expect(events.find((e) => e.kind === 'opened')!.href).toBe('/projects/shop-1/spec?discussion=t1');
 		expect(events.find((e) => e.kind === 'resolved')!.href).toBe('/projects/shop-1/spec?discussion=t1');
-	});
-});
-
-describe("Read on the bar of Ask my AI lands on Lyriks's answer [criterion:0bdc1d4f]", () => {
-	const doc = play([
-		[{ kind: 'open', anchor: 'product', anchorTitle: 'The product', text: 'Who is it for?', notify: [] }, carmen],
-		[{ kind: 'reply', threadId: 't1', text: 'Me too, I wonder.' }, sarah],
-		[{ kind: 'reply', threadId: 't1', text: 'Small shops, says the Overview.' }, lyriks],
-		[{ kind: 'reply', threadId: 't1', text: 'And their accountants?' }, carmen],
-		[{ kind: 'reply', threadId: 't1', text: 'Them too.' }, lyriks]
-	]);
-	const thread = doc.threads[0];
-
-	it("finds the AI's first message after the question, never a colleague's", () => {
-		expect(aiAnswerTo(thread, 'm0')?.text).toBe('Small shops, says the Overview.');
-		expect(aiAnswerTo(thread, 'm3')?.text).toBe('Them too.');
-	});
-
-	it('finds nothing while the answer has not reached the page, nor for a message the thread does not hold', () => {
-		expect(aiAnswerTo(thread, 'm4')).toBeNull();
-		expect(aiAnswerTo(thread, 'gone')).toBeNull();
 	});
 });

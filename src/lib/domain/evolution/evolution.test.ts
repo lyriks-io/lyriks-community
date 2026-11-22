@@ -3,75 +3,44 @@ import {
 	canAcceptProposal,
 	canAdopt,
 	canAdvance,
-	canAmendSpec,
-	canAnnotateCapture,
-	canAnchor,
 	canBuildReport,
-	canCloseAfterAcceptance,
 	canCloseReport,
 	canCloseRequest,
-	canComposeRebrief,
 	canComputePropagation,
 	canCrossToImplementation,
 	canDecide,
-	canDeleteEntry,
 	canDeleteRequest,
-	canDropCard,
-	reachLabel,
-	reachMeaning,
 	impactSectionOf,
 	supportedStage,
-	canFlagOutOfScope,
-	canFlagRegression,
 	canFoldBack,
-	canGenerateProposals,
 	canInvalidate,
 	canLeaveCoherence,
 	canLiftWaiver,
 	canLogObservation,
-	canMarkConform,
-	canOpenBlock,
-	canOpenEntities,
-	canOpenPreviousReport,
 	canOpenRequest,
-	canOpenRules,
-	canPostMessage,
 	canPublishFinding,
 	canRebrief,
 	canRecord,
-	canRecordAcceptedProposal,
 	canRefuseProposal,
 	canRemove,
-	canResume,
 	canRewordProposal,
 	canRule,
 	canRunCheck,
 	canSaveField,
-	canSendBackForImplementation,
 	canAnswerOpenQuestion,
 	canMarkOpenQuestion,
-	canSupersede,
-	canSwitchHypothesis,
 	canWaive,
 	createEvolutionRequest,
 	createObservation,
 	createProposal,
 	deriveVerdict,
-	firstEmptyFieldPath,
 	openRequest,
-	protectedLineIds,
 	readMaturity,
 	record,
-	switchHypothesis,
 	tierOf,
 	undecidedCount,
-	validatedNotFoldedBack,
 	ALL_BLOCK_FIELDS,
-	BLOCK_COUNT,
-	BOARD_COLUMNS,
 	CONDITIONAL_BLOCKS,
-	MATURITY_NEVER_BLOCKS,
-	MATURITY_STATEMENT,
 	blocksFor,
 	holdsValue,
 	canonicalPathsFor,
@@ -165,14 +134,23 @@ describe('opening and steering a request', () => {
 		expect(canAdvance(req({ stage: 'specification' }), 'coherence').ok).toBe(true);
 	});
 
-	it('does not move a closed request between stages', () => {
+	it('does not move a closed or deleted request between stages', () => {
 		expect(canAdvance(req({ stage: 'specification', status: 'closed' }), 'coherence').ok).toBe(false);
+		expect(canAdvance(req({ stage: 'specification', status: 'deleted' }), 'coherence').ok).toBe(false);
 	});
 
 	it('sends an implementation request back to specification', () => {
 		expect(canRebrief(req({ stage: 'implementation', status: 'open' })).ok).toBe(true);
 		expect(canRebrief(req({ stage: 'specification' })).ok).toBe(false);
 		expect(canRebrief(req({ stage: 'implementation', status: 'closed' })).ok).toBe(false);
+		expect(canRebrief(req({ stage: 'implementation', status: 'cancelled' })).ok).toBe(false);
+	});
+
+	// A deleted dossier is out of the run: a rebrief moves it no more than a crossing (rule 3dac3bfe, scenario 83efd801).
+	it('never sends a deleted request back to specification', () => {
+		const refused = canRebrief(req({ stage: 'coherence', status: 'deleted' }));
+		expect(refused.ok).toBe(false);
+		expect(refused.ok ? null : refused.reason).toBe('This request is deleted.');
 	});
 
 	it('refuses to close while a validated observation is not folded back', () => {
@@ -188,9 +166,10 @@ describe('opening and steering a request', () => {
 		expect(canCloseRequest(req({ stage: 'acceptance' })).ok).toBe(false);
 	});
 
-	it('refuses to close a deleted or an already closed request (issue 85)', () => {
+	it('refuses to close a deleted, an already closed or a cancelled request (issue 85)', () => {
 		expect(canCloseRequest(req({ stage: 'delivered', status: 'deleted' }))).toMatchObject({ ok: false, reason: 'This request is deleted.' });
 		expect(canCloseRequest(req({ stage: 'delivered', status: 'closed' }))).toMatchObject({ ok: false, reason: 'This request is closed.' });
+		expect(canCloseRequest(req({ stage: 'delivered', status: 'cancelled' })).ok).toBe(false);
 	});
 
 	it('refuses to delete a request twice', () => {
@@ -200,15 +179,6 @@ describe('opening and steering a request', () => {
 });
 
 describe('the specification dossier page', () => {
-	it('has exactly ten blocks', () => {
-		expect(BLOCK_COUNT).toBe(10);
-	});
-
-	it('opens any block whatever the state of the other nine', () => {
-		expect(canOpenBlock(true, true).ok).toBe(true);
-		expect(canOpenBlock(false, true).ok).toBe(false);
-		expect(canOpenBlock(true, false).ok).toBe(false);
-	});
 
 	it('marks a field as an open question, once, on a field, never on a validated block', () => {
 		const ok = { canEdit: true, fieldSelected: true, alreadyOpen: false, blockState: 'empty' };
@@ -287,16 +257,6 @@ describe('the specification dossier page', () => {
 		expect(holdsValue(list, '\nAn import completes\n')).toBe(true);
 		expect(holdsValue(prose, '   ')).toBe(false);
 		expect(holdsValue(prose, 'x')).toBe(true);
-	});
-
-	it('offers Resume only when a hole was left behind, empty or open', () => {
-		expect(canResume('').ok).toBe(false);
-		expect(canResume('05-functional.mainFlow').ok).toBe(true);
-		expect(firstEmptyFieldPath(allFilled(), [LEAF])).toBe('');
-		expect(firstEmptyFieldPath(new Set(), [LEAF])).toBe(ALL_BLOCK_FIELDS[0].path);
-		expect(firstEmptyFieldPath(allFilled(), [LEAF], [fieldKey('02-problem.value', LEAF)])).toBe(
-			'02-problem.value'
-		);
 	});
 });
 
@@ -390,12 +350,6 @@ describe('writing a field through to its canonical section', () => {
 });
 
 describe('the maturity score', () => {
-	it('says what it measures, and that it never blocks by itself', () => {
-		expect(readMaturity(new Set()).statement).toContain('absence of holes');
-		expect(MATURITY_STATEMENT).toContain('absence of holes');
-		expect(readMaturity(new Set()).neverBlocks).toBe(MATURITY_NEVER_BLOCKS);
-		expect(MATURITY_NEVER_BLOCKS).toContain('never blocks');
-	});
 
 	it('is a weighted sum, so a filled title does not weigh as much as invariants', () => {
 		const title = readMaturity(new Set([fieldKey('01-origin.trigger', LEAF)]), [], [LEAF]);
@@ -513,16 +467,6 @@ describe('the stage gate', () => {
 		expect(impactSectionOf(field('06-behavioural.rules'))).toBeNull();
 	});
 
-	it('keeps the board at five columns', () => {
-		expect(BOARD_COLUMNS).toHaveLength(5);
-	});
-
-	it('refuses a drop into an unmet gate and a delivered card dragged back', () => {
-		expect(canDropCard(req({ stage: 'specification' }), false).ok).toBe(false);
-		expect(canDropCard(req({ stage: 'specification' }), true).ok).toBe(true);
-		expect(canDropCard(req({ stage: 'delivered' }), true).ok).toBe(false);
-	});
-
 	it('shows a request at the last stage it earned, not where it was put', () => {
 		const opened = { title: 'Dark theme', origin: 'customer_feedback' as const };
 		// Taken to delivered with a specification full of holes: no gate opened
@@ -629,6 +573,11 @@ describe('the coherence report', () => {
 		});
 		expect(canLeaveCoherence(ready).ok).toBe(true);
 		expect(canLeaveCoherence(req()).ok).toBe(false);
+		const blocking = { id: 'f1', axis: 'functional' as const, severity: 'blocking' as const, title: 'Refund twice', requestNodeId: 'a', existingNodeId: 'b', fixNowTarget: 't', published: true };
+		expect(canLeaveCoherence({ ...ready, coherenceFindings: [blocking] }).ok).toBe(false);
+		// Accepted as a risk, or held by the features before the request: no longer this request's to fix.
+		expect(canLeaveCoherence({ ...ready, coherenceFindings: [{ ...blocking, risk: { by: 'ana', at: 'now', reason: 'Known' } }] }).ok).toBe(true);
+		expect(canLeaveCoherence({ ...ready, coherenceFindings: [{ ...blocking, scope: 'inherited' as const }] }).ok).toBe(true);
 	});
 });
 
@@ -638,139 +587,6 @@ describe('the impact report', () => {
 		expect(canComputePropagation(7).ok).toBe(false);
 		expect(canComputePropagation(2).ok).toBe(true);
 		expect(canComputePropagation(5).ok).toBe(true);
-	});
-
-	it('refuses to switch hypothesis before a first propagation', () => {
-		expect(canSwitchHypothesis(req()).ok).toBe(false);
-		const ran = req({
-			impactReport: { status: 'ready', hypothesis: 'add', depth: 2, ranAt: 'now' }
-		});
-		expect(canSwitchHypothesis(ran).ok).toBe(true);
-	});
-
-	it('does not lock the reader on the first hypothesis they pick', () => {
-		const impact = (hypothesis: 'add' | 'change') => ({
-			id: `i-${hypothesis}`,
-			hypothesis,
-			section: 'leaves' as const,
-			nodeKind: 'feature' as const,
-			codeWork: null,
-			groupPath: [],
-			note: '',
-			nodeId: 'feat-a',
-			nodeLabel: 'Shell and Local Privacy > Dark theme',
-			depth: 1,
-			severity: 'low' as const,
-			migrationImplied: null,
-			ruleWork: null
-		});
-		const both = req({
-			impactReport: { status: 'ready', hypothesis: 'add', depth: 2, ranAt: 'now' },
-			impactFindings: [impact('add'), impact('change')]
-		});
-		// A reading that was computed comes back as computed, and the control stays
-		// live, so the reader can go back to the one they came from.
-		const toChange = switchHypothesis(both, 'change');
-		expect(toChange.impactReport.status).toBe('ready');
-		expect(canSwitchHypothesis(toChange).ok).toBe(true);
-		expect(switchHypothesis(toChange, 'add').impactReport.hypothesis).toBe('add');
-		// One nobody has read still asks to be computed.
-		const toRemove = switchHypothesis(both, 'remove');
-		expect(toRemove.impactReport.status).toBe('not_run');
-		expect(canSwitchHypothesis(toRemove).ok).toBe(true);
-	});
-
-	it('does not carry a result over to another hypothesis', () => {
-		const ran = req({
-			impactReport: { status: 'ready', hypothesis: 'add', depth: 2, ranAt: 'now' }
-		});
-		const switched = switchHypothesis(ran, 'remove');
-		expect(switched.impactReport.hypothesis).toBe('remove');
-		expect(switched.impactReport.status).toBe('not_run');
-	});
-
-	it('reads a distance as what it asks of the reader', () => {
-		expect(reachLabel(1)).toBe('direct');
-		expect(reachLabel(2)).toBe('knock-on');
-		expect(reachLabel(4)).toBe('4 steps out');
-		// One link means the work lands there; two means it only has to be checked.
-		expect(reachMeaning(1)).toContain('edit');
-		expect(reachMeaning(2)).toContain('Nothing is edited here');
-		expect(reachMeaning(4)).toContain('3 links');
-	});
-
-	it('keeps entities shut while a migration answer is missing', () => {
-		const withGap = req({
-			impactFindings: [
-				{
-					id: 'i1',
-					hypothesis: 'add',
-					section: 'entities_and_fields',
-					nodeKind: 'feature' as const,
-					codeWork: null,
-					groupPath: [],
-					note: '',
-					nodeId: 'e1',
-					nodeLabel: 'Invoice',
-					depth: 1,
-					severity: 'medium',
-					migrationImplied: null,
-					ruleWork: null
-				}
-			]
-		});
-		expect(canOpenEntities(withGap).ok).toBe(false);
-		const answered = req({
-			impactFindings: [{ ...withGap.impactFindings[0], migrationImplied: true }]
-		});
-		expect(canOpenEntities(answered).ok).toBe(true);
-	});
-
-	it('does not open an empty section', () => {
-		expect(canOpenEntities(req()).ok).toBe(false);
-		expect(canOpenRules(req()).ok).toBe(false);
-	});
-
-	it('keeps rewrites apart from replays', () => {
-		const mixed = req({
-			impactFindings: [
-				{
-					id: 'r1',
-					hypothesis: 'add',
-					section: 'rules_and_scenarios',
-					nodeKind: 'feature' as const,
-					codeWork: null,
-					groupPath: [],
-					note: '',
-					nodeId: 'x',
-					nodeLabel: 'Rule A',
-					depth: 1,
-					severity: 'low',
-					migrationImplied: null,
-					ruleWork: 'replay'
-				},
-				{
-					id: 'r2',
-					hypothesis: 'add',
-					section: 'rules_and_scenarios',
-					nodeKind: 'feature' as const,
-					codeWork: null,
-					groupPath: [],
-					note: '',
-					nodeId: 'y',
-					nodeLabel: 'Rule B',
-					depth: 1,
-					severity: 'high',
-					migrationImplied: null,
-					ruleWork: 'rewrite'
-				}
-			]
-		});
-		expect(canOpenRules(mixed).ok).toBe(true);
-		const unseparated = req({
-			impactFindings: [{ ...mixed.impactFindings[0], ruleWork: null }]
-		});
-		expect(canOpenRules(unseparated).ok).toBe(false);
 	});
 });
 
@@ -823,21 +639,6 @@ describe('the implementation report', () => {
 		).toBe('conform');
 	});
 
-	it('refuses conform without a passing acceptance test', () => {
-		expect(canMarkConform(line({ acceptanceTestPassing: false })).ok).toBe(false);
-		expect(canMarkConform(line({ acceptanceTestPassing: true })).ok).toBe(true);
-	});
-
-	it('refuses out of scope on an anchored span', () => {
-		expect(canFlagOutOfScope(line({ hasRequirementAnchor: true })).ok).toBe(false);
-		expect(canFlagOutOfScope(line({ hasRequirementAnchor: false })).ok).toBe(true);
-	});
-
-	it('refuses a regression on the request own leaf', () => {
-		expect(canFlagRegression(line({ anchorForeignLeaf: false })).ok).toBe(false);
-		expect(canFlagRegression(line({ anchorForeignLeaf: true })).ok).toBe(true);
-	});
-
 	it('refuses a decision with no author', () => {
 		const r = req({ implementationFindings: [line()], iterations: [iteration()] });
 		expect(canDecide(r, { id: '', kind: 'person', role: 'member' }).ok).toBe(false);
@@ -886,61 +687,7 @@ function iteration(over: Partial<EvolutionRequest['iterations'][number]> = {}) {
 	};
 }
 
-describe('the rebrief', () => {
-	it('is composed only from a fully decided report with at least one refusal', () => {
-		const undecided = req({
-			implementationFindings: [line({ decision: 'invalidated' }), line({ id: 'l2' })],
-			iterations: [iteration()]
-		});
-		expect(canComposeRebrief(undecided).ok).toBe(false);
-
-		const nothingRefused = req({
-			implementationFindings: [line({ decision: 'validated' })],
-			iterations: [iteration()]
-		});
-		expect(canComposeRebrief(nothingRefused).ok).toBe(false);
-
-		const refused = req({
-			implementationFindings: [
-				line({ decision: 'invalidated' }),
-				line({ id: 'l2', decision: 'validated', verdict: 'conform' })
-			],
-			iterations: [iteration()]
-		});
-		expect(canComposeRebrief(refused).ok).toBe(true);
-		expect(protectedLineIds(refused)).toEqual(['l2']);
-	});
-
-	it('amends the spec only from a fully decided report', () => {
-		expect(
-			canAmendSpec(req({ implementationFindings: [line()], iterations: [iteration()] })).ok
-		).toBe(false);
-		expect(
-			canAmendSpec(
-				req({ implementationFindings: [line({ decision: 'validated' })], iterations: [iteration()] })
-			).ok
-		).toBe(true);
-	});
-
-	it('starts no implementation while the coherence gate is closed', () => {
-		expect(canSendBackForImplementation(req({ coherenceGateClosed: true })).ok).toBe(false);
-		expect(canSendBackForImplementation(req({ coherenceGateClosed: false })).ok).toBe(true);
-	});
-
-	it('opens an earlier report once there is more than one iteration', () => {
-		expect(canOpenPreviousReport(req({ iterations: [iteration()] })).ok).toBe(false);
-		expect(
-			canOpenPreviousReport(req({ iterations: [iteration(), iteration({ number: 2 })] })).ok
-		).toBe(true);
-	});
-});
-
 describe('the LLM completion', () => {
-	it('runs one at a time and needs a hole to fill', () => {
-		expect(canGenerateProposals('running', 12).ok).toBe(false);
-		expect(canGenerateProposals('idle', 0).ok).toBe(false);
-		expect(canGenerateProposals('idle', 12).ok).toBe(true);
-	});
 
 	it('lets no AI client accept a proposal', () => {
 		const p = createProposal({
@@ -994,15 +741,6 @@ describe('the LLM completion', () => {
 });
 
 describe('the acceptance walkthrough', () => {
-	it('re-anchors only a draft observation', () => {
-		expect(canAnchor(createObservation({ status: 'draft' })).ok).toBe(true);
-		expect(canAnchor(createObservation({ status: 'logged' })).ok).toBe(false);
-	});
-
-	it('annotates only an attached capture', () => {
-		expect(canAnnotateCapture(createObservation({ captureAttached: false })).ok).toBe(false);
-		expect(canAnnotateCapture(createObservation({ captureAttached: true })).ok).toBe(true);
-	});
 
 	it('logs an observation that says what was seen; the screen it was seen on is optional', () => {
 		expect(canLogObservation(createObservation({ body: '   ' })).ok).toBe(false);
@@ -1010,12 +748,6 @@ describe('the acceptance walkthrough', () => {
 		expect(
 			canLogObservation(createObservation({ body: 'Wrong price shown.', screenId: 'screen-pricing', elementId: 'btn-start-trial' })).ok
 		).toBe(true);
-	});
-
-	it('takes no new message once a ruling is recorded', () => {
-		expect(canPostMessage(createObservation({ ruling: 'open' }), 'u-viewer-nour').ok).toBe(true);
-		expect(canPostMessage(createObservation({ ruling: 'validated' }), 'u1').ok).toBe(false);
-		expect(canPostMessage(createObservation({ ruling: 'open' }), '').ok).toBe(false);
 	});
 
 	it('lets no AI client and no viewer rule on an observation', () => {
@@ -1041,22 +773,6 @@ describe('folding an observation back into the spec', () => {
 		expect(canFoldBack(person, createObservation({ ruling: 'deferred' }), 'feat-a').ok).toBe(false);
 		expect(canFoldBack(viewer, validated, 'feat-a').ok).toBe(false);
 	});
-
-	it('does not count a deferred observation against closing', () => {
-		const deferred = req({ observations: [createObservation({ ruling: 'deferred' })] });
-		expect(validatedNotFoldedBack(deferred)).toBe(0);
-		expect(canCloseAfterAcceptance({ ...person, role: 'owner' }, deferred).ok).toBe(true);
-	});
-
-	it('refuses to close with a validated observation still hanging', () => {
-		const hanging = req({ observations: [createObservation({ ruling: 'validated' })] });
-		expect(validatedNotFoldedBack(hanging)).toBe(1);
-		expect(canCloseAfterAcceptance({ ...person, role: 'owner' }, hanging).ok).toBe(false);
-	});
-
-	it('lets no viewer close a request', () => {
-		expect(canCloseAfterAcceptance(viewer, req()).ok).toBe(false);
-	});
 });
 
 describe('the decision history', () => {
@@ -1064,49 +780,6 @@ describe('the decision history', () => {
 		expect(canRecord({ authorId: '', recorded: false }).ok).toBe(false);
 		expect(canRecord({ authorId: 'person-1', recorded: true }).ok).toBe(false);
 		expect(canRecord({ authorId: 'person-1', recorded: false }).ok).toBe(true);
-	});
-
-	it('stamps an accepted proposal with the proposal and the accepting person', () => {
-		expect(
-			canRecordAcceptedProposal({
-				authorKind: 'ai_client',
-				proposalId: 'prop-4412',
-				acceptedByPersonId: ''
-			}).ok
-		).toBe(false);
-		expect(
-			canRecordAcceptedProposal({
-				authorKind: 'person',
-				proposalId: '',
-				acceptedByPersonId: 'person-1'
-			}).ok
-		).toBe(false);
-		expect(
-			canRecordAcceptedProposal({
-				authorKind: 'person',
-				proposalId: 'prop-4412',
-				acceptedByPersonId: 'person-1'
-			}).ok
-		).toBe(true);
-	});
-
-	it('supersedes rather than deletes', () => {
-		const entry = {
-			id: 'h1',
-			type: 'verdict_decision' as const,
-			summary: 's',
-			authorId: 'person-1',
-			authorKind: 'person' as const,
-			recordedAt: 'now',
-			proposalId: null,
-			acceptedByPersonId: null,
-			supersededById: null,
-			channel: null
-		};
-		expect(canSupersede(person, entry).ok).toBe(true);
-		expect(canSupersede(aiClient, entry).ok).toBe(false);
-		expect(canDeleteEntry().ok).toBe(false);
-		expect(canDeleteEntry()).toMatchObject({ reason: expect.stringContaining('append-only') });
 	});
 
 	it('appends an attributed entry to the timeline', () => {
@@ -1185,9 +858,6 @@ describe('writing a dossier field into the section that owns it', () => {
 		cores: [],
 		families: [],
 		features: [],
-		mvpAssignments: [],
-		releases: [],
-		roadmapAssignments: [],
 		lastSavedAt: null
 	});
 

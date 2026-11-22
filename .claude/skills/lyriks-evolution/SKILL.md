@@ -30,11 +30,10 @@ answer carries `next`:
 Ask, write, read `next`, ask again. Never a list of ten questions, never a
 dossier filled in silence.
 
-## Work live on the pages: one session per project
+## Work live on the pages: one session per AI
 
-A person holds ONE session per project. They stay on their pages (the
-Specification 360°, the Retrospecification, the Evolution board, a request)
-and you answer their clicks; the AI chip in the app bar shows it.
+Each AI of a person holds its own session per project, beside their other
+AIs; a click goes to one of them. They stay on their pages; Ask my AI shows it.
 
 1. **Open it when the work calls for it, never merely because you use the MCP**: at the latest in the turn you hand the person a link to the app (an `href` a Lyriks answer carries), before that link, so their click there reaches you; when they ask to work with you on the pages; whenever you ask them something they answer on a page; when the prompt Ask my AI or "Prepare it with my AI" copies says a Lyriks session begins. In a bound repository open it yourself, in the background, silently unless it fails, and never again once the person ended it in that conversation. `start_evolution_session {project_id}` (with `request_id` when the prompt names one). Say in one sentence that you are listening, unless it opened by itself.
 2. **Wait without taking the chat away**: in Claude Code run the `wait.command` the opening answered, as given, with Bash `run_in_background`; it signs in by itself (nothing to set, no token to ask for), prints the event and wakes you. Other clients call `await_evolution_event` with a short hold and answer the chat between waits. Events:
@@ -45,8 +44,8 @@ and you answer their clicks; the AI chip in the app bar shows it.
      - `ticket`, on a closed request: post `ticket`'s message through YOUR tracker connector, move it to done, report with `report_ticket_post` (`note` says what could not be done). Lyriks calls no tracker.
      - `build`: `build.brief` is the frozen version to build and prove (lyriks-delivery).
      - `close`: `close.step` (merge, sync, branch) and `close.brief`: run them in the person's checkout, never push, never force, say what git refused.
-     - `ask_block` (a question on a block of the Specification 360°) and `reread`: answer with `answer_click {clickId, text}`.
-     Announce each major step on the page (`update_evolution_session {say}`: "Reading the dossier", "Writing the new version"), not one per tool call; answer with `answerWith`; wait again at once.
+     - `ask_block` (a question on a block), `reread`, `question` (another AI of yours asks): answer with `answer_click {clickId, text}`; `run`, `resume`: follow its prompt. `read_evolution_sessions`, `ask_evolution_session` reach your other AIs.
+     Announce each major step on the page (`update_evolution_session {say}`: "Reading the dossier"), not one per tool call; answer with `answerWith`; wait again at once.
    - `progress`: the person moved the request themselves. Say in one sentence what they did and what comes next, do what `next` asks, hand them the `href` of what waits. Your own writes never come back; a waiting click comes first.
    - `nothing`: wait again, silently.
    - `ended`: they ended it, half an hour passed, or the call dropped. Say so in one sentence and stop.
@@ -106,14 +105,15 @@ sense comes back in the summary; tell the person, keep their text.
 
 ## The eight steps
 
-Need, Solution, Functional spec, Technical spec and Approval are VALIDATED by
-people; the Impact analysis is read by the platform; Build and Deployment are
-judged and declared.
+Validating Need, Solution and the specs is optional; the build waits for the
+Specification only, VALIDATED by people (or by you in their name when they tell
+you); the Impact analysis is read by the platform; Build, Approval and
+Deployment are judged and declared.
 
 1. **Need**: why the change exists. `update_need {description}` verbatim, `register_source {title, note}` with their words, then `propose` each answer on `00-need.<question>` (`leafId: null`) citing it. Situation and objectives are essential.
-2. **Solution**, in prose: the description says what changes, then `answer_step {step: "solution", question: "examples" | "out_of_scope", answer}`. Draft no feature yet. The page shows Solution, Functional spec and Technical spec as ONE tab (2.1 functional, 2.2 technical). Hand over the link to validate only when `next` says every required text is written: the Solution's description and examples, the Functional spec's description and rules (`refusals`). A change that refuses nothing new still writes one Rule line saying so, or `skip_question` with a reason. Until those four steps are validated (or marked not applicable), every draft op is refused ("The Solution waits for its validation"). A Solution rewritten after validation goes back to it, its drafts locked.
-3. **Functional spec**, in prose, in their words: the description walks it as the user does (Journey), then `answer_step {step: "functional_spec", question, answer}`: `refusals` (required, Rule), and optionally `interactions`, `screens`, `experience`, `failures`. Cite a product element as `@[name](kind:id)`. Translating it into behaviour (`apply_behavior_batch` on `draft:...`, `simulate_behavior`) is optional; never ask the person to read a schema.
-   **The use case diagram** (UML: use cases, one flow per use case in swimlanes with its ways out, the states each thing goes through) never says something other than the texts. When a text moves, `functionalDiagram.behind` turns true and `next` puts the redraw first: `redraw_diagram {step: "functional_spec", diagram}`, then tell the person it is your drawing of their words. `answer_step {question: "diagram"}` edits the drawing itself and rewrites the texts: only when they change the drawing. Notation, one line per element:
+2. **Solution**, in prose: the description says what changes. It and the Need's situation and objectives are ALL a request owes. The page shows Solution, Functional spec and Technical spec as ONE tab (2.1 functional, 2.2 technical). The examples (`answer_step {step: "solution", question: "examples" | "out_of_scope", answer}`), steps 3 and 4 and their diagrams are offered, never owed: write them only when the person asks or Prefill hands you their section. Then draft at once (step 5). Validating is optional. A text rewritten after a validation asks for it again.
+3. **Functional spec**, in prose, in their words: the description walks it as the user does (Journey), then `answer_step {step: "functional_spec", question, answer}`: `refusals` (Rule), `interactions`, `screens`, `experience`, `failures`. Cite a product element as `@[name](kind:id)`. Translating it into behaviour (`apply_behavior_batch` on `draft:...`, `simulate_behavior`) is optional; never ask the person to read a schema.
+   **The use case diagram** (UML: use cases, one flow per use case in swimlanes with its ways out, the states each thing goes through), once drawn, never says something other than the texts. When a text moves, `next` puts the redraw first: `redraw_diagram {step: "functional_spec", diagram}`, then tell the person it is your drawing of their words. `answer_step {question: "diagram"}` edits the drawing itself and rewrites the texts: only when they change the drawing. Notation, one line per element:
    ```
    actor Customer
    system Payment provider
@@ -125,21 +125,22 @@ judged and declared.
    states Order
    placed -> paid: <what causes it>
    ```
-   Link what the change reuses: an existing feature ends with `@[name](feature:<featureId>)`, an existing action with `@[name](action:<featureId>/<actionId>)` (ids from `get_knowledge_graph`). A linked feature no draft touches is read at the Impact as used. While the diagram is behind, nothing can be validated.
-   **The technical diagram** pairs with its description: components (`: new` after what the change adds, `link a -> b: what goes through`, `note part: constraint`) and sequences (`sequence <name>`, `a -> b: message`, `-->` for an answer, each with its `goes wrong when`). Link existing features and tables (`@[name](entity:<tableId>)`). Redraw with `redraw_diagram {step: "technical_spec", diagram}` when `technicalDiagram.behind`. Draw what helps a decision, not every class.
+   Link what the change reuses: an existing feature ends with `@[name](feature:<featureId>)`, an existing action with `@[name](action:<featureId>/<actionId>)` (ids from `get_knowledge_graph`). A linked feature no draft touches is read at the Impact as used. While a drawn diagram is behind, its step and the paths it draws are not validated.
+   **The technical diagram** pairs with its description: components (`: new` after what the change adds, `link a -> b: what goes through`, `note part: constraint`) and sequences (`sequence <name>`, `a -> b: message`, `-->` for an answer, each with its `goes wrong when`). Link existing features and tables (`@[name](entity:<tableId>)`). Redraw with `redraw_diagram {step: "technical_spec", diagram}` when `next` asks. Draw what helps a decision, not every class.
 4. **Technical spec**: the description (known constraints and risks), then optionally `answer_step {step: "technical_spec", question: "data", answer}`; declare the tables from it (`add_data_draft`, field by field).
    **Every other page of the spec changes from the request too**: `add_section_draft {page, summary, edits}`, `page` as the person reads it (glance, users, experience, requirements, architecture, glossary), `edits` in patch_section vocabulary, limited to what that page shows. Read the section first. Never write such a change directly while a request carries it.
    **The rules the whole product keeps**: `add_rule_draft {summary, operations}` with `add_project_invariant`, `update_project_invariant` or `remove_project_invariant`; never through `apply_project_behavior_batch` inside a request, which writes at once. Draft the feature change before a rule that reads its states.
-5. **Impact analysis**, entered once the four steps are validated; nobody validates it. Name what the change touches yourself: `get_knowledge_graph {kinds:["feature"], q:"<their words>"}`, then `add_draft_leaf` per subject (`add`; `amend` as a delta: `acceptanceCriteria`, `retireCriteria`, `changeCriteria`, `descriptionPatch`, `changeSummary`; `remove`), `add_data_draft`, `add_section_draft`, `add_rule_draft`. `propose` a value on each empty question of a named feature. Then `run_impact` and `run_coherence` in one batch. Read the impact's two plain lines, then what does not fit: **collides** (red) blocks, **rubs** (amber) is to settle, **nothing to attach to** (blue) asks a core or family; inherited (grey) never blocks. A collision is fixed in its section, accepted as a risk (`decide_finding {findingId, decision: "accept_risk", reason}`) or waived. Then `cross_stage` **freezes version N**; nothing is written into the spec yet.
-6. **Build**: the code is written against version N (lyriks-delivery; on the branch Lyriks names when the card carries `code`), the index synced as usual: entries naming what the request adds are held on the request. Then `build_implementation_report`. The tests come ready (`GET /api/evolution/tests?projectId=&requestId=&runner=vitest|node`, or `export_behavior_scenarios` on each draft id); only the adapter is to write. Every screen, action and criterion of the touched features is a line, "to build" until the code proves it; a conform line needs no decision, the others `decide_line validated | invalidated | adopted | removed`. Inherited lines are counted, never ruled. Accepting the Build (`cross_stage`) fixes the commit it validates.
-7. **Approval**: the person walks the change. Each remark is logged as said (`log_observation {body, type}`, `as_person`), ruled (`rule_observation validated | deferred | requalified | invalidated`), and if validated folded back as a criterion (`fold_back {observationId, leafId, text}`). Then `cross_stage` approves.
+5. **Impact analysis**, entered on its own once what is owed is written and something is drafted, no question open, no proposal waiting; nobody validates it. Name what the change touches yourself: `get_knowledge_graph {kinds:["feature"], q:"<their words>"}`, then `add_draft_leaf` per subject (`add`; `amend` as a delta: `acceptanceCriteria`, `retireCriteria`, `changeCriteria`, `descriptionPatch`, `changeSummary`; `remove`), `add_data_draft`, `add_section_draft`, `add_rule_draft`. `propose` a value on each empty question of a named feature. Then `run_impact` and `run_coherence` in one batch. Read what does not fit: **collides** (red) blocks, **rubs** (amber) is to settle, **nothing to attach to** (blue) asks a core or family; inherited (grey) never blocks. A collision is fixed in its section, accepted as a risk (`decide_finding {findingId, decision: "accept_risk", reason}`) or waived. A person's last validation of the Specification **freezes version N** (never yours; else `cross_stage`), writing nothing.
+6. **Build**: the code is written against version N (lyriks-delivery; on the branch Lyriks names when the card carries `code`), the index synced as usual: entries naming what the request adds are held on the request. Then `build_implementation_report`. The tests come ready (`GET /api/evolution/tests?projectId=&requestId=&runner=vitest|node`, or `export_behavior_scenarios` on each draft id); only the adapter is to write. Every screen, action and criterion of the touched features is a line, "to build" until the code proves it; lines the code or a test closes need no decision, the others `decide_line validated | invalidated | adopted | removed`. Inherited lines are counted, never ruled. Settled, its branch clean, it enters Approval alone.
+7. **Approval**: the person walks the change. Each remark is logged as said (`log_observation {body, type}`, `as_person`), ruled (`rule_observation validated | deferred | requalified | invalidated`), and if validated folded back as a criterion (`fold_back {observationId, leafId, text}`). Their approval (`cross_stage`) fixes the commit.
 8. **Deployment, the ONE moment the change becomes official**: every draft is written into the spec under the ids the code was indexed against. With a deployment branch, its merge does it (`report-merge.mjs`; `declare_deployment` and `close_request` are refused there). Otherwise `declare_deployment {releaseId?, note?}` once live.
 
 **Nothing is official before it is live.** A value accepted on an existing
 feature waits on the request's amendment. Deleting or reopening the request
-leaves the spec as it was. **`rebrief`** reopens a frozen version: edits
-again, validations asked again for what changed, the next freeze is N+1, the
-next landing writes only what changed. A step a small change does not need is
+leaves the spec as it was. In the Build, fix a draft in place: N+1 opens in
+correction, code stays on N, a person's validation of its changes freezes
+N+1 (an AI's never does; Approval waits).
+**`rebrief`** only rewrites Need, Solution or specs. A step a small change does not need is
 `mark_step_not_applicable {step, reason}`; the Need never is, its unanswered
 questions are skipped (`skip_question`).
 
@@ -147,8 +148,8 @@ questions are skipped (`skip_question`).
 
 - **Anyone with access validates, a viewer excepted.** Each answer needs `validationsPerAnswer` different people (one by default); change it only when the person says so.
 - **Named validators**: `name_validators {fieldPath, leafId?}` or `{step}` with `people[]` (emails; `[]` clears). Once named, only they count. Suggest from `members[].jobs`: Product for Need and Solution, Product and Design for the Functional spec, Tech and Security & compliance for the Technical spec, Product and Business for Approval. Name only whom the person chose.
-- **Every field is versioned.** `validate_field` stands behind the version held now; a later write outdates it. `refuse_field {fieldPath, leafId?, reason}`; `withdraw_field_verdict` takes either back. Accepting a proposal validates nothing. `skip_question` (undone by `unskip_question`) makes a question no longer owed: never ask it again.
-- **Alone in the workspace** you may carry every step; the history says it came through the assistant.
+- **Every field is versioned.** `validate_field` stands behind the version held now; a later write outdates it. Each item of the Specification is validated by the `fieldPath` and `leafId` part `specification` lists, never a key you build: Lyriks stands behind it as the page shows it. `refuse_field {fieldPath, leafId?, reason}`; `withdraw_field_verdict` takes either back. Accepting a proposal validates nothing. `skip_question` (undone by `unskip_question`) makes a question no longer owed: never ask it again.
+- **Alone in the workspace** you may carry every step; the history names the assistant.
 - **Two members or more**: every decision is a person's. Relay one with `as_person: true` only as they said it in the conversation. `tag_reviewers` asks for a look.
 - **Under delegation** (`aiDelegation`, on the request or the project) you validate in their name what they validate (`validate_field`, `validate_step`) and accept your own suggestions. Never refuse, cross a stage, freeze, accept a risk, approve or close; never give or take a delegation.
 - **Always a person's**: a waiver, lifting one, deleting, cancelling or reopening a request, logging or ruling a remark. `cancel_request {requestId, reason}` with their reason only; `reopen_request`; `close_request` ends a delivered one.
@@ -158,7 +159,7 @@ questions are skipped (`skip_question`).
 | Tool | Use |
 |---|---|
 | `get_evolution {project_id}` | The board. |
-| `get_evolution {project_id, request_id}` | One dossier with `next`, `gate`, `stepDescriptions`, `customQuestions`; lists one `part` at a time (drafts, fields, proposals, impact, report, readings, history, graph). |
+| `get_evolution {project_id, request_id}` | One dossier with `next`, `gate`, `stepDescriptions`, `customQuestions`; lists one `part` at a time (drafts, fields, proposals, impact, report, readings, history, graph, specification). |
 | `apply_evolution_batch {project_id, operations[], as_person?}` | Typed operations, atomic. |
 | `apply_behavior_batch` / `get_behavior_feature` / `simulate_behavior` on `draft:...` | The draft's behaviour. |
 | `start_evolution_session` / `await_evolution_event` / `update_evolution_session` | The person's session. |

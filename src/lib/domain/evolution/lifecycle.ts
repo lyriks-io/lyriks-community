@@ -124,6 +124,11 @@ const previousOf = (stage: RequestStage): RequestStage => {
 export function canRebrief(request: EvolutionRequest): Guarded {
 	return firstRefusal(
 		guard(
+			request.status === 'deleted',
+			'This request is deleted.',
+			'A deleted dossier is out of the run; nothing moves it, a rebrief no more than a crossing.'
+		),
+		guard(
 			request.status === 'cancelled',
 			'This request is cancelled: reopen it first.',
 			'A cancelled request is read, not written; Reopen in its settings menu takes it back up where it stood.'
@@ -203,16 +208,6 @@ export function canDeleteRequest(request: EvolutionRequest): Guarded {
 		'This request is already deleted.',
 		'Deleting twice would suggest a second removal happened, which the history would then have to explain.'
 	);
-}
-
-/** A leaf is listed once. The set says what the change touches, not how often. */
-export function leafListInvariantHolds(request: EvolutionRequest): boolean {
-	return new Set(request.leafIds).size === request.leafIds.length;
-}
-
-/** A request always carries an iteration number, from one, only moving forward. */
-export function iterationInvariantHolds(request: EvolutionRequest): boolean {
-	return request.iteration >= 1;
 }
 
 /**

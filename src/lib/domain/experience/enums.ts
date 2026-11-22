@@ -38,8 +38,6 @@ export const OPERATION_KINDS = [
 	{ code: 'event', label: 'Event' }
 ] as const satisfies readonly Option[];
 export type OperationKind = (typeof OPERATION_KINDS)[number]['code'];
-export const isOperationKind = (v: unknown): v is OperationKind =>
-	typeof v === 'string' && (OPERATION_KINDS as readonly Option[]).some((o) => o.code === v);
 
 /** Whether a Step reads from or writes to an Entity (the Data-Consumed underlay). */
 export const DATA_MODES = [
@@ -47,8 +45,6 @@ export const DATA_MODES = [
 	{ code: 'write', label: 'Write' }
 ] as const satisfies readonly Option[];
 export type DataMode = (typeof DATA_MODES)[number]['code'];
-export const isDataMode = (v: unknown): v is DataMode =>
-	typeof v === 'string' && (DATA_MODES as readonly Option[]).some((m) => m.code === v);
 
 /** Direction a Step can be nudged within its Journey / an operation within its Step. */
 export type ReorderDirection = 'up' | 'down';

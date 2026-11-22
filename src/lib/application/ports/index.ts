@@ -107,6 +107,7 @@ export type {
 	ReportImplementationInput,
 	ResolveConflictInput
 } from './code-adoption';
+export type { ImplementationIndexRevisionsPort } from './implementation-index-revisions';
 export type { ProjectResidueRepositoryPort } from './project-residue-repository';
 export type { ProjectPortabilityStorePort } from './project-portability-store';
 export { ArchiveError } from './archive-codec';
@@ -173,6 +174,7 @@ export type {
 } from './feature-maturity-scorer';
 export type { ProjectModelRevisionPort } from './project-model-revision';
 export type { FeatureAcceptanceReaderPort } from './feature-acceptance-reader';
+export type { FeatureCoverageReaderPort } from './feature-coverage-reader';
 export type { LanguageModelAnswer, LanguageModelConnection, LanguageModelPort, LanguageModelRequest } from './language-model';
 export type { SecretCipherPort } from './secret-cipher';
 export type { ProofSwitchPort } from './proof-switch';

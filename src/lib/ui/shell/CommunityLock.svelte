@@ -1,27 +1,28 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { lockedSentence, planOpening, PRICING_URL, UPGRADE_PLAN_NAMES, type CommunityLock } from '$domain/licensing';
+	import { lockedSentence, planOpening, PRICING_ADDRESS, PRICING_URL, UPGRADE_PLAN_NAMES, type CommunityLock } from '$domain/licensing';
+	import { VIEW_PLANS } from './offer-refusal';
 
 	/**
 	 * What a Community installation locks (EVO-001), said where the capability
-	 * would be: one sentence naming the plan that opens it, and the plans. The
-	 * link out is drawn only where the installation allows links out
-	 * (criterion b4538030); an air-gapped one shows the address as text.
+	 * would be: the offer of the plan that opens it, and View plans, a link to
+	 * the plans that opens in a new tab (EVO-006). The link out is drawn only
+	 * where the installation allows links out (criterion b4538030); an
+	 * air-gapped one shows the address as text.
 	 */
 	let { lock, title }: { lock: CommunityLock; title?: string } = $props();
 
 	const plan = $derived(UPGRADE_PLAN_NAMES[planOpening(lock)]);
 	const online = $derived(!!page.data.onlineHelp);
-	const shownUrl = PRICING_URL.replace(/^https?:\/\//, '');
 </script>
 
 <section class="lock animate-lk-in" data-community-lock={lock}>
 	{#if title}<h1>{title}</h1>{/if}
 	<p class="lead"><span class="plan">{plan}</span>{lockedSentence(lock)}</p>
 	{#if online}
-		<a class="step" href={PRICING_URL} target="_blank" rel="noopener noreferrer">See the plans</a>
+		<a class="step" href={PRICING_URL} target="_blank" rel="noopener noreferrer">{VIEW_PLANS}</a>
 	{:else}
-		<p>The plans: {shownUrl}</p>
+		<p>The plans: {PRICING_ADDRESS}</p>
 	{/if}
 </section>
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildScreenAccessMap, canAccessScreen, governingCapabilityIds } from './run-access';
+import { buildScreenAccessMap, canAccessScreen } from './run-access';
 
 const screens = [
 	{ id: 'submit-1', category: 'core-capture' },
@@ -29,7 +29,6 @@ describe('buildScreenAccessMap', () => {
 
 	it('leaves a screen ungated when no capability owns its Core', () => {
 		expect(access.screenCapabilityIds['login']).toBeUndefined();
-		expect(governingCapabilityIds(access, 'login')).toEqual([]);
 	});
 });
 

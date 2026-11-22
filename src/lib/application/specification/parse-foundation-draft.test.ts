@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createEmptyDefinitionDraft, createEmptyIdentityDraft, createEmptyOperationsDraft } from '$domain/foundation';
 import { parseFoundationDraft } from './parse-foundation-draft';
 
 describe('parseFoundationDraft', () => {
@@ -29,5 +30,17 @@ describe('parseFoundationDraft', () => {
 			projectId: 'project-1',
 			i18n: { primaryLocale: 'fr' }
 		});
+	});
+
+	it('reads a missing or malformed document as an empty Foundation for the project', () => {
+		const empty = {
+			projectId: 'project-1',
+			identity: createEmptyIdentityDraft('project-1'),
+			definition: createEmptyDefinitionDraft('project-1'),
+			operations: createEmptyOperationsDraft('project-1')
+		};
+		expect(parseFoundationDraft(null, 'project-1')).toEqual(empty);
+		expect(parseFoundationDraft(undefined, 'project-1')).toEqual(empty);
+		expect(parseFoundationDraft('identity', 'project-1')).toEqual(empty);
 	});
 });

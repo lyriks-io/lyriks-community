@@ -1,235 +1,233 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { isHttpError, type RequestEvent } from '@sveltejs/kit';
-import { saveSectionDraft } from './section-save.server';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import { error, isHttpError } from '@sveltejs/kit';
+import type { AccessDecision, DraftLockPort, SectionDraftSaveOptions } from '$application/ports';
+import { saveSectionDraft, type SectionSaveSpec } from './section-save.server';
+import { requestEvent, servicesWith } from './request-event.fixture';
+import { subscribeSectionChanges, type SectionChange } from './sync-bus.server';
 
-const calls: string[] = [];
+/**
+ * The protocol every `PUT /api/draft/<section>` follows, over an in-memory
+ * revision lock and section store, the real access gate and the real live bus.
+ * Each test reads what the save left behind: the stored section, the revision,
+ * what was mirrored to the Back and what the other tabs were told.
+ */
 
-const rollback = vi.fn(async () => {
-	calls.push('rollback');
-});
-const scheduleBackSync = vi.fn(async () => {
-	calls.push('mirror');
-});
+const PROJECT = 'p-shop';
 
-let projectExistsResult = true;
-const projectExists = vi.fn(async () => {
-	calls.push('exists');
-	return projectExistsResult;
-});
-
-vi.mock('$composition/container.server', () => ({
-	getServices: () => ({
-		draftLock: { rollback },
-		foundationWrites: { withLock: async (_id: string, run: () => Promise<unknown>) => run() },
-		scheduleBackSync,
-		projectExists
-	})
-}));
-import { getServices } from '$composition/container.server';
-
-vi.mock('$lib/server/project-access.server', () => ({
-	requireProjectAccess: vi.fn(async () => {
-		calls.push('access');
-	})
-}));
-
-vi.mock('$lib/server/draft-lock.server', () => ({
-	commitRevision: vi.fn(async () => {
-		calls.push('commit');
-		return 7;
-	}),
-	expectedRevision: vi.fn((request: Request) => {
-		const raw = request.headers.get('x-lyriks-draft-revision');
-		return raw === null ? null : Number(raw);
-	})
-}));
-
-vi.mock('$lib/server/sync-bus.server', () => ({
-	publishSectionChange: vi.fn(() => {
-		calls.push('publish');
-	})
-}));
-
-function makeEvent(body: unknown): RequestEvent {
-	const request = new Request('http://localhost/api/draft/test', {
-		method: 'PUT',
-		headers: { 'content-type': 'application/json', 'x-lyriks-client': 'tab-1' },
-		body: JSON.stringify(body)
+/** One installation: a revision lock, a section store, the Back mirror, the projects that exist. */
+function installation(opts: { decision?: AccessDecision; exists?: boolean; rollbackFails?: boolean; mirrorFails?: boolean } = {}) {
+	const revisions = new Map<string, number>();
+	const stored = new Map<string, unknown>();
+	const mirrored: string[] = [];
+	const draftLock = {
+		current: async (projectId: string, section: string) => revisions.get(`${projectId}/${section}`) ?? 0,
+		commit: async (projectId: string, section: string, expected: number | null) => {
+			const now = revisions.get(`${projectId}/${section}`) ?? 0;
+			if (expected !== null && expected !== now) return null;
+			revisions.set(`${projectId}/${section}`, now + 1);
+			return now + 1;
+		},
+		rollback: async (projectId: string, section: string, revision: number) => {
+			if (opts.rollbackFails) throw new Error('lock table gone');
+			if (revisions.get(`${projectId}/${section}`) === revision) revisions.set(`${projectId}/${section}`, revision - 1);
+		}
+	} satisfies DraftLockPort;
+	const services = servicesWith({
+		installEdition: () => 'enterprise',
+		resolveActiveProject: { execute: async () => null },
+		projectAccess: { authorize: async () => opts.decision ?? { ok: true } },
+		enterpriseHooks: null,
+		projectExists: async (id) => (opts.exists ?? true) && id === PROJECT,
+		draftLock,
+		foundationWrites: { withLock: async (_key, run) => run() },
+		scheduleBackSync: async (projectId) => {
+			if (opts.mirrorFails) throw new Error('back is down');
+			mirrored.push(projectId);
+		}
 	});
-	return { request, locals: { services: getServices() } } as unknown as RequestEvent;
+	return { services, revisions, stored, mirrored, revisionOf: (section: string) => revisions.get(`${PROJECT}/${section}`) ?? 0 };
 }
 
-const baseSpec = () => ({
-	section: 'test',
-	parse: vi.fn((_body: unknown, projectId: string) => {
-		calls.push('parse');
-		return { projectId };
-	}),
-	persist: vi.fn(async () => {
-		calls.push('persist');
-		return { savedAt: 'now' };
-	})
+type Installation = ReturnType<typeof installation>;
+
+/** A section whose parser keeps the title and whose store is the installation's. */
+function section(at: Installation, name = 'rules', extra: Partial<SectionSaveSpec<{ projectId: string; title: string }, object>> = {}) {
+	return {
+		section: name,
+		parse: (body: unknown, projectId: string) => {
+			const title = (body as { title?: unknown }).title;
+			if (typeof title !== 'string') throw new Error('title is required');
+			return { projectId, title };
+		},
+		persist: async (draft: { projectId: string; title: string }) => {
+			at.stored.set(name, draft);
+			return { savedAt: '2026-11-18T03:00:00.000Z' };
+		},
+		...extra
+	} satisfies SectionSaveSpec<{ projectId: string; title: string }, object>;
+}
+
+/** An atomic section: its own store keeps the revision and refuses a stale one. */
+function atomicSection(at: Installation) {
+	let revision = 3;
+	return section(at, 'experience', {
+		atomic: true,
+		persist: async (draft, _services, _projectId, save: SectionDraftSaveOptions) => {
+			if (save.expectedRevision !== null && save.expectedRevision !== revision) return null;
+			revision += 1;
+			at.stored.set('experience', { ...draft, origin: save.origin });
+			return { savedAt: 'now', revision };
+		}
+	});
+}
+
+const announced: SectionChange[] = [];
+const unsubscribe = subscribeSectionChanges((change) => {
+	if (change.projectId === PROJECT) announced.push(change);
 });
 
-describe('saveSectionDraft', () => {
-	beforeEach(() => {
-		calls.length = 0;
-		projectExistsResult = true;
-		vi.clearAllMocks();
+function put(at: Installation, body: unknown, headers: Record<string, string> = {}) {
+	return requestEvent({
+		path: '/api/draft/rules',
+		method: 'PUT',
+		body: JSON.stringify(body),
+		headers: { 'content-type': 'application/json', 'x-lyriks-client': 'tab-1', ...headers },
+		authRequired: true,
+		services: at.services,
+		cookies: { lyriks_session: 'jwt' }
+	});
+}
+
+async function save<T extends object>(at: Installation, spec: SectionSaveSpec<{ projectId: string; title: string }, T>, body: unknown, headers: Record<string, string> = {}) {
+	return saveSectionDraft(put(at, body, headers), spec).then(
+		async (response) => ({ status: response.status, body: await response.json() }),
+		(failure: unknown) => (isHttpError(failure) ? { status: failure.status, body: failure.body } : Promise.reject(failure))
+	);
+}
+
+afterEach(() => {
+	announced.length = 0;
+	vi.restoreAllMocks();
+});
+
+describe('saving a section', () => {
+	it('stores the parsed section, answers its new revision, mirrors it to the Back and tells the other tabs', async () => {
+		const at = installation();
+		const answer = await save(at, section(at), { projectId: PROJECT, title: 'Refunds' });
+		expect(answer).toEqual({ status: 200, body: { savedAt: '2026-11-18T03:00:00.000Z', revision: 1 } });
+		expect(at.stored.get('rules')).toEqual({ projectId: PROJECT, title: 'Refunds' });
+		expect(at.revisionOf('rules')).toBe(1);
+		expect(at.mirrored).toEqual([PROJECT]);
+		expect(announced).toEqual([{ projectId: PROJECT, section: 'rules', origin: 'tab-1' }]);
 	});
 
-	it('runs the protocol in order and echoes result + revision', async () => {
-		const spec = baseSpec();
-		const res = await saveSectionDraft(makeEvent({ projectId: 'p1' }), spec);
-		expect(await res.json()).toEqual({ savedAt: 'now', revision: 7 });
-		// Parse must precede the revision bump; publish must follow the persist.
-		expect(calls).toEqual(['access', 'exists', 'parse', 'commit', 'persist', 'mirror', 'publish']);
+	it('requires the project id before touching anything', async () => {
+		const at = installation();
+		expect((await save(at, section(at), { title: 'Refunds' })).status).toBe(400);
+		expect(at.stored.size).toBe(0);
+		expect(announced).toEqual([]);
 	});
 
-	it('awaits cross-context validation before parsing, revision changes or persistence', async () => {
-		const spec = baseSpec();
-		await expect(saveSectionDraft(makeEvent({ projectId: 'p1' }), { ...spec, validate: async () => {
-			await Promise.resolve();
-			throw new Error('unresolved capability');
-		} })).rejects.toThrow('unresolved capability');
-		expect(calls).toEqual(['access', 'exists']);
-		expect(spec.persist).not.toHaveBeenCalled();
+	it('refuses a caller who may not write the project, writing nothing', async () => {
+		const at = installation({ decision: { ok: false, reason: 'forbidden' } });
+		expect((await save(at, section(at), { projectId: PROJECT, title: 'Refunds' })).status).toBe(403);
+		expect(at.stored.size).toBe(0);
+		expect(at.revisionOf('rules')).toBe(0);
 	});
 
-	it('rejects a missing projectId before touching anything', async () => {
-		await expect(saveSectionDraft(makeEvent({}), baseSpec())).rejects.toSatisfy(
-			(e: unknown) => isHttpError(e) && e.status === 400
-		);
-		expect(calls).toEqual([]);
+	it('refuses a section written for a project that does not exist, writing nothing', async () => {
+		const at = installation({ exists: false });
+		const answer = await save(at, section(at), { projectId: PROJECT, title: 'Refunds' });
+		expect(answer.status).toBe(404);
+		expect(String((answer.body as { message: string }).message)).toContain('does not exist');
+		expect(at.stored.size).toBe(0);
+		expect(at.revisionOf('rules')).toBe(0);
 	});
 
-	// Auth off (standalone appliance, dev) makes requireProjectAccess a no-op, so
-	// this is the only thing standing between a mistyped id and a section saved
-	// under a project no catalog lists — a 200 whose work is invisible everywhere.
-	it('refuses a section written for a project that does not exist', async () => {
-		projectExistsResult = false;
-		await expect(saveSectionDraft(makeEvent({ projectId: 'ghost' }), baseSpec())).rejects.toSatisfy(
-			(e: unknown) => isHttpError(e) && e.status === 404 && /does not exist/.test(e.body.message)
-		);
-		expect(calls).toEqual(['access', 'exists']);
-		expect(rollback).not.toHaveBeenCalled();
+	it('lets Foundation through for an unknown project, since it is what creates it', async () => {
+		const at = installation({ exists: false });
+		const answer = await save(at, section(at, 'foundation'), { projectId: PROJECT, title: 'Shop' });
+		expect(answer.status).toBe(200);
+		expect(at.stored.get('foundation')).toEqual({ projectId: PROJECT, title: 'Shop' });
 	});
 
-	// Foundation is what brings a project into being, so it cannot require one.
-	it('lets Foundation through for an unknown project — it is what creates it', async () => {
-		projectExistsResult = false;
-		const spec = { ...baseSpec(), section: 'foundation' };
-		const res = await saveSectionDraft(makeEvent({ projectId: 'brand-new' }), spec);
-		expect(await res.json()).toEqual({ savedAt: 'now', revision: 7 });
-		expect(calls).not.toContain('exists');
+	it('consumes no revision and stores nothing when the body does not validate or parse', async () => {
+		const at = installation();
+		const refusing = section(at, 'rules', { validate: async () => Promise.reject(new Error('unresolved capability')) });
+		await expect(save(at, refusing, { projectId: PROJECT, title: 'Refunds' })).rejects.toThrow('unresolved capability');
+		await expect(save(at, section(at), { projectId: PROJECT })).rejects.toThrow('title is required');
+		expect(at.revisionOf('rules')).toBe(0);
+		expect(at.stored.size).toBe(0);
+		expect(announced).toEqual([]);
 	});
 
-	it('does not consume a revision when validate or parse throws', async () => {
-		const spec = {
-			...baseSpec(),
-			validate: () => {
-				throw new Error('invalid body');
-			}
-		};
-		await expect(saveSectionDraft(makeEvent({ projectId: 'p1' }), spec)).rejects.toThrow(
-			'invalid body'
-		);
-		expect(calls).not.toContain('commit');
-		expect(rollback).not.toHaveBeenCalled();
+	it('answers 409 to an edit made on a revision someone else already replaced, storing nothing', async () => {
+		const at = installation();
+		await save(at, section(at), { projectId: PROJECT, title: 'First' });
+		const stale = await save(at, section(at), { projectId: PROJECT, title: 'Stale' }, { 'x-lyriks-rev': '0' });
+		expect(stale.status).toBe(409);
+		expect(at.stored.get('rules')).toEqual({ projectId: PROJECT, title: 'First' });
+		expect(at.revisionOf('rules')).toBe(1);
 	});
 
-	it('rolls the revision bump back when persistence fails, and never publishes', async () => {
-		const spec = baseSpec();
-		spec.persist.mockRejectedValueOnce(new Error('disk on fire'));
-		await expect(saveSectionDraft(makeEvent({ projectId: 'p1' }), spec)).rejects.toSatisfy(
-			(e: unknown) => isHttpError(e) && e.status === 500 && /kernel_write_failed/.test(e.body.message)
-		);
-		expect(rollback).toHaveBeenCalledWith('p1', 'test', 7);
-		expect(calls).not.toContain('publish');
-		expect(calls).not.toContain('mirror');
+	it('gives the revision back and tells nobody when the store fails', async () => {
+		const at = installation();
+		const failing = section(at, 'rules', { persist: async () => Promise.reject(new Error('disk on fire')) });
+		const answer = await save(at, failing, { projectId: PROJECT, title: 'Refunds' });
+		expect(answer.status).toBe(500);
+		expect(String((answer.body as { message: string }).message)).toMatch(/kernel_write_failed \[rules\]: disk on fire/);
+		expect(at.revisionOf('rules')).toBe(0);
+		expect(at.mirrored).toEqual([]);
+		expect(announced).toEqual([]);
 	});
 
-	it('still surfaces the persist error when the rollback itself fails', async () => {
-		const spec = baseSpec();
-		spec.persist.mockRejectedValueOnce(new Error('disk on fire'));
-		rollback.mockRejectedValueOnce(new Error('lock table gone'));
+	it('passes a refusal the store answers with its own status through unchanged, and gives the revision back', async () => {
+		const at = installation();
+		const refusing = section(at, 'rules', { persist: async () => error(422, 'A rule names a state no surface declares.') });
+		expect(await save(at, refusing, { projectId: PROJECT, title: 'Refunds' })).toEqual({ status: 422, body: { message: 'A rule names a state no surface declares.' } });
+		expect(at.revisionOf('rules')).toBe(0);
+	});
+
+	it('still reports the store failure when giving the revision back fails too', async () => {
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const at = installation({ rollbackFails: true });
+		const failing = section(at, 'rules', { persist: async () => Promise.reject(new Error('disk on fire')) });
+		expect((await save(at, failing, { projectId: PROJECT, title: 'Refunds' })).status).toBe(500);
+	});
+
+	it('answers the save even when the Back mirror fails', async () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-		await expect(saveSectionDraft(makeEvent({ projectId: 'p1' }), spec)).rejects.toSatisfy(
-			(e: unknown) => isHttpError(e) && e.status === 500
-		);
-		expect(warn).toHaveBeenCalledWith(expect.stringContaining('rollback failed'), expect.anything());
-		warn.mockRestore();
-	});
-
-	it('answers the save even when the Back mirror rejects (fire-and-forget)', async () => {
-		const spec = baseSpec();
-		scheduleBackSync.mockRejectedValueOnce(new Error('back is down'));
-		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-		const res = await saveSectionDraft(makeEvent({ projectId: 'p1' }), spec);
-		expect(await res.json()).toEqual({ savedAt: 'now', revision: 7 });
-		// Let the detached mirror promise settle; its rejection must be handled.
+		const at = installation({ mirrorFails: true });
+		expect((await save(at, section(at), { projectId: PROJECT, title: 'Refunds' })).status).toBe(200);
 		await new Promise((resolve) => setTimeout(resolve, 0));
-		expect(warn).toHaveBeenCalledWith(
-			expect.stringContaining('envelope mirror dispatch failed'),
-			expect.anything()
-		);
-		warn.mockRestore();
+		expect(warn).toHaveBeenCalledWith(expect.stringContaining('envelope mirror dispatch failed'), 'back is down');
 	});
 
-	it('skips the Back mirror when the spec opts out', async () => {
-		const spec = { ...baseSpec(), mirror: false };
-		await saveSectionDraft(makeEvent({ projectId: 'p1' }), spec);
-		expect(calls).toContain('publish');
-		expect(calls).not.toContain('mirror');
-	});
-
-	describe('atomic (consolidated) sections', () => {
-		const atomicSpec = () => ({
-			...baseSpec(),
-			atomic: true,
-			persist: vi.fn(
-				async (
-					_draft: unknown,
-					_services: unknown,
-					_projectId: string,
-					_save: { expectedRevision: number | null; origin: string | null }
-				) => {
-					calls.push('persist');
-					return { savedAt: 'now', revision: 8 };
-				}
-			)
-		});
-
-		it('lets persist own the whole save — no lock commit, no separate publish', async () => {
-			const spec = atomicSpec();
-			const res = await saveSectionDraft(makeEvent({ projectId: 'p1' }), spec);
-			expect(await res.json()).toEqual({ savedAt: 'now', revision: 8 });
-			expect(calls).toEqual(['access', 'exists', 'parse', 'persist', 'mirror']);
-			// The client's revision + writer id are handed to the atomic save.
-			expect(spec.persist).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'p1', {
-				expectedRevision: null,
-				origin: 'tab-1'
-			});
-		});
-
-		it('answers 409 when the atomic save reports a stale revision', async () => {
-			const spec = atomicSpec();
-			spec.persist.mockResolvedValueOnce(null as never);
-			await expect(saveSectionDraft(makeEvent({ projectId: 'p1' }), spec)).rejects.toSatisfy(
-				(e: unknown) => isHttpError(e) && e.status === 409
-			);
-			expect(calls).not.toContain('mirror');
-			expect(rollback).not.toHaveBeenCalled();
-		});
-
-		it('never touches the legacy lock when the atomic persist fails', async () => {
-			const spec = atomicSpec();
-			spec.persist.mockRejectedValueOnce(new Error('disk on fire'));
-			await expect(saveSectionDraft(makeEvent({ projectId: 'p1' }), spec)).rejects.toSatisfy(
-				(e: unknown) => isHttpError(e) && e.status === 500
-			);
-			expect(rollback).not.toHaveBeenCalled();
-			expect(calls).not.toContain('commit');
-		});
+	it('mirrors nothing for a section that opts out, and still tells the other tabs', async () => {
+		const at = installation();
+		await save(at, section(at, 'rules', { mirror: false }), { projectId: PROJECT, title: 'Refunds' });
+		expect(at.mirrored).toEqual([]);
+		expect(announced).toHaveLength(1);
 	});
 });
+
+describe('saving an atomic section', () => {
+	it('lets its store keep the revision: the store answers it, the lock is left alone', async () => {
+		const at = installation();
+		const answer = await save(at, atomicSection(at), { projectId: PROJECT, title: 'Journeys' }, { 'x-lyriks-rev': '3' });
+		expect(answer).toEqual({ status: 200, body: { savedAt: 'now', revision: 4 } });
+		expect(at.stored.get('experience')).toEqual({ projectId: PROJECT, title: 'Journeys', origin: 'tab-1' });
+		expect(at.revisionOf('experience')).toBe(0);
+		expect(at.mirrored).toEqual([PROJECT]);
+	});
+
+	it('answers 409 when its store refuses a stale revision, mirroring nothing', async () => {
+		const at = installation();
+		const stale = await save(at, atomicSection(at), { projectId: PROJECT, title: 'Journeys' }, { 'x-lyriks-rev': '1' });
+		expect(stale.status).toBe(409);
+		expect(at.stored.size).toBe(0);
+		expect(at.mirrored).toEqual([]);
+	});
+});
+
+afterAll(unsubscribe);

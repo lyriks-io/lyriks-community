@@ -2,13 +2,16 @@
 	import { fade, slide } from 'svelte/transition';
 	import { Icon } from '$ui/design-system';
 	import { celebrateValidation } from '$ui/evolution/validate-motion';
+	import { countOf, type SectionElements } from '$ui/evolution/section-elements';
 
 	/**
-	 * Validate all, on a frame or a section of the Specification 360°
-	 * (criterion aba60be7, owner 2026-11-07: 'les blocs de validation doivent
-	 * tous etre les memes'): the check of the four acts, the same square at the
-	 * same size beside the frame's other acts, the number of elements it
-	 * validates written beside the check as the comments write theirs. It
+	 * Validate the whole section, on a frame or a section of the Specification
+	 * 360° (criterion aba60be7, owner 2026-11-07: 'les blocs de validation doivent
+	 * tous etre les memes'; EVO-009 for its name): the check of the four acts, the
+	 * same square at the same size beside the frame's other acts, the number of
+	 * elements it validates written beside the check as the comments write
+	 * theirs, its tooltip and accessible name Validate the whole section: N
+	 * <elements> still waiting on you (criterion 3f424411). It
 	 * validates in the reader's name every element there still waiting on them,
 	 * and exists only while something does. Outside a frame that is itself the
 	 * place to validate (`always`, the Overview's frames) it shows while the
@@ -20,22 +23,20 @@
 		/** Elements there still waiting on the reader's validation. */
 		count: number;
 		/** How the section names its elements, plural: "profiles", "rules". */
-		what: string;
+		what: SectionElements;
 		/** Shown at rest, not only while the pointer is on the section. */
 		always?: boolean;
-		/** What the elements are, for the tooltip: "of this section" by default. */
-		of?: string;
 		disabled?: boolean;
 		onclick: () => void;
 	}
-	let { count, what, always = false, of = 'of this section', disabled = false, onclick }: Props = $props();
+	let { count, what, always = false, disabled = false, onclick }: Props = $props();
 	const reveal = $derived(
 		always
 			? ''
 			: 'pointer-events-none opacity-0 transition-opacity duration-150 group-hover/section:pointer-events-auto group-hover/section:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100'
 	);
 	const comeAndGo = (node: Element) => (always ? slide(node, { axis: 'x', duration: 160 }) : fade(node, { duration: 160 }));
-	const title = $derived(`Validate the ${count} ${count === 1 ? what.replace(/s$/, '') : what} ${of} still waiting on you`);
+	const title = $derived(`Validate the whole section: ${countOf(count, what)} still waiting on you`);
 </script>
 
 {#if count > 0}

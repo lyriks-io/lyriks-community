@@ -15,7 +15,7 @@ describe('UI_LOCATION (criterion 0aa782c2)', () => {
 	});
 
 	it('names no page the interface no longer has', () => {
-		const retired = /Foundation(?! document)|Control Center|Traceability|Rules tab|Roadmap tab|Work queue tab|Tech & Data|Users & Permissions|At a glance|Project health \(coverage/;
+		const retired = /Foundation(?! document)|Control Center|Traceability|Rules tab|Roadmap|Work queue|Tech & Data|Users & Permissions|At a glance|Project health \(coverage/;
 		for (const section of SECTIONS) expect(UI_LOCATION[section], section).not.toMatch(retired);
 	});
 
@@ -24,6 +24,6 @@ describe('UI_LOCATION (criterion 0aa782c2)', () => {
 		expect(UI_LOCATION.foundation).toContain('`definition.constraints.items`');
 		expect(UI_LOCATION.foundation).toContain('`operations.testFixtures`');
 		expect(UI_LOCATION.rules).toContain('`rules[]`, `inventory[]` and the edge cases');
-		expect(UI_LOCATION.features).toContain('the work queue');
+		expect(UI_LOCATION.features).toContain('implementation index');
 	});
 });

@@ -533,9 +533,6 @@ export function impactSectionOf(field: BlockField): ImpactSection | null {
 	}
 }
 
-/** Exactly ten core blocks. The score covers every block shown or it is not reported at all. */
-export const BLOCK_COUNT = SPEC_BLOCKS.length;
-
 /**
  * The need of the request (ac-evo-need-1..3): why the change exists, asked once
  * for the whole request rather than once per feature it touches. Its values

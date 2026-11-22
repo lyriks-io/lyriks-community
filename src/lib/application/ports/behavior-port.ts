@@ -49,7 +49,7 @@ export type BehaviorOp =
 			description: string;
 			tags: UnspaTag[];
 	  }
-	/** Replace a feature's membership tags (core/family/mvp/phase). */
+	/** Replace a feature's membership tags (core/family). */
 	| { kind: 'setFeatureTags'; featureId: string; tags: UnspaTag[] }
 	/** Rename a feature (and optionally its description). */
 	| { kind: 'renameFeature'; featureId: string; name: string; description?: string }

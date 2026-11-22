@@ -27,7 +27,7 @@
 	 * checked green while a draft; then the band of where the specification
 	 * stands, VALIDATED with + New change, or DRAFT with what the page on
 	 * screen asks of the reader (criterion f480783f: the page hands its scope
-	 * through FeatureValidation) and its Validate all section (criterion
+	 * through FeatureValidation) and its Validate the whole section (criterion
 	 * d7cd4e43), with no count of the whole specification; the version line
 	 * closes the name's row. On a phone they scroll with the page.
 	 */
@@ -134,7 +134,7 @@
 		{#if draft && mine > 0 && scope}
 			<span class="acts">
 				<button type="button" class="act fill" title="Validate the {mine} {mine === 1 ? 'element' : 'elements'} of this section still waiting on you" onclick={() => validateSection(scope)}
-					>Validate all section</button
+					>Validate the whole section</button
 				>
 			</span>
 		{/if}

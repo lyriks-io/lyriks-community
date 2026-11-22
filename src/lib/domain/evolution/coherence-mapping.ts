@@ -35,7 +35,7 @@ export interface AnalysedProject {
 }
 
 export interface CoherenceMappingInput {
-	readonly request: Pick<EvolutionRequest, 'id' | 'leafIds' | 'coherenceReport' | 'coherenceBaseline' | 'specVersion'>;
+	readonly request: Pick<EvolutionRequest, 'id' | 'leafIds' | 'coherenceReport' | 'coherenceBaseline' | 'coherenceBaselineLeafIds' | 'specVersion'>;
 	readonly analysis: AnalysedProject;
 	/** Leaf id -> name, so a gap that names a feature by its name is matched too. */
 	readonly leafNames: Readonly<Record<string, string>>;
@@ -50,8 +50,13 @@ export interface CoherenceMappingInput {
 export interface CoherenceMapping {
 	readonly report: EvolutionRequest['coherenceReport'];
 	readonly findings: CoherenceFinding[];
-	/** The findings the product carried before the request: set at the first check only. */
+	/**
+	 * The findings the product carried before the request: set at the first
+	 * check, and grown by the findings of a feature that joined the request since.
+	 */
 	readonly baseline?: string[];
+	/** The touched features the baseline covers, set with it (criterion dd8db104). */
+	readonly baselineLeafIds?: string[];
 }
 
 /** An anchor that is a page address fragment, not a node anyone can name. */
@@ -134,6 +139,19 @@ export function mapCoherenceAnalysis(input: CoherenceMappingInput): CoherenceMap
 	// for a complete one, so a cold cache never decides what the product carried.
 	const firstCheck = !request.coherenceBaseline && request.specVersion === 0;
 	const baseline = new Set(firstCheck ? findings.map((f) => f.id) : (request.coherenceBaseline ?? []));
+	// A feature that joined the request after the first check brings what the
+	// product already carried on it the same way (criterion dd8db104): its
+	// findings join the baseline at the first complete reading after it joined.
+	const covered = firstCheck ? new Set(request.leafIds) : coveredLeaves(request, findings, baseline);
+	let grown = false;
+	if (!firstCheck && request.coherenceBaseline && !input.partial) {
+		const joined = request.leafIds.filter((id) => !covered.has(id));
+		for (const f of findings) {
+			if (joined.includes(f.requestNodeId) && !baseline.has(f.id)) baseline.add(f.id);
+		}
+		for (const id of joined) covered.add(id);
+		grown = joined.length > 0 || !request.coherenceBaselineLeafIds;
+	}
 	for (const f of findings) f.scope = baseline.has(f.id) ? 'inherited' : 'request';
 	const order: Record<FindingSeverity, number> = { blocking: 0, major: 1, minor: 2 };
 	findings.sort((a, b) => order[a.severity] - order[b.severity] || a.title.localeCompare(b.title));
@@ -150,8 +168,22 @@ export function mapCoherenceAnalysis(input: CoherenceMappingInput): CoherenceMap
 			ranAt: input.at
 		},
 		findings,
-		...(firstCheck && !input.partial ? { baseline: [...baseline] } : {})
+		...((firstCheck || grown) && !input.partial ? { baseline: [...baseline], baselineLeafIds: [...covered] } : {})
 	};
+}
+
+/**
+ * The touched features the request's coherence baseline already covers. A
+ * request baselined before the features were recorded reads as covered every
+ * feature that owns a finding of its baseline.
+ */
+function coveredLeaves(
+	request: Pick<EvolutionRequest, 'coherenceBaselineLeafIds'>,
+	findings: readonly CoherenceFinding[],
+	baseline: ReadonlySet<string>
+): Set<string> {
+	if (request.coherenceBaselineLeafIds) return new Set(request.coherenceBaselineLeafIds);
+	return new Set(findings.filter((f) => baseline.has(f.id)).map((f) => f.requestNodeId));
 }
 
 /** The request with a fresh coherence reading; the gate reopens on it. */
@@ -166,6 +198,7 @@ export function withCoherenceReading(
 		coherenceReport: mapping.report,
 		coherenceFindings: mapping.findings.map((f) => (risks.has(f.id) ? { ...f, risk: risks.get(f.id) } : f)),
 		coherenceGateClosed: false,
-		...(mapping.baseline ? { coherenceBaseline: mapping.baseline } : {})
+		...(mapping.baseline ? { coherenceBaseline: mapping.baseline } : {}),
+		...(mapping.baselineLeafIds ? { coherenceBaselineLeafIds: mapping.baselineLeafIds } : {})
 	};
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createEmptyExperienceDraft, createJourney, createStep, createScreen, createElementNode, createGroupNode, ensureScreenRoot, addNode, deriveJourneyFlow, simulate, generateAcceptanceTests } from './index';
+import { createEmptyExperienceDraft, createJourney, createStep, createScreen, createElementNode, createGroupNode, ensureScreenRoot, addNode, deriveJourneyFlow, simulate } from './index';
 
 function workflow() {
 	const draft = createEmptyExperienceDraft('p');
@@ -77,19 +77,5 @@ describe('stateful journey planning', () => {
 		const flow = deriveJourneyFlow(draft, journey);
 		expect(flow.flowGaps.join(' ')).toContain('steps[].actions');
 		expect(simulate(draft.builder, { actions: flow.script }).ok).toBe(false);
-	});
-
-	it('exports enabling actions to the real acceptance test, not just navigation', () => {
-		const { draft } = workflow();
-		const code = generateAcceptanceTests(draft).playwright;
-		expect(code).toContain('name: "Prepare preview"');
-		expect(code.indexOf('name: "Prepare preview"')).toBeLessThan(code.indexOf('name: "Publish"'));
-	});
-
-	it('marks failed explicit scripts as needing repair in generated tests', () => {
-		const { draft, publish } = workflow();
-		draft.steps.splice(1);
-		draft.steps[0].actions = [{ nodeId: publish.id }];
-		expect(generateAcceptanceTests(draft).playwright).toContain('The prototype simulation failed');
 	});
 });

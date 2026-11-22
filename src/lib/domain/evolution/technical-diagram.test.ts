@@ -68,6 +68,12 @@ describe('the technical notation reads the diagram [criterion:ac-leaf-ac-evo-tec
 		expect(technicalDiagramWords(SMS)).not.toMatch(/\b(component|store|system|link|note|sequence|goes wrong when)\b/);
 	});
 
+	it('points out a link that does not join two parts, and draws no link for it', () => {
+		const { diagram, problems } = readTechnicalDiagram('component Shop\nlink Shop\nlink -> Shop: pays\nlink Shop -> : pays\nlink Shop -> Bank: pays');
+		expect(problems.map((p) => p.line)).toEqual([2, 3, 4]);
+		expect(diagram.links).toEqual([{ from: 'Shop', to: 'Bank', label: 'pays' }]);
+	});
+
 	it('says where each problem sits on the drawing: the link, the note or the message (ac-evo-tech-uml)', () => {
 		const { diagram } = readTechnicalDiagram(
 			'component Shop\nlink Shop -> Shop: loops\nlink Shop -> Bank: pays\nnote Ledger: append only\nsequence Pay\n  Shop -> Shop: checks\n  Shop -> Gateway: pays\n    goes wrong when down'

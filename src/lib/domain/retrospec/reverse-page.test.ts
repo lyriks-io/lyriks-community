@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { celebrationLine, liveTitle, readingEnd, relaunchOffered, relaunchQuestion, reverseLead, runReach, scopeLine } from './reverse-page';
+import { celebrationLine, liveTitle, readingEnd, relaunchOffered, relaunchQuestion, reverseLead, runReach, scopeLine, scopeOptions } from './reverse-page';
 
 describe('the Reverse page says what it does, and asks before the next run [criterion:2dbed801]', () => {
 	it('says under its title what Lyriks reads, from where the runs read', () => {
@@ -13,8 +13,17 @@ describe('the Reverse page says what it does, and asks before the next run [crit
 		expect(q.title).toBe('Launch a complementary Reverse-Specification?');
 		expect(q.message).toContain('erases nothing');
 		expect(q.message).toContain('since commit 7c0d4b1');
-		expect(q.message).toContain('the whole product again');
 		expect(q.message).toContain('Only what it changes goes back to validation.');
+		// From Reverse the Source step still lets the person choose (criterion bf0ea80c).
+		expect(relaunchQuestion({ complementary: true, fromCommit: '7c0d4b1' }, false, undefined, true).message).toContain('You can choose otherwise on the next step.');
+		expect(q.message).not.toContain('next step');
+	});
+
+	it('says what each option reads: the whole product again, or where the last run stopped [criterion:bf0ea80c]', () => {
+		const next = { complementary: true, fromCommit: '7c0d4b1' } as const;
+		expect(relaunchQuestion(next, false, { kind: 'whole' }).message).toContain('it reads the whole product again');
+		const resume = relaunchQuestion(next, false, { kind: 'resume', left: ['experience', 'rules', 'tech', 'check'], fromCommit: '7c0d4b1aa' });
+		expect(resume.message).toContain('it resumes where the last run stopped: Experience and design, Business rules, Tech stack, then the final check, and what changed in the code since commit 7c0d4b1. What was already read is not read again.');
 	});
 
 	it('asks a complementary run from what the specification cites when no commit was recorded', () => {
@@ -138,5 +147,20 @@ describe('a run that holds its changes says nothing is written yet [criterion:50
 
 	it('celebrates the reading, never a specification brought up to date', () => {
 		expect(celebrationLine('Kutt', 'repo', delta, 40, true)).toBe('Lyriks has read what changed in the code of Kutt. Nothing is written yet: validate what it found on Mismatch, then Write the validated changes has your AI write it.');
+	});
+});
+
+describe('what the next run may read, the same on Mismatch and on Reverse (EVO-014) [criterion:1f1f4ca8] [criterion:04f3bc85]', () => {
+	it('offers Delta and Full analysis, and Resume analysis only after a run closed before its final check', () => {
+		expect(scopeOptions(true, false).map((o) => o.title)).toEqual(['Delta analysis', 'Full analysis']);
+		expect(scopeOptions(true, true).map((o) => [o.title, o.sub])).toEqual([
+			['Delta analysis', 'Only what is new or changed since the last run. Erases nothing.'],
+			['Full analysis', 'Everything, from the specification gathered: confirms, completes, corrects. Erases nothing.'],
+			['Resume analysis', 'Where the last run stopped: the phases it never reached, then the final check. What it read is not read again.']
+		]);
+	});
+
+	it('greys Delta analysis on a product with no specification yet', () => {
+		expect(scopeOptions(false, false).find((o) => o.scope === 'delta')?.unavailable).toBe('Nothing to compare yet: the product has no specification.');
 	});
 });

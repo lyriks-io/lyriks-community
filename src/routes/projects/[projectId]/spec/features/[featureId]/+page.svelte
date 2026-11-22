@@ -17,6 +17,8 @@
 	import ActionDataTouched from '$ui/spec360/features/ActionDataTouched.svelte';
 	import ActionList from '$ui/spec360/features/ActionList.svelte';
 	import CoreFeaturePage from '$ui/spec360/features/CoreFeaturePage.svelte';
+	import DisabledBadge from '$ui/spec360/features/DisabledBadge.svelte';
+	import ElementMenu from '$ui/spec360/features/ElementMenu.svelte';
 	import FeaturePoints from '$ui/spec360/features/FeaturePoints.svelte';
 	import AskAiTool from '$ui/spec360/page/AskAiTool.svelte';
 	import PageHead from '$ui/spec360/page/PageHead.svelte';
@@ -135,8 +137,11 @@
 			<PageHead kicker="Feature" up={{ label: f.coreName, href: `${base}/${corePath(encodeURIComponent(f.coreId))}` }} title={shown.text} {name}>
 				{#snippet tools()}
 					<AskAiTool {anchor} title={shown.text} />
+					<!-- The whole feature is disabled and enabled here, with the guards and the stamp of every element (criterion 6579f7f4). -->
+					<ElementMenu featureId={f.id} elementId={f.id} title={shown.text} disabled={f.disabled} />
 				{/snippet}
-				<div id={anchorDomId(anchor)} data-evo-waits={waits(anchor)} class="flex scroll-mt-44 flex-col gap-2">
+				<div id={anchorDomId(anchor)} data-evo-waits={waits(anchor)} class="flex scroll-mt-44 flex-col gap-2 {f.disabled ? 'opacity-60' : ''}" data-disabled={f.disabled ? true : undefined}>
+					{#if f.disabled}<DisabledBadge marker={f.disabled} />{/if}
 					{#if edits.editing === anchor}
 						<InlineEditor {anchor} />
 					{:else}

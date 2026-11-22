@@ -10,14 +10,16 @@ import {
 } from './acts';
 import {
 	createEvolutionRequest,
+	createObservation,
 	createProposal,
 	draftFor,
 	isDraftLeafId,
 	touchedLeafIds,
 	type Actor,
-	type EvolutionRequest
+	type EvolutionRequest,
+	type ImplementationFinding
 } from './draft';
-import { isPresentational, nothingToArbitrate } from './gate';
+import { canCrossToImplementation, isPresentational, nothingToArbitrate } from './gate';
 import { canAcceptProposal } from './proposals';
 import { draftCoherence, draftNodeIds, overlayGraph } from './overlay';
 import { propagateImpact, type PropagationGraph } from './impact-propagation';
@@ -290,6 +292,23 @@ describe('the contradictions only a draft can introduce', () => {
 		expect(untestable?.severity).toBe('minor');
 	});
 
+	it('never flags as untestable a draft whose behaviour model brings a Given/When/Then criterion [criterion:52c53f0c]', () => {
+		const opened_ = ok(addDraftLeafAct(ctx(), opened(), { name: 'Cancel a booking' }, known));
+		const request = {
+			...opened_,
+			drafts: opened_.drafts.map((d) => ({
+				...d,
+				behaviourModel: {
+					operations: [{ kind: 'add_acceptance_criterion', title: 'A booking cancelled frees its seat', given: 'a booking', when: 'it is cancelled', then: 'its seat is free' }],
+					mintedIds: [],
+					updatedAt: '2026-11-22T00:00:00.000Z'
+				}
+			}))
+		};
+		const untestable = draftCoherence({ request, leafNames, dependsOn: {} }).find((f) => f.title.includes('no acceptance criterion'));
+		expect(untestable).toBeUndefined();
+	});
+
 	it('flags a word the glossary bans, and names the word to use', () => {
 		const request = ok(addDraftLeafAct(ctx(), opened(), { name: 'Empty the basket' }, known));
 		const findings = draftCoherence({
@@ -323,7 +342,7 @@ describe('the freeze is the one moment a dossier writes', () => {
 				unspaghettitFeatureId: 'feat-b'
 			}
 		],
-		leafMeta: { 'feat-a': { status: 'done' } }
+		leafMeta: { 'feat-a': { objective: 'Seat a passenger.' } }
 	});
 
 	it('creates an addition, with what the draft carried', () => {
@@ -361,7 +380,7 @@ describe('the freeze is the one moment a dossier writes', () => {
 		const leaf = out.features.features.find((f) => f.id === 'feat-a');
 		expect(leaf?.description).toBe('Take a seat, or two.');
 		expect(leaf?.name).toBe('Book a seat');
-		expect(out.features.leafMeta?.['feat-a']?.status).toBe('done');
+		expect(out.features.leafMeta?.['feat-a']?.objective).toBe('Seat a passenger.');
 	});
 
 	it('removes what a removal stands for, and forgets its drawer', () => {
@@ -414,8 +433,43 @@ describe('a request with nothing to arbitrate gets out of the way', () => {
 		expect(nothingToArbitrate(read(opened()))).toBe(true);
 	});
 
+	it('lets such a request cross to the Build with critical fields still empty, and holds one not yet read (ac-evo-req-14)', () => {
+		expect(canCrossToImplementation(read(opened()), 3).ok).toBe(true);
+		expect(canCrossToImplementation(opened(), 3).ok).toBe(false);
+	});
+
 	it('will not say so before the readings have actually run', () => {
 		expect(nothingToArbitrate(opened())).toBe(false);
+		const impactOnly = { ...read(opened()), coherenceReport: opened().coherenceReport };
+		expect(nothingToArbitrate(impactOnly)).toBe(false);
+	});
+
+	it('will not say so of a request no longer open', () => {
+		expect(nothingToArbitrate({ ...read(opened()), status: 'closed' })).toBe(false);
+	});
+
+	it('says there is something while a question is open, a remark logged or a report line listed', () => {
+		const request = read(opened());
+		expect(nothingToArbitrate({ ...request, openQuestionKeys: ['00-need.cost'] })).toBe(false);
+		expect(nothingToArbitrate({ ...request, observations: [createObservation({ id: 'o1' })] })).toBe(false);
+		const reportLine: ImplementationFinding = {
+			id: 'l1',
+			iteration: 1,
+			verdict: 'missing',
+			requirement: 'Cancel a booking',
+			filePath: 'src/booking.ts',
+			lineRange: '1-9',
+			specStatement: '',
+			codeStatement: '',
+			hasRequirementAnchor: true,
+			anchorForeignLeaf: false,
+			acceptanceTestPassing: false,
+			specVersion: 1,
+			decision: 'undecided',
+			decidedBy: null,
+			decidedAt: null
+		};
+		expect(nothingToArbitrate({ ...request, implementationFindings: [reportLine] })).toBe(false);
 	});
 
 	it('says there is something the moment the coherence check publishes one', () => {

@@ -10,6 +10,7 @@ import { MIGRATIONS } from './pg-migrations.server';
 import type { SectionChangeEvent } from '$application/ports';
 import { emptyRowSnapshot } from '$domain/portability';
 import { PgProjectPortabilityStore } from './pg-project-portability-store.server';
+import { PgBackLinkRepository } from './pg-back-link-repository.server';
 
 const projectId = `pg-integration-${randomUUID()}`;
 const integration = process.env.LYRIKS_PG_URL ? describe : describe.skip;
@@ -155,6 +156,94 @@ integration('operator session version migration', () => {
 			expect(await otherProcess.verify(fresh.token)).toBeNull();
 		} finally {
 			await pgQuery('DELETE FROM operator_accounts WHERE email = $1', [email]);
+		}
+	});
+});
+
+integration('the link of a project to its Back project', () => {
+	const repository = new PgBackLinkRepository();
+	const ids: string[] = [];
+	/** A local project (a link names one that exists), not yet registered on the Back. */
+	const fresh = async () => {
+		const id = `link-${randomUUID()}`;
+		ids.push(id);
+		await pgQuery('INSERT INTO project_drafts (project_id, document, updated_at) VALUES ($1, $2, $3)', [id, JSON.stringify({ projectId: id }), new Date().toISOString()]);
+		return id;
+	};
+	afterAll(async () => {
+		await pgQuery('DELETE FROM project_drafts WHERE project_id = ANY($1::text[])', [ids]);
+	});
+
+	it('is absent for a project never registered, and gets no envelope version', async () => {
+		await ready();
+		const id = await fresh();
+		expect(await repository.find(id)).toBeNull();
+		expect(await repository.nextEnvelopeVersion(id)).toBeNull();
+	});
+
+	it('is linked once saved, keeps the error of a failed health check, and a new save heals it', async () => {
+		await ready();
+		const id = await fresh();
+		await repository.save({ localProjectId: id, backProjectId: 'b-1', backWorkspaceId: 'ws-1' });
+		expect(await repository.find(id)).toEqual({ localProjectId: id, backProjectId: 'b-1', backWorkspaceId: 'ws-1', status: 'linked' });
+		await repository.markStatus(id, 'stale', 'back project 404');
+		expect(await repository.find(id)).toMatchObject({ status: 'stale', lastError: 'back project 404' });
+		await repository.save({ localProjectId: id, backProjectId: 'b-2', backWorkspaceId: 'ws-1' });
+		expect(await repository.find(id)).toEqual({ localProjectId: id, backProjectId: 'b-2', backWorkspaceId: 'ws-1', status: 'linked' });
+	});
+
+	it('hands concurrent pushes distinct, strictly increasing envelope versions', async () => {
+		await ready();
+		const id = await fresh();
+		await repository.save({ localProjectId: id, backProjectId: 'b-1', backWorkspaceId: 'ws-1' });
+		const versions = await Promise.all(Array.from({ length: 5 }, () => repository.nextEnvelopeVersion(id)));
+		expect(new Set(versions).size).toBe(5);
+		expect(await repository.nextEnvelopeVersion(id)).toBe(Math.max(...(versions as number[])) + 1);
+	});
+});
+
+integration('a project copied out of PostgreSQL and back', () => {
+	it('reads back exactly the rows it wrote, and replaces what the copy does not describe', async () => {
+		await ready();
+		const id = `portable-${randomUUID()}`;
+		const store = new PgProjectPortabilityStore();
+		const snapshot = {
+			...emptyRowSnapshot(),
+			legacyDocuments: { project_drafts: { projectId: id, productName: 'Shop' }, project_rules_drafts: { rules: ['r1'] } },
+			sectionDocuments: { glossary: { schemaVersion: 1, document: { terms: ['cart'] }, revision: 3 } },
+			residue: { 'kernel-residue': { sources: [] }, team: { collaborators: [] } },
+			revisions: { rules: 4 },
+			meta: { domainId: null, shippedAt: null }
+		};
+		try {
+			await store.write(id, snapshot);
+			expect(await store.exists(id)).toBe(true);
+			expect(await store.read(id)).toEqual(snapshot);
+
+			const smaller = { ...emptyRowSnapshot(), legacyDocuments: { project_drafts: { projectId: id, productName: 'Shop 2' } } };
+			await store.write(id, smaller);
+			expect(await store.read(id)).toEqual({ ...smaller, meta: null });
+		} finally {
+			for (const table of ['project_section_documents', 'project_residue', 'draft_revisions', 'project_meta', 'project_drafts', 'project_rules_drafts']) {
+				await pgQuery(`DELETE FROM ${table} WHERE project_id = $1`, [id]);
+			}
+		}
+	});
+
+	it('leaves the project as it was when the copy cannot be written whole', async () => {
+		await ready();
+		const id = `portable-${randomUUID()}`;
+		const store = new PgProjectPortabilityStore();
+		const original = { ...emptyRowSnapshot(), legacyDocuments: { project_drafts: { projectId: id, productName: 'Kept' } } };
+		try {
+			await store.write(id, original);
+			// A revision that is not a number makes the last insert fail, after the deletes and the first inserts.
+			const broken = { ...emptyRowSnapshot(), legacyDocuments: { project_drafts: { projectId: id, productName: 'Lost' } }, revisions: { rules: 'not-a-number' as unknown as number } };
+			await expect(store.write(id, broken)).rejects.toThrow();
+			expect((await store.read(id)).legacyDocuments).toEqual({ project_drafts: { projectId: id, productName: 'Kept' } });
+		} finally {
+			await pgQuery('DELETE FROM project_drafts WHERE project_id = $1', [id]);
+			await pgQuery('DELETE FROM draft_revisions WHERE project_id = $1', [id]);
 		}
 	});
 });
