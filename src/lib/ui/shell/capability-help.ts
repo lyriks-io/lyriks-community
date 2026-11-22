@@ -23,7 +23,7 @@ export const PORTFOLIO_HELP: HelpEntry = {
 export const CAPABILITY_HELP: Record<string, HelpEntry> = {
 	evolution: {
 		title: 'Evolution',
-		what: 'One request per change to the product, read in six steps: Briefing, Solution, Specification, Simulation, Implementation and Verification. Nothing a request changes is written into the specification before the change is declared live. The Roadmap view plans the releases its features ship in.',
+		what: 'One request per change to the product, read in six steps: Briefing, Solution, Specification, Simulation, Implementation and Verification. Nothing a request changes is written into the specification before the change is declared live.',
 		how: [
 			'Open a request with New change, then answer the Briefing and the Solution in your own words, or let your AI suggest the answers: accept or reject each suggestion, and answer the question it asks there.',
 			'Validate each answer, then each element of the Specification: a step opens once a person has validated what the step before holds.',
@@ -69,10 +69,9 @@ export const CAPABILITY_HELP: Record<string, HelpEntry> = {
 	},
 	features: {
 		title: 'Features',
-		what: 'The feature tree: the product broken into families and leaf features, with MVP scope. The release roadmap is a view of Evolution.',
+		what: 'The feature tree: the product broken into families and leaf features.',
 		how: [
 			'Build the tree of families and features.',
-			'Mark what is in the MVP versus later releases.',
 			'Each feature’s maturity identifies missing specification details.'
 		],
 		value:
@@ -140,7 +139,7 @@ export const CAPABILITY_HELP: Record<string, HelpEntry> = {
 	},
 	traceability: {
 		title: 'Traceability',
-		what: 'Every feature as a requirement, traced to its acceptance criteria, behavior, source and release; the named versions of the spec; and who signed off what.',
+		what: 'Every feature as a requirement, traced to its acceptance criteria, behavior and source; the named versions of the spec; and who signed off what.',
 		how: [
 			'Coverage: read the matrix, where each red cell is a gap to close.',
 			'Baselines: freeze the spec at discovery, design or launch; each one records the scores, the feature count and a full requirements snapshot you can compare and export.',

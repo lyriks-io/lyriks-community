@@ -5,10 +5,12 @@ import { onlyProjectSessionActs } from './evolution-door.server';
 /**
  * The HTTP face of what a Community installation locks (EVO-001): a refused
  * scope check answers 403 with the sentence naming the plan that opens it, the
- * same words on the page and to an AI client.
+ * same words on the page and to an AI client. The body carries the sentence,
+ * the address of the plans for an API client, and the plan, so a page knows
+ * the refusal is an offer (EVO-006).
  */
 export function refuseUnlessAllowed(check: ScopeCheck): void {
-	if (!check.ok) error(403, `${check.reason} ${check.detail}`);
+	if (!check.ok) error(403, { message: check.reason, detail: check.detail, plan: check.plan });
 }
 
 /** Every Evolution operation, read or write, from the page or an AI client, is refused on Community. */

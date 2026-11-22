@@ -465,3 +465,37 @@ export function simulationTop<C extends { readonly verdict: CrossVerdict }>(inpu
 		issues
 	};
 }
+
+/**
+ * What a row of Evolutions in progress reads of the order (EVO-005, criterion
+ * 4162228b): the other request lands before this one, after it, or no order is
+ * set yet; what a person decided on a conflict follows. Only requests that
+ * share a feature or a table are ordered: the others read nothing here.
+ */
+export function orderWords(
+	cross: { readonly key: string; readonly verdict: CrossVerdict; readonly order: 'before' | 'after' | null; readonly decision: { readonly kind: 'order' | 'risk'; readonly reason: string } | null }
+): { readonly line: string; readonly decided: string | null } | null {
+	if (cross.verdict !== 'conflict' && cross.verdict !== 'overlap') return null;
+	const line = cross.order === 'before' ? `Lands before this one` : cross.order === 'after' ? `Lands after this one` : 'Not ordered yet';
+	const decided =
+		cross.decision?.kind === 'risk'
+			? `Conflict accepted as a risk: ${cross.decision.reason}`
+			: cross.verdict === 'conflict'
+				? cross.decision?.kind === 'order'
+					? 'Conflict decided by the order.'
+					: `Conflict undecided: set which lands first, or accept the risk with a reason, before ${cross.key} or this one is frozen.`
+				: null;
+	return { line, decided };
+}
+
+/**
+ * The line the Simulation opens on once another request landed on what it
+ * shares (EVO-005, criteria 550bcc24 and 7e16f2cb): which request landed, on
+ * what, and whether the readings caught up with the version it left.
+ */
+export function landedNoticeWords(landing: { readonly key: string; readonly on: readonly string[]; readonly upToDate: boolean; readonly neverRead: boolean }): { readonly line: string; readonly stale: boolean } {
+	const on = landing.on.length > 0 ? ` on ${landing.on.join(', ')}` : '';
+	if (landing.neverRead) return { line: `${landing.key} landed${on}: this request is read on the new version at its Impact analysis.`, stale: false };
+	if (landing.upToDate) return { line: `${landing.key} landed${on}, read again on the new version.`, stale: false };
+	return { line: `${landing.key} landed${on}: this Simulation still reads the version before that landing.`, stale: true };
+}

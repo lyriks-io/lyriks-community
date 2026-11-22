@@ -12,8 +12,8 @@ const folder = (id: string, workspaceId: string): Domain => ({
 	workspaceId
 });
 
-/** Two teams: the caller owns `mine` and is limited to folder `t-open` in `team`. */
-function portfolio() {
+/** Two teams: the caller owns `mine` and is limited to folder `t-open` in `team`, a collaborator on `collaborating`. */
+function portfolio(collaborating: readonly string[] = []) {
 	const projects = [
 		{ id: 'p-mine', ws: 'mine', domainId: 'm-1' },
 		{ id: 'p-open', ws: 'team', domainId: 't-open' },
@@ -28,7 +28,7 @@ function portfolio() {
 		{ analyze: async () => ({ dimensions: [], readinessScore: 0, gaps: [], lastActivityAt: null }) } as never,
 		{ execute: async () => ({ features: [] }) } as never,
 		{ find: async (id: string) => ({ localProjectId: id, backProjectId: id, backWorkspaceId: byId.get(id)?.ws ?? '', status: 'linked' }) } as never,
-		{ execute: async () => ({ collaborators: [] }) } as never,
+		{ execute: async (id: string) => ({ collaborators: collaborating.includes(id) ? [{ email: 'ada@acme.test' }] : [] }) } as never,
 		{ loadIdentity: async () => null } as never,
 		{ execute: async () => null } as never
 	);
@@ -62,6 +62,13 @@ describe('BuildPortfolioUseCase reads each project in its own workspace', () => 
 		const { folders } = ids(await portfolio().execute(reach('mine')));
 		expect(folders).not.toContain('o-empty');
 		expect(folders).not.toContain('o-1');
+	});
+
+	it('lists a project the caller collaborates on beyond their folders, with its folder', async () => {
+		expect(ids(await portfolio(['p-closed']).execute(reach('mine')))).toEqual({
+			projects: ['p-closed', 'p-mine', 'p-open'],
+			folders: ['m-1', 't-closed', 't-open']
+		});
 	});
 
 	it('lists everything when nothing is scoped', async () => {

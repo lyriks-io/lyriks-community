@@ -580,11 +580,6 @@ export function applySectionPatchReport(draft: Record<string, unknown>, operatio
   return report
 }
 
-/** The number of ops that found their target. */
-export function applySectionPatch(draft: Record<string, unknown>, operations: PatchOp[]): number {
-  return applySectionPatchReport(draft, operations).applied
-}
-
 /**
  * Targeted section write: read the current draft, apply `operations` in order,
  * write it back through the wizard app's real save use-case (with its sync side-effects).

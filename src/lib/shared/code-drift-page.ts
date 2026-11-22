@@ -1,4 +1,4 @@
-import type { CodeShift, DriftImpact, ElementText, NextRun, ReportCard, ReportCounts, RetrospecScope, RunDelta, SpecEditStatus } from '$domain/retrospec';
+import type { CodeShift, DriftImpact, ElementText, NextRunOffer, ReportCard, ReportCounts, RunDelta, RunPreview, SpecEditStatus } from '$domain/retrospec';
 
 /**
  * The Code drift page as the server hands it to the browser: whether the code
@@ -82,10 +82,15 @@ export interface HeldReportView {
 	readonly reworkPrompt: string;
 }
 
-/** The analysis Mismatch can launch once the last run is validated (criterion c350fed7). */
-export interface NextAnalysisView {
-	readonly scope: RetrospecScope;
-	readonly reads: NextRun;
+/** The next analysis Mismatch offers while no run is under way (criterion d44eb4e4, EVO-014). */
+export type NextAnalysisView = NextRunOffer;
+
+/** The preview of the run under way, in place of the waiting card (criterion 63d6ffe7, EVO-014). */
+export interface RunPreviewView extends RunPreview {
+	/** When this node last heard the AI call about the project: the page reads the run paused once it went silent. */
+	readonly aiLastSeenAt: string | null;
+	/** The prompt that resumes it, copied by Resume it with my AI without a session. */
+	readonly resumePrompt: string;
 }
 
 export interface DriftPageData {
@@ -100,5 +105,9 @@ export interface DriftPageData {
 	/** The changes made in the specification by hand, oldest first. */
 	readonly specEdits: readonly SpecEditView[];
 	readonly report: RunReportView | null;
+	/** Offered while no run is under way; the page shows it to who may write the project. */
 	readonly next: NextAnalysisView | null;
+	readonly preview: RunPreviewView | null;
+	/** A first analysis is over and wrote the specification: Mismatch leads to Knowledge (criterion 79b3cf4f). */
+	readonly firstWritten: boolean;
 }

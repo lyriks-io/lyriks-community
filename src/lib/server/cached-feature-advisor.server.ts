@@ -56,7 +56,7 @@ export class CachedFeatureAdvisor {
 	readonly #signature: ((projectId: string) => string) | undefined;
 
 	constructor(
-		private readonly score: ScoreFeaturesUseCase,
+		private readonly score: Pick<ScoreFeaturesUseCase, 'execute'>,
 		options: CachedFeatureAdvisorOptions = {}
 	) {
 		this.#lane = options.lane ?? engineLane;

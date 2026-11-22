@@ -68,7 +68,7 @@ describe('Overview blocks validate one by one beside their frames [criterion:e20
 		expect(html.match(/data-evo-validate/g)).toHaveLength(5);
 		// The standard review control on every block: the reviewer picker names each one.
 		for (const name of ['Problems', 'Objectives', 'Billing', 'Customer']) expect(html).toContain(`aria-label="Request validation: ${name}"`);
-		expect(html).toContain('You validated: rest on it to withdraw');
+		expect(html).toContain('You validated this element · click to withdraw');
 		for (const link of html.match(/<a\b[^>]*>[\s\S]*?<\/a>/g) ?? []) expect(link).not.toContain('data-evo-validate');
 	});
 
@@ -77,7 +77,7 @@ describe('Overview blocks validate one by one beside their frames [criterion:e20
 		for (const id of anchors) expect(own(id)).toContain('data-evo-validate');
 	});
 
-	it('shows the frame Validate all without editing rights to whom the blocks wait on [criterion:43bef20d]', () => {
+	it('shows the frame Validate the whole section without editing rights to whom the blocks wait on [criterion:43bef20d]', () => {
 		reset({ canWrite: false });
 		expect(overview()).toContain('data-validate-all');
 	});

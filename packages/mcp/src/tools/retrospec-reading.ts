@@ -9,7 +9,10 @@
 // person sent it what was validated, says in `written` what each change became.
 // A change a person rejected comes back under its id once reworked, or leaves the
 // report in `withdrawn` when the person said it is not a change at all
-// (feat-fb747-traceability criterion eb132bbd).
+// (feat-fb747-traceability criterion eb132bbd). A run that writes nothing as it
+// reads also says the phase it reads (`phase`) and each feature it finished
+// re-reading (`read`): what its preview on Mismatch follows (EVO-014, actions
+// 83ba020b and ef746636 of feat-145).
 
 import type { LyriksClient } from '../lyriks-client.js'
 
@@ -23,6 +26,8 @@ export interface RetrospecReadingArgs {
   withdrawn?: string[]
   finished?: boolean
   written?: { change: string; elements: { anchor: string; title?: string }[] }[]
+  phase?: string
+  read?: string[]
 }
 
 const path = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}/retrospec/reading`
@@ -33,7 +38,9 @@ export async function reportRetrospecReadingHandler(args: RetrospecReadingArgs, 
   const changes = args.changes ?? []
   const written = args.written ?? []
   const withdrawn = args.withdrawn ?? []
-  if (!args.received && !args.commit && !args.finished && checks.length === 0 && changes.length === 0 && written.length === 0 && withdrawn.length === 0) return lyriks.get(path(args.project_id))
+  const read = args.read ?? []
+  if (!args.received && !args.commit && !args.finished && !args.phase && checks.length === 0 && changes.length === 0 && written.length === 0 && withdrawn.length === 0 && read.length === 0)
+    return lyriks.get(path(args.project_id))
   return lyriks.post(path(args.project_id), {
     ...(args.received ? { received: true } : {}),
     ...(args.commit ? { commit: { sha: args.commit, ...(args.repository ? { repository: args.repository } : {}) } } : {}),
@@ -42,5 +49,7 @@ export async function reportRetrospecReadingHandler(args: RetrospecReadingArgs, 
     ...(withdrawn.length > 0 ? { withdrawn } : {}),
     ...(written.length > 0 ? { written } : {}),
     ...(args.finished ? { finished: true } : {}),
+    ...(args.phase ? { phase: args.phase } : {}),
+    ...(read.length > 0 ? { read } : {}),
   })
 }

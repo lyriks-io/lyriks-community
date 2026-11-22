@@ -9,6 +9,7 @@ import type { LyriksClient } from '../lyriks-client.js'
 import { codePlacesForRead } from './code-places.js'
 import { withPageLinks } from './evolution.js'
 import { RESULT_CAP, selectPaths, summarize } from '../util/shape.js'
+import { disabledCounts, markerOf } from './disabled.js'
 
 export interface ApplyBehaviorBatchArgs {
   project_id: string
@@ -191,21 +192,31 @@ export function featureToc(feature: Row): Row {
     stateCount: count(surface.stateDefinitions),
     ruleCount: count(surface.rules),
     invariants: rows(surface.invariants).map(idName),
-    actions: rows(surface.actions).map((action) => ({
-      id: action.id,
-      name: action.name,
-      rules: count(action.rules),
-      effects: count(action.effects),
-      scenarios: count(action.scenarios),
-      parameters: count(action.parameters),
-    })),
+    actions: rows(surface.actions).map((action) => {
+      const disabled = markerOf(action)
+      return {
+        id: action.id,
+        name: action.name,
+        rules: count(action.rules),
+        effects: count(action.effects),
+        scenarios: count(action.scenarios),
+        parameters: count(action.parameters),
+        ...(disabled ? { disabled } : {}),
+      }
+    }),
   }))
+  // A disabled element is still in the tree, readable; it is counted apart,
+  // so a reader tells what is in force from what is put aside.
+  const disabled = disabledCounts(feature)
+  const featureMarker = markerOf(feature)
   const toc: Row = {
     featureId: feature.id,
     name: feature.name,
     updatedAt: feature.updatedAt,
     counts: Object.fromEntries(FEATURE_COLLECTIONS.map((key) => [key, count(feature[key])])),
     acceptanceCriteria: rows(feature.acceptanceCriteria).map((c) => ({ id: c.id, title: c.title })),
+    ...(featureMarker ? { disabledFeature: featureMarker } : {}),
+    ...(disabled.total > 0 ? { disabled } : {}),
     surfaces,
     next: 'surface_id or action_id returns one element whole; paths reads an exact branch.',
   }
@@ -425,6 +436,8 @@ export interface SimulateBehaviorArgs {
   snapshot?: Record<string, unknown>
   persona_id?: string
   stop_on_blocked?: boolean
+  /** Ids of elements disabled for this call only, in memory: nothing is saved. */
+  disable?: string[]
 }
 
 /**
@@ -456,6 +469,7 @@ export async function simulateBehaviorHandler(
     ...(args.snapshot ? { snapshot: args.snapshot } : {}),
     ...(args.persona_id ? { personaId: args.persona_id } : {}),
     ...(args.stop_on_blocked === true ? { stopOnBlocked: true } : {}),
+    ...(args.disable && args.disable.length > 0 ? { disable: args.disable } : {}),
   })
 }
 

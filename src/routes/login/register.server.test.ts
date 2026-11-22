@@ -13,6 +13,7 @@ function signUp(opts: { authRequired: boolean; licenseRequired: boolean; unclaim
 	const form = new FormData();
 	form.set('email', 'eve@example.com');
 	form.set('password', 'long-enough-password');
+	form.set('confirm', 'long-enough-password');
 	const event = {
 		request: new Request('http://platform/login?/register', { method: 'POST', body: form }),
 		cookies: { set: vi.fn() },

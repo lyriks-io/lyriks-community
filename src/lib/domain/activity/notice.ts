@@ -16,6 +16,8 @@ export interface NoticeAction {
 	readonly label: string;
 	/** An arrow goes somewhere; relaunch starts again what stopped. */
 	readonly icon: 'go' | 'relaunch';
+	/** What the action copies for the person's AI before it goes, and the words that say it was copied. */
+	readonly copies?: { readonly text: string; readonly said: string };
 }
 
 /**

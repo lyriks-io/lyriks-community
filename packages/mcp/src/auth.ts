@@ -54,6 +54,7 @@ export async function authenticate(
         c.set('user_token', grant.session)
         c.set('token_scope', grant.scope ?? null)
         c.set('token_session', grant.sessionId ?? null)
+        c.set('token_project', grant.projectId ?? null)
         return await next()
       }
       const { payload } = await jwtVerify(token, JWT_SECRET)

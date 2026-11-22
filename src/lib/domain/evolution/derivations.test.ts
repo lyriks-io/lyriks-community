@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createEvolutionRequest } from './draft';
 import { propagateImpact, reachedSentence, withImpactReading } from './impact-propagation';
 import { mapCoherenceAnalysis, touchedLeafOf, withCoherenceReading } from './coherence-mapping';
-import { deriveImplementationReport, withDerivedReport } from './report-derivation';
+import { deriveImplementationReport, recordedCodeLine, specElementsOf, withDerivedReport } from './report-derivation';
+import { reportSummary } from './implementation';
 import { stableId } from './ids';
 import { deriveCodeImpact, impactInPlainWords, impactSummaryLine, impactVerb, reachedFeatures, shownImpactSentence } from './code-impact';
 
@@ -196,6 +197,60 @@ describe('mapCoherenceAnalysis', () => {
 		});
 		expect(again.report.requestDelta).toBe(6);
 	});
+
+	describe('a feature that joins the request later brings its findings as inherited [criterion:dd8db104]', () => {
+		const names = { 'feat-a': 'Checkout', 'feat-b': 'Invoicing' };
+		const onA = { id: 'g-a', title: 'Checkout has no role', severity: 'high', blocking: true, featureRef: 'feat-a' };
+		const onB = { id: 'g-b', title: 'Invoicing has no role', severity: 'high', blocking: true, featureRef: 'feat-b' };
+		const scopes = (findings: readonly { requestNodeId: string; scope?: string }[]) => findings.map((f) => [f.requestNodeId, f.scope]);
+		const checkedOn = (leafIds: string[]) => {
+			const start = createEvolutionRequest({ id: 'req-j', leafIds });
+			return withCoherenceReading(start, mapCoherenceAnalysis({ request: start, analysis: { readinessScore: 70, gaps: [onA, onB] }, leafNames: names, at: 't1' }));
+		};
+
+		it('reads the findings of a feature named after the first check as the product already carried them', () => {
+			const first = checkedOn(['feat-a']);
+			expect(first.coherenceBaselineLeafIds).toEqual(['feat-a']);
+			const joined = { ...first, leafIds: ['feat-a', 'feat-b'] };
+			const again = mapCoherenceAnalysis({ request: joined, analysis: { readinessScore: 70, gaps: [onA, onB] }, leafNames: names, at: 't2' });
+			expect(scopes(again.findings)).toEqual([
+				['feat-a', 'inherited'],
+				['feat-b', 'inherited']
+			]);
+			const stored = withCoherenceReading(joined, again);
+			expect(stored.coherenceBaselineLeafIds).toEqual(['feat-a', 'feat-b']);
+			// Covered from now on: a later reading keeps them inherited and grows nothing.
+			const later = mapCoherenceAnalysis({ request: stored, analysis: { readinessScore: 70, gaps: [onA, onB] }, leafNames: names, at: 't3' });
+			expect(scopes(later.findings).every(([, scope]) => scope === 'inherited')).toBe(true);
+			expect(later.baseline).toBeUndefined();
+		});
+
+		it('keeps a finding that appears later on a covered feature as the request\'s, and grows nothing on a partial reading', () => {
+			const first = withCoherenceReading(
+				createEvolutionRequest({ id: 'req-j', leafIds: ['feat-a'] }),
+				mapCoherenceAnalysis({ request: createEvolutionRequest({ id: 'req-j', leafIds: ['feat-a'] }), analysis: { readinessScore: 70, gaps: [] }, leafNames: names, at: 't1' })
+			);
+			const joined = { ...first, leafIds: ['feat-a', 'feat-b'] };
+			const partial = mapCoherenceAnalysis({ request: joined, analysis: { readinessScore: 70, gaps: [onA, onB] }, leafNames: names, at: 't2', partial: true });
+			expect(partial.baseline).toBeUndefined();
+			expect(scopes(partial.findings)).toEqual([
+				['feat-a', 'request'],
+				['feat-b', 'request']
+			]);
+			const complete = mapCoherenceAnalysis({ request: joined, analysis: { readinessScore: 70, gaps: [onA, onB] }, leafNames: names, at: 't3' });
+			expect(scopes(complete.findings)).toEqual([
+				['feat-a', 'request'],
+				['feat-b', 'inherited']
+			]);
+		});
+
+		it('reads as covered, on a request baselined before the features were recorded, the features owning a finding of its baseline', () => {
+			const legacy = { ...checkedOn(['feat-a']), leafIds: ['feat-a', 'feat-b'], coherenceBaselineLeafIds: undefined };
+			const again = mapCoherenceAnalysis({ request: legacy, analysis: { readinessScore: 70, gaps: [onA, onB] }, leafNames: names, at: 't2' });
+			expect(scopes(again.findings).every(([, scope]) => scope === 'inherited')).toBe(true);
+			expect(again.baselineLeafIds).toEqual(['feat-a', 'feat-b']);
+		});
+	});
 });
 
 describe('deriveImplementationReport', () => {
@@ -281,6 +336,122 @@ describe('deriveImplementationReport', () => {
 		expect(stateLine([action('add', 'now')], { surfaces: [{ id: 's1', name: 'Cart' }], actions: [{ id: 'add', name: 'add', surfaceName: 'Cart' }, { id: 'empty', name: 'empty', surfaceName: 'Cart' }] })?.verdict).toBe('non_conform');
 		// A screen with no action proves nothing.
 		expect(stateLine([])?.verdict).toBe('non_conform');
+	});
+
+	it('proves the rules and always-true statements of a screen by its screen, and says so [criterion:127dba2b]', () => {
+		const located = (entityType: string, entityId: string) => ({ entityType, entityId, entityName: entityId, locations: [{ file: 'src/cart.ts', line: 4, snippet: 'guard()' }] });
+		const declared = [located('state', 'cart.count'), located('surface_rule', 'sr1'), located('surface_invariant', 'never-negative')];
+		// No sync stamps a screen row: only its actions carry a passing result.
+		const screen = { surfaceId: 's1', surfaceName: 'Cart', expectedEntities: declared, foundEntities: declared };
+		const action = (id: string, verifiedAt?: string) => ({
+			actionId: id,
+			actionName: id,
+			surfaceId: 's1',
+			surfaceName: 'Cart',
+			expectedEntities: [located('action', id)],
+			foundEntities: [located('action', id)],
+			...(verifiedAt ? { auditMeta: { verifiedAt } } : {})
+		});
+		const linesOf = (actions: object[], lang?: 'fr') =>
+			deriveImplementationReport({ request, statuses: { 'feat-a': { surfaces: [screen], actions } as never }, neighbours: {}, leafNames, ...(lang ? { lang } : {}) });
+		const lineOn = (lines: ReturnType<typeof linesOf>, suffix: string) => lines.find((l) => l.requirement.endsWith(suffix));
+
+		const proven = linesOf([action('add', 'now'), action('remove', 'now')]);
+		for (const suffix of ['surface_rule "sr1"', 'surface_invariant "never-negative"', 'state "cart.count"'])
+			expect(lineOn(proven, suffix)?.verdict).toBe('conform');
+		expect(lineOn(proven, 'surface_invariant "never-negative"')?.codeStatement).toBe(
+			"guard() (proven by its screen: the engine checks it in every scenario of the screen's actions, and they all passed)"
+		);
+		expect(lineOn(proven, 'surface_rule "sr1"')?.codeStatement).toBe(
+			"guard() (proven by its screen: the engine checks it in every scenario of the screen's actions, and they all passed)"
+		);
+		expect(lineOn(proven, 'state "cart.count"')?.codeStatement).toBe(
+			'guard() (proven by its screen: every action of the screen passed all its scenarios)'
+		);
+		// The code line recorded on the line reads without its standing.
+		expect(recordedCodeLine(lineOn(proven, 'surface_invariant "never-negative"')!.codeStatement)).toBe('guard()');
+		const french = linesOf([action('add', 'now')], 'fr').find((l) => l.requirement.includes('surface_invariant'));
+		expect(french?.verdict).toBe('conform');
+		expect(recordedCodeLine(french!.codeStatement)).toBe('guard()');
+
+		// One action of the screen without a passing result keeps them all unproven.
+		const open = linesOf([action('add', 'now'), action('remove')]);
+		expect(lineOn(open, 'surface_invariant "never-negative"')?.verdict).toBe('non_conform');
+		expect(lineOn(open, 'surface_invariant "never-negative"')?.codeStatement).toBe('guard() (no passing result proves it yet)');
+		expect(lineOn(open, 'surface_rule "sr1"')?.verdict).toBe('non_conform');
+		// A screen with no action proves nothing.
+		expect(lineOn(linesOf([]), 'surface_invariant "never-negative"')?.verdict).toBe('non_conform');
+	});
+
+	it('proves a state by the actions of its screen that read or write it, never by those that do not touch it [criterion:ad059df9]', () => {
+		// The shape of EVO-006 v2: Health holds thirteen actions; only one reads installation.edition, through a rule.
+		const reader = {
+			id: 'b3fdea10',
+			name: 'Turn points into a change',
+			rules: [{ id: 'b09ed5a6', condition: { left: 'installation.edition', operator: 'equals', right: 'community' }, effect: { type: 'block_action', reason: 'Not on Community.' } }],
+			effects: [],
+			scenarios: [{ id: 'sc', stateOverrides: [{ path: 'points.count', value: 1 }] }]
+		};
+		const others = Array.from({ length: 12 }, (_, i) => ({ id: `filter-${i}`, name: `Narrow ${i}`, rules: [], effects: [{ type: 'set_state', path: 'points.filter', value: { kind: 'literal', value: i } }] }));
+		const feature = {
+			surfaces: [
+				{
+					id: '915b7319',
+					name: 'Health',
+					stateDefinitions: [
+						{ id: 'st-edition', path: 'installation.edition' },
+						{ id: 'st-filter', path: 'points.filter' },
+						{ id: 'st-count', path: 'points.count' }
+					],
+					actions: [reader, ...others]
+				}
+			]
+		};
+		const spec = specElementsOf(feature);
+		expect(spec.stateTouchedBy).toMatchObject({ 'st-edition': ['b3fdea10'] });
+		// A scenario that sets a state is no touch of the action.
+		expect(spec.stateTouchedBy?.['st-count']).toBeUndefined();
+		const located = (entityType: string, entityId: string, entityName = entityId) => ({ entityType, entityId, entityName, locations: [{ file: 'src/health.ts', line: 7, snippet: 'edition()' }] });
+		const states = [located('state', 'st-edition', 'installation.edition'), located('state', 'st-filter', 'points.filter'), located('state', 'st-count', 'points.count')];
+		const row = (id: string, verifiedAt?: string) => ({ actionId: id, actionName: id, surfaceId: '915b7319', surfaceName: 'Health', expectedEntities: [located('action', id)], foundEntities: [located('action', id)], ...(verifiedAt ? { auditMeta: { verifiedAt } } : {}) });
+		const lines = deriveImplementationReport({
+			request,
+			statuses: { 'feat-a': { surfaces: [{ surfaceId: '915b7319', surfaceName: 'Health', expectedEntities: states, foundEntities: states }], actions: [row('b3fdea10', 'now'), ...others.map((o) => row(o.id))] } as never },
+			neighbours: {},
+			leafNames,
+			spec: { 'feat-a': spec }
+		});
+		const lineOn = (path: string) => lines.find((l) => l.requirement.endsWith(`state "${path}"`));
+		expect(lineOn('installation.edition')).toMatchObject({ verdict: 'conform', codeStatement: 'edition() (proven by the actions that read or write it: each passed all its scenarios)' });
+		expect(recordedCodeLine(lineOn('installation.edition')!.codeStatement)).toBe('edition()');
+		// The filter is written by twelve actions nobody proved yet: it waits on them.
+		expect(lineOn('points.filter')?.verdict).toBe('non_conform');
+		// A state no action touches keeps the screen's rule: every action of the screen.
+		expect(lineOn('points.count')?.verdict).toBe('non_conform');
+	});
+
+	it('derives one line per element, an event two actions emit counted once and proven by either [criterion:46dc1372]', () => {
+		const located = (entityType: string, entityId: string) => ({ entityType, entityId, entityName: entityId, locations: [{ file: 'src/cart.ts', line: 4, snippet: 'emit()' }] });
+		const action = (id: string, verifiedAt?: string) => ({
+			actionId: id,
+			actionName: id,
+			expectedEntities: [located('action', id), located('event', 'cart.changed')],
+			foundEntities: [located('action', id), located('event', 'cart.changed')],
+			...(verifiedAt ? { auditMeta: { verifiedAt } } : {})
+		});
+		const lines = deriveImplementationReport({ request, statuses: { 'feat-a': { actions: [action('add'), action('remove', 'now')] } as never }, neighbours: {}, leafNames, baseline: new Set(['action:add']) });
+		const events = lines.filter((l) => l.requirement.endsWith('event "cart.changed"'));
+		expect(events).toHaveLength(1);
+		expect(events[0].verdict).toBe('conform');
+		expect(new Set(lines.map((l) => l.id)).size).toBe(lines.length);
+		// Every line is the request's or inherited, and the two add up to the report.
+		const own = lines.filter((l) => l.scope === 'request').length;
+		const inherited = lines.filter((l) => l.scope === 'inherited').length;
+		expect(own + inherited).toBe(lines.length);
+		expect([own, inherited]).toEqual([2, 1]);
+		expect(reportSummary(2, lines)).toBe(
+			'Report for version 2: 2 lines of this request: 2 conform, 0 to build. 1 inherited line, the backlog of the features touched, never hold the gate: 1 found, not tested yet.'
+		);
 	});
 
 	it('reads a missing index as everything missing, without a test as non-conform', () => {

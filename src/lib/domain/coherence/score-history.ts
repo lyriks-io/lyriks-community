@@ -49,8 +49,3 @@ export function appendScorePoint(history: ScoreHistory, point: ScorePoint): Scor
 	const points = [...history.points, point].slice(-SCORE_HISTORY_CAP);
 	return { points };
 }
-
-/** The last `n` points, oldest first, for a sparkline. */
-export function recentPoints(history: ScoreHistory, n: number): ScorePoint[] {
-	return history.points.slice(-n);
-}

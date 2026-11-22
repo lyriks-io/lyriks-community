@@ -155,6 +155,17 @@ describe('await_evolution_event', () => {
     expect(((await waiting) as Record<string, unknown>).kind).toBe('ended')
   })
 
+  it('sends no progress notification to a client that gave no progress token', async () => {
+    const sent: unknown[] = []
+    let release!: (v: unknown) => void
+    const lyriks = { post: () => new Promise((r) => (release = r)) } as unknown as LyriksClient
+    const waiting = awaitEvolutionEventHandler(args, lyriks, { sendNotification: async (n) => void sent.push(n) })
+    await vi.advanceTimersByTimeAsync(SESSION_LIMITS.progressIntervalSeconds * 1000 * 3)
+    expect(sent).toEqual([])
+    release({ ok: true, kind: 'ended', sessionId: 's1', reason: 'ended_by_person' })
+    expect(((await waiting) as Record<string, unknown>).kind).toBe('ended')
+  })
+
   it('without a progress token a call waits no longer than a default client timeout allows', async () => {
     const calls: Call[] = []
     await awaitEvolutionEventHandler(args, platform([{ ok: true, kind: 'ended', sessionId: 's1', reason: 'idle' }], calls), {})

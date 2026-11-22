@@ -57,6 +57,17 @@ describe('proxyToMcp', () => {
 		expect(new Headers(init.headers).get('cookie')).toBe('lyriks_session=jwt');
 	});
 
+	it('forwards a request body byte for byte, and sends none with a GET or a HEAD', async () => {
+		const sent: (BodyInit | null | undefined)[] = [];
+		const fetchImpl = vi.fn(async (_target: URL, init: RequestInit) => (sent.push(init.body), new Response('{}', { status: 200 })));
+		const payload = '{"jsonrpc":"2.0","id":1,"method":"tools/list"}';
+		await proxyToMcp(event('/mcp', { method: 'POST', body: payload }), 'http://mcp:3055', fetchImpl as unknown as typeof fetch);
+		await proxyToMcp(event('/mcp', { method: 'GET' }), 'http://mcp:3055', fetchImpl as unknown as typeof fetch);
+		await proxyToMcp(event('/mcp', { method: 'HEAD' }), 'http://mcp:3055', fetchImpl as unknown as typeof fetch);
+		expect(new TextDecoder().decode(sent[0] as ArrayBuffer)).toBe(payload);
+		expect(sent.slice(1)).toEqual([undefined, undefined]);
+	});
+
 	it('drops hop-by-hop headers instead of passing them on', async () => {
 		const fetchImpl = vi.fn(async () => new Response('{}', { status: 200 }));
 		await proxyToMcp(

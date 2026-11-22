@@ -13,6 +13,7 @@
  * screen) via `screenRoots[screenId] = rootGroupNodeId` — the screen IS the
  * surface, so there is no parallel surface concept. Pure data + reducers only.
  */
+import { mintUuid } from '../shared';
 import type { Option } from '$domain/shared';
 import type { BindTargetKind } from './prototype';
 import type { ExperiencePrototype } from './prototype';
@@ -76,11 +77,6 @@ export const STATUS_VARIANTS = [
 export type FlexDirection = 'row' | 'col';
 export type FlexJustify = 'start' | 'center' | 'end' | 'between' | 'around' | 'evenly';
 export type FlexAlign = 'start' | 'center' | 'end' | 'stretch';
-
-export const FLEX_DIRECTIONS = [
-	{ code: 'col', label: 'Column ↓' },
-	{ code: 'row', label: 'Row →' }
-] as const satisfies readonly Option[];
 export const FLEX_JUSTIFY = [
 	{ code: 'start', label: 'Start' },
 	{ code: 'center', label: 'Center' },
@@ -752,7 +748,7 @@ export function emptyBuilder(): ExperienceBuilder {
 
 /* ── Creators ────────────────────────────────────────────────────────── */
 function newId(): string {
-	return crypto.randomUUID();
+	return mintUuid();
 }
 
 export function createGroupNode(surfaceId: string, parentId: string | null, label = 'Group'): BuilderGroupNode {
@@ -787,11 +783,6 @@ function cloneNodeData(node: BuilderNode, id: string, surfaceId: string, parentI
 		surfaceId,
 		parentId: parentId as string
 	};
-}
-
-/* ── Selectors (pure) ────────────────────────────────────────────────── */
-export function screenRootId(b: ExperienceBuilder, screenId: string): string | null {
-	return b.screenRoots[screenId] ?? null;
 }
 
 export function group(b: ExperienceBuilder, id: string): BuilderGroupNode | null {
@@ -985,11 +976,6 @@ export function removeNode(b: ExperienceBuilder, nodeId: string): void {
 export function setFlexProps(b: ExperienceBuilder, groupId: string, patch: Partial<FlexProps>): void {
 	const g = group(b, groupId);
 	if (g) g.flex = { ...g.flex, ...patch };
-}
-
-export function setElementWiring(b: ExperienceBuilder, nodeId: string, patch: Partial<ElementWiring>): void {
-	const n = b.nodes[nodeId];
-	if (n?.kind === 'element') n.wiring = { ...n.wiring, ...patch };
 }
 
 export function createTransition(trigger: TransitionTrigger = 'click'): ElementTransition {

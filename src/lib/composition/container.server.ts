@@ -35,7 +35,9 @@ import {
 	LoadConformanceUseCase,
 	ReadProjectHealthUseCase,
 	SweepImplementationGapsUseCase,
-	ReconcileImplementationStatusesUseCase,
+	FindIndexKeyOwnersUseCase,
+	GuardIndexWriteUseCase,
+	MoveIndexPositionsUseCase,
 	AssessProjectCompletenessUseCase,
 	AuditProjectScopeUseCase,
 	BuildCompletionEvidenceUseCase,
@@ -174,6 +176,7 @@ import { StructuredAuditLog } from '$infrastructure/audit/structured-audit-log.s
 import { ConsoleToastNotifier } from '$infrastructure/notifier/console-toast';
 import { buildPersistence } from '$infrastructure/persistence/persistence.server';
 import { LocalGlobalCoherenceChecker } from '$application/analysis/local-global-coherence-checker';
+import { operativeBehavior } from '$application/analysis/operative-behavior';
 import { DecisionAwareCoherenceChecker } from '$application/analysis/decision-aware-coherence-checker';
 import { CachedCoherenceChecker } from '$application/analysis/cached-coherence-checker';
 import { ProjectStateCache } from '$application/projection/project-state-cache';
@@ -226,6 +229,7 @@ import { createEmptyApprovalsDraft, type ProjectApprovalsDraft } from '$domain/a
 import { createEmptyEvolutionDraft, type ProjectEvolutionDraft } from '$domain/evolution';
 import { parseStoredApprovalsDraft } from '$application/specification/parse-approvals-draft';
 import { parseEvolutionDraft } from '$application/evolution/parse-evolution-draft';
+import { storedEvolutionDraft } from '$application/evolution/stored-evolution-draft';
 import type { ProjectScopeDraft } from '$domain/scope';
 import { parseScopeDraft } from '$application/specification/parse-scope-draft';
 import { ProjectModelRevisionReader } from '$infrastructure/persistence/project-model-revision-reader.server';
@@ -251,6 +255,7 @@ import { DEFAULT_CALL_TIMEOUT_MS } from '$infrastructure/unspaghettit/unspa-engi
 import { CachedCompletionEvidence } from '$lib/server/cached-completion-evidence.server';
 import { CachedProjectHealth, type StoredHealth } from '$lib/server/cached-project-health.server';
 import { coalesceLoads } from '$lib/server/coalesced-loads.server';
+import { keepPerRevision } from '$lib/server/revision-kept-loads.server';
 import { CachedKnowledgeGraph } from '$lib/server/cached-knowledge-graph.server';
 import { McpCodeAdoption } from '$infrastructure/unspaghettit/mcp-code-adoption.server';
 import { EngineAnalysisStateReader } from '$infrastructure/unspaghettit/analysis-state-reader.server';
@@ -304,11 +309,19 @@ export interface AppServices {
 	projectHealthView: CachedProjectHealth;
 	/** The fold of the behaviour kernel every specification page reads, once per state of the spec. */
 	behaviorReadings: ProjectStateCache<BehaviorFold>;
+	/**
+	 * Identity of the project's behaviour folder (its files, sizes and times): it moves with every
+	 * write of the behaviour and of its implementation reports, so a reading keyed on it needs no timer.
+	 */
+	behaviorSignature: (projectId: string) => string;
 	/** Project-wide gap roll-up: which features still hold unlocated spec entities. */
 	sweepImplementationGaps: SweepImplementationGapsUseCase;
-	/** Plans coverage→status upgrades (never downgrades) so the roadmap follows
-	 *  what code adoption found. Persistence stays with the server edge. */
-	reconcileImplementationStatuses: ReconcileImplementationStatusesUseCase;
+	/** Which feature declares each index key, and the unit it travels with (feat-100, af8d9001). */
+	findIndexKeyOwners: FindIndexKeyOwnersUseCase;
+	/** Every write of an implementation index, one at a time per project, answering its revision. */
+	guardIndexWrite: GuardIndexWriteUseCase;
+	/** Moves located places without touching coverage (feat-100, f20cf75e). */
+	moveIndexPositions: MoveIndexPositionsUseCase;
 	/** The engine's behavioral-maturity scorer — pure, used by page-level summaries. */
 	maturityScorer: FeatureMaturityScorerPort;
 	loadExperienceDraft: LoadExperienceDraftUseCase;
@@ -832,9 +845,14 @@ export function getServices(): AppServices {
 	const evolutionDrafts = new SectionDocumentDraftRepository(
 		persistence.sectionDocuments,
 		'evolution',
-		parseEvolutionDraft
+		parseEvolutionDraft,
+		storedEvolutionDraft
 	);
-	const loadEvolutionDraft = coalesceLoads(new LoadResidueDraftUseCase(evolutionDrafts, createEmptyEvolutionDraft));
+	// Megabytes on a project carried through several requests: parsed once per revision of the section.
+	const loadEvolutionDraft = keepPerRevision(
+		coalesceLoads(new LoadResidueDraftUseCase(evolutionDrafts, createEmptyEvolutionDraft)),
+		(projectId) => persistence.sectionDocuments.currentRevision(projectId, 'evolution')
+	);
 	const scopeDrafts = new SectionDocumentDraftRepository(
 		persistence.sectionDocuments,
 		'scope',
@@ -1110,12 +1128,9 @@ export function getServices(): AppServices {
 	// Read through the same cached snapshot, so it is instant and agrees with the chips.
 	const loadConformance = new LoadConformanceUseCase(implementationCoverage);
 	const sweepImplementationGaps = new SweepImplementationGapsUseCase(loadFeaturesDraft, codeAdoption);
-	// Reads coverage FRESH (not through the cache): it runs right after a sync
-	// and must see what that sync just wrote.
-	const reconcileImplementationStatuses = new ReconcileImplementationStatusesUseCase(
-		loadFeaturesDraft,
-		loadImplementationCoverage
-	);
+	const findIndexKeyOwners = new FindIndexKeyOwnersUseCase(behaviorPort);
+	const guardIndexWrite = new GuardIndexWriteUseCase(persistence.implementationIndexRevisions);
+	const moveIndexPositions = new MoveIndexPositionsUseCase(behaviorPort, codeAdoption);
 	const loadExperienceDraft = coalesceLoads(new LoadExperienceDraftUseCase(experienceDrafts, featuresDrafts));
 	const loadRulesDraft = coalesceLoads(new LoadRulesDraftUseCase(
 		rulesDrafts,
@@ -1156,6 +1171,13 @@ export function getServices(): AppServices {
 		persistence.draftLock
 	);
 	const kernelSignature = (projectId: string) => localBehavior.kernelSignature(projectId);
+	// The behaviour fold reads the kernel and the spec's language, never a change request's acts nor the background
+	// coherence analysis: keyed without them, a click in Evolution no longer throws the fold away (seconds on a large project).
+	const behaviorModelRevision = new ProjectModelRevisionReader(
+		SECTIONS.filter((section) => section !== 'scope' && section !== 'evolution' && section !== 'coherence'),
+		persistence.sectionDocuments,
+		persistence.draftLock
+	);
 	const localChecker = new CachedCoherenceChecker(new LocalGlobalCoherenceChecker(
 		loadFoundationDraft,
 		loadUsersDraft,
@@ -1165,14 +1187,15 @@ export function getServices(): AppServices {
 		loadDataDraft,
 		loadArchitectureDraft,
 		loadGlossaryDraft,
-		behavior,
+		// The coherence check reads the operative model: a disabled element counts in no reading.
+		operativeBehavior(behavior),
 		maturityScorer
 	), projectModelRevision, kernelSignature);
 	// Behavior (unspa) advisory tier — cached read served instantly on every load,
 	// the heavy verify runs in the background and pushes over live-sync. Independent
 	// of the DPO, so it enriches the checker whether or not the back is wired.
 	const behaviorAdvisories = new CachedBehaviorAdvisor(
-		new ComputeBehaviorAdvisoriesUseCase(laneAdvisor, behavior, loadSpecLanguage, {
+		new ComputeBehaviorAdvisoriesUseCase(laneAdvisor, operativeBehavior(behavior), loadSpecLanguage, {
 			ids: async (projectId) => new Set(Object.keys((await dataDrafts.load(projectId))?.rules?.generated ?? {}))
 		}),
 		{ store: new ResidueSnapshotStore(projectResidue, 'features-advisories'), signature: kernelSignature }
@@ -1384,7 +1407,10 @@ export function getServices(): AppServices {
 		foundationOperationsDrafts,
 		clock,
 		telemetry,
-		{ coherence: computeOperationsCoherence }
+		{
+			coherence: (draft, lang) => computeOperationsCoherence(draft, true, lang),
+			languageOf: specLanguageOf
+		}
 	);
 	const saveFoundationDraft = new SaveFoundationDraftUseCase(
 		foundationIdentityDrafts,
@@ -1415,6 +1441,7 @@ export function getServices(): AppServices {
 			foundation: loadFoundationDraft, scope: loadScopeDraft, users: loadUsersDraft,
 			features: loadFeaturesDraft, completion: assessProjectCompleteness,
 			behavior: { execute: (projectId) => readBehaviorOverview(behaviorPort, maturityScorer, projectId) },
+			coverage: implementationCoverage,
 			modelRevision: { fingerprint: async (projectId) => `${await projectModelRevision.fingerprint(projectId)}:${localBehavior.kernelSignature(projectId)}` }
 		}),
 		loadScopeDraft,
@@ -1447,9 +1474,12 @@ export function getServices(): AppServices {
 		loadConformance,
 		readProjectHealth,
 		projectHealthView,
-		behaviorReadings: new ProjectStateCache<BehaviorFold>(projectModelRevision, kernelSignature, HEAVY_READINGS_HELD),
+		behaviorReadings: new ProjectStateCache<BehaviorFold>(behaviorModelRevision, kernelSignature, HEAVY_READINGS_HELD),
+		behaviorSignature: kernelSignature,
 		sweepImplementationGaps,
-		reconcileImplementationStatuses,
+		findIndexKeyOwners,
+		guardIndexWrite,
+		moveIndexPositions,
 		maturityScorer,
 		saveFeaturesDraft: new SaveFeaturesDraftUseCase(featuresDrafts, clock, telemetry),
 		loadExperienceDraft,
@@ -1467,7 +1497,8 @@ export function getServices(): AppServices {
 		loadGlossaryDraft,
 		loadSpecCorpus,
 		saveGlossaryDraft: new SaveSimpleSectionDraftUseCase<ProjectGlossaryDraft>('glossary', glossaryDrafts, clock, telemetry, {
-			coherence: computeGlossaryCoherence
+			coherence: computeGlossaryCoherence,
+			languageOf: specLanguageOf
 		}),
 		loadDocumentRegister,
 		saveDocumentsDraft: new SaveResidueDraftUseCase(documentsDrafts, clock),
@@ -1503,6 +1534,7 @@ export function getServices(): AppServices {
 			loadArchitectureDraft,
 			new LoadResidueDraftUseCase(documentsDrafts, createEmptyDocumentsDraft),
 			featureAcceptance,
+			implementationCoverage,
 			specLanguageOf
 		),
 		loadDataDraft,
@@ -1529,7 +1561,8 @@ export function getServices(): AppServices {
 			{
 				// Don't persist the recomputed derived mirror — it's rebuilt on load.
 				prepare: (d) => ({ ...d, derivedTech: [] }),
-				coherence: computeArchitectureCoherence
+				coherence: computeArchitectureCoherence,
+				languageOf: specLanguageOf
 			}
 		),
 		loadCoherenceDraft,
@@ -1553,6 +1586,7 @@ export function getServices(): AppServices {
 			loadArchitectureDraft,
 			new LoadResidueDraftUseCase(documentsDrafts, createEmptyDocumentsDraft),
 			featureAcceptance,
+			implementationCoverage,
 			specLanguageOf
 		),
 		loadKnowledgeGraph: new LoadKnowledgeGraphUseCase(knowledgeGraph),
@@ -1576,7 +1610,7 @@ export function getServices(): AppServices {
 		}),
 		whatIf: new WhatIfUseCase(advisor),
 		authorProjectBehavior: new AuthorProjectBehaviorUseCase(advisor),
-		readProjectBehavior: new ReadProjectBehaviorUseCase(advisor, new ProjectStateCache(projectModelRevision, kernelSignature, HEAVY_READINGS_HELD)),
+		readProjectBehavior: new ReadProjectBehaviorUseCase(advisor, new ProjectStateCache(behaviorModelRevision, kernelSignature, HEAVY_READINGS_HELD)),
 		findStateReferences: new FindStateReferencesUseCase(advisor),
 		generateBehaviorTypes: new GenerateBehaviorTypesUseCase(advisor),
 		readBehaviorOperations: new ReadBehaviorOperationsUseCase(advisor),

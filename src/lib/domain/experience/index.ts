@@ -20,7 +20,5 @@ export * from './state-type-conflicts';
 export * from './node-dependants';
 export * from './simulate';
 export * from './acceptance';
-export * from './acceptance-tests';
-export * from './repo-scaffold';
 export * from './can-advance';
 export * from './design-system';

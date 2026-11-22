@@ -10,7 +10,7 @@ import { dirname, resolve } from 'node:path';
  *   1. Unspaghettit dashboard (port 3001) — the spec UI. Its child also
  *      hosts the Yjs websocket relay at `ws://127.0.0.1:3001/sync` once
  *      its OSS init bug is resolved.
- *   2. y-websocket reference server (port 3002) — pure Yjs relay used as
+ *   2. Yjs reference relay, @y/websocket-server (port 3002) — pure Yjs relay used as
  *      a stand-in while the OSS dashboard's WS endpoint is down. Toggle
  *      the v3 page's `YJS_WS_URL` between 3001/sync and 3002 depending
  *      on which is healthy.
@@ -81,7 +81,7 @@ function defineCompanions(root: string, devPort: number): readonly Companion[] {
 	// Kernel store root — `LYRIKS_UNSPA_ROOT` (default `data/unspa`) so a sandbox
 	// copy covers the dashboard and Back too, not just the app.
 	const unspaSnapshots = resolve(root, process.env.LYRIKS_UNSPA_ROOT || 'data/unspa');
-	const yjsBin = resolve(root, 'node_modules', 'y-websocket', 'bin', 'server.cjs');
+	const yjsBin = resolve(root, 'node_modules', '@y', 'websocket-server', 'src', 'server.js');
 	const back = backRepo(root);
 	const apiBin =
 		process.env.LYRIKS_API_BIN ?? resolve(back, 'packages', 'api', 'dist', 'lyriks-api.js');
@@ -133,7 +133,7 @@ function defineCompanions(root: string, devPort: number): readonly Companion[] {
 			args: [yjsBin],
 			env: { HOST: '127.0.0.1', PORT: process.env.YJS_PORT ?? '3002' },
 			color: '36',
-			skipReason: !yjsPresent ? `y-websocket server not found at ${yjsBin}` : undefined
+			skipReason: !yjsPresent ? `Yjs relay (@y/websocket-server) not found at ${yjsBin}` : undefined
 		},
 		{
 			name: 'back',

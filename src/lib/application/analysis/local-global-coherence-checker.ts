@@ -86,16 +86,16 @@ import type {
  */
 export class LocalGlobalCoherenceChecker implements GlobalCoherenceCheckerPort {
 	constructor(
-		private readonly loadFoundation: LoadFoundationDraftUseCase,
-		private readonly loadUsers: LoadUsersDraftUseCase,
-		private readonly loadFeatures: LoadFeaturesDraftUseCase,
-		private readonly loadExperience: LoadExperienceDraftUseCase,
-		private readonly loadRules: LoadRulesDraftUseCase,
-		private readonly loadData: LoadDataDraftUseCase,
-		private readonly loadArchitecture: LoadArchitectureDraftUseCase,
-		private readonly loadGlossary: LoadGlossaryDraftUseCase,
-		private readonly behavior: BehaviorRepositoryPort,
-		private readonly maturityScorer: FeatureMaturityScorerPort
+		private readonly loadFoundation: Pick<LoadFoundationDraftUseCase, 'loadIdentity' | 'loadDefinition' | 'loadOperations'>,
+		private readonly loadUsers: Pick<LoadUsersDraftUseCase, 'execute'>,
+		private readonly loadFeatures: Pick<LoadFeaturesDraftUseCase, 'execute'>,
+		private readonly loadExperience: Pick<LoadExperienceDraftUseCase, 'execute'>,
+		private readonly loadRules: Pick<LoadRulesDraftUseCase, 'execute'>,
+		private readonly loadData: Pick<LoadDataDraftUseCase, 'execute'>,
+		private readonly loadArchitecture: Pick<LoadArchitectureDraftUseCase, 'execute'>,
+		private readonly loadGlossary: Pick<LoadGlossaryDraftUseCase, 'execute'>,
+		private readonly behavior: Pick<BehaviorRepositoryPort, 'loadFeature'>,
+		private readonly maturityScorer: Pick<FeatureMaturityScorerPort, 'score'>
 	) {}
 
 	async analyze(projectId: string): Promise<CoherenceAnalysis> {
@@ -239,8 +239,8 @@ export class LocalGlobalCoherenceChecker implements GlobalCoherenceCheckerPort {
 					? "Rien ne peut être simulé, accordé ni construit tant que le produit n'a pas au moins une fonctionnalité."
 					: 'Nothing can be simulated, granted or built until the product has at least one feature.',
 				action: fr
-					? 'Créez au moins une fonctionnalité feuille, affectez-la au MVP, puis rédigez ses surfaces, actions, états et scénarios.'
-					: 'Create at least one leaf feature, assign it to the MVP, then author its surfaces, actions, states and scenarios.',
+					? 'Créez au moins une fonctionnalité feuille, puis rédigez ses surfaces, actions, états et scénarios.'
+					: 'Create at least one leaf feature, then author its surfaces, actions, states and scenarios.',
 				sourceStep: 'features',
 				blocking: true
 			});
@@ -518,9 +518,7 @@ function buildDimensions(
 			label: fr ? 'Fonctionnalités' : 'Features',
 			sourceStep: 'features',
 			score: computeFeaturesCoherence(features).score,
-			summary: fr
-				? `${leaves} fonctionnalité(s) feuille(s) · ${features.mvpAssignments.length} affectation(s) MVP`
-				: `${leaves} leaf feature(s) · ${features.mvpAssignments.length} MVP assignment(s)`
+			summary: fr ? `${leaves} fonctionnalité(s) feuille(s)` : `${leaves} leaf feature(s)`
 		},
 		{
 			key: 'users',

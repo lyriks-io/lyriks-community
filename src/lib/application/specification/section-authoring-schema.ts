@@ -1,4 +1,4 @@
-import { CORE_TONES, MVP_TIERS, WORK_STATUSES } from '$domain/features';
+import { CORE_TONES } from '$domain/features';
 import { EDGE_OUTCOMES, ISSUE_KINDS, ISSUE_SEVERITIES, ISSUE_STATUSES } from '$domain/rules';
 import { CAPABILITY_SOURCES, ROLE_TONES } from '$domain/users';
 
@@ -109,58 +109,6 @@ export const SECTION_ITEM_SCHEMAS: Readonly<
 				parentFamilyId: nullableString(),
 				description: requiredString(),
 				unspaghettitFeatureId: requiredString()
-			}
-		},
-		mvpAssignments: {
-			additionalProperties: false,
-			fields: { featureId: requiredString(), tier: requiredString(codes(MVP_TIERS)) }
-		},
-		releases: {
-			additionalProperties: false,
-			fields: {
-				id: requiredString(),
-				name: requiredString(),
-				version: requiredString(),
-				weekStart: requiredNumber(),
-				weekEnd: requiredNumber(),
-				order: requiredNumber(),
-				description: requiredString(),
-				// Explicit ship/archive stamp (ISO instant). Optional: releases
-				// authored before the lifecycle existed must still validate.
-				archivedAt: { type: 'string' }
-			}
-		},
-		roadmapAssignments: {
-			additionalProperties: false,
-			fields: { featureId: requiredString(), releaseId: requiredString() }
-		},
-		// Work-distribution residue. Typed here so an MCP write with a malformed
-		// sprint or assignment gets a 400 naming the field, instead of the parser
-		// silently dropping the row (which read as data loss to the author).
-		sprints: {
-			additionalProperties: false,
-			fields: {
-				id: requiredString(),
-				name: { type: 'string' },
-				startDate: { type: 'string' },
-				endDate: { type: 'string' },
-				order: { type: 'number' },
-				archivedAt: { type: 'string' }
-			}
-		},
-		assignments: {
-			additionalProperties: false,
-			fields: {
-				id: requiredString(),
-				kind: requiredString(['core', 'feature', 'action']),
-				coreId: { type: 'string' },
-				featureId: { type: 'string' },
-				actionId: { type: 'string' },
-				label: { type: 'string' },
-				assigneeId: nullableString(),
-				sprintId: { type: 'string', nullable: true },
-				status: { type: 'string', enum: WORK_STATUSES },
-				order: { type: 'number' }
 			}
 		}
 	},

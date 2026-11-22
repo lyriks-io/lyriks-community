@@ -15,9 +15,13 @@ export async function refusedCreation<T>(create: () => Promise<T>): Promise<{ cr
 	}
 }
 
-/** The 403 an API caller (an AI client, an import) gets for a creation the edition refuses. */
+/**
+ * The 403 an API caller (the project list, an AI client, an import) gets for a
+ * creation the edition refuses: the sentence, the address of the plans, and
+ * the plan that opens it, so a page shows the offer with View plans (EVO-006).
+ */
 export function creationRefused(refusal: Refusal): never {
-	error(403, { message: refusal.reason, detail: refusal.detail });
+	error(403, { message: refusal.reason, detail: refusal.detail, plan: refusal.plan });
 }
 
 /** Run a creation; a folder the project may not be filed in comes back as its refusal, anything else is rethrown. */

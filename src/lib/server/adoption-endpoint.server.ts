@@ -15,9 +15,14 @@ import { requireProjectAccess } from './project-access.server';
  *  - `ok: true`  → the payload, relayed verbatim.
  */
 export function adoptionJson(result: AdoptionResult | null): Response {
+	return json(adoptionBody(result));
+}
+
+/** The body {@link adoptionJson} answers, for a route that adds to it (the index revision). */
+export function adoptionBody(result: AdoptionResult | null): Readonly<Record<string, unknown>> {
 	if (result === null) error(503, 'Behavior engine unavailable');
-	if (!result.ok) return json({ available: true, ok: false, error: inLyriksTerms(result.error) });
-	return json({ available: true, ok: true, ...withItemRefusalsInLyriksTerms(result.value) });
+	if (!result.ok) return { available: true, ok: false, error: inLyriksTerms(result.error) };
+	return { available: true, ok: true, ...withItemRefusalsInLyriksTerms(result.value) };
 }
 
 /**

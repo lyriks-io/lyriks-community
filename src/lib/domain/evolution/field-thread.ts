@@ -19,13 +19,6 @@ export function latestThread(request: EvolutionRequest, key: string): FieldThrea
 	return threads[threads.length - 1];
 }
 
-/** How many threads are open, optionally under one block (`02-problem` matches `02-problem.*`). */
-export function openThreadCount(request: EvolutionRequest, blockId?: string): number {
-	return request.fieldThreads.filter(
-		(t) => t.state === 'open' && (blockId === undefined || t.key.startsWith(`${blockId}.`))
-	).length;
-}
-
 /** Posting needs the comment right, and a thread that has not become a change. */
 export function canPostOnField(
 	actor: Actor,
@@ -46,51 +39,6 @@ export function canPostOnField(
 			input.thread?.state === 'turned_into_change',
 			'This thread already produced a change. Open a new thread on the new value.',
 			'A thread that became a change is closed to new messages and stays readable.'
-		)
-	);
-}
-
-/** A ruling is always a person's: the model replies, it never marks a thread answered. */
-export function canMarkAnswered(actor: Actor, thread: FieldThread | undefined): Guarded {
-	return firstRefusal(
-		guard(
-			actor.kind === 'ai_client',
-			'The model replies in a thread; it never rules on it.',
-			'A ruling is always a person\'s.'
-		),
-		guard(
-			!thread || thread.messages.length === 0,
-			'Nothing has been said yet.',
-			'An empty thread has no answer to acknowledge.'
-		),
-		guard(
-			thread?.state === 'turned_into_change',
-			'This thread already produced a change.',
-			'A change is a stronger ending than an answer.'
-		)
-	);
-}
-
-/** Ending a thread in a new value is a person's write on the request. */
-export function canTurnIntoChange(
-	actor: Actor,
-	input: { canEdit: boolean; thread: FieldThread | undefined }
-): Guarded {
-	return firstRefusal(
-		guard(
-			actor.kind === 'ai_client',
-			'The model proposes; a person writes the change.',
-			'A change to the spec is a person\'s act.'
-		),
-		guard(
-			!input.canEdit,
-			'You can read this request but not write on it.',
-			'Writing the new value needs write access.'
-		),
-		guard(
-			input.thread?.state === 'turned_into_change',
-			'This thread already produced a change.',
-			'One change per thread.'
 		)
 	);
 }
@@ -162,30 +110,4 @@ export function setTopicRuling(thread: FieldThread, messageId: string, ruling: T
 	const messages = thread.messages.map((m) => (m.id !== opener.id ? m : ruling ? { ...m, ruling } : withoutRuling(m)));
 	const next = { ...thread, messages };
 	return { ...next, state: stateFrom(next) };
-}
-
-export function markAnswered(thread: FieldThread): FieldThread {
-	return { ...thread, state: 'answered' };
-}
-
-/** The thread ended in a value; it names it and the person who wrote it. */
-export function turnIntoChange(
-	thread: FieldThread,
-	input: { value: string; actorId: string; at: string }
-): FieldThread {
-	return {
-		...thread,
-		state: 'turned_into_change',
-		changeValue: input.value,
-		changedBy: input.actorId,
-		changedAt: input.at
-	};
-}
-
-/** A thread that became a change names its value and author. */
-export function changeIsRecorded(thread: FieldThread): boolean {
-	return (
-		thread.state !== 'turned_into_change' ||
-		(thread.changeValue !== null && thread.changedBy !== null && thread.changedAt !== null)
-	);
 }

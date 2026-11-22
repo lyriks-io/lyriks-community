@@ -13,8 +13,6 @@ export const HOST_KINDS = [
 	{ code: 'onprem', label: 'On-prem' }
 ] as const satisfies readonly Option[];
 export type HostKind = (typeof HOST_KINDS)[number]['code'];
-export const isHostKind = (v: unknown): v is HostKind =>
-	typeof v === 'string' && (HOST_KINDS as readonly Option[]).some((k) => k.code === v);
 
 /**
  * Cloud regions a host can sit in (the mockup's region select). Codes are the

@@ -21,8 +21,9 @@
 	 * Ask my AI page (action 336e9466, criterion cc5f46cb); without a session the
 	 * prompt that opens one is copied and the message waits for it. It is also
 	 * the one place that says whether the reader's AI is connected (criterion
-	 * 4cb97f74): a mark and a word under its name, and in session the box says
-	 * since when, what the AI does and ends the session (action dd8370af).
+	 * 4cb97f74): a mark and a word under its name, and in session the box lists
+	 * each AI of the reader, newest first, with since when, what it does and an
+	 * End of its own (action dd8370af, criterion 39e1abc1, EVO-015).
 	 */
 	interface Props {
 		/** The block the question bears on; none on a page that names no block. */
@@ -50,6 +51,10 @@
 		return mounted && date && !Number.isNaN(date.getTime()) ? date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
 	};
 	const since = $derived(clock(ai?.session?.startedAt));
+	// One line per AI in session, each saying what it does in the words of the button (criterion 39e1abc1).
+	const ais = $derived(
+		(ai?.aiSessions ?? []).map((one) => ({ ...one, since: clock(one.startedAt), doing: aiStanding({ isOpen: true, ...one }, null).doing ?? 'connecting' }))
+	);
 	const lastCall = $derived(clock(aiSessionSlot.run?.seenAt));
 	const quietSince = $derived(lastCall ? `No call from your AI since ${lastCall}.` : 'No call from your AI for a minute.');
 	const tip = $derived(inSession ? `Your AI is in session${since ? ` since ${since}` : ''}, ${standing.doing}` : standing.word);
@@ -64,10 +69,16 @@
 		return () => clearInterval(timer);
 	});
 
-	async function endSession() {
+	async function endSession(sessionId?: string) {
 		open = false;
-		if (await confirmDialog({ title: 'End the session?', message: 'Your AI stops waiting for your clicks. The clicks it has not answered wait for your next session.', confirmLabel: 'End the session' }))
-			await ai?.end();
+		if (
+			await confirmDialog({
+				title: 'End the session?',
+				message: 'Your AI stops waiting for your clicks. The clicks it has not answered go to another of your AIs, or wait for your next session.',
+				confirmLabel: 'End the session'
+			})
+		)
+			await ai?.end(sessionId);
 	}
 
 	let open = $state(false);
@@ -148,13 +159,29 @@
 				class="flex w-[360px] max-w-[calc(100vw-32px)] animate-lk-in-fast flex-col gap-2.5 {POP} p-3.5 text-left"
 			>
 				<!-- Where the reader's AI stands (action dd8370af, criteria 39e1abc1, bc0f0767). -->
-				{#if inSession}
+				{#if inSession && ais.length > 0}
+					<div class="border-b border-line pb-2.5 text-[0.8125rem]" role="status" aria-live="polite">
+						<ul class="m-0 flex list-none flex-col gap-2 p-0" aria-label="Your AIs in session">
+							{#each ais as one (one.id)}
+								<li class="flex flex-col gap-1" data-ai-session={one.id}>
+									<span class="flex items-center gap-2 font-bold text-green-ink"
+										><span class="ai-mark" data-alive={one.status === 'thinking' || one.status === 'writing' || undefined} aria-hidden="true"></span>{one.name}{' '}<span
+											class="font-normal text-ink-3">in session{one.since ? ` since ${one.since}` : ''}</span
+										></span
+									>
+									<span class="leading-normal text-ink-2">Now: {one.doing}.</span>
+									<button type="button" class="quiet self-start text-xs text-red-ink" onclick={() => endSession(one.id)}>End the session</button>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{:else if inSession}
 					<div class="flex flex-col gap-1 border-b border-line pb-2.5 text-[0.8125rem]" role="status" aria-live="polite">
 						<span class="flex items-center gap-2 font-bold text-green-ink"
 							><span class="ai-mark" data-alive={standing.tone === 'working' || undefined} aria-hidden="true"></span>Your AI is in session{since ? ` since ${since}` : ''}</span
 						>
 						<span class="leading-normal text-ink-2">Now: {standing.doing}.</span>
-						<button type="button" class="quiet self-start text-xs text-red-ink" onclick={endSession}>End the session</button>
+						<button type="button" class="quiet self-start text-xs text-red-ink" onclick={() => endSession()}>End the session</button>
 					</div>
 				{:else if standing.tone === 'quiet'}
 					<div class="flex flex-col gap-1 border-b border-line pb-2.5 text-[0.8125rem]" role="status">

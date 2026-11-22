@@ -89,7 +89,6 @@ const HUB_KINDS: ReadonlySet<string> = new Set([
 	'capability',
 	'core',
 	'family',
-	'release',
 	'term'
 ]);
 

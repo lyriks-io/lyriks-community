@@ -86,7 +86,7 @@
 		 * reads while `view.diagram` holds.
 		 */
 		diagram?: Snippet | null;
-		view?: { readonly diagram: boolean; readonly toggle: () => void; readonly owed?: string | null } | null;
+		view?: { readonly diagram: boolean; readonly toggle: () => void } | null;
 	}
 	let {
 		projectId,
@@ -390,12 +390,11 @@
 			type="button"
 			class="relative grid {compact ? 'size-7' : 'size-9'} place-items-center rounded-lg {view.diagram ? ICON_BTN_ON : `${ICON_BTN} text-ink`}"
 			aria-pressed={view.diagram}
-			aria-label={view.diagram ? 'Show as a list' : view.owed ? `Show as a diagram: ${view.owed}` : 'Show as a diagram'}
-			title={view.diagram ? 'Show as a list' : (view.owed ?? 'Show as a diagram')}
+			aria-label={view.diagram ? 'Show as a list' : 'Show as a diagram'}
+			title={view.diagram ? 'Show as a list' : 'Show as a diagram'}
 			onclick={() => void toggleView()}
 		>
 			<Icon name={view.diagram ? 'list' : 'workflow'} size={16} />
-			{#if view.owed && !view.diagram}<span aria-hidden="true" class="absolute top-1 right-1 size-2 bg-orange"></span>{/if}
 		</button>
 	{/if}
 	<BlockControls

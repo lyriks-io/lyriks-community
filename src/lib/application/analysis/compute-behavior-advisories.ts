@@ -108,7 +108,7 @@ export class ComputeBehaviorAdvisoriesUseCase {
 
 	constructor(
 		private readonly advisor: UnspaghettitAdvisorPort,
-		private readonly behavior: BehaviorRepositoryPort,
+		private readonly behavior: Pick<BehaviorRepositoryPort, 'loadProject' | 'loadFeature'>,
 		/** The spec's language, read from its declaration alone: the cards are written in it. */
 		private readonly specLanguage?: { generated(projectId: string): Promise<SpecLanguage> },
 		/** The project invariants Lyriks generated from the data model (their ids): breaking one says the spec disagrees with its own data model. */

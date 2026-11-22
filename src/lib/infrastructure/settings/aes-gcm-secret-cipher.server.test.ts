@@ -24,6 +24,16 @@ describe('the secret cipher [criterion:ac-leaf-ac-adm-ai-key]', () => {
 		expect(new AesGcmSecretCipher({ secret: 'before' }).open('not sealed')).toBeNull();
 	});
 
+	it('opens only the format it seals: another version, or a part missing, reads nothing', () => {
+		const cipher = new AesGcmSecretCipher({ secret: 'session-secret' });
+		const [v, iv, tag, body] = cipher.seal('sk-ant-api03-secret').split(':');
+		expect(cipher.open([`${v}x`, iv, tag, body].join(':'))).toBeNull();
+		expect(cipher.open([v, '', tag, body].join(':'))).toBeNull();
+		expect(cipher.open([v, iv, '', body].join(':'))).toBeNull();
+		expect(cipher.open([v, iv, tag].join(':'))).toBeNull();
+		expect(cipher.open([v, iv, tag, body].join(':'))).toBe('sk-ant-api03-secret');
+	});
+
 	it('writes its own key file, readable by the server alone, only when a secret is first sealed', () => {
 		const keyFile = join(mkdtempSync(join(tmpdir(), 'lyriks-cipher-')), 'secrets.key');
 		const cipher = new AesGcmSecretCipher({ keyFile });

@@ -23,11 +23,6 @@ export interface ProjectVisibility {
 	readonly email: string | null;
 }
 
-/** Blanket visibility — sees everything (auth off, owner/admin, or "all projects"). */
-export function seesEverything(v: ProjectVisibility): boolean {
-	return v.allowedDomainIds === null;
-}
-
 /**
  * Whether a single project is visible. `domainId` is the project's domain (may be
  * null/unassigned); `getTeam` is only consulted when the domain isn't in breadth,

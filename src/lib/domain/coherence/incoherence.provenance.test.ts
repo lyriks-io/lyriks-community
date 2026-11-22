@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nextBestFix, provenanceOf, toProductCoherence } from './incoherence';
+import { provenanceOf, toProductCoherence } from './incoherence';
 import type { CoherenceAnalysis, Gap } from './draft';
 
 const resolve = (step: string) => ({
@@ -64,7 +64,6 @@ describe('what a card carries', () => {
 			resolve
 		);
 		expect(pc.incoherences.map((i) => i.id)).toEqual(['block', 'high', 'low']);
-		expect(nextBestFix(pc)?.id).toBe('block');
 	});
 
 	it('counts a settled gap as a failing check: a decision never turns a check green', () => {

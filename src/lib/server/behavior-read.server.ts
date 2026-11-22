@@ -4,13 +4,13 @@ import {
 	EMPTY_BEHAVIOR_TOTALS,
 	type BehaviorOverview
 } from '$application/specification/summarize-behavior';
-import { indexFeatureActions, type FeatureActionIndex } from '$application/specification/index-feature-actions';
+import { indexDisabledFeatures, indexFeatureActions, indexFeatureScenarios, type FeatureActionIndex } from '$application/specification/index-feature-actions';
 import { indexFeatureRules, type KernelRulesReadModel } from '$application/specification/index-feature-rules';
 import type { BehaviorFold, BehaviorReading } from '$application/specification/behavior-reading';
 
 /*
- * Shared by the Features page (the tree, its stats and rules) and the Evolution
- * page's Roadmap tab (the actions each scheduled feature holds).
+ * Shared by the Features page (the tree, its stats and rules) and every page
+ * that reads the behaviour fold.
  */
 
 const EMPTY_OVERVIEW: BehaviorOverview = {
@@ -67,7 +67,9 @@ async function foldBehavior(services: AppServices, projectId: string): Promise<B
 			actions: indexFeatureActions(featureSnapshots),
 			// Every rule reads in the language the spec is written in.
 			kernelRules: indexFeatureRules(project, featureSnapshots, specLanguage),
-			writtenAt: writtenAtOf(featureSnapshots)
+			writtenAt: writtenAtOf(featureSnapshots),
+			disabledFeatures: indexDisabledFeatures(featureSnapshots),
+			scenarios: indexFeatureScenarios(featureSnapshots, specLanguage)
 		},
 		whole
 	};

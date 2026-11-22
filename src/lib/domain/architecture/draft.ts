@@ -1,3 +1,4 @@
+import { mintUuid } from '../shared';
 import type { ArchLayer, ConstraintCategory, DocKind } from './enums';
 
 /* ── Entities — mirror of Unspaghettit feature 8c799e4a ─────────────── */
@@ -84,7 +85,7 @@ export function createEmptyArchitectureDraft(projectId: string): ProjectArchitec
 }
 
 function newId(): string {
-	return crypto.randomUUID();
+	return mintUuid();
 }
 
 export function createTechChoice(layer: ArchLayer, overrides: Partial<TechChoice> = {}): TechChoice {
@@ -147,12 +148,6 @@ export function withStableArchitectureIds(
 		referenceDocs: fix(draft.referenceDocs, 'reference-doc'),
 		constraints: fix(draft.constraints, 'constraint')
 	};
-}
-
-/* ── Pure selectors ───────────────────────────────────────────────────── */
-
-export function techOfLayer(draft: ProjectArchitectureDraft, layer: ArchLayer): TechChoice[] {
-	return draft.techChoices.filter((t) => t.layer === layer);
 }
 
 /** Identity of a technology across the board and the upstream stack. */

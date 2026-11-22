@@ -86,12 +86,15 @@ describe.skipIf(!BASE)('Lyriks project smoke', () => {
 		expect((await save(projectId, '/api/draft/features', {})).status).toBe(200);
 	});
 
-	it('feature scoring endpoint responds with an availability flag', async () => {
+	it('feature scoring answers whether the engine is there, and advice per feature only when it is', async () => {
 		const res = await fetch(url(`/api/features/score?projectId=${PROJECT}`));
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as { available?: unknown; advice?: unknown };
-		expect(body).toHaveProperty('available');
+		expect(typeof body.available).toBe('boolean');
 		expect(Array.isArray(body.advice)).toBe(true);
+		const advice = body.advice as Array<{ featureId?: unknown }>;
+		if (!body.available) expect(advice).toEqual([]);
+		for (const entry of advice) expect(typeof entry.featureId).toBe('string');
 	});
 
 	it('rejects a draft save with no projectId (400)', async () => {

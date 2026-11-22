@@ -2,10 +2,13 @@ import type { DraftProofImpact, ProofChanges, ProofScopeEntry } from '$lib/domai
 import { SECTION_DRAFT_PREFIX, isSpecPage, sectionEditsIssue, type SectionDraft, type SectionEdit } from '$lib/domain/evolution';
 import { RULE_DRAFT_PREFIX, ruleOperationsIssue, type RuleDraft } from '$lib/domain/evolution';
 import { FINDING_DRAFT_PREFIX, isFindingOutcome, type FindingDraft, type FindingSettlement, type ProjectHealthAfter } from '$lib/domain/evolution';
-import type { AiDelegation } from '$lib/domain/evolution';
+import type { AiDelegation, KnowledgeLanding, LandingChoice, OtherLanding, PairDecision } from '$lib/domain/evolution';
+import { OTHER_LANDINGS_KEPT } from '$lib/domain/evolution';
 import { isProjectClickKind, type ProjectClick } from '$lib/domain/evolution';
 import { HISTORY_LISTED, withoutCredentials, type BranchHistory, type CodeRepository, type CodeTrack } from '$lib/domain/evolution';
+import { parseFreezeHeld } from '$lib/domain/evolution';
 import type { DiagramAlignment, TechnicalAlignment, TextAlignment } from '$lib/domain/evolution';
+import { parseSpecCorrection } from '$lib/domain/evolution';
 import {
 	createEmptyEvolutionDraft,
 	createEmptyNeed,
@@ -363,6 +366,7 @@ function parseVersionSnapshot(value: unknown): VersionSnapshot | undefined {
 		: undefined;
 	return {
 		...(data ? { data } : {}),
+		...parseLandingChoices(src.landingChoices),
 		...(Array.isArray(src.sections) ? { sections: parseSectionDrafts(src.sections).map(({ id, page, summary, edits }) => ({ id, page, summary, edits })) } : {}),
 		...(Array.isArray(src.rules) ? { rules: parseRuleDrafts(src.rules).map(({ id, summary, operations }) => ({ id, summary, operations })) } : {}),
 		...(Array.isArray(src.findings) ? { findings: parseFindingDrafts(src.findings).map(({ id, findingId, title, featureRef, blocking, outcome, reason }) => ({ id, findingId, title, featureRef, blocking, outcome, reason })) } : {}),
@@ -561,6 +565,8 @@ function parseImplementationFinding(src: Record<string, unknown>): Implementatio
 		verdict: isImplementationVerdict(src.verdict) ? src.verdict : 'missing',
 		requirement: str(src.requirement),
 		...(str(src.leafId) ? { leafId: str(src.leafId) } : {}),
+		...(str(src.key) ? { key: str(src.key) } : {}),
+		...(str(src.owner) ? { owner: str(src.owner) } : {}),
 		filePath: str(src.filePath),
 		lineRange: str(src.lineRange),
 		specStatement: str(src.specStatement),
@@ -778,9 +784,11 @@ function parseRequest(src: Record<string, unknown>): EvolutionRequest {
 			.filter((v): v is Record<string, unknown> => !!v && typeof v === 'object')
 			.map(parseFrozenVersion)
 			.filter((v) => v.version >= 1),
+		...parseSpecCorrection(src.correction, parseDraftLeaf),
 		...(Array.isArray(src.baselineKeys) ? { baselineKeys: strList(src.baselineKeys) } : {}),
 		...(Array.isArray(src.baselineLeafIds) ? { baselineLeafIds: strList(src.baselineLeafIds) } : {}),
 		...(Array.isArray(src.coherenceBaseline) ? { coherenceBaseline: strList(src.coherenceBaseline) } : {}),
+		...(Array.isArray(src.coherenceBaselineLeafIds) ? { coherenceBaselineLeafIds: strList(src.coherenceBaselineLeafIds) } : {}),
 		createdAt: str(src.createdAt),
 		openQuestionKeys: [
 			...new Set([...strList(src.openQuestionKeys), ...openQuestionsOfParkedBlocks(src, leafIds)])
@@ -860,12 +868,34 @@ function parseRequest(src: Record<string, unknown>): EvolutionRequest {
 			.filter((v): v is FieldValidation => v !== null),
 		heldImplementation: parseHeld(src.heldImplementation),
 		...parseCodeTrack(src.code),
+		...parseFreezeHeld(src.freezeHeld),
 		liveSessions: rows(src.liveSessions).map(parseLiveSession).filter((s): s is LiveSession => s !== null),
 		aiClicks: rows(src.aiClicks).map(parseAiClick).filter((c): c is AiClick => c !== null),
 		...parseAiDelegations(src.aiDelegations),
 		...parseStepPrefills(src.stepPrefills),
 		...(str(src.closingBaselineId) ? { closingBaselineId: str(src.closingBaselineId) } : {}),
-		...parseTicketPost(src.ticketPost)
+		...parseTicketPost(src.ticketPost),
+		...parseKnowledgeLanding(src.knowledgeLanding),
+		...parseLandingChoices(src.landingChoices),
+		...parseLandingOrder(src)
+	};
+}
+
+/** The order a request lands in, the decisions on its pairs and the landings it was told of (EVO-005); each says nothing when empty. */
+function parseLandingOrder(src: Record<string, unknown>): Pick<EvolutionRequest, 'landsAfter' | 'pairDecisions' | 'otherLandings'> {
+	const landsAfter = [...new Set(strList(src.landsAfter).filter((id) => id !== ''))];
+	const pairDecisions = objects(src.pairDecisions)
+		.map((d): PairDecision => ({ requestId: str(d.requestId), kind: d.kind === 'risk' ? 'risk' : 'order', reason: str(d.reason), by: str(d.by), at: str(d.at) }))
+		.filter((d) => d.requestId !== '' && d.by !== '' && d.at !== '' && (d.kind === 'order' || d.reason.trim() !== ''))
+		.filter((d, i, all) => all.findIndex((o) => o.requestId === d.requestId) === i);
+	const otherLandings = objects(src.otherLandings)
+		.map((l): OtherLanding => ({ requestId: str(l.requestId), key: str(l.key), title: str(l.title), featureIds: strList(l.featureIds), tableIds: strList(l.tableIds), at: str(l.at) }))
+		.filter((l) => l.requestId !== '' && l.at !== '')
+		.slice(-OTHER_LANDINGS_KEPT);
+	return {
+		...(landsAfter.length > 0 ? { landsAfter } : {}),
+		...(pairDecisions.length > 0 ? { pairDecisions } : {}),
+		...(otherLandings.length > 0 ? { otherLandings } : {})
 	};
 }
 
@@ -937,6 +967,37 @@ export function parseBranchHistory(value: unknown): BranchHistory | null {
 		.slice(0, HISTORY_LISTED);
 	const count = Number.isInteger(src.count) && (src.count as number) >= commits.length ? (src.count as number) : commits.length;
 	return { count, commits };
+}
+
+/** The elements set to Validate at the landing (EVO-003); a choice naming nobody or no date says nothing. */
+function parseLandingChoices(value: unknown): { landingChoices?: Record<string, LandingChoice> } {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+	const choices: Record<string, LandingChoice> = {};
+	for (const [id, raw] of Object.entries(value as Record<string, unknown>)) {
+		if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+		const src = raw as Record<string, unknown>;
+		const by = str(src.by);
+		const at = str(src.at);
+		if (id && by && at) choices[id] = { by, at, ...(src.atFreeze === true ? { atFreeze: true } : {}) };
+	}
+	return Object.keys(choices).length > 0 ? { landingChoices: choices } : {};
+}
+
+/** What a landing did in Knowledge (EVO-002); one with no date says nothing. */
+function parseKnowledgeLanding(value: unknown): { knowledgeLanding?: KnowledgeLanding } {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+	const src = value as Record<string, unknown>;
+	const at = str(src.at);
+	if (!at) return {};
+	return {
+		knowledgeLanding: {
+			at,
+			validated: strList(src.validated),
+			toReview: strList(src.toReview),
+			...(src.specValidated === true ? { specValidated: true } : {}),
+			...(str(src.failure) ? { failure: str(src.failure) } : {})
+		}
+	};
 }
 
 /** What the AI reported it did on the ticket; a report naming no ticket or no tool says nothing. */
@@ -1017,6 +1078,9 @@ function parseLiveSession(src: Record<string, unknown>): LiveSession | null {
 		personId,
 		startedAt,
 		...(endedAt ? { endedAt, endReason: isSessionEndReason(src.endReason) ? src.endReason : 'ended_by_person' } : {}),
+		// What names the session and what it opened on (EVO-015).
+		...(str(src.client) ? { client: str(src.client) } : {}),
+		...(str(src.startsOn) ? { startsOn: str(src.startsOn) } : {}),
 		...(str(src.currentClickId) ? { currentClickId: str(src.currentClickId) } : {}),
 		...(str(src.cancelledClickId) ? { cancelledClickId: str(src.cancelledClickId) } : {}),
 		...parseHeard(src.heard)
@@ -1391,9 +1455,12 @@ function parseProjectClick(src: Record<string, unknown>): ProjectClick | null {
 	const personId = str(src.personId);
 	const anchor = str(src.anchor);
 	if (!str(src.id) || !personId || !isProjectClickKind(src.kind)) return null;
-	if (src.kind === 'chat' ? !str(src.conversationId) : !anchor) return null;
+	// A question of another AI names whom it is for, never a place (EVO-015).
+	if (src.kind === 'chat' ? !str(src.conversationId) : src.kind === 'question' ? !str(src.toSessionId) : !anchor) return null;
 	const state = AI_CLICK_STATES.includes(src.state as AiClickState) ? (src.state as AiClickState) : 'waiting';
-	const optional = (key: 'conversationId' | 'threadId' | 'messageId' | 'text' | 'featureId' | 'takenAt' | 'answeredAt' | 'answer') => (str(src[key]) ? { [key]: str(src[key]) } : {});
+	const optional = (
+		key: 'conversationId' | 'threadId' | 'messageId' | 'text' | 'featureId' | 'takenAt' | 'answeredAt' | 'answer' | 'sessionId' | 'runId' | 'fromSessionId' | 'toSessionId'
+	) => (str(src[key]) ? { [key]: str(src[key]) } : {});
 	return {
 		id: str(src.id),
 		personId,
@@ -1411,6 +1478,11 @@ function parseProjectClick(src: Record<string, unknown>): ProjectClick | null {
 		...optional('takenAt'),
 		...optional('answeredAt'),
 		...optional('answer'),
-		...(src.answeredNothing === true ? { answeredNothing: true as const } : {})
+		...(src.answeredNothing === true ? { answeredNothing: true as const } : {}),
+		...optional('sessionId'),
+		...optional('runId'),
+		...optional('fromSessionId'),
+		...optional('toSessionId'),
+		...(src.expired === true ? { expired: true as const } : {})
 	};
 }

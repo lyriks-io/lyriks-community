@@ -1,12 +1,29 @@
 import { goto, invalidate } from '$app/navigation';
-import { pushToast } from '$ui/design-system';
+import { page } from '$app/state';
+import { evolutionOpeningSentence } from '$domain/licensing';
+import { pushToast, type Toast } from '$ui/design-system';
 import { clientId } from '$ui/shell/live-sync.client';
-import { refusalOf } from '$ui/shell/save-queue';
+import { offerToast, readRefusal, type Refusal } from '$ui/shell/offer-refusal';
 import { projectSyncKey, sectionSyncKey } from '$lib/shared/section-sync';
 import type { NoticedPoint, NoticedState, NoticedTarget } from '$application/spec360/noticed';
 import type { SpecEdits } from '../edits.svelte';
 
 const without = <T>(record: Record<string, T>, key: string): Record<string, T> => Object.fromEntries(Object.entries(record).filter(([k]) => k !== key));
+
+/**
+ * What a refused batch shows (EVO-006). Community's refusal is an offer: on a
+ * batch that opens an evolution, the sentence of opening one, with View plans
+ * and nothing in front; any other in the server's words. Any other refusal says
+ * what did not happen, then why when the answer could be read, never the raw
+ * answer.
+ */
+export function evolutionRefusalToast(refusal: Refusal, operations: readonly Record<string, unknown>[], failed: string, online: boolean): Omit<Toast, 'id' | 'count'> {
+	if (refusal.plan) {
+		const opens = operations.some((op) => op.op === 'open_request');
+		return offerToast(opens ? evolutionOpeningSentence() : (refusal.message ?? failed), online);
+	}
+	return { level: 'error', message: refusal.message ? `${failed} ${refusal.message}` : failed };
+}
 
 /**
  * The decisions on the points Lyriks noticed, taken from a row or from its
@@ -230,8 +247,12 @@ export class FindingDecisions {
 			.json()
 			.catch(() => null)) as { results?: { ok: boolean; summary: string }[]; requests?: { key?: string | null; href?: string }[] } | null;
 		const refused = body?.results?.find((r) => !r.ok);
-		if (!res.ok || refused) {
-			pushToast({ level: 'error', message: `${failed} ${refused?.summary ?? (await refusalOf(res, 'The change failed'))}` });
+		if (refused) {
+			pushToast({ level: 'error', message: `${failed} ${refused.summary}` });
+			return null;
+		}
+		if (!res.ok) {
+			pushToast(evolutionRefusalToast(await readRefusal(res), operations, failed, !!page.data.onlineHelp));
 			return null;
 		}
 		await Promise.all([invalidate(projectSyncKey(this.projectId)), invalidate(sectionSyncKey(this.projectId, 'evolution'))]);

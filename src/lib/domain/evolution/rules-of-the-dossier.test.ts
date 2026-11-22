@@ -295,13 +295,14 @@ describe('a question can be skipped on purpose, with a reason (ac-evo-form-quest
 		expect(ok(markOpenQuestionAct(ctxFor(ana), skipped, cost, null)).skippedQuestions).toEqual([]);
 	});
 
-	it('settles a required text of a step of prose, and keeps the skip across a reload', () => {
-		const blank = open({ stepDescriptions: { solution: 'Wrap a gift.', functional_spec: '', technical_spec: '' } });
-		expect(requiredTextsEmpty(blank, 'solution')).toEqual(['step.solution.examples']);
-		const skipped = ok(skip(blank, 'step.solution.examples', 'The change has nothing to test by hand.'));
+	it('settles the owed text of a step of prose, and keeps the skip across a reload', () => {
+		const blank = open({ stepDescriptions: { solution: '', functional_spec: '', technical_spec: '' } });
+		// The Solution owes its description only (EVO-013, criterion c1db73b7).
+		expect(requiredTextsEmpty(blank, 'solution')).toEqual(['step.solution.description']);
+		const skipped = ok(skip(blank, 'step.solution.description', 'The title says it all.'));
 		expect(requiredTextsEmpty(skipped, 'solution')).toEqual([]);
 		const reread = parseEvolutionDraft(JSON.parse(JSON.stringify({ projectId: 'p', requests: [skipped] })), 'p').requests[0];
-		expect(reread.skippedQuestions).toMatchObject([{ key: 'step.solution.examples', reason: 'The change has nothing to test by hand.' }]);
+		expect(reread.skippedQuestions).toMatchObject([{ key: 'step.solution.description', reason: 'The title says it all.' }]);
 	});
 });
 

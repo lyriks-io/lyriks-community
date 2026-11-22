@@ -1,6 +1,7 @@
 import type { AppServices } from '$composition/container.server';
 import { dropPreparation, settleGap } from '$domain/coherence';
 import { healthPointFinder } from './health-points.server';
+import { crossingsAfter, type CrossingsOnTheirOwn } from './evolution-crossings-on-their-own.server';
 import { env } from '$env/dynamic/private';
 import { settlesWithin } from './settles-within';
 import {
@@ -17,6 +18,8 @@ import {
 	withValidation,
 	fieldKey,
 	isElementPath,
+	isActionReviewKey,
+	reportNotRebuiltAct,
 	attributeTo,
 	addDataDraftAct,
 	addSectionDraftAct,
@@ -87,7 +90,11 @@ import {
 	buildReportAct,
 	closeRequestAct,
 	crossStageAct,
+	chooseAllAtLandingAct,
+	chooseAtLandingAct,
+	takeBackLandingChoiceAct,
 	gateFor,
+	readableAtImpact,
 	unvalidatedSpecSteps,
 	decideLineAct,
 	decideProposalAct,
@@ -109,6 +116,8 @@ import {
 	draftNodeIds,
 	foldBackAct,
 	isImpactHypothesis,
+	DEFAULT_IMPACT_DEPTH,
+	DEFAULT_IMPACT_HYPOTHESIS,
 	isImplementationVerdict,
 	isLineDecision,
 	isObservationRuling,
@@ -224,6 +233,23 @@ import {
 	asksOnThePage,
 	openSessionOf,
 	sessionFirst,
+	routeCriteriaDelta,
+	broughtKeys,
+	describingDraft,
+	isDescriptionPath,
+	landedDescription,
+	acceptConflictRiskAct,
+	beforeItsTurn,
+	beforeItsTurnGate,
+	concurrentHoldOf,
+	noticeOtherLanding,
+	readAgainDue,
+	setLandingOrderAct,
+	staleModelFindings,
+	withLandingOutOfOrder,
+	withoutFinishedOrders,
+	type OrderOutcome,
+	type StaleDraftModel,
 	type JournalEntry,
 	type JournalSection,
 	type JournalSegment
@@ -244,9 +270,12 @@ import {
 } from '$domain/documents';
 import { mapLimit } from '$lib/shared/map-limit';
 import { inputValidation, loadEvolutionView, maturityOf, requestCard, specificationHoldOf, type EvolutionView } from './evolution-view.server';
-import { specificationActionTrails } from './evolution-spec-actions.server';
-import { draftFeature } from './evolution-graph.server';
+import { elementFingerprint, specificationActionTrails } from './evolution-spec-actions.server';
+import { draftsVersionOf, loadLocalGraph, readDraftFeature, readStoredFeature, type LocalGraphReading } from './evolution-graph.server';
 import { captureClosingBaselines } from './evolution-closing-baseline.server';
+import { readAgainInBackground } from './evolution-read-again.server';
+import { landedBetween, readKnowledgeBefore, validateLandedInKnowledge } from './evolution-knowledge-landing.server';
+import { readTouchedValidation } from './evolution-touched-validation.server';
 import { readCodeBroughtBy } from './spec-code-drift.server';
 import { checkSectionEdits, prepareSectionLanding, readSectionDrafts, writeSectionLandings, type SectionLanding } from './evolution-section-drafts.server';
 import { checkRuleLanding, checkRuleOperations, landRuleDrafts, proveRuleDrafts } from './evolution-rule-drafts.server';
@@ -255,6 +284,8 @@ import { proposalErrors, recordChatAnswer } from './ai-conversations.server';
 import { proposalShapeRefusal, type AiChatAnswer } from '$domain/ai-conversations';
 import type { ProjectClick } from '$domain/evolution';
 import { publishSectionChange } from './sync-bus.server';
+import { draftsOpen, inCorrection, reportHeldInCorrectionAct } from '$domain/evolution';
+import { freezeCorrectionByHand, freezeCorrectionWhenDue, openCorrectionWhenChanged, type CorrectionDeps } from './evolution-correction.server';
 
 /**
  * Typed operations on the Evolution section, applied by the server.
@@ -504,6 +535,9 @@ export const EVOLUTION_OPERATIONS = [
 	'run_impact',
 	'run_coherence',
 	'decide_finding',
+	'validate_at_landing',
+	'validate_all_at_landing',
+	'withdraw_landing_validation',
 	'build_implementation_report',
 	'cross_stage',
 	'lift_waiver',
@@ -538,6 +572,8 @@ export const EVOLUTION_OPERATIONS = [
 	'withdraw_step_validation',
 	'name_validators',
 	'declare_deployment',
+	'set_landing_order',
+	'accept_conflict_risk',
 	'set_deployment_branch',
 	'report_code_state',
 	'report_merge',
@@ -734,7 +770,11 @@ function elementOrLiveValue(op: Record<string, unknown>, request: EvolutionReque
 	// A change to the data stands behind what it says now (3.4 Datamap, criterion 3d4f23dd).
 	const data = dataDraftOfKey(request.dataDrafts, key.split('@')[0]);
 	if (data) return dataChangeFingerprint(data);
-	return isElementPath(key.split('@')[0]) ? text(op.value) : liveValueOf(request, key, features);
+	// A description a draft writes stands behind what the landing writes (criterion e384d594).
+	const [path, leafId] = key.split('@');
+	const describing = isDescriptionPath(path) && leafId ? describingDraft(request.drafts, leafId) : null;
+	if (describing) return landedDescription(describing, features.features.find((f) => f.id === describing.baseLeafId)?.description ?? '');
+	return isElementPath(path) ? text(op.value) : liveValueOf(request, key, features);
 }
 
 async function specElementsFor(services: AppServices, projectId: string, leafId: string): Promise<SpecElements | null> {
@@ -758,8 +798,8 @@ async function setDraftBehaviour(
 	const draftId = str(op.draftId);
 	const operations = records(op.operations);
 	const draft = request.drafts.find((d) => d.id === draftId);
-	if (!draft || operations.length === 0 || request.frozen) {
-		// The act names what is missing or refuses the frozen request.
+	if (!draft || operations.length === 0 || !draftsOpen(request).ok) {
+		// The act names what is missing or refuses the request past its Build.
 		return setDraftBehaviourModelAct(ctx, request, draftId, null);
 	}
 	// A model written from a read of the draft is refused when the model moved
@@ -797,6 +837,48 @@ async function setDraftBehaviour(
 		operations,
 		mintedIds: strList(walk.batch?.mintedIds)
 	});
+}
+
+/**
+ * add_draft_leaf and update_draft_leaf on an amendment, with the Given/When/Then
+ * criteria of the feature it stands for (criterion 569c7789): changeCriteria and
+ * retireCriteria naming one of them go to the draft's behaviour model, checked by
+ * the engine as apply_behavior_batch on the draft is, in the same operation as
+ * the draft itself, so a refusal of either writes nothing.
+ */
+async function draftWithBehaviourCriteria(
+	services: AppServices,
+	ctx: ActContext,
+	projectId: string,
+	request: EvolutionRequest,
+	op: Record<string, unknown>,
+	textCriteria: (leafId: string) => { readonly criteria: readonly { readonly id: string }[] } | null,
+	draft: (sent: Record<string, unknown>) => ActOutcome
+): Promise<ActOutcome> {
+	const current = request.drafts.find((d) => d.id === str(op.draftId));
+	const baseLeafId = str(op.baseLeafId) || current?.baseLeafId || '';
+	const amends = (str(op.kind) || current?.kind) === 'amend';
+	if (!amends || !baseLeafId || (op.changeCriteria === undefined && op.retireCriteria === undefined)) return draft(op);
+	const snapshot = await services.readBehaviorFeature.execute(projectId, baseLeafId).catch(() => null);
+	const behaviour = records((snapshot?.feature as { acceptanceCriteria?: unknown } | undefined)?.acceptanceCriteria);
+	const routed = routeCriteriaDelta(
+		{ changeCriteria: op.changeCriteria === undefined ? undefined : records(op.changeCriteria), retireCriteria: op.retireCriteria === undefined ? undefined : strList(op.retireCriteria) },
+		new Set(behaviour.map((c) => str(c.id)).filter((id) => id !== '')),
+		new Set((textCriteria(baseLeafId)?.criteria ?? []).map((c) => c.id))
+	);
+	if (!routed.ok) return refuse(routed.reason, routed.fix);
+	// What the routing left of the two lists replaces them; a list left out keeps what the draft held.
+	const rest = Object.fromEntries(Object.entries(op).filter(([key]) => key !== 'changeCriteria' && key !== 'retireCriteria'));
+	const drafted = draft({ ...rest, ...Object.fromEntries(Object.entries(routed.delta).filter(([, list]) => list !== undefined)) });
+	if (!drafted.ok || routed.operations.length === 0) return drafted;
+	const holder = drafted.request.drafts.find((d) => d.kind === 'amend' && d.baseLeafId === baseLeafId && d.materialisedAs === null);
+	if (!holder) return drafted;
+	const modelled = await setDraftBehaviour(services, ctx, drafted.request, {
+		draftId: holder.id,
+		operations: [...(holder.behaviourModel?.operations ?? []), ...routed.operations],
+		...(holder.behaviourModel ? { mintedIds: holder.behaviourModel.mintedIds } : {})
+	});
+	return modelled.ok ? { ...modelled, summary: `${drafted.summary}; ${modelled.summary}` } : modelled;
 }
 
 /**
@@ -855,6 +937,9 @@ async function writeFindingLanding(
 		summary: `Project health: ${written.length} finding${written.length === 1 ? '' : 's'} settled in the rules register, ${decided} kept by design${byEngine > 0 ? `, ${byEngine} left to the engine reading the landed spec` : ''}`
 	};
 }
+
+/** An open request that owes nothing, carries a change and holds nothing for a signature: the Impact analysis can read it (EVO-013). */
+const readyForImpact = (request: EvolutionRequest): boolean => readableAtImpact(request) && gateFor(request, 'coherence', 0).ok;
 
 export async function applyEvolutionOperations(
 	services: AppServices,
@@ -1029,9 +1114,21 @@ export async function applyEvolutionOperations(
 		mintedIds: string[];
 	}[] = [];
 
+	/** A request's graph, read once per batch and drafts version: every action validated in one save reads the same (rule 519642d3). */
+	const graphReadings = new Map<string, Promise<LocalGraphReading>>();
+	const graphOf = (request: EvolutionRequest): Promise<LocalGraphReading> => {
+		const key = `${request.id}\u0000${draftsVersionOf(request)}`;
+		let reading = graphReadings.get(key);
+		if (!reading) graphReadings.set(key, (reading = loadLocalGraph(services, view, request)));
+		return reading;
+	};
+
 	/** The drafts of a request whose behaviour model the engine no longer validates, said. */
-	const draftModelsThatNoLongerApply = async (request: EvolutionRequest): Promise<string[]> => {
-		const stale: string[] = [];
+	const draftModelsThatNoLongerApply = async (request: EvolutionRequest): Promise<string[]> =>
+		(await staleDraftModels(request)).map((model) => `draft "${model.label}" does not apply: ${model.why}`);
+	/** The same drafts, each with the feature it stands for and why the engine refuses it. */
+	const staleDraftModels = async (request: EvolutionRequest): Promise<(StaleDraftModel & { label: string; silent: boolean })[]> => {
+		const stale: (StaleDraftModel & { label: string; silent: boolean })[] = [];
 		for (const draft of request.drafts) {
 			// Nothing left to replay: what the model held is already in the feature.
 			if (!draft.behaviourModel?.operations.length || draft.kind === 'remove') continue;
@@ -1047,7 +1144,8 @@ export async function applyEvolutionOperations(
 					: Array.isArray(walk?.errors)
 						? walk.errors.slice(0, 3).map(String).join(' | ')
 						: 'refused by the engine';
-			stale.push(`draft "${draft.name || draft.id}" does not apply: ${why}`);
+			const featureId = draft.materialisedAs ?? draft.baseLeafId;
+			stale.push({ draftId: draft.id, featureId, label: draft.name || draft.id, name: draft.name || (featureId ? leafNames[featureId] : '') || draft.id, why, silent: !answer });
 		}
 		return stale;
 	};
@@ -1081,15 +1179,27 @@ export async function applyEvolutionOperations(
 		// The freeze waits for the Specification a person stood behind, its actions read with the engine's graph (ac-evo-form-step-lock).
 		const specification =
 			request.stage === 'coherence' ? specificationHoldOf(view, request, await specificationActionTrails(services, view, request)) : undefined;
+		// What the change touches that Knowledge has not validated and nobody chose for: the freeze sets it to the landing (EVO-003).
+		const touched = request.stage === 'coherence' ? await touchedFor(request) : null;
 		const outcome = crossStageAct(ctx, request, {
 			criticalEmptyCount: maturityOf(view, working.features, request).criticalEmptyCount,
 			waiverReason,
-			specification
+			specification,
+			leftToLanding: touched?.lines.filter((line) => line.choice === 'none') ?? [],
+			// The conflicts with the requests under way hold the freeze, and the order is set against them (EVO-005).
+			requests: working.evolution.requests
 		});
 		if (!outcome.ok) return outcome;
-		if (request.stage === 'implementation' && outcome.request.stage === 'acceptance' && outcome.request.code)
+		if (touched && !touched.readable && outcome.request.stage === 'implementation')
+			return finishFreeze({ ...outcome, summary: `${outcome.summary}. Knowledge could not be read: nothing this change touches was set to Validate at the landing` });
+		// The last approval awaited, not the close of the verification, fixes the commit that goes live (EVO-011, criterion b8d393ea).
+		if (request.stage === 'acceptance' && outcome.request.stage === 'delivered' && outcome.request.code)
 			return { ...outcome, request: withValidation(ctx, outcome.request), summary: `${outcome.summary}. Validated commit: ${outcome.request.code.branch}@${outcome.request.code.codeHead.slice(0, 7)}` };
 		if (outcome.request.stage !== 'implementation') return outcome;
+		return finishFreeze(outcome);
+	};
+
+	const finishFreeze = async (outcome: Extract<ActOutcome, { ok: true }>): Promise<ActOutcome> => {
 		// Checked at the freeze and again at the landing: an amendment whose model
 		// no longer applies to the feature as it stands refuses the crossing,
 		// rather than building, or writing, a feature without its behaviour.
@@ -1098,6 +1208,30 @@ export async function applyEvolutionOperations(
 		const frozen = await withBaseline(outcome.request);
 		return { ...outcome, request: frozen, summary: `${outcome.summary}. Nothing is written into the specification before the change is declared live` };
 	};
+
+	// What the crossings that follow an act read (EVO-011): the Specification and the gate as cross_stage reads them.
+	const crossings: CrossingsOnTheirOwn = {
+		ctx,
+		deploymentBranch,
+		specificationOf: async (r) => specificationHoldOf(view, r, await specificationActionTrails(services, view, r)),
+		freezeGate: (r, specification) =>
+			gateFor(r, 'implementation', maturityOf(view, working.features, r).criticalEmptyCount, specification, concurrentHoldOf(r, working.evolution.requests)),
+		crossOnce: (r) => crossOnce(r),
+		resolve: (ref) => {
+			const found = lookupRequest(ref);
+			return found.kind === 'found' ? found.request : null;
+		}
+	};
+
+	/** The block Not validated in Knowledge of a request, read for whoever acts (EVO-003). */
+	const touchedFor = (request: EvolutionRequest) =>
+		readTouchedValidation(
+			services,
+			input.projectId,
+			request,
+			{ id: ctx.actor.id, name: view.members.find((m) => m.id === ctx.actor.id)?.name ?? ctx.actor.id },
+			ctx.actor.role !== 'viewer'
+		);
 
 	const staleModels = (stale: readonly string[]) =>
 		refuse(
@@ -1411,6 +1545,8 @@ export async function applyEvolutionOperations(
 			current = crossed.request;
 			summaries.push(crossed.summary);
 		}
+		// Landing before its turn is a person's decision with its reason: a request that closes itself waits at Deployment (EVO-005).
+		if (beforeItsTurn(current, working.evolution.requests).length > 0) return { ok: true, request: current, summary: summaries.join('. ') };
 		const landed = await landIfDue(current);
 		if (!landed.ok) return { ok: true, request: current, summary: summaries.join('. ') };
 		const closed = closeRequestAct(ctx, landed.request);
@@ -1423,6 +1559,8 @@ export async function applyEvolutionOperations(
 		};
 	};
 
+	// Correcting the frozen version in the Build: an act opens version N+1, another freezes it (EVO-012).
+	const correction: CorrectionDeps = { services, ctx, view, evolution: () => working.evolution, features: () => working.features, staleModels: draftModelsThatNoLongerApply, baseline: withBaseline };
 	// The person's operations, then whatever the platform computes on its own
 	// once an act leaves a request where a reading is due (ac-evo-imp-7,
 	// ac-evo-coh-8, ac-evo-impl-9). An automatic reading that fails never sinks
@@ -1639,6 +1777,7 @@ export async function applyEvolutionOperations(
 			}
 		}
 
+		const beforeOp = { evolution: working.evolution, features: working.features, request };
 		let outcome: ActOutcome;
 		/**
 		 * Need and Solution stand validated once every answer they hold is
@@ -1706,12 +1845,16 @@ export async function applyEvolutionOperations(
 				outcome = setLeavesAct(ctx, request, strList(op.leafIds), knownLeafIds);
 				break;
 			case 'add_draft_leaf':
-				outcome = badCriteria(op) ? CRITERIA_REFUSAL : addDraftLeafAct(ctx, request, draftInput(op), knownLeafIds, baseLeaf);
+				outcome = badCriteria(op)
+					? CRITERIA_REFUSAL
+					: await draftWithBehaviourCriteria(services, ctx, input.projectId, request, op, baseLeaf, (sent) => addDraftLeafAct(ctx, request, draftInput(sent), knownLeafIds, baseLeaf));
 				break;
 			case 'update_draft_leaf':
 				outcome = badCriteria(op)
 					? CRITERIA_REFUSAL
-					: updateDraftLeafAct(ctx, request, str(op.draftId), draftInput(op), knownLeafIds, baseLeaf);
+					: await draftWithBehaviourCriteria(services, ctx, input.projectId, request, op, baseLeaf, (sent) =>
+							updateDraftLeafAct(ctx, request, str(op.draftId), draftInput(sent), knownLeafIds, baseLeaf)
+						);
 				break;
 			case 'add_data_draft':
 				outcome = addDataDraftAct(ctx, request, dataDraftInput(op), working.data);
@@ -2006,8 +2149,8 @@ export async function applyEvolutionOperations(
 				outcome = stopStepPrefillAct(ctx, request);
 				break;
 			case 'run_impact': {
-				const hypothesis = isImpactHypothesis(op.hypothesis) ? op.hypothesis : request.impactReport.hypothesis;
-				const depth = num(op.depth, request.impactReport.depth);
+				const hypothesis = isImpactHypothesis(op.hypothesis) ? op.hypothesis : DEFAULT_IMPACT_HYPOTHESIS;
+				const depth = num(op.depth, DEFAULT_IMPACT_DEPTH);
 				const graph = await services.loadKnowledgeGraph.execute(input.projectId);
 				// The walk runs over the product as THIS request would leave it: the
 				// graph with its drafts laid on top, and nothing written anywhere
@@ -2098,17 +2241,31 @@ export async function applyEvolutionOperations(
 				});
 				// The rules the whole product keeps, proved by the engine with the change (ac-evo-draft-rules).
 				const fromRules = ruleDraftCoherence({ request, proof: await proveRuleDrafts(services, input.projectId, request), lang: view.language });
-				const findings = [...mapped.findings, ...fromDrafts, ...fromSections, ...fromRules];
+				// Read again after another request landed: a drafted behaviour that no longer applies is met here, before the build (EVO-005, rule 4c181849).
+				// An engine that does not answer proves nothing stale: the reading then stays the one before the landing.
+				const fromLandings = (request.otherLandings ?? []).length > 0 ? staleModelFindings(request, (await staleDraftModels(request)).filter((m) => !m.silent)) : [];
+				const findings = [...mapped.findings, ...fromDrafts, ...fromSections, ...fromRules, ...fromLandings];
 				// Project health as the change would leave it, beside how it reads now (ac-evo-coh-after).
 				const after = projectHealthAfter({
 					gaps: analysis.gaps,
 					findingDrafts: request.findingDrafts,
 					register: await services.loadRulesDraft.execute(input.projectId),
-					requestFindings: findings
+					requestFindings: findings,
+					requestId: request.id
 				});
 				outcome = runCoherenceAct(ctx, request, { ...mapped, report: { ...mapped.report, health: after }, findings }, { partial: !behaviourUpToDate });
 				break;
 			}
+			// The choices of the block Not validated in Knowledge (EVO-003), each read against Knowledge as it stands.
+			case 'validate_at_landing':
+				outcome = chooseAtLandingAct(ctx, request, str(op.elementId), await touchedFor(request));
+				break;
+			case 'validate_all_at_landing':
+				outcome = chooseAllAtLandingAct(ctx, request, await touchedFor(request));
+				break;
+			case 'withdraw_landing_validation':
+				outcome = takeBackLandingChoiceAct(ctx, request, str(op.elementId));
+				break;
 			case 'decide_finding':
 				outcome = decideFindingAct(
 					ctx,
@@ -2119,6 +2276,11 @@ export async function applyEvolutionOperations(
 				);
 				break;
 			case 'build_implementation_report': {
+				// While version N+1 is in correction, the report of version N stands (EVO-012).
+				if (inCorrection(request)) {
+					outcome = reportHeldInCorrectionAct(request);
+					break;
+				}
 				// The neighbours worth reading: what the touched features depend on and
 				// what depends on them, which is where a change disturbs a span.
 				const meta = working.features.leafMeta ?? {};
@@ -2139,26 +2301,47 @@ export async function applyEvolutionOperations(
 				const near = await mapLimit([...neighbourIds], 2, async (id) => [id, await featureStatus(services, id)] as const);
 				const read = await mapLimit(subjects, 2, async (id) => {
 					const draft = pendingDraftFor(based, id);
+					// A touched feature the request drafts nothing on brings nothing: its lines are its own (criterion 28d5a69c).
 					if (!draft || draft.kind === 'remove')
-						return { id, status: await featureStatus(services, id), spec: await specElementsFor(services, input.projectId, id) };
+						return {
+							id,
+							status: await featureStatus(services, id),
+							spec: await specElementsFor(services, input.projectId, id),
+							brought: !draft && based.baselineKeys && !isLanded(based) ? new Set<string>() : null
+						};
 					const baseId = draft.baseLeafId;
-					const [snapshot, official, baseSnapshot] = await Promise.all([
-						draftFeature(services, working.evolution, draft.id),
+					const [drafted, official, baseSnapshot] = await Promise.all([
+						readDraftFeature(services, working.evolution, draft.id),
 						baseId ? featureStatus(services, baseId) : Promise.resolve(null),
-						baseId ? services.readBehaviorFeature.execute(input.projectId, baseId).catch(() => null) : Promise.resolve(null)
+						baseId ? readStoredFeature(services, input.projectId, baseId) : Promise.resolve({ status: 'read' as const, feature: null })
 					]);
+					// Nothing is derived from a draft the engine did not answer (rule a540a11e).
+					if (drafted.status === 'unanswered' || baseSnapshot.status === 'unanswered') return null;
+					const snapshot = drafted.status === 'computed' ? drafted.feature : null;
 					const signed = working.features.leafMeta?.[draft.id]?.acceptanceCriteria ?? [];
 					const criteria = [...draft.acceptanceCriteria, ...signed.filter((c) => !draft.acceptanceCriteria.some((d) => d.id === c.id))];
 					const officialKeys = new Set(
-						draftIndexKeys((baseSnapshot?.feature as Record<string, unknown> | undefined) ?? null, {
+						draftIndexKeys(baseSnapshot.feature, {
 							acceptanceCriteria: (baseId ? working.features.leafMeta?.[baseId]?.acceptanceCriteria : undefined) ?? []
 						})
 					);
 					const held = heldStatusOf(snapshot, based.heldImplementation, criteria, officialKeys);
-					return { id, status: mergedStatus(official, held), spec: specElementsOf(snapshot) };
+					// What the draft brings or changes, read against the feature as it stands: an element a direct change
+					// added since the freeze is in both, so it reads the feature's own (criterion 28d5a69c).
+					const brought = snapshot
+						? broughtKeys(snapshot, baseSnapshot.feature, [...criteria.map((c) => c.id), ...(draft.changeCriteria ?? []).map((c) => c.id)])
+						: null;
+					return { id, status: mergedStatus(official, held), spec: specElementsOf(snapshot), brought };
 				});
-				const own = read.map((r) => [r.id, r.status] as const);
-				const specs = read.map((r) => [r.id, r.spec] as const);
+				// The last report stands, lines and counts untouched, and the Build card's log says why (rules a540a11e, 9d958ddc).
+				const answered = read.filter((r) => r !== null);
+				if (answered.length < read.length) {
+					const guarded = buildReportAct(ctx, based, []);
+					outcome = guarded.ok ? reportNotRebuiltAct(ctx, request) : guarded;
+					break;
+				}
+				const own = answered.map((r) => [r.id, r.status] as const);
+				const specs = answered.map((r) => [r.id, r.spec] as const);
 				const lines = deriveImplementationReport({
 					request: { ...based, leafIds: subjects },
 					statuses: Object.fromEntries(own),
@@ -2166,6 +2349,7 @@ export async function applyEvolutionOperations(
 					spec: Object.fromEntries(specs),
 					leafNames,
 					baseline: based.baselineKeys ? new Set(based.baselineKeys) : null,
+					brought: Object.fromEntries(answered.map((r) => [r.id, r.brought])),
 					lang: view.language
 				});
 				// The data changes are lines too (ac-evo-impl-data), to build until a person validates them.
@@ -2175,10 +2359,13 @@ export async function applyEvolutionOperations(
 				break;
 			}
 			case 'cross_stage':
-				outcome = await crossOnce(
-					request,
-					typeof op.waiverReason === 'string' ? op.waiverReason : undefined
-				);
+				// In the Build with version N+1 in correction, the next gate is its freeze, a person's act (EVO-012).
+				outcome = inCorrection(request)
+					? await freezeCorrectionByHand(correction, request)
+					: await crossOnce(
+							request,
+							typeof op.waiverReason === 'string' ? op.waiverReason : undefined
+						);
 				break;
 			case 'lift_waiver':
 				outcome = liftWaiverAct(ctx, request);
@@ -2299,13 +2486,21 @@ export async function applyEvolutionOperations(
 					outcome = closable;
 					break;
 				}
+				// Closing lands the change like declaring it live: before its turn, only with a reason (EVO-005, rule a05d347f).
+				const ahead = beforeItsTurn(request, working.evolution.requests);
+				const reason = str(op.outOfOrderReason).trim();
+				const inTurn = beforeItsTurnGate(ahead, working.evolution.requests, reason);
+				if (!inTurn.ok) {
+					outcome = inTurn;
+					break;
+				}
 				// What the request carries lands first.
 				const landed = await landIfDue(request);
 				if (!landed.ok) {
 					outcome = landed;
 					break;
 				}
-				outcome = closeRequestAct(ctx, landed.request);
+				outcome = closeRequestAct(ctx, withLandingOutOfOrder(ctx, landed.request, ahead, working.evolution.requests, { reason }));
 				if (outcome.ok && landed.summary) outcome = { ...outcome, summary: `${outcome.summary}. ${landed.summary}` };
 				break;
 			}
@@ -2391,7 +2586,27 @@ export async function applyEvolutionOperations(
 					outcome = refuse(undecided, 'update_finding_draft {findingDraftId, outcome: "fixed" | "kept", reason} chooses it.');
 					break;
 				}
-				outcome = validateFieldAct(ctx, request, { key, liveValue: elementOrLiveValue(op, request, key, working.features) });
+				let liveValue = elementOrLiveValue(op, request, key, working.features);
+				// An action stands behind the engine's reading of it, never a fallback: while the engine does not answer, nothing is recorded (rule 519642d3).
+				const actionRead = isActionReviewKey(key) ? await elementFingerprint(services, view, request, key, () => graphOf(request)) : null;
+				if (actionRead?.status === 'unread') {
+					outcome = refuse(actionRead.reason, 'Nothing was recorded. Try again in a moment: the engine may be busy with other readings.');
+					break;
+				}
+				// An AI client validates an action or a path by its key alone: Lyriks reads it as the page shows it (criterion fa81c0eb).
+				if (liveValue === '' && isElementPath(key.split('@')[0])) {
+					const reading = actionRead ?? (await elementFingerprint(services, view, request, key));
+					const read = reading.status === 'read' ? reading.fingerprint : null;
+					if (read === null) {
+						outcome = refuse(
+							`The Specification offers no action or path of the journey under ${key}.`,
+							'get_evolution part "specification" lists every item the Specification offers, each with the fieldPath and leafId validate_field takes.'
+						);
+						break;
+					}
+					liveValue = read;
+				}
+				outcome = validateFieldAct(ctx, request, { key, liveValue });
 				outcome = standStepWhenEveryAnswerIs(outcome, key);
 				break;
 			}
@@ -2440,17 +2655,43 @@ export async function applyEvolutionOperations(
 					outcome = declarable;
 					break;
 				}
+				// The order a team set is kept, or departed from on purpose: before its turn, a reason is asked and nothing lands without it (EVO-005, rule a05d347f).
+				const ahead = beforeItsTurn(request, working.evolution.requests);
+				const reason = str(op.outOfOrderReason).trim();
+				const inTurn = beforeItsTurnGate(ahead, working.evolution.requests, reason);
+				if (!inTurn.ok) {
+					outcome = inTurn;
+					break;
+				}
 				// Live: the change becomes official now, never before (ac-evo-req-landing).
 				const landed = await landIfDue(request);
 				if (!landed.ok) {
 					outcome = landed;
 					break;
 				}
-				outcome = declareDeploymentAct(ctx, landed.request, {
+				outcome = declareDeploymentAct(ctx, withLandingOutOfOrder(ctx, landed.request, ahead, working.evolution.requests, { reason }), {
 					releaseId: typeof op.releaseId === 'string' ? op.releaseId : null,
 					note: str(op.note)
 				});
 				if (outcome.ok && landed.summary) outcome = { ...outcome, summary: `${outcome.summary}. ${landed.summary}` };
+				break;
+			}
+			case 'set_landing_order':
+			case 'accept_conflict_risk': {
+				// One decision on a pair of requests under way, written on both (EVO-005).
+				const other = lookupRequest(str(op.otherRequestId));
+				const pair = other.kind === 'found' ? other.request : null;
+				const decided: OrderOutcome =
+					name === 'set_landing_order'
+						? setLandingOrderAct(ctx, request, pair, op.landsFirst, working.evolution.requests)
+						: acceptConflictRiskAct(ctx, request, pair, text(op.reason), working.evolution.requests);
+				if (!decided.ok) {
+					outcome = decided;
+					break;
+				}
+				const here = decided.requests.find((r) => r.id === request.id) ?? request;
+				for (const changed of decided.requests) if (changed.id !== request.id) put(changed);
+				outcome = { ok: true, request: here, summary: decided.summary };
 				break;
 			}
 			case 'cancel_request':
@@ -2487,7 +2728,9 @@ export async function applyEvolutionOperations(
 				}
 				// The code the branch brought becomes the reference the code changed outside Lyriks is read against (ac-evo-branch-not-outside).
 				const brought = await readCodeBroughtBy(services, input.projectId, request.code!).catch(() => ({}));
-				outcome = declareByMergeAct(ctx, landed.request, deploymentBranch(), merge, brought);
+				// A merge is already in git: one out of order is recorded, never refused (EVO-005, criterion fbf8c9b6).
+				const ahead = beforeItsTurn(request, working.evolution.requests);
+				outcome = declareByMergeAct(ctx, withLandingOutOfOrder(ctx, landed.request, ahead, working.evolution.requests, { merge: merge.mergeCommit }), deploymentBranch(), merge, brought);
 				if (outcome.ok && landed.summary) outcome = { ...outcome, summary: `${outcome.summary}. ${landed.summary}` };
 				break;
 			}
@@ -2514,6 +2757,7 @@ export async function applyEvolutionOperations(
 			default:
 				outcome = refuse(`Unknown operation "${name}".`, `The operations are: ${EVOLUTION_OPERATIONS.join(', ')}.`);
 		}
+		outcome = await openCorrectionWhenChanged(correction, beforeOp, outcome);
 		if (!record(outcome)) break;
 		// An act of the AI answers the click it was taking care of ("Record the AI's answer").
 		const answer = outcome.ok ? answerOf(name, op) : null;
@@ -2521,23 +2765,31 @@ export async function applyEvolutionOperations(
 			const answered = recordAnswerAct(ctx, outcome.request, answer);
 			if (answered) put(answered);
 		}
-		// The Impact analysis is a step, not a second click: once the steps before it
-		// stand validated and nothing waits for a signature, the request enters it
-		// on its own. Validating is optional, so a request whose steps nobody
-		// validated is moved on by hand. The freeze stays a deliberate act.
-		if (
-			// Validating the last answer of Need or Solution completes the step as surely as validating it (ac-evo-req-23).
+		// The Impact analysis is a step, not a second click: once what the steps before
+		// it owe is written (validated or not), something is drafted and nothing waits
+		// for a signature, the request enters it on its own, whoever wrote last, a
+		// person or their AI (criterion 80349d4a). Until
+		// something is coded a request goes as far as it can without a validation
+		// and only the freeze waits for a validation (criterion b10629df). Only the write that
+		// makes the request ready moves it, so one sent back to Specify (a rebrief)
+		// stays there to be edited (criterion dc1fcf8b).
+		const becameReady = outcome.ok && outcome.request.id === request.id && readyForImpact(outcome.request) && !readyForImpact(request);
+		// Validating the last answer of Need or Solution completes the step as surely as validating it (ac-evo-req-23).
+		const validatedLast =
 			(name === 'validate_step' || name === 'mark_step_not_applicable' || name === 'validate_field') &&
 			outcome.ok &&
-			outcome.request.stage === 'specification' &&
 			unvalidatedSpecSteps(outcome.request).length === 0 &&
-			gateFor(outcome.request, 'coherence', 0).ok
-		) {
+			readyForImpact(outcome.request);
+		if (outcome.ok && outcome.request.stage === 'specification' && (becameReady || validatedLast)) {
 			const entered = crossStageAct({ ...ctx, actor: { ...ctx.actor, kind: 'person' }, soloWorkspace: true }, outcome.request, { criticalEmptyCount: 0 });
 			// The crossing is lent a person's standing to pass its guard, but the history
 			// keeps who actually acted: an assistant stays an assistant (ac-evo-hist-auto-crossing-author).
 			if (entered.ok) put(attributeTo(entered.request, outcome.request.history.length, ctx.actor.kind));
 		}
+		// The crossings a computation settles follow the act that settled them (EVO-011).
+		const onTheirOwn = outcome.ok && requestId ? await crossingsAfter(crossings, { op: name, said: outcome.summary }, crossings.resolve(requestId), queue.slice(index + 1)) : null;
+		if (onTheirOwn) put(onTheirOwn.request);
+		if (onTheirOwn?.summary) results.push({ index, op: name, requestId: onTheirOwn.request.id, ok: true, summary: `Automatic: ${onTheirOwn.summary}` });
 		// The readings have just come back. If they say nothing moves and nothing
 		// contradicts, the dossier costs its author nothing further.
 		if (
@@ -2550,6 +2802,9 @@ export async function applyEvolutionOperations(
 			if (settled.ok && settled.request.stage !== 'specification')
 				record(settled, settled.request.id);
 		}
+		// Version N+1 freezes in the Build after a person's validation that leaves nothing of it waiting (EVO-012).
+		const corrected = outcome.ok ? await freezeCorrectionWhenDue(correction, { op: name, later: queue.slice(index + 1) }, request.id) : null;
+		if (corrected) record(corrected, request.id);
 		const standing = requestId ? lookupRequest(requestId) : null;
 		if (standing?.kind === 'found') {
 			const due = dueReadings(standing.request);
@@ -2567,6 +2822,23 @@ export async function applyEvolutionOperations(
 	}
 
 	if (results.some((r) => !r.ok)) return { ok: false, status: 422, results };
+
+	// What Knowledge reads before anything lands: what the landing writes is told from it (EVO-002).
+	const landingNow = landedBetween(view.draft, working.evolution);
+	const knowledgeBefore = landingNow.length > 0 ? await readKnowledgeBefore(services, input.projectId) : null;
+
+	// Another request landed: every request under way that shares a feature or a table with it is told, and read
+	// again on the specification as it now stands once the landing is written (EVO-005, action d632b48b).
+	const sharedName = (kind: 'feature' | 'table', id: string) => (kind === 'feature' ? leafNames[id] : working.data.entities.find((e) => e.id === id)?.name) ?? id;
+	const toReadAgain = new Set<string>();
+	for (const landed of landingNow) {
+		for (const told of noticeOtherLanding(ctx, landed, working.evolution.requests, sharedName)) {
+			put(told);
+			if (readAgainDue(told)) toReadAgain.add(told.id);
+		}
+	}
+	// A request that left the run, landed included, leaves every order it was in (rule db7e7b63).
+	for (const kept of withoutFinishedOrders(working.evolution.requests)) if (!working.evolution.requests.includes(kept)) put(kept);
 
 	// The texts of a step and its diagram follow each other in a session: a write that left them apart sends the
 	// person's AI the Draw click that catches the other side up (ac-evo-live-follow).
@@ -2712,10 +2984,33 @@ export async function applyEvolutionOperations(
 	services.implementationCoverage.invalidate(input.projectId);
 	// Every evolution this batch closed moves the Specification 360° one version, read off the spec as it now stands.
 	await captureClosingBaselines(services, { projectId: input.projectId, before: view.draft, after: working.evolution, origin: input.origin });
+	// What each landing delivered and the code proved reads Validated in Knowledge, after the specification is written and never undoing it (EVO-002).
+	if (landingNow.length > 0) {
+		const names = new Map(view.members.map((m) => [m.id.toLowerCase(), m.name]));
+		const validated = await validateLandedInKnowledge(services, {
+			projectId: input.projectId,
+			before: view.draft,
+			after: working.evolution,
+			knowledgeBefore,
+			actor: ctx.actor,
+			names,
+			at: ctx.at,
+			origin: input.origin
+		});
+		for (const done of validated) results.push({ index: results.length, op: 'validate_in_knowledge', requestId: done.requestId, ok: done.ok, summary: done.summary });
+	}
+	// Queued once the landing is written, never run inside it (EVO-005): each request told is read again in its own batch.
+	readAgainInBackground(
+		working.evolution.requests.filter((r) => toReadAgain.has(r.id)),
+		(operations) => applyEvolutionOperations(services, { projectId: input.projectId, operations, actor: input.actor, origin: input.origin })
+	);
 
 	// The touched requests as cards, read back off the saved state; the dossier
-	// itself is one get_evolution away, so a batch answer stays small.
-	const after: EvolutionView = await loadEvolutionView(services, input.projectId);
+	// itself is one get_evolution away, so a batch answer stays small. A card reads
+	// its own request's readings only: the others' features and drafts are not read again.
+	const after: EvolutionView = await loadEvolutionView(services, input.projectId, {
+		readingsOf: (requests) => requests.filter((r) => working.touched.has(r.id))
+	});
 	const requests = [...working.touched]
 		.map((id) => after.draft.requests.find((r) => r.id === id))
 		.filter((r): r is EvolutionRequest => r !== undefined)

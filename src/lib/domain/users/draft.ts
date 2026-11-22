@@ -1,3 +1,4 @@
+import { mintUuid } from '../shared';
 import { SYSTEM_CAPABILITIES } from './enums';
 import type { CapabilitySource, RoleTone } from './enums';
 import type { SuggestionDismissal } from './suggestion-dismissals';
@@ -126,7 +127,7 @@ export function createEmptyUsersDraft(projectId: string): ProjectUsersDraft {
 
 /** Generic stable-id factory for new in-memory rows; replaced by uuid v4 in tests if needed. */
 function newId(): string {
-	return crypto.randomUUID();
+	return mintUuid();
 }
 
 export function createRole(overrides: Partial<Role> = {}): Role {

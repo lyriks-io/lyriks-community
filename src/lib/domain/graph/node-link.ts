@@ -55,7 +55,6 @@ export function nodeSourceHref(projectId: string, node: GraphNode): string | nul
 				node: raw
 			});
 		case 'features':
-			if (node.kind === 'release') return href(projectId, 'features', { tab: 'roadmap', node: raw });
 			// `feature=` opens the leaf's detail drawer (the real editor) when the id
 			// is a tree leaf; cores/families fall back to the anchored tree row.
 			return href(

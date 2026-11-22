@@ -1,33 +1,41 @@
 import { describe, expect, it, vi } from 'vitest';
+import { render } from 'svelte/server';
 import { ProjectAiSession } from './project-ai-session.svelte';
 import { projectSessionPrompt, sessionPrompt } from '$ui/evolution/session-prompt';
 import { aiStanding } from './ai-standing';
 import { APPROVALS_AHEAD } from './approvals';
 import { llmOnRun } from '$domain/retrospec';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import AskAiTool from '$ui/spec360/page/AskAiTool.svelte';
+import type { LiveSessionSignal } from '$lib/shared/live-session';
 
 /** Ask my AI in the navigation is the one place that says whether the reader's AI is connected (criterion 4cb97f74). */
 
-const source = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/projects/kutt-c76982/spec') } }));
+vi.mock('./project-ai-session.svelte', async (original) => ({ ...await original<object>(), useProjectAiSession: () => shown.session }));
+const shown = vi.hoisted(() => ({ session: null as ProjectAiSession | null }));
 const sessionWith = (session: ProjectAiSession['reading']) => {
 	const live = new ProjectAiSession(() => 'kutt-c76982', () => 'Kutt', () => true);
 	live.reading = session;
 	return live;
 };
+const signal = (status: LiveSessionSignal['status']): LiveSessionSignal => ({ requestId: '', personId: 'ana', sessionId: 's1', status, thinkingAbout: null, saying: null, step: null, endReason: null, at: '2026-10-29T10:00:00.000Z' });
 const OPEN = { id: 's1', open: true, startedAt: '2026-10-29T10:00:00.000Z', endReason: null };
 const NOW = Date.parse('2026-10-29T22:00:00.000Z');
 
 describe('Ask my AI alone says whether my AI is connected [criterion:4cb97f74]', () => {
-	it('holds no chip in the top bar, on any page', () => {
-		const bar = source('../shell/TopBar.svelte');
-		expect(bar).not.toContain('AiSessionChip');
-		expect(bar).toContain('class="lk-top bare"');
-	});
-
-	it('shows the mark and the word under Ask my AI', () => {
-		const tool = source('../spec360/page/AskAiTool.svelte');
-		expect(tool).toContain('<span class="ai-st" data-tone={standing.tone}');
+	it('shows the word of where my AI stands under Ask my AI, and says it on hover', () => {
+		const row = (session: ProjectAiSession) => {
+			shown.session = session;
+			const html = render(AskAiTool, { props: { anchor: 'product', title: 'Product summary' } }).body.replace(/<!--.*?-->/g, '');
+			return html.match(/<button[^>]*data-tip="Ask my AI[\s\S]*?<\/button>/)?.[0] ?? '';
+		};
+		const off = row(sessionWith({ session: null, presence: null, clicks: [] }));
+		expect(off).toContain('data-tip="Ask my AI · Not connected"');
+		expect(off).toMatch(/Ask my AI<\/span><\/span><span[^>]*data-tone="off"[^>]*>[\s\S]*Not connected/);
+		const live = sessionWith({ session: OPEN, presence: null, clicks: [] });
+		live.presence = signal('listening');
+		expect(row(live)).toMatch(/data-tone="listening"[^>]*>[\s\S]*Listening/);
 	});
 
 	it('reads Not connected when no session was ever opened', () => {
@@ -38,13 +46,13 @@ describe('Ask my AI alone says whether my AI is connected [criterion:4cb97f74]',
 	it('reads Connecting until a call of the AI waits, then Listening', () => {
 		const live = sessionWith({ session: OPEN, presence: null, clicks: [] });
 		expect(aiStanding(live, null).word).toBe('Connecting');
-		live.presence = { requestId: '', sessionId: 's1', status: 'listening', thinkingAbout: null, saying: null } as unknown as ProjectAiSession['presence'];
+		live.presence = signal('listening');
 		expect(aiStanding(live, null).word).toBe('Listening');
 	});
 
 	it('reads Working with what the AI does while it works on a click [criterion:39e1abc1]', () => {
 		const live = sessionWith({ session: OPEN, presence: null, clicks: [] });
-		live.presence = { requestId: '', sessionId: 's1', status: 'thinking', thinkingAbout: 'your message in Runs', saying: null } as unknown as ProjectAiSession['presence'];
+		live.presence = { ...signal('thinking'), thinkingAbout: 'your message in Runs' };
 		expect(aiStanding(live, null)).toEqual({ tone: 'working', word: 'Working', doing: 'on your message in Runs' });
 	});
 

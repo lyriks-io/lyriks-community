@@ -16,22 +16,15 @@ describe('references resolve inside the payload', () => {
 		const issues = validateSectionReferences('features', {
 			cores: [{ id: 'core-chat', name: 'Chat' }],
 			families: [],
-			features: [{ id: 'feat-send', name: 'Send', coreId: 'core-chat', parentFamilyId: null }],
-			releases: [{ id: 'release-v1', name: 'V1' }],
-			mvpAssignments: [
-				{ featureId: 'feat-send', tier: 'must' },
-				{ featureId: 'feat-typo', tier: 'should' }
-			],
-			roadmapAssignments: [{ featureId: 'feat-send', releaseId: 'release-v2' }]
+			features: [
+				{ id: 'feat-send', name: 'Send', coreId: 'core-chat', parentFamilyId: null },
+				{ id: 'feat-read', name: 'Read', coreId: 'core-typo', parentFamilyId: null }
+			]
 		});
 
-		expect(issues.map((issue) => issue.path)).toEqual([
-			'mvpAssignments[1].featureId',
-			'roadmapAssignments[0].releaseId'
-		]);
-		expect(issues[0].message).toContain('"feat-typo"');
-		expect(issues[0].message).toContain('features[]');
-		expect(issues[1].message).toContain('releases[]');
+		expect(issues.map((issue) => issue.path)).toEqual(['features[1].coreId']);
+		expect(issues[0].message).toContain('"core-typo"');
+		expect(issues[0].message).toContain('cores[]');
 	});
 
 	it('accepts null for the references that are genuinely optional', () => {

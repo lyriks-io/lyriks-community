@@ -1,4 +1,4 @@
-import { shortSha, type CloseStep, type CodeReading, type LandingCheck } from '$domain/evolution';
+import { VERIFICATION_CLOSED, shortSha, type CloseStep, type CodeReading, type LandingCheck } from '$domain/evolution';
 
 /**
  * What happens next once the verification has nothing left open
@@ -209,31 +209,26 @@ export function nextStepsOf(input: NextStepsInput): NextSteps | null {
 	const at = reached(stage, status);
 	if (at === 0 && !gateOk) return null;
 	const branch = code ? (code.branch ?? code.expectedBranch) : '';
-	const commit = code ? shortSha(code.validatedCommit ?? code.codeHead) : '';
 	const acceptState = stateAt(at, 0);
 	const approveState = stateAt(at, 1);
+	// The approval, not the close of the verification, fixes the commit that goes live (EVO-011, criterion b8d393ea).
+	const fixed = code?.validatedCommit ? `: it fixed ${shortSha(code.validatedCommit)} on ${branch}` : '';
+	const fixes = code?.codeHead ? ` The last approval awaited fixes ${shortSha(code.codeHead)} on ${branch}, the branch's last commit of code.` : '';
 	const steps: NextStep[] = [
 		acceptState === 'done'
-			? {
-					id: 'accept',
-					title: 'Verification closed',
-					text: code && commit ? `Closed${on(code.validatedAt)}: it validated ${commit} on ${branch}.` : 'Closed: nothing was left open in the report.',
-					state: acceptState
-				}
+			? { id: 'accept', title: 'Verification closed', text: `${VERIFICATION_CLOSED}.`, state: acceptState }
 			: {
 					id: 'accept',
-					title: 'Start acceptance testing',
-					text: code && commit
-						? `Closes the verification and fixes the commit it validates: ${commit} on ${branch}. Nothing is official yet.`
-						: 'Closes the verification. Nothing is official yet.',
+					title: 'Verification closes',
+					text: 'Every line of the request is settled: the evolution moves to acceptance testing on its own. Nothing is official yet.',
 					state: acceptState
 				},
 		approveState === 'done'
-			? { id: 'approve', title: 'Change approved', text: approvedBy.length > 0 ? `Approved by ${approvedBy.join(', ')}.` : 'Approved.', state: approveState }
+			? { id: 'approve', title: 'Change approved', text: approvedBy.length > 0 ? `Approved by ${approvedBy.join(', ')}${fixed}.` : `Approved${fixed}.`, state: approveState }
 			: {
 					id: 'approve',
 					title: 'Approve the change',
-					text: `Walk the change as its users would, then approve it${awaited.length > 0 ? `: ${awaited.join(', ')} still to sign` : ''}.`,
+					text: `Walk the change as its users would, then approve it${awaited.length > 0 ? `: ${awaited.join(', ')} still to sign` : ''}.${fixes}`,
 					state: approveState
 				},
 		liveStep(input, at, branch)

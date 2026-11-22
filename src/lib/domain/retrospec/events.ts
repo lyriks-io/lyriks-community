@@ -3,7 +3,13 @@ import { anchorDomId, placeOfAnchor } from '../discussions/anchors';
 import { currentRun, type PersonRef, type RetrospecDocument, type RetrospecRun } from './document';
 import { closedNotice, fullyValidatedNotice, readyNotice, rejectedNotice, reminderNotice, revalidationNotice, startedNotice, stoppedNotice, validationRequestNotice } from './notices';
 import { CONNECTED_MS, runPaused } from './presence';
+import { writesHeld } from './run-report';
+import { DEFAULT_DOCS_LOCATION } from './docs-location';
+import { resumeRetrospecPrompt } from './source-prompt';
 import { tabOfItem } from './reading';
+
+/** What the paused run's copies say, shared by its notification and its own page. */
+export { RESUME_COPIED } from './notices';
 import { samePersonRef } from './spec-validators';
 
 /**
@@ -129,14 +135,17 @@ function stoppedEvent(run: RetrospecRun, input: RunEventInput, href: string): Re
 	if (!to) return null;
 	const silentFrom = Date.parse(live.seenAt ?? run.launchedAt ?? run.startedAt);
 	const figures = run.complementary ? null : (input.figures ?? null);
+	const product = input.productName.trim() || 'this product';
+	// The prompt the paused run's own Copy the prompt hands over, so the notification relaunches it at once.
+	const resume = resumeRetrospecPrompt(run.mode, product, input.projectId, run.docsAt ?? DEFAULT_DOCS_LOCATION, writesHeld(run));
 	return {
 		kind: 'analysis_stopped',
 		toEmail: to,
 		toName: run.startedBy.name,
 		at: new Date(silentFrom + CONNECTED_MS).toISOString(),
-		text: `The Reverse-Specification of ${input.productName.trim() || 'this product'} stopped at ${live.pct} %: its AI went silent.`,
+		text: `The Reverse-Specification of ${product} stopped at ${live.pct} %: its AI went silent.`,
 		href,
-		notice: stoppedNotice(live.pct, figures, input.productName.trim() || 'this product')
+		notice: stoppedNotice(live.pct, figures, product, resume)
 	};
 }
 

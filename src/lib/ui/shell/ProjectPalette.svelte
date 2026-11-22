@@ -10,6 +10,7 @@
 	import { OptimisticActs } from '$ui/evolution/optimistic-acts.svelte';
 	import { folderKey, menuFolders, ORDER_KEY, projectKey, type MenuAct, type MenuFolder } from './project-menu';
 	import { SaveQueue, refusalOf } from './save-queue';
+	import { offerToast, PROJECT_NOT_CREATED, refusalIn, refusalToast } from './offer-refusal';
 	import { projectEntryFrom } from './app-nav';
 	import { openOnboarding } from './onboarding.svelte';
 	import { shell } from './shell-state.svelte';
@@ -183,7 +184,8 @@
 			// A folder's workspace owns the project; filed nowhere, the workspace the switcher shows does (rule fb69bf09).
 			const owner = folder === null && typeof page.data.activeWorkspace === 'string' ? { workspaceId: page.data.activeWorkspace } : {};
 			const res = await fetch('/api/projects', json('POST', { name: n, domainId: folder, ...owner }));
-			if (!res.ok) return pushToast({ level: 'error', message: (await res.text().catch(() => '')) || 'The project was not created' });
+			// A refusal reads in the server's words, never its raw answer; Community's is an offer with View plans (EVO-006).
+			if (!res.ok) return pushToast(await refusalToast(res, PROJECT_NOT_CREATED, !!page.data.onlineHelp));
 			const { projectId } = (await res.json()) as { projectId: string };
 			pushToast({ level: 'success', message: `Project “${n}” created` });
 			shell.close();
@@ -277,6 +279,9 @@
 				try {
 					if (result.type === 'redirect') return await goto(result.location);
 					if (result.type !== 'success') {
+						// A copy Community refuses is the offer of the plan that opens more projects (EVO-006).
+						const refusal = result.type === 'failure' ? refusalIn(result.data) : null;
+						if (refusal?.plan && refusal.message) return void pushToast(offerToast(refusal.message, !!page.data.onlineHelp));
 						const reason = result.type === 'failure' ? result.data?.message : result.error.message;
 						pushToast({ level: 'error', message: `The project was not duplicated.${typeof reason === 'string' ? ` ${reason}` : ''}` });
 						return;

@@ -109,6 +109,8 @@ export interface SelfInstallSource {
   signIn: () => { token: string | null; expiresAt?: string } | null
   /** The live session's waiting command signs in with this (session-ticket.ts, criterion 26c95cc1). */
   sessionTicket?: (sessionId: string) => { token: string | null; expiresAt?: string } | null
+  /** The sync command of one project's index signs in with this (index-ticket.ts, criterion 2452b3d7). */
+  indexTicket?: (projectId: string) => { token: string | null; expiresAt?: string } | null
 }
 
 type SyncEntry = Record<string, unknown> & { id?: unknown; installContent?: unknown }

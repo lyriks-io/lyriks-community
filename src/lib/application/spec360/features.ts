@@ -8,6 +8,8 @@ import { sharedRefusalLead } from '../specification/nest-kernel-rules';
 import { counted, text } from './labels';
 import type { OutlineCore, SpecOutline } from './outline';
 import { endUsersFirst, holdersIndex, userClassOf, type UserClass } from './users';
+import type { DisabledMarker } from '$lib/unspa-schema';
+import type { FeatureScenarioIndex } from '../specification/index-feature-actions';
 
 /**
  * The features of the Specification 360°: every core feature with its
@@ -53,6 +55,8 @@ export interface ActionRule {
 	readonly variables?: readonly VariableHint[];
 	/** Under its action's `refusalLead`: the condition that refuses the action and the message it shows. */
 	readonly refusal?: { readonly case: string; readonly message: string; readonly variables?: readonly VariableHint[] };
+	/** Set while the rule is disabled (on its own or with its action): it still reads, greyed, with who, when and why. */
+	readonly disabled?: DisabledMarker;
 }
 
 export interface ActionWho {
@@ -76,11 +80,65 @@ export interface FeatureActionView {
 	 */
 	readonly refusalLead: string | null;
 	readonly rules: readonly ActionRule[];
+	/** Set while the action is disabled: it reads in place, greyed, with who, when and why (criterion c4071631). */
+	readonly disabled?: DisabledMarker;
+	/** Its scenarios, each with its proof against the code (criteria 2c64761b, 978057c9). */
+	readonly scenarios?: readonly ScenarioView[];
+}
+
+/** How a scenario stands against the code: proven, failing, or nothing proves it yet. */
+export type ScenarioProof = 'proven' | 'failing' | 'unproven';
+
+/** One scenario's last result against the code, as the implementation index recorded it. */
+export interface ScenarioRun {
+	readonly passed: boolean;
+	readonly at: string;
+}
+
+export interface ScenarioView {
+	readonly id: string;
+	readonly name: string;
+	/** Given / When / Then, as Lyriks writes it from the model. */
+	readonly statement: string;
+	readonly proof: ScenarioProof;
+	/** Set while it is disabled: it reads greyed with its badge and leaves the count. */
+	readonly disabled?: DisabledMarker;
+}
+
+/**
+ * How a scenario stands against the code, from its own last result (criterion
+ * d0f1688f): failing when that result failed; proven against the code when it
+ * passed after the scenario last changed; else not proven yet (no result, or
+ * the scenario changed since it passed).
+ */
+export function scenarioProof(result: ScenarioRun | undefined, changedAt: string | undefined): ScenarioProof {
+	if (!result) return 'unproven';
+	if (!result.passed) return 'failing';
+	if (changedAt && Date.parse(changedAt) > Date.parse(result.at)) return 'unproven';
+	return 'proven';
+}
+
+/**
+ * The last result of one scenario: its own, as the index recorded it. An action
+ * whose index entry holds no result of any scenario (proven before results were
+ * kept per scenario) reads its `verifiedAt` as a pass of each of its scenarios,
+ * which is what that stamp says; once results are kept, a scenario without one
+ * has none.
+ */
+export function scenarioRunOf(
+	scenarioId: string,
+	results: Readonly<Record<string, ScenarioRun>> | undefined,
+	provenAt: string | undefined
+): ScenarioRun | undefined {
+	if (results && Object.keys(results).length > 0) return results[scenarioId];
+	return provenAt ? { passed: true, at: provenAt } : undefined;
 }
 
 export interface FeatureView extends FeatureSummary {
 	/** The feature's own description, whole: what editing it changes. */
 	readonly description: string;
+	/** Set while the whole feature is disabled: its head says who, when and why. */
+	readonly disabled?: DisabledMarker;
 	readonly coreId: string;
 	readonly coreName: string;
 	readonly actions: readonly FeatureActionView[];
@@ -131,8 +189,17 @@ export function featureView(input: {
 	rules: KernelRulesReadModel;
 	/** The users draft with its grants carried onto the per-action rows. */
 	users: ProjectUsersDraft;
+	/** The features disabled as a whole, by id. */
+	disabledFeatures?: Readonly<Record<string, DisabledMarker>>;
+	/** Each action's scenarios, by feature then action. */
+	scenarios?: FeatureScenarioIndex;
+	/** When a passing run last proved each action against the code, by action id (the implementation index). */
+	provenAt?: Readonly<Record<string, string | undefined>>;
+	/** Each scenario's last result against the code, by action then scenario id (the implementation index). */
+	scenarioResults?: Readonly<Record<string, Readonly<Record<string, ScenarioRun>> | undefined>>;
 }): FeatureView {
 	const { core, featureId, features, actions, rules, users } = input;
+	const featureOff = input.disabledFeatures?.[featureId];
 	const feature = core.features.find((f) => f.id === featureId);
 	const own = actions[featureId] ?? [];
 	const description = descriptionOf(features, featureId);
@@ -163,7 +230,16 @@ export function featureView(input: {
 				blocks: r.effect === 'block',
 				...(r.category ? { category: r.category } : {}),
 				...(r.variables ? { variables: r.variables } : {}),
-				...(refusalLead && r.refusal ? { refusal: { case: r.refusal.case, message: r.refusal.message, ...(r.refusal.variables ? { variables: r.refusal.variables } : {}) } } : {})
+				...(refusalLead && r.refusal ? { refusal: { case: r.refusal.case, message: r.refusal.message, ...(r.refusal.variables ? { variables: r.refusal.variables } : {}) } } : {}),
+				...(r.disabled ? { disabled: r.disabled } : {})
+			})),
+			...(a.disabled ? { disabled: a.disabled } : {}),
+			scenarios: (input.scenarios?.[featureId]?.[a.id] ?? []).map((sc) => ({
+				id: sc.id,
+				name: sc.name,
+				statement: sc.statement,
+				proof: scenarioProof(scenarioRunOf(sc.id, input.scenarioResults?.[a.id], input.provenAt?.[a.id]), sc.changedAt),
+				...(sc.disabled ? { disabled: sc.disabled } : {})
 			}))
 		};
 	});
@@ -175,6 +251,7 @@ export function featureView(input: {
 		description: text(description),
 		coreId: core.id,
 		coreName: core.name,
-		actions: actionViews
+		actions: actionViews,
+		...(featureOff ? { disabled: featureOff } : {})
 	};
 }

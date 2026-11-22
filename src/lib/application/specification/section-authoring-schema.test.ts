@@ -1,32 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { SECTION_ITEM_SCHEMAS, validateSectionItems } from './section-authoring-schema';
+import { validateSectionItems } from './section-authoring-schema';
 
 describe('section authoring schemas', () => {
-	it('publishes the strict fields and enum values that were previously undiscoverable', () => {
-		expect(SECTION_ITEM_SCHEMAS.features?.releases.fields).toHaveProperty('version');
-		expect(SECTION_ITEM_SCHEMAS.features?.releases.fields).toHaveProperty('weekStart');
-		expect(SECTION_ITEM_SCHEMAS.features?.mvpAssignments.fields.tier.enum).toContain('later');
-		expect(SECTION_ITEM_SCHEMAS.users?.offStructureCapabilities.fields).toHaveProperty('label');
-		expect(SECTION_ITEM_SCHEMAS.rules?.scenarios.fields).toHaveProperty('whenText');
-		expect(SECTION_ITEM_SCHEMAS.rules?.issues.fields.severity.enum).toEqual([
-			'critical',
-			'major',
-			'minor'
-		]);
-	});
 
 	it('rejects guessed aliases, incomplete items, and invalid enums with precise paths', () => {
 		const issues = validateSectionItems('features', {
-			mvpAssignments: [{ featureId: 'feature-1', tier: 'could' }],
-			releases: [{ id: 'release-1', name: 'MVP' }]
+			cores: [{ id: 'core-1', name: 'Chat', description: '', tone: 'chat' }],
+			features: [{ id: 'feature-1', name: 'Send' }]
 		});
 
-		expect(issues).toContainEqual({
-			path: 'mvpAssignments[0].tier',
-			message: 'must be one of: must, should, later, out'
-		});
-		expect(issues.some((issue) => issue.path === 'releases[0].version')).toBe(true);
-		expect(issues.some((issue) => issue.path === 'releases[0].weekStart')).toBe(true);
+		expect(issues.some((issue) => issue.path === 'cores[0].tone')).toBe(true);
+		expect(issues.some((issue) => issue.path === 'features[0].coreId')).toBe(true);
+		expect(issues.some((issue) => issue.path === 'features[0].description')).toBe(true);
 	});
 
 	it('rejects UI-crashing rule and capability aliases', () => {
@@ -127,11 +112,6 @@ describe('a permission carries no verb [criterion:464a725a]', () => {
 		for (const action of ['read', 'execute', 'teleport', 42]) {
 			expect(validateSectionItems('users', { permissions: [{ ...grant, action }] })).toEqual([]);
 		}
-	});
-
-	it('publishes no verb field and names the one it ignores', () => {
-		expect(SECTION_ITEM_SCHEMAS.users?.permissions.fields).not.toHaveProperty('action');
-		expect(SECTION_ITEM_SCHEMAS.users?.permissions.ignoredFields).toEqual(['action']);
 	});
 
 	it('still refuses a field nobody ever wrote', () => {

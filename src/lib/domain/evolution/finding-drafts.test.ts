@@ -15,6 +15,7 @@ import {
 	type FindingDraft
 } from './finding-drafts';
 import { readVersions, snapshotOf, versionDiff } from './versions';
+import { stableId } from './ids';
 import { parseEvolutionDraft } from '$lib/application/evolution/parse-evolution-draft';
 import type { Gap } from '$domain/coherence';
 import type { Issue, ProjectRulesDraft } from '$domain/rules';
@@ -199,7 +200,7 @@ describe('the coherence reads Project health as the change would leave it [crite
 		request = ok(addFindingDraftAct(ctx, request, { findingId: ipGap.id }, contextOf(ipGap.id)));
 		const brought: CoherenceFinding = { id: 'coh-x', axis: 'functional', severity: 'major', title: 'The draft contradicts a rule', requestNodeId: 'draft:a', existingNodeId: 'rule:b', fixNowTarget: 'x', published: true, scope: 'request' };
 		const inherited: CoherenceFinding = { ...brought, id: 'coh-y', scope: 'inherited' };
-		const health = projectHealthAfter({ gaps, findingDrafts: request.findingDrafts, register, requestFindings: [brought, inherited] });
+		const health = projectHealthAfter({ gaps, findingDrafts: request.findingDrafts, register, requestFindings: [brought, inherited], requestId: request.id });
 		expect(health.leaving.map((l) => l.findingId)).toEqual([banGap.id, mailGap.id]);
 		expect(health.expectedToLeave.map((l) => l.findingId)).toEqual([brokenGap.id]);
 		expect(health.undecided).toBe(1);
@@ -209,6 +210,18 @@ describe('the coherence reads Project health as the change would leave it [crite
 		expect(health.after.blocking).toBe(1);
 		const stored = parseEvolutionDraft(JSON.parse(JSON.stringify({ projectId: 'p', requests: [{ ...request, coherenceReport: { status: 'ready', projectScore: 90, requestDelta: 0, ranAt: 'x', health } }] })), 'p');
 		expect(stored.requests[0].coherenceReport.health).toEqual(health);
+	});
+
+	it('never counts a second time what Project health already lists now [criterion:7dd35532]', () => {
+		const request = fresh();
+		// The engine reads the product without the drafts: its finding of scope request is a gap listed now.
+		const listed: CoherenceFinding = { id: stableId('coh', request.id, ipGap.id), axis: 'functional', severity: 'major', title: ipGap.title, requestNodeId: 'feat-sign-in', existingNodeId: 'feat-sign-in', fixNowTarget: 'x', published: true, scope: 'request' };
+		const drafted: CoherenceFinding = { ...listed, id: 'coh-draft-name-x', title: 'The draft takes a name the product uses' };
+		const health = projectHealthAfter({ gaps, findingDrafts: request.findingDrafts, register, requestFindings: [listed, drafted], requestId: request.id });
+		expect(health.coming).toEqual([{ id: 'coh-draft-name-x', title: 'The draft takes a name the product uses' }]);
+		expect(health.after.total).toBe(health.now.total + 1);
+		const alone = projectHealthAfter({ gaps, findingDrafts: request.findingDrafts, register, requestFindings: [listed], requestId: request.id });
+		expect(alone.after).toEqual(alone.now);
 	});
 });
 

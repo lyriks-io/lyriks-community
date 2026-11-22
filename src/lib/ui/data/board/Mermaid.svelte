@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { mintUuid } from '$ui/shell/mint-id';
 	import { browser } from '$app/environment';
 	import { DiagramEnlarger, EnlargedBackdrop, DiagramHeader, PanZoom, PanZoomCanvas, frameClass, portalWhile } from '$ui/design-system';
 
@@ -33,6 +34,12 @@
 					startOnLoad: false,
 					theme: 'neutral',
 					securityLevel: 'strict',
+					// Mermaid 12 lays diagrams out with ELK and gives several types a
+					// `neo` look by default. Keep the dagre layout and classic look these
+					// diagrams have always had: no re-layout, no restyle, and no elkjs in
+					// the bundle (vite/elkjs-excluded.js).
+					layout: 'dagre',
+					look: 'classic',
 					// The canvas handles sizing — let the SVG keep its natural dimensions.
 					er: { useMaxWidth: false }
 				});
@@ -48,7 +55,7 @@
 		let cancelled = false;
 		error = null;
 		loadMermaid()
-			.then((mermaid) => mermaid.render(`er-${crypto.randomUUID()}`, source))
+			.then((mermaid) => mermaid.render(`er-${mintUuid()}`, source))
 			.then(({ svg }) => {
 				if (cancelled || !canvas) return;
 				canvas.innerHTML = svg;

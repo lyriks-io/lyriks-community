@@ -6,6 +6,7 @@ import {
 } from './identity';
 import { identityCanAdvance, missingIdentityRequirements } from './can-advance';
 import { computeIdentityCoherence } from './identity-coherence';
+import { createFeatureFlag, createTestFixture } from './operations';
 
 function filledDraft(): FoundationIdentityDraft {
 	return {
@@ -72,5 +73,17 @@ describe('legacy definition migration boundary', () => {
 		expect(canonical.mainProblem).toBeUndefined();
 		expect(canonical.marketType).toBeUndefined();
 		expect(canonical.competitors).toBeUndefined();
+	});
+});
+
+describe('a new operations row', () => {
+	it('always has an id of its own, even when given a blank one', () => {
+		for (const create of [createFeatureFlag, createTestFixture]) {
+			const [a, b] = [create(), create({ id: '' })];
+			expect(a.id).not.toBe('');
+			expect(b.id).not.toBe('');
+			expect(a.id).not.toBe(b.id);
+			expect(create({ id: 'kept' }).id).toBe('kept');
+		}
 	});
 });

@@ -58,8 +58,9 @@ export function legacyPageTarget(projectId: string, page: LegacyPage, query: URL
 		case 'functional':
 		case 'rules':
 		case 'reuse': {
-			// The Roadmap and Evolution tabs of the old Features became Changes.
-			if (tab === 'roadmap') return `${project}/evolution?tab=roadmap`;
+			// The Evolution tab of the old Features became Changes. The Roadmap tab is
+			// gone: a bookmark of it lands on Changes, where it lived last (rule aa3941d5).
+			if (tab === 'roadmap') return `${project}/evolution`;
 			if (tab === 'evolution') {
 				const rest = new URLSearchParams(query);
 				rest.delete('tab');

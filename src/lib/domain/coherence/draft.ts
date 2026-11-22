@@ -268,10 +268,6 @@ export interface PreparedDecision {
 	preparedAt: string;
 }
 
-export function emptyAnalysis(): CoherenceAnalysis {
-	return { dimensions: [], gaps: [], readinessScore: 0 };
-}
-
 /** The dimension carrying per-feature behavioral maturity. */
 export const MATURITY_DIMENSION_KEY = 'maturity';
 /**

@@ -1,5 +1,4 @@
 import type { CoherenceFinding, EvolutionRequest } from './draft';
-import { COHERENCE_AXES } from './enums';
 import { firstRefusal, guard, type Guarded } from './guard';
 
 /**
@@ -12,8 +11,6 @@ import { firstRefusal, guard, type Guarded } from './guard';
  * asked whether a change is coherent will produce something plausible, and the
  * report has to be reproducible.
  */
-
-export const AXIS_COUNT = COHERENCE_AXES.length;
 
 export function canRunCheck(
 	request: EvolutionRequest,
@@ -64,15 +61,6 @@ export function canPublishFinding(finding: CoherenceFinding): Guarded {
 /** A contradiction is a relation between two nodes, so a finding with one is not a finding. */
 export function namedNodeCount(finding: CoherenceFinding): number {
 	return [finding.requestNodeId, finding.existingNodeId].filter((n) => n.trim() !== '').length;
-}
-
-/** Fix now works on published findings: an unpublished one may still be revised. */
-export function canFixNow(finding: CoherenceFinding): Guarded {
-	return guard(
-		!finding.published,
-		'This finding is not in the report yet.',
-		'An unpublished finding may still be revised by the engine, so its target is not stable enough to send a person into the spec.'
-	);
 }
 
 /** Findings the reader actually sees, worst first. */

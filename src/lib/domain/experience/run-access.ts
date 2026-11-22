@@ -101,11 +101,3 @@ export function canAccessScreen(
 	if (!caps || caps.length === 0) return true;
 	return caps.some((cap) => access.capabilityRoleIds[cap]?.includes(activePersonaId));
 }
-
-/** The capability ids governing a screen (empty when ungated) — for UI labels. */
-export function governingCapabilityIds(
-	access: ScreenAccessMap | null,
-	screenId: string
-): readonly string[] {
-	return access?.screenCapabilityIds[screenId] ?? [];
-}

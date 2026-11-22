@@ -55,6 +55,7 @@
 		class:cursor-grabbing={view.dragging}
 		class:cursor-grab={!view.dragging}
 		style="{enlarged ? '' : `height: var(--diagram-fill, ${height});`}{dotted ? BOARD_DOTS : ''}"
+		data-dotted={dotted || undefined}
 		onpointerdown={view.onPointerDown}
 		onpointermove={view.onPointerMove}
 		onpointerup={view.onPointerUp}

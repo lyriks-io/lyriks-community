@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { LyriksClient } from '../lyriks-client.js'
-import { applySectionPatch, patchSectionHandler, type PatchOp } from '../tools/sections.js'
+import { applySectionPatchReport, patchSectionHandler, type PatchOp } from '../tools/sections.js'
 
 describe('safe section patch preview', () => {
   function setup() {
@@ -71,7 +71,7 @@ describe('safe section patch preview', () => {
   })
   it.each(['__proto__.polluted', 'constructor.prototype.polluted', 'builder..nodes', 'projectId'])('rejects unsafe path %s before any local change', (path) => {
     const draft = { title: 'Original' }
-    expect(() => applySectionPatch(draft, [{ op: 'set', path: 'title', value: 'Changed' }, { op: 'set', path, value: true }])).toThrow('Invalid patch operation 1')
+    expect(() => applySectionPatchReport(draft, [{ op: 'set', path: 'title', value: 'Changed' }, { op: 'set', path, value: true }]).applied).toThrow('Invalid patch operation 1')
     expect(draft).toEqual({ title: 'Original' })
     expect(({} as Record<string, unknown>).polluted).toBeUndefined()
   })

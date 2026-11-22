@@ -41,18 +41,6 @@ export function aiAnswerAuthor(personId: string, question: Pick<DiscussionMessag
 	return { email: `${AI_AUTHOR_PREFIX}${personId}`, name: `Lyriks · for ${asked || rosterName?.trim() || personId}` };
 }
 
-/** Lyriks's answer to a message asked of the AI: the first message the AI wrote after it in the thread, if any yet. */
-export function aiAnswerTo(thread: Pick<DiscussionThread, 'messages'>, askedId: string): DiscussionMessage | null {
-	const at = thread.messages.findIndex((m) => m.id === askedId);
-	if (at < 0) return null;
-	return thread.messages.slice(at + 1).find((m) => isAiAuthor(m.author)) ?? null;
-}
-
-/** Whether the AI takes part in a thread: it answered there, or one of its messages was asked of it (ac-ai-session-ask-block). */
-export function aiTakesPart(thread: Pick<DiscussionThread, 'messages'>, askedOfAi: (messageId: string) => boolean): boolean {
-	return thread.messages.some((m) => isAiAuthor(m.author) || askedOfAi(m.id));
-}
-
 export interface DiscussionMessage {
 	readonly id: string;
 	readonly author: DiscussionAuthor;

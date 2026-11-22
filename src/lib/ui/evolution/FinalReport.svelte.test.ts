@@ -79,7 +79,8 @@ describe('Verification reads like the design, on the real report', () => {
 	it('finishes the request: acceptance testing, its approval, then closing it', () => {
 		linkTo('a');
 		const lines = [line('a', 'conform')];
-		expect(page({ dossier: dossier({ gate: { next: 'acceptance', ok: true, reason: null } }), report: report(lines) })).toContain('Start acceptance testing →');
+		// A settled Build moves on its own: nothing is offered (EVO-011, criterion 3cf58130).
+		expect(page({ dossier: dossier({ gate: { next: 'acceptance', ok: true, reason: null } }), report: report(lines) })).not.toContain('Start acceptance testing →');
 		expect(page({ dossier: dossier({ stage: 'acceptance', gate: { next: 'delivered', ok: false, reason: 'Approval still waits.' } }), report: report(lines, 'closed') })).toContain(
 			'Walk the change in acceptance testing, then approve it.'
 		);

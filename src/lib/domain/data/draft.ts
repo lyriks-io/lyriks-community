@@ -1,3 +1,4 @@
+import { mintUuid } from '../shared';
 import type {
 	DbEngine,
 	EntityOrigin,
@@ -178,7 +179,7 @@ export function createEmptyDataDraft(projectId: string): ProjectDataDraft {
 }
 
 function newId(): string {
-	return crypto.randomUUID();
+	return mintUuid();
 }
 
 export function createHost(overrides: Partial<Host> = {}): Host {
@@ -270,12 +271,4 @@ export function databasesOfHost(draft: ProjectDataDraft, hostId: string): Databa
 
 export function entitiesOfDatabase(draft: ProjectDataDraft, databaseId: string): DataEntity[] {
 	return draft.entities.filter((e) => e.databaseId === databaseId);
-}
-
-/** Entities relation-linked from one entity, via its relation fields. */
-export function relationsOfEntity(draft: ProjectDataDraft, entityId: string): DataEntity[] {
-	const targets = fieldsOfEntity(draft, entityId)
-		.filter((f) => f.type === 'relation' && f.relationTargetEntityId)
-		.map((f) => f.relationTargetEntityId);
-	return draft.entities.filter((e) => targets.includes(e.id));
 }

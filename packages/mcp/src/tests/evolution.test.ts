@@ -162,4 +162,75 @@ describe('a page that does not fit is read again, smaller, in its own shape', ()
     expect(JSON.stringify(answer).length).toBeLessThanOrEqual(10_000)
     expect(answer.request.coherence.nextOffset).toBe(answer.request.coherence.findings.length)
   })
+
+  it('reads the items the Specification gate counts, each with its key, paged in their own shape [criterion:2df61e72]', async () => {
+    const calls: Array<{ method: string; path: string }> = []
+    await getEvolutionHandler({ project_id: 'p1', request_id: 'r1', part: 'specification' }, fakeClient(calls))
+    expect(calls.at(-1)?.path).toContain('part=specification')
+    const items = (limit: number) => ({
+      projectId: 'p1',
+      request: {
+        id: 'r1',
+        specification: {
+          total: 120,
+          validated: 0,
+          left: 120,
+          offset: 0,
+          limit,
+          items: Array.from({ length: Math.min(limit, 120) }, (_, i) => ({
+            key: `element.path.use-case-${i}`,
+            fieldPath: `element.path.use-case-${i}`,
+            leafId: null,
+            kind: 'path',
+            label: 'z'.repeat(200),
+            standing: 'waiting',
+            href: `/projects/p1/evolution?request=r1&n=${i}`,
+          })),
+        },
+      },
+    })
+    const client = {
+      get: async (path: string) => items(Number(new URLSearchParams(path.split('?')[1]).get('limit') ?? 150)),
+    } as unknown as LyriksClient
+    const answer = (await getEvolutionHandler({ project_id: 'p1', request_id: 'r1', part: 'specification' }, client, 10_000)) as {
+      request: { specification: { items: Array<{ href: string }>; nextOffset?: number } }
+    }
+    expect(JSON.stringify(answer).length).toBeLessThanOrEqual(10_000)
+    expect(answer.request.specification.nextOffset).toBe(answer.request.specification.items.length)
+    // Each item's link is made whole, like every other place a person acts on.
+    expect(answer.request.specification.items[0].href.startsWith('http')).toBe(true)
+  })
+
+  it('relays part knowledge with the request id and hands the block back whole, never paged [criterion:b6ebd524]', async () => {
+    const calls: Array<{ method: string; path: string }> = []
+    // The platform's answer: the block Not validated in Knowledge, larger than the budget on purpose.
+    const block = {
+      projectId: 'p1',
+      revision: 7,
+      requestId: 'b93ca8d8-23a9-4838-b34a-fe120719af9c',
+      knowledge: {
+        readable: true,
+        specValidated: false,
+        lines: Array.from({ length: 40 }, (_, i) => ({
+          id: `rule:feat-1:r${i}`,
+          title: 'z'.repeat(400),
+          place: 'Core / Feature',
+          relation: i % 2 === 0 ? 'amended' : 'used',
+          waitsOn: [{ id: 'ana@example.test', name: 'Ana' }],
+          waitsOnMe: false,
+          choice: 'none',
+        })),
+        awaitingChoice: 40,
+        validated: ['feature:feat-1'],
+      },
+    }
+    const answer = await getEvolutionHandler(
+      { project_id: 'p1', request_id: 'b93ca8d8', part: 'knowledge' },
+      fakeClient(calls, block),
+      10_000,
+    )
+    expect(calls.map((c) => c.path)).toEqual(['/api/evolution?projectId=p1&requestId=b93ca8d8&part=knowledge'])
+    // One read, the block as the platform sent it: no smaller page asked, no nextOffset added.
+    expect(answer).toEqual(block)
+  })
 })

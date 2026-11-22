@@ -8,7 +8,7 @@ import type { ElaborationInput } from './report';
 import type { ProjectCompletionReport } from '../scope';
 
 function input(): ElaborationInput {
-	return { foundation: { projectId: 'p', identity: createEmptyIdentityDraft('p'), definition: createEmptyDefinitionDraft('p'), operations: createEmptyOperationsDraft('p') }, scope: createEmptyScopeDraft('p'), users: createEmptyUsersDraft('p'), features: createEmptyFeaturesDraft('p'), completion: null, acceptanceCriteriaByFeature: null, unavailable: [] };
+	return { foundation: { projectId: 'p', identity: createEmptyIdentityDraft('p'), definition: createEmptyDefinitionDraft('p'), operations: createEmptyOperationsDraft('p') }, scope: createEmptyScopeDraft('p'), users: createEmptyUsersDraft('p'), features: createEmptyFeaturesDraft('p'), completion: null, acceptanceCriteriaByFeature: null, buildStatusByFeature: {}, unavailable: [] };
 }
 
 describe('project elaboration', () => {
@@ -55,7 +55,7 @@ describe('project elaboration', () => {
 		expect(report.limitations.join(' ')).toContain('not proof of user confirmation');
 	});
 	it('treats unavailable readings as unknown, not missing data', () => {
-		const report = analyzeElaboration({ foundation: null, scope: null, users: null, features: null, completion: null, acceptanceCriteriaByFeature: null, unavailable: ['foundation'] });
+		const report = analyzeElaboration({ foundation: null, scope: null, users: null, features: null, completion: null, acceptanceCriteriaByFeature: null, buildStatusByFeature: null, unavailable: ['foundation'] });
 		expect(report.items).toHaveLength(1);
 		expect(report.items[0]).toMatchObject({ kind: 'action', requiresUserDecision: false });
 		expect(report.items[0].observation).toContain('unknown, not empty');
@@ -103,12 +103,22 @@ describe('project elaboration', () => {
 	it('keeps dependent implementation work blocked while independent work can proceed', () => {
 		const data = input();
 		data.features!.features.push(createFeature('core', null, { id: 'a', name: 'Import' }), createFeature('core', null, { id: 'b', name: 'Export' }));
-		data.features!.leafMeta = { a: { status: 'in-progress' }, b: { status: 'in-progress', dependsOn: ['a'] } };
+		data.features!.leafMeta = { b: { dependsOn: ['a'] } };
+		data.buildStatusByFeature = { a: 'in-progress', b: 'in-progress' };
 		const work = analyzeElaboration(data).items.filter(i => i.id.startsWith('feature-work'));
 		expect(work.map(i => i.subjectId)).toEqual(['a', 'b']);
 		expect(work[1].blockedBy).toEqual(['a']);
-		data.features!.leafMeta.a.status = 'done';
-		expect(analyzeElaboration(data).items.find(i => i.subjectId === 'b' && i.kind === 'action')?.blockedBy).toEqual([]);
+		// The code holds all of a: it asks no work and blocks nothing any more.
+		data.buildStatusByFeature = { a: 'done', b: 'in-progress' };
+		const after = analyzeElaboration(data).items.filter(i => i.id.startsWith('feature-work'));
+		expect(after.map(i => i.subjectId)).toEqual(['b']);
+		expect(after[0].blockedBy).toEqual([]);
+	});
+	it('claims no work when the code coverage could not be read', () => {
+		const data = input();
+		data.features!.features.push(createFeature('core', null, { id: 'a', name: 'Import' }));
+		data.buildStatusByFeature = null;
+		expect(analyzeElaboration(data).items.some(i => i.id.startsWith('feature-work'))).toBe(false);
 	});
 	it('flags invalid and self dependencies without manufacturing completion evidence', () => {
 		const data = input();
@@ -151,7 +161,7 @@ describe('project elaboration in French (spec language)', () => {
 			`La fonctionnalité «${NB}Invoices${NB}» n'a aucun critère d'acceptation enregistré.`
 		);
 		expect(report.items.find(i => i.id.startsWith('feature-work'))!.observation).toBe(
-			`La fonctionnalité «${NB}Invoices${NB}» est en attente (backlog).`
+			`La fonctionnalité «${NB}Invoices${NB}» est non commencée.`
 		);
 	});
 

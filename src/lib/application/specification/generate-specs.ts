@@ -7,10 +7,12 @@ import type {
 	ClockPort,
 	CoherenceDraftRepositoryPort,
 	FeatureAcceptanceReaderPort,
+	FeatureCoverageReaderPort,
 	GlobalCoherenceCheckerPort,
 	SectionDraftSaveOptions,
 	TelemetryPort
 } from '../ports';
+import { buildStatusByFeature } from '$domain/features';
 import { composeArtifacts } from './compose-specs';
 import type { SpecLanguage } from '$domain/language';
 import type {
@@ -44,16 +46,18 @@ export class GenerateSpecsUseCase {
 		private readonly checker: GlobalCoherenceCheckerPort,
 		private readonly clock: ClockPort,
 		private readonly telemetry: TelemetryPort,
-		private readonly loadFoundation: LoadFoundationDraftUseCase,
-		private readonly loadUsers: LoadUsersDraftUseCase,
-		private readonly loadFeatures: LoadFeaturesDraftUseCase,
-		private readonly loadExperience: LoadExperienceDraftUseCase,
-		private readonly loadRules: LoadRulesDraftUseCase,
-		private readonly loadData: LoadDataDraftUseCase,
-		private readonly loadArchitecture: LoadArchitectureDraftUseCase,
-		private readonly loadDocuments: LoadResidueDraftUseCase<ProjectDocumentsDraft>,
+		private readonly loadFoundation: Pick<LoadFoundationDraftUseCase, 'loadIdentity' | 'loadDefinition'>,
+		private readonly loadUsers: Pick<LoadUsersDraftUseCase, 'execute'>,
+		private readonly loadFeatures: Pick<LoadFeaturesDraftUseCase, 'execute'>,
+		private readonly loadExperience: Pick<LoadExperienceDraftUseCase, 'execute'>,
+		private readonly loadRules: Pick<LoadRulesDraftUseCase, 'execute'>,
+		private readonly loadData: Pick<LoadDataDraftUseCase, 'execute'>,
+		private readonly loadArchitecture: Pick<LoadArchitectureDraftUseCase, 'execute'>,
+		private readonly loadDocuments: Pick<LoadResidueDraftUseCase<ProjectDocumentsDraft>, 'execute'>,
 		/** The model's criteria, so the document prints the list the product counts. */
 		private readonly acceptance: FeatureAcceptanceReaderPort,
+		/** What the code holds of each feature: the requirements document prints it as its status. */
+		private readonly coverage: FeatureCoverageReaderPort,
 		/** The spec's language: the documents are written in it (English when absent). */
 		private readonly languageOf?: (projectId: string) => Promise<SpecLanguage>
 	) {}
@@ -86,14 +90,18 @@ export class GenerateSpecsUseCase {
 			]);
 
 		const now = this.clock.nowIso();
-		const [acceptanceCriteriaByFeature, lang] = await Promise.all([
+		const [acceptanceCriteriaByFeature, lang, coverage] = await Promise.all([
 			this.acceptance.byFeature(projectId),
-			this.languageOf?.(projectId)
+			this.languageOf?.(projectId),
+			// An unreadable coverage prints no status rather than stopping the documents.
+			this.coverage.get(projectId).catch(() => null)
 		]);
+		const buildStatus = coverage ? buildStatusByFeature(features.features.map((f) => f.id), coverage) : undefined;
 		const artifacts = composeArtifacts(
 			{
 				identity, definition, users, features, experience, rules, data, architecture, documents,
-				acceptanceCriteriaByFeature
+				acceptanceCriteriaByFeature,
+				buildStatusByFeature: buildStatus
 			},
 			analysis,
 			now,

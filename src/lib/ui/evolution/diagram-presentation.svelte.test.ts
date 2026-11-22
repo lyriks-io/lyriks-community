@@ -21,7 +21,7 @@ function dossier() {
 function specification(withJourney = false, withFeature = false) {
  const saved = dossier();
  const drawing = createRawSnippet(() => ({ render: () => render(FunctionalDiagram, { props: { value: diagram, editable: false, save: async () => {}, productName: 'P', lang: 'en', initialView: 'flows' } as never }).body }));
- return render(SpecificationTab, { props: { projectId: 'p', dossier: { ...saved, used: withFeature ? [{ id: 'old', name: 'Existing feature' }] : [] }, members: [], actorId: 'Ana', canEdit: true, canValidate: true, canComment: true, graph: null, actionReadings: {}, actionsRead: () => ({}), fieldsOf: () => [], labelOf: () => '', journeyField: withJourney ? { path: 'step.functional_spec.diagram', leafId: null, value: diagram, filled: true, trail: null } : null, onDropSubject: () => {}, onGoSimulation: () => {}, journey: drawing, datamap: createRawSnippet(() => ({ render: () => '<div data-fake-map>Legend for a populated diagram</div>' })) } as never }).body;
+ return render(SpecificationTab, { props: { projectId: 'p', dossier: { ...saved, used: withFeature ? [{ id: 'old', name: 'Existing feature' }] : [] }, members: [], actorId: 'Ana', canEdit: true, canValidate: true, canComment: true, graph: null, actionReadings: {}, fieldsOf: () => [], labelOf: () => '', journeyField: withJourney ? { path: 'step.functional_spec.diagram', leafId: null, value: diagram, filled: true, trail: null } : null, onDropSubject: () => {}, onGoSimulation: () => {}, journey: drawing, datamap: createRawSnippet(() => ({ render: () => '<div data-fake-map>Legend for a populated diagram</div>' })) } as never }).body;
 }
 
 describe('Evolution diagram and empty-state presentation', () => {
@@ -39,7 +39,7 @@ describe('Evolution diagram and empty-state presentation', () => {
   expect(html).not.toContain('data-fake-map');
   expect(html).not.toContain('>Datamap</h3>');
   expect(html).not.toContain('Validate the data changes');
-  expect(html).not.toContain('radial-gradient');
+  expect(html).not.toContain('data-dotted');
  });
  it('retains the unvalidated-action instruction when a feature actually exists', () => {
   const html = specification(false, true);
@@ -48,7 +48,7 @@ describe('Evolution diagram and empty-state presentation', () => {
  });
  it('puts dots on only the drawing while surrounding tabs and review content stay plain [criterion:fa6c7dec]', () => {
   const html = specification(true);
-  expect(html.match(/radial-gradient/g)).toHaveLength(1);
+  expect(html.match(/data-dotted/g)).toHaveLength(1);
   expect(html).toContain('Views of the diagram');
   expect(html).toContain('Flow of');
  });
@@ -57,7 +57,7 @@ describe('Evolution diagram and empty-state presentation', () => {
   for (const landed of [false, true]) {
    const html = render(DataChanges, { props: { projectId: 'p', requestId: 'r', drafts: [], view: saved.data.view, canEdit: false, landed, bare: true } }).body;
    expect(html).toContain('This evolution changes no data.');
-   expect(html).not.toContain('radial-gradient');
+   expect(html).not.toContain('data-dotted');
   }
  });
  it('keeps the historical acknowledgment when declared data changes already landed', () => {

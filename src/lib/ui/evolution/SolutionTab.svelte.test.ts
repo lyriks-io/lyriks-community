@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
 import { createRawSnippet } from 'svelte';
 import SolutionTab, { type ProseQuestion } from './SolutionTab.svelte';
+import { firstOwingSection } from './solution-owed';
 
 const question = (step: ProseQuestion['step'], value: string): ProseQuestion =>
 	({ step, key: 'description', label: 'Description', field: { path: `${step}.description`, value, filled: true, trail: null } }) as never;
 const CONSTRAINT = 'The count drops in the same operation as the order';
 
-const page = (shown: readonly string[] = [], diagramOwed = false, editing: string | null = null) =>
+const page = (shown: readonly string[] = [], editing: string | null = null) =>
 	render(SolutionTab, {
 		props: {
 			projectId: 'p',
@@ -29,7 +30,6 @@ const page = (shown: readonly string[] = [], diagramOwed = false, editing: strin
 			openOwed: false,
 			diagramShown: (id: string) => shown.includes(id),
 			onDiagram: () => {},
-			diagramOwed,
 			useCaseDiagram: createRawSnippet(() => ({ render: () => '<svg aria-label="Use cases drawn"></svg>' })),
 			technicalDiagram: createRawSnippet(() => ({ render: () => '<svg aria-label="Parts drawn"></svg>' })),
 			onGoSpecification: () => {}
@@ -38,7 +38,7 @@ const page = (shown: readonly string[] = [], diagramOwed = false, editing: strin
 
 describe('page editing holds the two Solution sections independently [criterion:4477db19]', () => {
 	it('opens both sets of requirements and removes per-section save controls', () => {
-		const body = page([], false, 'all');
+		const body = page([], 'all');
 		expect(body).toContain('aria-label="Functional requirements"');
 		expect(body).toContain('aria-label="Technical requirements"');
 		expect(body).toContain('value="The customer orders a counted loaf"');
@@ -49,7 +49,7 @@ describe('page editing holds the two Solution sections independently [criterion:
 	});
 
 	it('keeps the other section as a reading when a single section is edited', () => {
-		const body = page([], false, 'sol-functional');
+		const body = page([], 'sol-functional');
 		expect(body).toContain('aria-label="Functional requirements"');
 		expect(body).not.toContain('aria-label="Technical requirements"');
 		expect(body).toContain(CONSTRAINT);
@@ -80,8 +80,8 @@ describe('each section offers its drawing among its own controls [criterion:ac-l
 		expect(body).not.toContain('Use cases drawn');
 	});
 
-	it('marks the drawing owed on the option of 2.1', () => {
-		expect(page([], true)).toContain('Show as a diagram: The use case diagram is owed');
+	it('marks no drawing owed: a diagram is offered, never owed (EVO-013)', () => {
+		expect(page()).not.toMatch(/is owed/);
 	});
 });
 
@@ -180,5 +180,76 @@ describe('Validate all leaves out a section whose texts and diagram are not in s
 
 	it('offers no Validate all once nothing it could send waits', () => {
 		expect(foot(['functional_spec', 'technical_spec'])).not.toContain('Validate all');
+	});
+});
+
+describe('the Solution\'s examples, the Functional spec and the Technical spec read Optional and open no editor on their own [criterion:ac-leaf-0a4d6036-275f-4249-9dcc-19a26d794667]', () => {
+	const row = (step: ProseQuestion['step'], key: string, value: string): ProseQuestion =>
+		({ step, key, label: key, field: { path: `step.${step}.${key}`, value, filled: value.trim() !== '', openQuestion: false, pendingProposalId: null, trail: null } }) as never;
+	const solutionWith = (functionalRules = '', technical = '') => ({
+		functional: [
+			row('solution', 'description', 'Only the Need and the Solution are owed'),
+			row('solution', 'examples', ''),
+			row('functional_spec', 'description', ''),
+			row('functional_spec', 'refusals', functionalRules)
+		],
+		technical: [row('technical_spec', 'description', technical), row('technical_spec', 'data', '')]
+	});
+	const tab = (questions: ReturnType<typeof solutionWith>, canEdit = true) =>
+		render(SolutionTab, {
+			props: {
+				projectId: 'p',
+				requestId: 'req-1',
+				...questions,
+				stepOf: () => ({ skip: null, validation: null }),
+				members: [],
+				actorId: 'me',
+				canEdit,
+				canValidate: true,
+				canComment: true,
+				lang: 'en',
+				mentionLinks: {},
+				versionsOf: () => [],
+				nameOf: (id: string) => id,
+				editing: null,
+				onEdit: () => {},
+				openOwed: true,
+				diagramShown: () => false,
+				onDiagram: () => {},
+				useCaseDiagram: createRawSnippet(() => ({ render: () => '<svg></svg>' })),
+				technicalDiagram: createRawSnippet(() => ({ render: () => '<svg></svg>' })),
+				onGoSpecification: () => {}
+			} as never
+		}).body;
+	const optionalLines = (body: string) => [...body.matchAll(/<p[^>]*data-optional[^>]*>([\s\S]*?)<\/p>/g)].map((m) => m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+
+	it('reads the examples and the Functional spec Optional under 2.1, the Technical spec under 2.2, never as owed', () => {
+		const body = tab(solutionWith());
+		const lines = optionalLines(body);
+		expect(lines).toHaveLength(2);
+		expect(lines[0]).toMatch(/^Optional Example · Functional spec: write them when the change needs them, or let your AI prefill them\.$/);
+		expect(lines[1]).toMatch(/^Optional Technical spec: write it when the change needs it, or let your AI prefill it\.$/);
+		// 2.2 owes nothing: it never reads as a section left to write.
+		expect(body.match(/Nothing written yet: edit the section to write it\./g)).toBeNull();
+	});
+
+	it('stops reading a part Optional once something is written in it', () => {
+		const lines = optionalLines(tab(solutionWith('No request enters without a draft.', 'readyForImpact asks for a draft.')));
+		expect(lines).toEqual(['Optional Example: write it when the change needs it, or let your AI prefill it.']);
+	});
+
+	it('says to a reader who may not edit that the offered parts are not written', () => {
+		expect(optionalLines(tab(solutionWith(), false))[1]).toBe('Optional Technical spec: not written.');
+	});
+
+	it('opens by itself only the section that owes the Solution\'s description', () => {
+		const sections = (description: string) => [
+			{ id: 'sol-functional', questions: solutionWith().functional.map((q) => (q.key === 'description' && q.step === 'solution' ? row('solution', 'description', description) : q)) },
+			{ id: 'sol-technical', questions: solutionWith().technical }
+		];
+		// Everything offered is empty, the description written: no editor opens.
+		expect(firstOwingSection(sections('Only the Need and the Solution are owed'))).toBeNull();
+		// The description empty: 2.1 opens, for it.
+		expect(firstOwingSection(sections(''))?.id).toBe('sol-functional');
 	});
 });

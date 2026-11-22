@@ -34,7 +34,7 @@ export function tabAnchors(elements: readonly SpecElement[], tab: string): strin
 
 /**
  * The elements a page of Knowledge shows when it hands no scope of its own (criterion c509fa9c), read from its tab
- * and the view under it (the path's segment after the tab): what the band counts and its Validate all section
+ * and the view under it (the path's segment after the tab): what the band counts and its Validate the whole section
  * validates. A tab's own page shows the whole tab; one profile shows itself, Who can do what the permissions, a view
  * of Technology & data its own elements (Operations shows the health items), Sources none.
  */

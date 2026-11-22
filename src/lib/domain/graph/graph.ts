@@ -34,7 +34,6 @@ export type GraphNodeKind =
 	| 'core'
 	| 'family'
 	| 'feature'
-	| 'release'
 	| 'journey'
 	| 'step'
 	| 'screen'
@@ -84,7 +83,6 @@ export type GraphEdgeKind =
 	| 'reads' // step → entity (data consumed)
 	| 'writes' // action|parameter|effect → state or entity
 	| 'relates' // entity → entity (relation field)
-	| 'scheduled' // feature → release (roadmap)
 	| 'derives' // rule → its source artefact
 	| 'flags' // gap → the node/context it concerns
 	// ── formal MRS engine edge types (engine context) ──
@@ -109,7 +107,7 @@ export interface GraphNode {
 	label: string;
 	/** Optional one-line subtitle (description, type, etc.). */
 	detail?: string;
-	/** Small, display-only scalar bag (tier, severity, mvp tier, layer…). */
+	/** Small, display-only scalar bag (tier, severity, layer…). */
 	meta?: Record<string, string | number | boolean>;
 }
 

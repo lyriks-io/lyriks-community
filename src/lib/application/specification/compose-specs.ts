@@ -1,10 +1,11 @@
+import { mintUuid } from '$domain/shared';
 import type { GeneratedArtifact, CoherenceAnalysis } from '$domain/coherence';
 import { architectureContext } from './architecture-context';
 import type { FoundationIdentityDraft } from '$domain/foundation';
 import type { FoundationDefinitionDraft } from '$domain/foundation';
 import type { ProjectUsersDraft } from '$domain/users';
 import type { ProjectDocumentsDraft } from '$domain/documents';
-import { leafFeatures, type ProjectFeaturesDraft } from '$domain/features';
+import { leafFeatures, type FeatureBuildStatus, type ProjectFeaturesDraft } from '$domain/features';
 import { stepsOfJourney, type ProjectExperienceDraft } from '$domain/experience';
 import type { ProjectRulesDraft } from '$domain/rules';
 import { fieldsOfEntity, type ProjectDataDraft } from '$domain/data';
@@ -29,10 +30,16 @@ export interface SpecEnvelope {
 	 * features draft answers instead.
 	 */
 	acceptanceCriteriaByFeature?: Readonly<Record<string, readonly string[]>>;
+	/**
+	 * Whether each feature is built, read from the coverage the implementation
+	 * index records: the requirements document prints it as the feature's status.
+	 * Absent when the coverage could not be read, and then no status is printed.
+	 */
+	buildStatusByFeature?: Readonly<Record<string, FeatureBuildStatus>>;
 }
 
 function newId(): string {
-	return crypto.randomUUID();
+	return mintUuid();
 }
 
 /**
@@ -59,8 +66,8 @@ export function composeArtifacts(
 
 /**
  * Every heading and fixed phrase of the documents, in the spec's language.
- * What the team authored is printed as written; enum codes (MVP tier, issue
- * kind, host kind, engine) stay as the model stores them. The English texts
+ * What the team authored is printed as written; enum codes (issue kind, host
+ * kind, engine) stay as the model stores them. The English texts
  * are the historical ones, byte for byte.
  */
 interface SpecTexts {
@@ -84,9 +91,9 @@ interface SpecTexts {
 	labelled(label: string, value: string): string;
 	/** "**Label**: value" in bold. */
 	boldLabelled(label: string, value: string): string;
-	mvp: string;
-	release: string;
 	status: string;
+	/** How a build status reads, from the code coverage. */
+	buildStatus: Readonly<Record<FeatureBuildStatus, string>>;
 	problem: string;
 	value: string;
 	objective: string;
@@ -133,9 +140,8 @@ const SPEC_TEXTS: Record<SpecLanguage, SpecTexts> = {
 		feature: 'Feature',
 		labelled: (label, value) => `${label}: ${value}`,
 		boldLabelled: (label, value) => `**${label}**: ${value}`,
-		mvp: 'MVP',
-		release: 'Release',
 		status: 'Status',
+		buildStatus: { done: 'done', 'in-progress': 'in progress', 'not-started': 'not started' },
 		problem: 'Problem',
 		value: 'Value',
 		objective: 'Objective',
@@ -180,9 +186,8 @@ const SPEC_TEXTS: Record<SpecLanguage, SpecTexts> = {
 		feature: 'Fonctionnalité',
 		labelled: (label, value) => `${label}${NBSP}: ${value}`,
 		boldLabelled: (label, value) => `**${label}**${NBSP}: ${value}`,
-		mvp: 'MVP',
-		release: 'Version',
 		status: 'Statut',
+		buildStatus: { done: 'terminée', 'in-progress': 'en cours', 'not-started': 'non commencée' },
 		problem: 'Problème',
 		value: 'Valeur',
 		objective: 'Objectif',
@@ -223,9 +228,6 @@ function requirementsDoc(env: SpecEnvelope, t: SpecTexts): string {
 	const lines: string[] = [];
 	const metaOf = (id: string) => features.leafMeta?.[id] ?? {};
 	const nameOf = (id: string) => features.features.find((f) => f.id === id)?.name || id;
-	const mvpTier = new Map(features.mvpAssignments.map((m) => [m.featureId, m.tier]));
-	const releaseName = new Map(features.releases.map((r) => [r.id, r.name]));
-	const releaseOf = new Map(features.roadmapAssignments.map((a) => [a.featureId, a.releaseId]));
 	const sourceById = new Map(documents.sources.map((source) => [source.id, source]));
 
 	lines.push(t.requirementsHeading(identity.productName || t.untitledProduct));
@@ -255,15 +257,9 @@ function requirementsDoc(env: SpecEnvelope, t: SpecTexts): string {
 			const m = metaOf(leaf.id);
 			const code = m.code ? `\`${m.code}\` ` : '';
 			lines.push(`\n#### ${code}${leaf.name || t.feature}`);
-			const tier = mvpTier.get(leaf.id);
-			const rel = releaseOf.get(leaf.id);
-			const relName = rel ? releaseName.get(rel) : undefined;
-			const tags = [
-				tier ? t.labelled(t.mvp, tier) : '',
-				relName ? t.labelled(t.release, relName) : '',
-				m.status ? t.labelled(t.status, m.status) : ''
-			].filter(Boolean);
-			if (tags.length > 0) lines.push(`_${tags.join(' · ')}_`);
+			// The status is what the code holds of the feature, never a status written by hand.
+			const status = env.buildStatusByFeature?.[leaf.id];
+			if (status) lines.push(`_${t.labelled(t.status, t.buildStatus[status])}_`);
 			if (leaf.description) lines.push(`\n${leaf.description}`);
 			if (m.problem?.trim()) lines.push(`\n${t.boldLabelled(t.problem, m.problem.trim())}`);
 			if (m.value?.trim()) lines.push(t.boldLabelled(t.value, m.value.trim()));

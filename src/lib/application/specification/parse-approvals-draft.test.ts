@@ -1,6 +1,5 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { stampDecisions } from '$domain/approvals';
+import { createEmptyApprovalsDraft, stampDecisions } from '$domain/approvals';
 import { parseApprovalsDraft, parseStoredApprovalsDraft } from './parse-approvals-draft';
 
 const stored = {
@@ -45,9 +44,22 @@ describe('a sign-off keeps who set its status and when [criterion:f89af5b5]', ()
 		expect(item.decidedBy).toBeNull();
 		expect(item.decidedAt).toBeNull();
 	});
+});
 
-	it('is what the storage of the approvals reads with', () => {
-		const container = readFileSync(new URL('../../composition/container.server.ts', import.meta.url), 'utf8');
-		expect(container).toMatch(/'approvals',\s*parseStoredApprovalsDraft/);
+describe('the Approvals gate on a worklist a caller sends', () => {
+	it('reads anything but an object as an empty worklist for the project', () => {
+		for (const input of [null, 'items', 3]) expect(parseApprovalsDraft(input, 'p1')).toEqual(createEmptyApprovalsDraft('p1'));
+	});
+
+	it('drops a row without an id or repeating one, and keeps the first', () => {
+		const { items } = parseApprovalsDraft({ items: [{ title: 'No id' }, { id: '', title: 'Empty id' }, { id: 'a1', title: 'First' }, { id: 'a1', title: 'Again' }, 'a2'] }, 'p1');
+		expect(items.map((i) => [i.id, i.title])).toEqual([['a1', 'First']]);
+	});
+
+	it('reads an unknown status as a draft and a row with no area as about the whole specification', () => {
+		const [item] = parseApprovalsDraft({ items: [{ id: 'a1', status: 'signed', area: 4 }] }, 'p1').items;
+		expect(item.status).toBe('draft');
+		expect(item.area).toBe('Whole specification');
+		expect(parseApprovalsDraft({ items: [{ id: 'a1', status: 'changes_requested' }] }, 'p1').items[0].status).toBe('changes_requested');
 	});
 });

@@ -87,9 +87,15 @@ async function post({ url, token }, sessionHeaders, message) {
 	});
 	const text = await response.text();
 	if (response.status === 401 || response.status === 403) {
-		throw new Error(
-			`The MCP endpoint refused the call (${response.status}): this deployment enforces sign-in. Pass --token or set LYRIKS_MCP_TOKEN; an expired token is refused the same way.`
+		// A sign-in that holds but does not open this call (a ticket of one command) says why.
+		const why = response.status === 401 ? null : /"message":"((?:[^"\\]|\\.)*)"/.exec(text)?.[1];
+		const error = new Error(
+			response.status === 401
+				? 'The MCP endpoint refused the call (401): this deployment enforces sign-in. Pass --token or set LYRIKS_MCP_TOKEN; an expired token is refused the same way.'
+				: `The MCP endpoint refused the call (403): ${why ?? 'this sign-in may not make this call.'}`
 		);
+		error.status = response.status; // a script can then say what to do about it
+		throw error;
 	}
 	if (!response.ok) {
 		throw new Error(`The MCP endpoint answered ${response.status}: ${text.slice(0, 300)}`);

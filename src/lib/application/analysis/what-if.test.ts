@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseEvolutionDraft } from '../evolution/parse-evolution-draft';
-import { exampleSteps, proofImpactHeadline, proofImpactLines, type DraftProofImpact } from '$lib/domain/evolution/proof-impact';
+import { proofImpactHeadline } from '$lib/domain/evolution/proof-impact';
 import { WhatIfUseCase, toDraftProofImpact } from './what-if';
 
 // Criteria 3394334b and b64a6410: a change is compared before and after, nothing saved.
@@ -89,22 +89,7 @@ describe('the proof impact of a draft', () => {
 	});
 });
 
-// Criterion d1b64667: how a change breaks a statement reads as an example anyone can follow.
-describe('exampleSteps', () => {
-	it('writes each action a person takes with the values used, in plain words, the channel left out', () => {
-		expect(
-			exampleSteps([
-				{ actionName: 'Record payment', parameters: { amount: 100 } },
-				{ actionName: 'Refund', parameters: { amount: 0.5, reason: 'goodwill', urgent: true, $channel: 'ui' } },
-				{ actionName: 'Sign in', featureName: 'Accounts', parameters: {} }
-			])
-		).toEqual([
-			'Someone does "Record payment", with amount 100',
-			'Someone does "Refund", with amount 0.5, reason "goodwill", urgent yes',
-			'Someone does "Sign in" (in Accounts)'
-		]);
-	});
-
+describe('the steps of a broken statement', () => {
 	it('keeps the steps of a broken statement through the section read-back', () => {
 		const withPath = {
 			...comparison,
@@ -113,59 +98,5 @@ describe('exampleSteps', () => {
 		const impact = toDraftProofImpact({ id: 'draft:x', name: 'Stock' }, { kind: 'comparison', comparison: withPath }, 'at');
 		const parsed = parseEvolutionDraft({ requests: [{ id: 'r1', title: 'x', proofImpact: [impact] }] }, 'p');
 		expect(parsed.requests[0]?.proofImpact?.[0]?.findingsAppeared[0]?.path).toEqual([{ actionName: 'Take one', parameters: { qty: 3 } }]);
-	});
-});
-
-// Criterion 0fb8f527: every line of what a change does to the proofs reads in plain words.
-describe('proofImpactLines', () => {
-	const base: DraftProofImpact = {
-		draftId: 'd',
-		draftName: 'Cart',
-		ranAt: 'at',
-		proven: { before: true, after: true },
-		statements: [],
-		actions: [],
-		goals: [],
-		findingsAppeared: [],
-		findingsResolved: [],
-		scenarios: [],
-		unchanged: false
-	};
-
-	it('says what breaks with its example, and a scenario that moves without the engine status words', () => {
-		const lines = proofImpactLines({
-			...base,
-			statements: [{ id: 'i', name: 'Never refund more than paid', before: 'none-within-bound', after: 'violated' }],
-			findingsAppeared: [{ kind: 'reachable-violation', severity: 'critical', on: 'Never refund more than paid', detail: 'x', path: [{ actionName: 'Refund', parameters: { amount: 0.5 } }] }],
-			scenarios: [{ actionName: 'Refund', scenarioName: 'A viewer cannot refund', before: 'pass', after: 'fail', reason: 'fail. status was success but expected blocked' }]
-		});
-		expect(lines).toEqual([
-			{ tone: 'worse', text: '"Never refund more than paid" can now be broken.', example: ['Someone does "Refund", with amount 0.5'] },
-			{ tone: 'worse', text: 'The example "A viewer cannot refund" (Refund) no longer holds: it now goes through where it should be refused.' }
-		]);
-	});
-
-	it('shows how a repaired statement used to break', () => {
-		const [line] = proofImpactLines({
-			...base,
-			statements: [{ id: 'i', name: 'Every line holds an item', before: 'violated', after: 'none-within-bound' }],
-			findingsResolved: [{ kind: 'reachable-violation', severity: 'critical', on: 'Every line holds an item', detail: 'x', path: [{ actionName: 'Remove line', parameters: { qty: 1 } }] }]
-		});
-		expect(line).toEqual({
-			tone: 'better',
-			text: '"Every line holds an item" can no longer be broken. Before the change, it broke like this:',
-			example: ['Someone does "Remove line", with qty 1']
-		});
-	});
-
-	it('claims nothing about a check left unsettled on one side', () => {
-		const lines = proofImpactLines({
-			...base,
-			statements: [{ id: 'i', name: 'Stock never negative', before: 'violated', after: 'unsettled' }],
-			deadlocks: { before: 'found', after: 'unsettled' }
-		});
-		expect(lines.map((l) => l.tone)).toEqual(['open', 'open']);
-		expect(lines[1]?.text).toBe('Dead ends could not be checked after the change, so nothing is said about them.');
-		expect(proofImpactHeadline({ ...base, statements: [{ id: 'i', name: 'X', before: 'violated', after: 'unsettled' }] })).not.toContain('repairs');
 	});
 });

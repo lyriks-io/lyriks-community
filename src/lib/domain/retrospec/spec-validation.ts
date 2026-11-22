@@ -1,5 +1,5 @@
 import { specVersionOf, type Baseline, type SpecVersion } from '../baselines';
-import { currentRun, lastPublishedRun, type PersonRef, type RetrospecDocument, type RetrospecRun } from './document';
+import { currentRun, lastPublishedRun, type PersonRef, type RequestValidation, type RetrospecDocument, type RetrospecRun } from './document';
 import { writesHeld } from './run-report';
 import { requiredValidators, samePersonRef, type SpecOwner, type TeamMember } from './spec-validators';
 
@@ -56,6 +56,8 @@ export interface ElementStanding {
 	readonly missing: readonly PersonRef[];
 	/** Rejected in the retrospecification's former review: only an explicit validation restores it. */
 	readonly rejected: boolean;
+	/** The landed change request that validated it, while that validation stands (EVO-002): it settles the element whatever its required validators. */
+	readonly through: RequestValidation | null;
 }
 
 export interface SpecValidationInput {
@@ -130,15 +132,28 @@ function validationsOf(run: RetrospecRun | null, element: SpecElement): readonly
 	return carried && element.fingerprint && carried.fingerprint === element.fingerprint ? carried.validatedBy.map((v) => v.person) : [];
 }
 
+/**
+ * The validation a landed change request gave an element, while it stands
+ * (EVO-002): not taken back, and the element still reads as it landed. A
+ * change requested on the element leaves none standing (invariant 4b808089).
+ */
+export function requestValidationOf(run: RetrospecRun | null, element: SpecElement): RequestValidation | null {
+	const given = run?.throughRequests?.[element.id];
+	if (!given || given.withdrawn || run?.verdicts[element.id]?.flag?.kind === 'rejected') return null;
+	return !element.fingerprint || given.fingerprint === element.fingerprint ? given : null;
+}
+
 export function elementStanding(run: RetrospecRun | null, element: SpecElement, lead: PersonRef | null, team: readonly TeamMember[], requested: readonly PersonRef[] = []): ElementStanding {
 	const required = requiredValidators(element.owner, lead, team, requested, element.id);
 	const verdict = run?.verdicts[element.id];
 	const validatedBy = validationsOf(run, element);
 	const has = (p: PersonRef) => validatedBy.some((v) => samePersonRef(v, p));
-	const missing = required.filter((p) => !has(p));
+	// A request's validation counts as every validation the element waits on (criterion 939f5eef).
+	const through = requestValidationOf(run, element);
+	const missing = through ? [] : required.filter((p) => !has(p));
 	// Nobody to wait on (no lead known, nobody holding the job): one validation settles it.
-	const settled = required.length > 0 ? missing.length === 0 : validatedBy.length > 0;
-	return { state: settled ? 'ok' : validatedBy.length > 0 ? 'waiting' : 'todo', required, validatedBy, missing, rejected: verdict?.flag?.kind === 'rejected' };
+	const settled = through !== null || (required.length > 0 ? missing.length === 0 : validatedBy.length > 0);
+	return { state: settled ? 'ok' : validatedBy.length > 0 ? 'waiting' : 'todo', required, validatedBy, missing, rejected: verdict?.flag?.kind === 'rejected', through };
 }
 
 export function specValidationBoard(input: SpecValidationInput): SpecValidationBoard {
@@ -182,8 +197,4 @@ export function waitingOn(board: SpecValidationBoard, person: PersonRef): string
 	return Object.entries(board.standings)
 		.filter(([, s]) => !s.rejected && s.missing.some((p) => samePersonRef(p, person)))
 		.map(([id]) => id);
-}
-
-export function specValidationSummary(input: SpecValidationInput): SpecValidationSummary {
-	return specValidationBoard(input).summary;
 }

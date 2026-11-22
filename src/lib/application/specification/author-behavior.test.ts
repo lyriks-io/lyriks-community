@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { BehaviorBatchResult } from '$application/ports';
+import type { BehaviorBatchResult, UnspaghettitAdvisorPort } from '$application/ports';
 import { AuthorBehaviorUseCase } from './author-behavior';
 
 const okBatch: BehaviorBatchResult = {
@@ -25,20 +25,6 @@ describe('AuthorBehaviorUseCase', () => {
 		expect(res.batch?.errors.join(' ')).toContain('operand');
 	});
 
-	it('forwards featureId + operations + dryRun to the advisor and returns the batch', async () => {
-		const applyBehaviorBatch = vi.fn().mockResolvedValue(okBatch);
-		const uc = new AuthorBehaviorUseCase({ applyBehaviorBatch });
-
-		const res = await uc.execute({ featureId: 'p__experience', operations: [{ kind: 'x' }], dryRun: true });
-
-		expect(applyBehaviorBatch).toHaveBeenCalledWith('p__experience', [{ kind: 'x' }], {
-			dryRun: true,
-			commit: undefined,
-			verbose: false
-		});
-		expect(res).toEqual({ available: true, batch: okBatch, warnings: [] });
-	});
-
 	it('reports unavailable (not a rejection) when the engine is unreachable', async () => {
 		const applyBehaviorBatch = vi.fn().mockResolvedValue(null);
 		const uc = new AuthorBehaviorUseCase({ applyBehaviorBatch });
@@ -62,35 +48,6 @@ describe('AuthorBehaviorUseCase', () => {
 		expect(res.available).toBe(true);
 		expect(res.batch?.ok).toBe(false);
 		expect(res.batch?.errors[0]).toContain('unknown op kind');
-	});
-
-	it('defaults dryRun to false', async () => {
-		const applyBehaviorBatch = vi.fn().mockResolvedValue(okBatch);
-		const uc = new AuthorBehaviorUseCase({ applyBehaviorBatch });
-		await uc.execute({ featureId: 'f', operations: [] });
-		expect(applyBehaviorBatch).toHaveBeenCalledWith('f', [], {
-			dryRun: false,
-			commit: undefined,
-			verbose: false
-		});
-	});
-
-	it('forwards a commit token so a dry-run can be saved without resending ops (Fix #8)', async () => {
-		const applyBehaviorBatch = vi.fn().mockResolvedValue(okBatch);
-		const uc = new AuthorBehaviorUseCase({ applyBehaviorBatch });
-		await uc.execute({ featureId: 'f', operations: [], commit: 'tok-123' });
-		expect(applyBehaviorBatch).toHaveBeenCalledWith('f', [], {
-			dryRun: false,
-			commit: 'tok-123',
-			verbose: false
-		});
-	});
-
-	it('exposes the commitToken from a valid dry-run', async () => {
-		const dry: BehaviorBatchResult = { ...okBatch, dryRun: true, commitToken: 'tok-abc' };
-		const uc = new AuthorBehaviorUseCase({ applyBehaviorBatch: vi.fn().mockResolvedValue(dry) });
-		const res = await uc.execute({ featureId: 'f', operations: [{ kind: 'x' }], dryRun: true });
-		expect(res.batch?.commitToken).toBe('tok-abc');
 	});
 
 	it('rejects a condition-less invariant op WITHOUT reaching the engine (store-poison guard)', async () => {
@@ -252,88 +209,67 @@ describe('AuthorBehaviorUseCase', () => {
 	});
 });
 
-describe('AuthorBehaviorUseCase, a batch that names the version it was written against', () => {
-	const STAMP = '2026-09-20T10:00:00.000Z';
+type BatchOptions = NonNullable<Parameters<UnspaghettitAdvisorPort['applyBehaviorBatch']>[2]>;
 
-	it('names no version to the advisor when the caller gave none', async () => {
-		const applyBehaviorBatch = vi.fn().mockResolvedValue(okBatch);
-		await new AuthorBehaviorUseCase({ applyBehaviorBatch }).execute({ featureId: 'f', operations: [] });
-		expect('expectedUpdatedAt' in applyBehaviorBatch.mock.calls[0][2]).toBe(false);
+/**
+ * A behavior engine held in memory: it writes a batch unless asked for a dry
+ * run, keeps a dry run under a commit token, moves the feature to a new version
+ * at each write and refuses a batch written against an older one. An engine
+ * that predates versions refuses any argument it does not know.
+ */
+class Engine implements Pick<UnspaghettitAdvisorPort, 'applyBehaviorBatch'> {
+	readonly written: (readonly Record<string, unknown>[])[] = [];
+	version = 'v1';
+	private readonly dryRuns = new Map<string, readonly Record<string, unknown>[]>();
+	constructor(private readonly knowsVersions = true) {}
+
+	async applyBehaviorBatch(_featureId: string, operations: readonly Record<string, unknown>[], opts: BatchOptions = {}): Promise<BehaviorBatchResult> {
+		const refuse = (error: string, raw: unknown = error): BehaviorBatchResult => ({ ...okBatch, ok: false, appliedCount: 0, refs: {}, errors: [error], raw });
+		if (!this.knowsVersions && 'expectedUpdatedAt' in opts) return refuse('unknown argument expectedUpdatedAt');
+		if (opts.expectedUpdatedAt && opts.expectedUpdatedAt !== this.version)
+			return refuse('The feature changed since this batch was written.', { ok: false, conflict: true, currentUpdatedAt: this.version });
+		const ops = opts.commit ? this.dryRuns.get(opts.commit) : operations;
+		if (!ops) return refuse('unknown commit token');
+		if (opts.dryRun) {
+			const token = `tok-${this.dryRuns.size + 1}`;
+			this.dryRuns.set(token, ops);
+			return { ...okBatch, dryRun: true, appliedCount: 0, commitToken: token };
+		}
+		this.written.push(ops);
+		this.version = `v${this.written.length + 1}`;
+		return { ...okBatch, appliedCount: ops.length };
+	}
+}
+
+describe('AuthorBehaviorUseCase, writing through the engine', () => {
+	it('writes a batch, writes nothing on a dry run, and saves that dry run from its commit token alone', async () => {
+		const engine = new Engine();
+		const uc = new AuthorBehaviorUseCase(engine);
+		await uc.execute({ featureId: 'f', operations: [{ kind: 'x', n: 1 }] });
+		const dry = await uc.execute({ featureId: 'f', operations: [{ kind: 'x', n: 2 }], dryRun: true });
+		expect(engine.written).toEqual([[{ kind: 'x', n: 1 }]]);
+
+		await uc.execute({ featureId: 'f', operations: [], commit: dry.batch?.commitToken ?? '' });
+		expect(engine.written).toEqual([[{ kind: 'x', n: 1 }], [{ kind: 'x', n: 2 }]]);
 	});
 
-	it('forwards the version when given, on a direct batch and on a commit', async () => {
-		const applyBehaviorBatch = vi.fn().mockResolvedValue(okBatch);
-		const uc = new AuthorBehaviorUseCase({ applyBehaviorBatch });
-		await uc.execute({ featureId: 'f', operations: [{ kind: 'x' }], expectedUpdatedAt: STAMP });
-		await uc.execute({ featureId: 'f', operations: [], commit: 'tok-1', expectedUpdatedAt: STAMP });
-		expect(applyBehaviorBatch.mock.calls[0][2]).toMatchObject({ expectedUpdatedAt: STAMP });
-		expect(applyBehaviorBatch.mock.calls[1][2]).toMatchObject({
-			commit: 'tok-1',
-			expectedUpdatedAt: STAMP
-		});
+	it('refuses a batch, or the commit of a dry run, written against a version the feature has since left', async () => {
+		const engine = new Engine();
+		const uc = new AuthorBehaviorUseCase(engine);
+		const dry = await uc.execute({ featureId: 'f', operations: [{ kind: 'x', n: 2 }], dryRun: true, expectedUpdatedAt: 'v1' });
+		await uc.execute({ featureId: 'f', operations: [{ kind: 'x', n: 1 }], expectedUpdatedAt: 'v1' });
+
+		const stale = await uc.execute({ featureId: 'f', operations: [{ kind: 'x', n: 3 }], expectedUpdatedAt: 'v1' });
+		const staleCommit = await uc.execute({ featureId: 'f', operations: [], commit: dry.batch?.commitToken ?? '', expectedUpdatedAt: 'v1' });
+		expect(stale).toMatchObject({ available: true, batch: { ok: false, conflict: true, currentUpdatedAt: 'v2' } });
+		expect(staleCommit.batch?.ok).toBe(false);
+		expect(engine.written).toEqual([[{ kind: 'x', n: 1 }]]);
 	});
 
-	it('answers a lost race as a rejected batch that says what to rebase on', async () => {
-		const raw = {
-			ok: false,
-			conflict: true,
-			expectedUpdatedAt: STAMP,
-			currentUpdatedAt: '2026-09-20T10:05:00.000Z',
-			changedSince: ['action:act-1', 'state:cart.total'],
-			changedSinceTotal: 2,
-			errors: ['The feature changed since this batch was written.']
-		};
-		const conflicted: BehaviorBatchResult = {
-			...okBatch,
-			ok: false,
-			appliedCount: 0,
-			refs: {},
-			errors: ['The feature changed since this batch was written.'],
-			maturityPercentage: null,
-			raw
-		};
-		const uc = new AuthorBehaviorUseCase({ applyBehaviorBatch: vi.fn().mockResolvedValue(conflicted) });
-		const res = await uc.execute({ featureId: 'f', operations: [{ kind: 'x' }], expectedUpdatedAt: STAMP });
-
-		// Reachable engine, batch not applied: the caller's after-write work keys on `ok`.
-		expect(res.available).toBe(true);
-		expect(res.batch).toMatchObject({
-			ok: false,
-			conflict: true,
-			currentUpdatedAt: '2026-09-20T10:05:00.000Z',
-			changedSince: ['action:act-1', 'state:cart.total'],
-			changedSinceTotal: 2
-		});
-		// Lifted once: the conflict fields moved up to `batch`, so `raw` keeps
-		// only what nothing lifts.
-		expect(res.batch?.raw).toEqual({ ok: false, expectedUpdatedAt: STAMP, errors: raw.errors });
-	});
-
-	it('exposes the versions of a save, what it touches elsewhere and its scenarios', async () => {
-		const saved: BehaviorBatchResult = {
-			...okBatch,
-			raw: {
-				ok: true,
-				previousUpdatedAt: STAMP,
-				updatedAt: '2026-09-20T10:01:00.000Z',
-				relatedElsewhere: [{ featureId: 'feat-other', elements: ['event:order-placed'] }],
-				scenarios: { scope: 'touched', run: 1, passed: 1, failed: [] }
-			}
-		};
-		const uc = new AuthorBehaviorUseCase({ applyBehaviorBatch: vi.fn().mockResolvedValue(saved) });
-		const res = await uc.execute({ featureId: 'f', operations: [{ kind: 'x' }] });
-		expect(res.batch).toMatchObject({
-			ok: true,
-			previousUpdatedAt: STAMP,
-			updatedAt: '2026-09-20T10:01:00.000Z',
-			relatedElsewhere: [{ featureId: 'feat-other', elements: ['event:order-placed'] }],
-			scenarios: { scope: 'touched', run: 1, passed: 1, failed: [] }
-		});
-	});
-
-	it('hands back an older engine answer untouched', async () => {
-		const uc = new AuthorBehaviorUseCase({ applyBehaviorBatch: vi.fn().mockResolvedValue(okBatch) });
-		const res = await uc.execute({ featureId: 'f', operations: [{ kind: 'x' }], expectedUpdatedAt: STAMP });
-		expect(res.batch).toBe(okBatch);
+	it('still writes through an engine that predates versions when the caller names none', async () => {
+		const engine = new Engine(false);
+		const res = await new AuthorBehaviorUseCase(engine).execute({ featureId: 'f', operations: [{ kind: 'x' }] });
+		expect(res.batch?.ok).toBe(true);
+		expect(engine.written).toHaveLength(1);
 	});
 });

@@ -99,16 +99,13 @@ export function diagramBehindTexts(request: SyncedRequest, step: PairedStep = 'f
 }
 
 /**
- * The Solution tab shows the Solution, the Functional spec and the Technical
- * spec as one, and its texts never go without the use case diagram that goes
- * with them (ac-evo-sol-with-diagram): written while nothing is drawn, the
- * diagram is owed. Not where the Functional spec, or its diagram, was set aside.
+ * Whether a diagram once drawn is behind its texts: what holds its step and
+ * its validation (EVO-013). A diagram is offered, never owed: one never drawn
+ * has nothing to keep in step, though it is still drawn from the texts on
+ * demand, which `diagramBehindTexts` keeps offering.
  */
-export function solutionDiagramOwed(request: SyncedRequest): boolean {
-	const written = request.stepDescriptions.solution.trim() !== '' || Object.values(functionalTexts(request)).some((t) => t.trim() !== '');
-	if (!written || (request.stepAnswers.functional_spec[FUNCTIONAL_DIAGRAM_KEY] ?? '').trim() !== '') return false;
-	if ((request.skippedSteps ?? []).some((s) => s.step === 'functional_spec')) return false;
-	return !skippedQuestionOf(request, diagramFieldOf('functional_spec'));
+export function drawnDiagramBehind(request: SyncedRequest, step: PairedStep = 'functional_spec'): boolean {
+	return (request.stepAnswers[step][FUNCTIONAL_DIAGRAM_KEY] ?? '').trim() !== '' && diagramBehindTexts(request, step);
 }
 
 /** Since when the diagram is behind: the latest version of a text it does not follow. */

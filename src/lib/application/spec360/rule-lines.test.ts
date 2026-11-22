@@ -22,6 +22,12 @@ describe('every rule reads inline under its action [criterion:7d1e80b6]', () => 
 		expect(lines.refusals).toEqual([]);
 		expect(lines.others.map((r) => r.id)).toEqual(['a', 'b']);
 	});
+
+	it('reads no shared sentence when no rule of the action refuses', () => {
+		const lines = ruleLines({ refusalLead: 'When the user places a machine, the system shall refuse if any of these holds:', rules: [rule('a')] });
+		expect(lines.lead).toBeNull();
+		expect(lines.others.map((r) => r.id)).toEqual(['a']);
+	});
 });
 
 describe('saved categories determine the display groups [criterion:ad995374]', () => {

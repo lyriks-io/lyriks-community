@@ -2,12 +2,12 @@ import type { AddElaborationItem, ElaborationInput } from './report';
 import { shortLabel } from './report';
 import { dependencyCycleMembers } from './dependency-cycles';
 import { NBSP, quoteName, type SpecLanguage } from '$domain/language';
+import type { FeatureBuildStatus } from '$domain/features';
 
-/** How a French sentence names a workflow status code. */
-const FRENCH_STATUSES: Readonly<Record<string, string>> = {
-	backlog: 'en attente (backlog)',
-	'in-progress': 'en cours',
-	done: 'terminée'
+/** How a sentence names a build status, read from the code coverage. */
+const STATUS_WORDS: Readonly<Record<SpecLanguage, Readonly<Record<FeatureBuildStatus, string>>>> = {
+	en: { 'not-started': 'not started', 'in-progress': 'in progress', done: 'done' },
+	fr: { 'not-started': 'non commencée', 'in-progress': 'en cours', done: 'terminée' }
 };
 
 /** The feature actions in the spec's language; codes and paths never change, names are quoted as they are. */
@@ -19,7 +19,7 @@ const TEXTS = {
 		noCriterionPrompt: 'Which input, observable result, failure case and tolerance should a real implementation test check?',
 		badDependency: (label: string, self: boolean) => `"${label}" has a ${self ? 'self' : 'missing'} dependency.`,
 		badDependencyPrompt: 'Inspect the intended dependency and repair its reference before planning implementation.',
-		status: (label: string, status: string) => `"${label}" is ${status}.`,
+		status: (label: string, status: FeatureBuildStatus) => `"${label}" is ${STATUS_WORDS.en[status]}.`,
 		blockedPrompt: 'Resolve the listed feature dependencies before implementing this feature; authoring its requirements can continue.',
 		workPrompt: 'Inspect the feature behavior, acceptance criteria and current implementation evidence before starting or continuing implementation.'
 	},
@@ -33,7 +33,7 @@ const TEXTS = {
 				? `La fonctionnalité ${quoteName('fr', label)} dépend d'elle-même.`
 				: `La fonctionnalité ${quoteName('fr', label)} dépend d'une fonctionnalité qui n'existe pas.`,
 		badDependencyPrompt: "Examinez la dépendance voulue et réparez sa référence avant de planifier l'implémentation.",
-		status: (label: string, status: string) => `La fonctionnalité ${quoteName('fr', label)} est ${FRENCH_STATUSES[status] ?? quoteName('fr', status)}.`,
+		status: (label: string, status: FeatureBuildStatus) => `La fonctionnalité ${quoteName('fr', label)} est ${STATUS_WORDS.fr[status]}.`,
 		blockedPrompt: `Résolvez les dépendances listées avant d'implémenter cette fonctionnalité${NBSP}; la rédaction de ses exigences peut continuer.`,
 		workPrompt: "Examinez le comportement de la fonctionnalité, ses critères d'acceptation et les preuves d'implémentation actuelles avant de commencer ou de poursuivre l'implémentation."
 	}
@@ -45,10 +45,13 @@ export function elaborationFeatureActions(input: ElaborationInput, add: AddElabo
 	const draft = input.features;
 	const ids = new Set(draft.features.map(f => f.id));
 	const cycles = dependencyCycleMembers(new Map(draft.features.map(f => [f.id, draft.leafMeta?.[f.id]?.dependsOn ?? []])));
+	// Built means what the code holds: a dependency blocks until the index locates all of it.
+	const built = input.buildStatusByFeature;
+	const statusOf = (id: string): FeatureBuildStatus => built?.[id] ?? 'not-started';
 	for (const feature of draft.features) {
 		const meta = draft.leafMeta?.[feature.id];
 		const dependencies = [...new Set(meta?.dependsOn ?? [])];
-		const blockedBy = dependencies.filter(id => !ids.has(id) || draft.leafMeta?.[id]?.status !== 'done');
+		const blockedBy = dependencies.filter(id => !ids.has(id) || statusOf(id) !== 'done');
 		const base = { section: 'features', subjectId: feature.id, requiresUserDecision: false };
 		const label = shortLabel(feature.name || feature.id);
 		if (cycles.has(feature.id)) add('feature-cycle', {
@@ -73,10 +76,12 @@ export function elaborationFeatureActions(input: ElaborationInput, add: AddElabo
 				prompt: t.badDependencyPrompt
 			});
 		}
-		if (meta?.status !== 'done') add('feature-work', {
-			...base, kind: 'action', priority: meta?.status === 'in-progress' ? 2 : 3,
-			path: `leafMeta.${feature.id}.status`, blockedBy,
-			observation: t.status(label, meta?.status ?? 'backlog'),
+		// Without the coverage nothing says what is built, so no work is claimed.
+		const status = statusOf(feature.id);
+		if (built && status !== 'done') add('feature-work', {
+			...base, kind: 'action', priority: status === 'in-progress' ? 2 : 3,
+			path: `features.${feature.id}`, blockedBy,
+			observation: t.status(label, status),
 			prompt: blockedBy.length ? t.blockedPrompt : t.workPrompt
 		});
 	}

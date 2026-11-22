@@ -781,7 +781,8 @@ describe('the bundled binding hook (Claude Code, UserPromptSubmit)', () => {
 
 describe('what the playbooks say of who acts, of time, of the system and of documents', () => {
 	const root = fileURLToPath(new URL('../../../..', import.meta.url));
-	const playbook = (id: string) => readFileSync(join(root, `.claude/skills/${id}/SKILL.md`), 'utf8');
+	// Read as prose: a paragraph re-wrapped says the same thing, so line breaks never count.
+	const playbook = (id: string) => readFileSync(join(root, `.claude/skills/${id}/SKILL.md`), 'utf8').replace(/\s+/g, ' ');
 
 	it('models who acts, what time does and what the system does, one feature verified at a time [criterion:0ec9f244]', () => {
 		const behavior = playbook('lyriks-behavior');
@@ -811,14 +812,15 @@ describe('what the playbooks say of who acts, of time, of the system and of docu
 		expect(retrospec).toContain('each with its `behaviorValues` (lyriks-build step 9)');
 		const build = playbook('lyriks-build');
 		const table = build.slice(build.indexOf('## Where each kind of document goes'));
-		for (const row of ['`apply_roadmap_batch`', '`evidence`', '`decision` status', '`foundation.painPointLinks`', '`foundation.slas`', 'Legal or Compliance', 'one `api` action per endpoint', 'a `rules` issue'])
+		for (const row of ['`evidence`', '`decision` status', '`foundation.painPointLinks`', '`foundation.slas`', 'Legal or Compliance', 'one `api` action per endpoint', 'a `rules` issue'])
 			expect(table, row).toContain(row);
 	});
 });
 
 describe('what the playbooks make a retrospec count and a CI check', () => {
 	const root = fileURLToPath(new URL('../../../..', import.meta.url));
-	const playbook = (id: string) => readFileSync(join(root, `.claude/skills/${id}/SKILL.md`), 'utf8');
+	// Read as prose: a paragraph re-wrapped says the same thing, so line breaks never count.
+	const playbook = (id: string) => readFileSync(join(root, `.claude/skills/${id}/SKILL.md`), 'utf8').replace(/\s+/g, ' ');
 
 	it('counts the screens, the settings and the rules on sensitive data whatever the spine [criterion:c3526104]', () => {
 		const retrospec = playbook('lyriks-retrospec');
@@ -832,8 +834,8 @@ describe('what the playbooks make a retrospec count and a CI check', () => {
 			'**Every rule on personal or sensitive data.**'
 		])
 			expect(ledger, list).toContain(list);
-		expect(ledger).toContain('a page declared in\n  metadata or configuration counts as much as a coded one');
-		expect(ledger).toContain('a rule spanned on the\n  code that enforces it');
+		expect(ledger).toContain('a page declared in metadata or configuration counts as much as a coded one');
+		expect(ledger).toContain('a rule spanned on the code that enforces it');
 		expect(retrospec).not.toContain('two lists always enter the ledger');
 	});
 
@@ -843,12 +845,12 @@ describe('what the playbooks make a retrospec count and a CI check', () => {
 		expect(part.startsWith('## A product known from its prototype or its design')).toBe(true);
 		for (const law of [
 			'**Read every file whole, and say so.**',
-			'Measure each file and its longest\n   line first',
+			'Measure each file and its longest line first',
 			'Never cut in silence.',
 			'**Count before writing, layer by layer, in the ledger:**',
-			'every interaction with what\n   its handler really does',
-			'(`readonly`,\n   `disabled`, `aria-*`)',
-			'**Sort every element into product, sample data or prototype control, and\n   write the sort down.**',
+			'every interaction with what its handler really does',
+			'(`readonly`, `disabled`, `aria-*`)',
+			'**Sort every element into product, sample data or prototype control, and write the sort down.**',
 			'**A sample catalogue states rules: take the rule, never the instance.**',
 			'**A label is not a behaviour.**',
 			'**The prototype is a source like any other:**',
@@ -862,11 +864,11 @@ describe('what the playbooks make a retrospec count and a CI check', () => {
 
 	it('ends on the checks, never on an impression, and tells its own work from a decision [criterion:f383eddf]', () => {
 		const retrospec = playbook('lyriks-retrospec');
-		expect(retrospec).toContain('**Read what done means first:** `assess_project_completeness` on the\n   empty project lists what your work ends on');
+		expect(retrospec).toContain('**Read what done means first:** `assess_project_completeness` on the empty project lists what your work ends on');
 		const protocol = retrospec.slice(retrospec.indexOf('## Low-intervention protocol'));
 		expect(protocol).toContain('**Your work, or a person\'s decision.** Only the `scope.mode`, approvals');
-		expect(protocol).toContain('every feature\'s\n  behaviour (never left at 0% unless shells or a target stage were asked)');
-		expect(protocol).toContain('never report them as "a\n  decision" or "to do on request".');
+		expect(protocol).toContain('every feature\'s behaviour (never left at 0% unless shells or a target stage were asked)');
+		expect(protocol).toContain('never report them as "a decision" or "to do on request".');
 		expect(protocol).toContain('**Done is proven, never felt.**');
 		expect(protocol).toContain('hand over a coverage report');
 	});

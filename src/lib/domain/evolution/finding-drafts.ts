@@ -1,5 +1,6 @@
 import type { CoherenceFinding, EvolutionRequest } from './draft';
 import { ELEMENT_PATH_PREFIX } from './spec-actions';
+import { stableId } from './ids';
 import { coherenceHeadline, type CoherenceHeadline } from '$domain/coherence';
 import type { Gap } from '$domain/coherence';
 import type { ProjectRulesDraft } from '$domain/rules';
@@ -226,6 +227,8 @@ export function projectHealthAfter(input: {
 	readonly register: Pick<ProjectRulesDraft, 'issues'>;
 	/** The request's own coherence findings: those of scope request that are not notes are what it brings. */
 	readonly requestFindings: readonly CoherenceFinding[];
+	/** The request read: its engine findings are keyed by it and by the gap they map (coherence-mapping). */
+	readonly requestId: string;
 }): ProjectHealthAfter {
 	const live = liveFindingDrafts(input.findingDrafts);
 	const listed = new Map(input.gaps.map((g) => [g.id, g]));
@@ -240,7 +243,9 @@ export function projectHealthAfter(input: {
 		else if (settlement === 'engine') expectedToLeave.push({ findingId: draft.findingId, title: gap.title });
 		else leaving.push({ findingId: draft.findingId, title: gap.title });
 	}
-	const coming = input.requestFindings.filter((f) => (f.scope ?? 'request') === 'request' && !f.note && !f.risk);
+	// What the engine reports is already on the list read now: it never comes a second time (criterion 7dd35532).
+	const listedNow = new Set(input.gaps.map((g) => stableId('coh', input.requestId, g.id)));
+	const coming = input.requestFindings.filter((f) => (f.scope ?? 'request') === 'request' && !f.note && !f.risk && !listedNow.has(f.id));
 	const gone = new Set(leaving.map((l) => l.findingId));
 	const after: Gap[] = [
 		...input.gaps.filter((g) => !gone.has(g.id)),

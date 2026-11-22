@@ -435,6 +435,12 @@ export interface SimulateStepsArgs {
 	readonly modelCheck?: boolean | { readonly maxDepth?: number; readonly maxStates?: number };
 	/** Return the simulated feature itself. */
 	readonly includeFeature?: boolean;
+	/**
+	 * Ids of elements to disable for this trial only, in memory, after the
+	 * operations: nothing is saved, and an id the feature does not hold refuses
+	 * the trial with that id.
+	 */
+	readonly disable?: readonly string[];
 }
 
 /**

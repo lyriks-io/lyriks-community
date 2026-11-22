@@ -42,7 +42,7 @@ export function codeSummary(code: CodeGlance): { word: string; tone: GlanceTone;
 			tip: `The validated commit was merged into ${code.mergedInto}: the change is now the official specification.`
 		};
 	if (code.validationSetAside)
-		return { word: 'moved since the validation: validate again', tone: 'warn', tip: 'A commit of code came after the validated one: the verification is validated again before the merge.' };
+		return { word: 'moved since the approval: approve again', tone: 'warn', tip: 'A commit of code came after the one the approval fixed: the approval is asked again before the merge.' };
 	if (code.clean === false)
 		return {
 			word: 'uncommitted changes',
@@ -56,7 +56,7 @@ export function codeSummary(code: CodeGlance): { word: string; tone: GlanceTone;
 			tip: `${testedTip(code)} The others prove nothing about ${shortSha(code.codeHead)}: run the tests on it, then sync.`
 		};
 	if (code.validatedCommit)
-		return { word: `validated at ${shortSha(code.validatedCommit)}`, tone: 'ok', tip: `A person validated the verification on ${shortSha(code.validatedCommit)}: that commit is what the merge brings into ${code.deploymentBranch}.` };
+		return { word: `validated at ${shortSha(code.validatedCommit)}`, tone: 'ok', tip: `The approval fixed ${shortSha(code.validatedCommit)}: that commit is what the merge brings into ${code.deploymentBranch}.` };
 	return code.proofsChecked > 0
 		? { word: `tested on ${shortSha(code.codeHead)}`, tone: 'ok', tip: `${testedTip(code)} ${COMMITTED_TIP}` }
 		: { word: `committed · ${shortSha(code.codeHead)}`, tone: 'muted', tip: `${COMMITTED_TIP} No test result was reported on it yet.` };

@@ -4,7 +4,7 @@
 	import EarsText from '$ui/glossary/EarsText.svelte';
 	import { untrack, type Snippet } from 'svelte';
 	import { Icon, pushToast } from '$ui/design-system';
-	import { DATAMAP_THREAD_KEY, elementPath, reviewActions, journeyPaths, personKey, readFunctionalDiagram, type JourneyPath, type LocalGraph, type LocalNode } from '$domain/evolution';
+	import { DATAMAP_THREAD_KEY, elementPath, isDescriptionPath, reviewActions, journeyPaths, personKey, readFunctionalDiagram, type JourneyPath, type LocalGraph, type LocalNode } from '$domain/evolution';
 	import type { DossierFieldRow, DossierReading } from '$lib/server/evolution-view.server';
 	import type { ActionReading } from '$lib/server/evolution-spec-actions.server';
 	import { initials } from '$ui/team/team-style';
@@ -18,6 +18,7 @@
 	import type { PendingVerdict } from './optimistic-verdict';
 	import { OptimisticActs } from './optimistic-acts.svelte';
 	import { useEvolutionWrites } from './evolution-writes.svelte';
+	import type { ActionsUnread } from './specification-readings.svelte';
 	import { patchKey, type Patch, type Patches } from './dossier-overlay';
 	import type { PageChanges } from './page-edit';
 	import JourneyPathCard from './JourneyPathCard.svelte';
@@ -28,6 +29,7 @@
 	import { FINDINGS_BLOCK_NAME, RULES_PAGE_NAME, type FindingOutcome } from '$domain/evolution';
 	import ValidateAllButton from './ValidateAllButton.svelte';
 	import StepValidateAll from './StepValidateAll.svelte';
+	import { freezeHolding } from './crossings-said';
 	import {
 		CARD,
 		CHANGE_CHIP,
@@ -72,8 +74,10 @@
 		canComment: boolean;
 		graph: LocalGraph | null;
 		actionReadings: Readonly<Record<string, ActionReading>>;
-		/** The action readings as the server last said, which change once a verdict on an action is read back. */
-		actionsRead?: () => unknown;
+		/** Reads the actions again after a verdict on one: it stays on the page until a reading begun after its save is held (criterion b33f1a03). */
+		readActionsAgain?: () => Promise<void>;
+		/** The engine did not answer the last reading of the actions: they show as last read, and are not validated meanwhile (criterion c623df9c). */
+		actionsUnread?: ActionsUnread | null;
 		fieldsOf: (leafId: string) => readonly DossierFieldRow[];
 		labelOf: (path: string) => string;
 		/** The Functional spec's diagram answer, validated as the journey. */
@@ -85,8 +89,10 @@
 		onDropSubject: (leaf: Leaf) => Promise<void>;
 		onGoSimulation: () => void;
 	}
-	let { projectId, dossier, members, actorId, canEdit, pageEditing = false, canValidate, canComment, graph, actionReadings, actionsRead = () => actionReadings, fieldsOf, labelOf, journeyField, journey, datamap, onDropSubject, onGoSimulation }: Props = $props();
+	let { projectId, dossier, members, actorId, canEdit, pageEditing = false, canValidate, canComment, graph, actionReadings, readActionsAgain, actionsUnread = null, fieldsOf, labelOf, journeyField, journey, datamap, onDropSubject, onGoSimulation }: Props = $props();
 	const writes = useEvolutionWrites(untrack(() => projectId));
+	/** The journey is a text of the Functional spec: from the freeze on it is rewritten only after a rebrief, never corrected in the Build (EVO-012). */
+	const journeyEditable = $derived(canEdit && !dossier.frozen);
 	/** Make it a comment, on an exchange of the reader with their AI (ac-evo-live-ask). */
 	const live = useLiveSession();
 	const publishExchange = live ? (messageId: string) => live.publish(messageId) : null;
@@ -97,12 +103,12 @@
 	const verdict = (act: PendingVerdict): Patch => ({ kind: 'verdict', verdict: act });
 	/**
 	 * Sends operations on the request, read at once through `patches`; true once
-	 * saved. A verdict on an action reads back with the action readings, loaded
-	 * after the request.
+	 * saved. A verdict on an action reads back with the action readings, read
+	 * again after the save.
 	 */
 	function send(ops: Record<string, unknown>[], what: string, patches: Patches = {}, onActions = false): Promise<boolean> {
 		if (ops.length === 0) return Promise.resolve(true);
-		return writes.send(patches, ops.map((op) => ({ requestId: dossier.id, ...op })), what, onActions ? actionsRead : undefined);
+		return writes.send(patches, ops.map((op) => ({ requestId: dossier.id, ...op })), what, onActions ? readActionsAgain : undefined);
 	}
 
 	// ---- 3.1 Features ---------------------------------------------------------
@@ -184,6 +190,8 @@
 			await send([{ op: 'withdraw_field_verdict', ...elementTarget(leaf, action) }], `the withdrawal of your validation of “${action.label}”`, actionAct(leaf, action, { act: 'withdraw' }), true);
 			return;
 		}
+		// Known before sending: the server refuses an action while the engine does not answer (rule 519642d3).
+		if (actionsUnread) return pushToast({ level: 'error', message: `Your validation of “${action.label}” was not saved: ${actionsUnread.reason} Try again in a moment.` });
 		if (openActions === undefined) openActions = leaf.id;
 		const sent = send([{ op: 'validate_field', ...elementTarget(leaf, action), value: fingerprint }], `your validation of “${action.label}”`, actionAct(leaf, action, { act: 'validate' }), true);
 		bringNextToValidate(actionDomId(leaf, action));
@@ -413,8 +421,9 @@
 	// ---- Validate all, section by section --------------------------------------
 	// What each section still waits on the reader for: an empty element and a rejected one are left out.
 	const waitingFeatures = $derived(canValidate ? dossier.leaves.filter((l) => filledOf(l).length > 0 && !featureMine(l)) : []);
+	// No action waits while the engine does not answer: a Validate all leaves them out rather than see the whole save refused.
 	const waitingActions = $derived(
-		canValidate ? validatedLeaves.flatMap((leaf) => actionsOf(leaf).filter((a) => !actionRejected(leaf, a.action) && !actionMine(leaf, a.action)).map((spec) => ({ leaf, spec }))) : []
+		canValidate && !actionsUnread ? validatedLeaves.flatMap((leaf) => actionsOf(leaf).filter((a) => !actionRejected(leaf, a.action) && !actionMine(leaf, a.action)).map((spec) => ({ leaf, spec }))) : []
 	);
 	const journeyWaits = $derived(canValidate && !!journeyField?.filled && journeyField.trail?.validation !== 'refused' && !journeyMine);
 	const waitingPaths = $derived(canValidate ? paths.filter((p) => !pathMine(p)) : []);
@@ -465,7 +474,7 @@
 	 * its paths, in one save; empty and rejected elements are left out.
 	 */
 	const stepActions = $derived(
-		canValidate
+		canValidate && !actionsUnread
 			? dossier.leaves
 					.filter((l) => featureMine(l) || waitingFeatures.includes(l))
 					.flatMap((leaf) => actionsOf(leaf).filter((a) => !actionRejected(leaf, a.action) && !actionMine(leaf, a.action)).map((spec) => ({ leaf, spec })))
@@ -492,6 +501,8 @@
 
 	const go = (id: string, previous: string | null = null) => scrollToBlock(id, previous);
 	const allValidated = $derived(nextBest === null && featuresDone);
+	/** Everything validated and nothing frozen: the foot says what holds the freeze (EVO-011, criterion c39cfe76). */
+	const freezeHeldBy = $derived(allValidated ? freezeHolding(dossier) : null);
 </script>
 
 {#snippet actionRow(leaf: Leaf, spec: ReturnType<typeof reviewActions>[number])}
@@ -635,7 +646,7 @@
 						{/if}
 						{#each fields.filter((f) => f.filled) as field (field.path)}
 							<div class="flex flex-col gap-1.5">
-								<span class={KICKER}>{labelOf(field.path)}</span>
+								<span class={KICKER}>{isDescriptionPath(field.path) ? field.label : labelOf(field.path)}</span>
 								<p class="whitespace-pre-line leading-relaxed">{'origin' in field && field.origin && field.origin.request.length > 0 ? field.origin.request.join('\n') : field.value}</p>
 							</div>
 						{/each}
@@ -722,6 +733,13 @@
 		<span class={numberPill(validatedLeaves.length > 0 && allActionsDone && featuresDone)}>3.2</span><h3 class={SECTION_TITLE}>Actions</h3>
 		<ValidateAllButton count={waitingActions.length} what="actions" onclick={() => void validateAllActions()} />
 	</div>
+	{#if actionsUnread}
+		<p class="flex items-start gap-2 rounded-evo-btn border-l-[6px] border-orange bg-orange-tint px-3.5 py-2.5 text-[0.8125rem] leading-[1.4] text-evo-ink-2" role="status" data-actions-unread>
+			{actionsUnread.readAt
+				? `The engine did not answer: the actions read as of ${new Date(actionsUnread.readAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. They are validated once it answers again.`
+				: 'The engine did not answer: the actions of this Specification cannot be read now. Try again in a moment.'}
+		</p>
+	{/if}
 	{#if validatedLeaves.length > 0 && actionsLeft > 0}
 		<div class={GUIDE_BAND}>
 			<span aria-hidden="true" class={GUIDE_DOT}></span>
@@ -798,10 +816,10 @@
 		answers={[journeyField]}
 		{members}
 		{actorId}
-		canEdit={canEdit && journeyField.trail?.validation !== 'validated'}
+		canEdit={journeyEditable && journeyField.trail?.validation !== 'validated'}
 		{canValidate}
 		{canComment}
-		editing={journeyEditing || (pageEditing && canEdit && journeyField.trail?.validation !== 'validated')}
+		editing={journeyEditing || (pageEditing && journeyEditable && journeyField.trail?.validation !== 'validated')}
 		{pageEditing}
 		onEdit={(on) => (journeyEditing = on)}
 		onSave={async () => true}
@@ -1001,6 +1019,7 @@
 {/if}
 
 <PageFoot id={STEP_FOOT_ID} class={FOOT_BAR}>
+	{#if freezeHeldBy}<span class="mr-auto text-sm text-ink-2">{freezeHeldBy}</span>{/if}
 	<StepValidateAll step="Specification" parts={stepParts} onclick={() => void validateStep()} />
 	<button type="button" class={primary48(allValidated)} onclick={onGoSimulation}>Go to Simulation →</button>
 </PageFoot>

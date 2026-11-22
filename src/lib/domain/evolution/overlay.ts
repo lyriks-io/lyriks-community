@@ -2,6 +2,7 @@ import type { CoherenceFinding, DraftLeaf, EvolutionRequest } from './draft';
 import { isDraftLeafId } from './draft';
 import type { PropagationGraph, PropagationNode, PropagationEdge } from './impact-propagation';
 import { stableId } from './ids';
+import { behaviourCriterionLines } from './behaviour-criteria';
 import { withoutQuotations } from './quotations';
 import { quoteName, type SpecLanguage } from '$domain/language';
 
@@ -220,11 +221,14 @@ export function draftCoherence(input: DraftCoherenceInput): CoherenceFinding[] {
 
 		// An addition nobody can test. Not a contradiction with the existing spec,
 		// so it is worth knowing about without holding the request.
-		// An amendment that only rewords or retires criteria says what changes.
+		// An amendment that only rewords or retires criteria says what changes, and a
+		// Given/When/Then criterion its behaviour model adds, rewords or retires counts
+		// as much as a text one (criterion 52c53f0c).
 		if (
 			draft.kind !== 'remove' &&
 			draft.acceptanceCriteria.length === 0 &&
-			(draft.changeCriteria?.length ?? 0) + (draft.retireCriteria?.length ?? 0) === 0
+			(draft.changeCriteria?.length ?? 0) + (draft.retireCriteria?.length ?? 0) === 0 &&
+			behaviourCriterionLines(draft.behaviourModel).length === 0
 		)
 			findings.push({
 				id: stableId('coh-draft-untestable', request.id, draft.id),

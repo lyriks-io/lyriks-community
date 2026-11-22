@@ -402,3 +402,15 @@ describe('pruneOrphanedReachabilityGoals', () => {
 		expect(pruneOrphanedReachabilityGoals(undefined, surfaces)).toBeUndefined();
 	});
 });
+
+describe('a re-save keeps what was disabled', () => {
+	it('keeps the marker of a disabled action and its disabled rules [criterion:ac-leaf-abbb6454-c761-42e0-909b-d341e45481dc]', () => {
+		const marker = { by: 'Sam', at: '2026-11-18T10:00:00.000Z', reason: 'Testing without it' };
+		const projected = [{ id: 'srf', name: 'Journey', stateDefinitions: [], rules: [], invariants: [], actions: [{ id: 'act', name: 'Submit', intent: 'Submit it', parameters: [], rules: [], invariants: [], effects: [] }] }];
+		const existing = [{ id: 'srf', name: 'Journey', stateDefinitions: [], rules: [], invariants: [], actions: [{ id: 'act', name: 'Submit', disabled: marker, rules: [{ id: 'r', disabled: marker }], invariants: [], effects: [] }] }];
+		const [s] = mergeSurfaces(projected, existing) as Array<Record<string, unknown>>;
+		const a = (s.actions as Array<Record<string, unknown>>)[0];
+		expect(a.disabled).toEqual(marker);
+		expect(a.rules).toEqual([{ id: 'r', disabled: marker }]);
+	});
+});

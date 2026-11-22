@@ -1,3 +1,4 @@
+import { mintUuid } from '$domain/shared';
 import { makeDomainId, type Domain } from '$domain/portfolio';
 import type { ClockPort, PortfolioRepositoryPort } from '$application/ports';
 
@@ -6,7 +7,7 @@ export class CreateDomainUseCase {
 	constructor(
 		private readonly repo: PortfolioRepositoryPort,
 		private readonly clock: ClockPort,
-		private readonly randomSuffix: () => string = () => crypto.randomUUID().slice(0, 6)
+		private readonly randomSuffix: () => string = () => mintUuid().slice(0, 6)
 	) {}
 
 	/** `workspaceId` is the workspace the folder belongs to (null without workspaces). */

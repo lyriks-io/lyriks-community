@@ -16,9 +16,6 @@ export const cardBorder = (validated: boolean) => (validated ? 'shadow-[inset_6p
 /** The frame a card wears while it is edited: paper inside a 2px ink border (drawn as a ring, so nothing moves). */
 export const EDITING = 'bg-evo-page ring-2 ring-evo-ink';
 
-/** The design's dotted ground under a diagram (.ly-grid): toner-1 with toner-2 dots every 6px. */
-export const GRID_GROUND = 'bg-toner-1 bg-[radial-gradient(circle,var(--color-toner-2)_0.6px,transparent_0.9px)] bg-size-[6px_6px]';
-
 /** The design's tag (.ly-tag): square, a 1.5px border, mono bold uppercase, never a shadow. The tone adds its colours. */
 export const TAG = 'inline-flex items-center gap-1.5 border-[1.5px] font-evo-mono font-bold tracking-[0.06em] uppercase';
 /** The tones of a tag: categories outline in their hue, a state fills. */

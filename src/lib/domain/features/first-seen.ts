@@ -30,10 +30,3 @@ export function isNewSince(firstSeen: FirstSeen | undefined, id: string, now: nu
 	const t = Date.parse(at);
 	return Number.isFinite(t) && now - t < days * DAY_MS;
 }
-
-/** The elements that read New, each with the moment it appeared. */
-export function newSince(firstSeen: FirstSeen | undefined, now: number, days: number): Record<string, string> {
-	const fresh: Record<string, string> = {};
-	for (const [id, at] of Object.entries(firstSeen ?? {})) if (isNewSince(firstSeen, id, now, days)) fresh[id] = at;
-	return fresh;
-}

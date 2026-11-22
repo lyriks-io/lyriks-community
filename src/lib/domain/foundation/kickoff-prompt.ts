@@ -26,7 +26,7 @@ export const KICKOFF_SOURCES = [
 		code: 'jira',
 		label: 'Jira backlog',
 		phrase: 'the Jira backlog',
-		hint: 'Epics and stories become the feature tree, the roadmap and the rules.'
+		hint: 'Epics and stories become the feature tree and the rules.'
 	},
 	{
 		code: 'notion',
@@ -50,7 +50,7 @@ export const KICKOFF_SOURCES = [
 		code: 'speckit',
 		label: 'Spec Kit files',
 		phrase: 'the Spec Kit files of this repository (spec, plan, tasks)',
-		hint: 'spec.md, plan.md and tasks.md map onto Features, Architecture and the roadmap.'
+		hint: 'spec.md, plan.md and tasks.md map onto Features and Architecture.'
 	},
 	{
 		code: 'figma',

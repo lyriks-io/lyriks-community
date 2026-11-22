@@ -10,6 +10,7 @@ import { applyBatchToDraft } from '$lib/server/draft-behavior-batch.server';
 import { requireEvolutionAccess } from '$lib/server/community-locks.server';
 import { saveRetrospecActs } from '$application/retrospec/retrospec-store';
 import { retrospecActor } from '$lib/server/retrospec-status.server';
+import { prepareDisableOps } from '$lib/server/behavior-disable.server';
 import type { RequestHandler } from './$types';
 
 /**
@@ -39,6 +40,24 @@ import type { RequestHandler } from './$types';
  * own aux feature (`<projectId>__experience` / `__data_model`). Exact-id match, not
  * the `__experience` suffix, so a caller can't author into another project's feature.
  */
+/** A batch the platform refuses before the engine sees it, in the shape a rejected batch already has. */
+function rejectedBatch(message: string, dryRun: boolean, rejectedBy: string) {
+	return {
+		available: true,
+		batch: {
+			ok: false,
+			dryRun,
+			appliedCount: 0,
+			refs: {},
+			errors: [message],
+			maturityPercentage: null,
+			commitToken: null,
+			raw: { rejectedBy, errors: [message] }
+		},
+		warnings: []
+	};
+}
+
 export const POST: RequestHandler = async (event) => {
 	const body = (await event.request.json().catch(() => null)) as {
 		projectId?: unknown;
@@ -71,16 +90,25 @@ export const POST: RequestHandler = async (event) => {
 	// The commit path replays the token's cached ops, so operations are optional there;
 	// otherwise a batch must carry them.
 	if (!commit && !Array.isArray(body?.operations)) error(400, 'operations must be an array');
-	const operations = Array.isArray(body?.operations)
+	const sent = Array.isArray(body?.operations)
 		? (body.operations as Record<string, unknown>[])
 		: [];
 
-	// A draft an Evolution request carries takes the same batch, kept on the draft.
+	// A draft an Evolution request carries takes the same batch, kept on the draft:
+	// a request is itself the change request, so a disable there is stamped, never refused.
 	if (isDraftLeafId(featureId)) {
 		requireEvolutionAccess(event.locals.services);
+		const prepared = await prepareDisableOps(event.locals.services, event.cookies, projectId, sent, { guardValidated: false });
+		const operations = prepared.ok ? prepared.operations : sent;
 		return applyBatchToDraft(event, { projectId, draftId: featureId, operations, dryRun, commit });
 	}
 	await requireBehaviorFeatureAccess(event, projectId, featureId, 'write');
+
+	// Disabling or enabling an element: refused on a specification validated
+	// definitively (rules 840b0846, dc50bf71), stamped with who asked (criterion e40ccfa1).
+	const prepared = await prepareDisableOps(event.locals.services, event.cookies, projectId, sent, { guardValidated: true });
+	if (!prepared.ok) return json(rejectedBatch(prepared.refusal, dryRun, 'specification-validated'));
+	const operations = prepared.operations;
 
 	// This id addresses a record another project also claims, so the engine would
 	// write into whichever copy it indexed. Refused in the shape a rejected batch
@@ -89,20 +117,7 @@ export const POST: RequestHandler = async (event) => {
 	const clashes = await featureIdCollisions(event.locals.services, projectId, featureId);
 	if (clashes.length > 0) {
 		const message = featureIdCollisionMessage(projectId, featureId, clashes);
-		return json({
-			available: true,
-			batch: {
-				ok: false,
-				dryRun,
-				appliedCount: 0,
-				refs: {},
-				errors: [message],
-				maturityPercentage: null,
-				commitToken: null,
-				raw: { rejectedBy: 'behavior-feature-access', errors: [message] }
-			},
-			warnings: []
-		});
+		return json(rejectedBatch(message, dryRun, 'behavior-feature-access'));
 	}
 
 	const services = event.locals.services;

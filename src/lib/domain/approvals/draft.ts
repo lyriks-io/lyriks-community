@@ -1,3 +1,4 @@
+import { mintUuid } from '../shared';
 import type { ApprovalStatus } from './enums';
 
 /**
@@ -38,7 +39,7 @@ export function createEmptyApprovalsDraft(projectId: string): ProjectApprovalsDr
 
 export function createApprovalItem(overrides: Partial<ApprovalItem> = {}): ApprovalItem {
 	return {
-		id: crypto.randomUUID(),
+		id: mintUuid(),
 		title: '',
 		area: 'Whole specification',
 		reviewer: '',

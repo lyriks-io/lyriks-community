@@ -75,7 +75,18 @@ export const DATA_MAP_PLACEMENTS_SECTION = 'data-map-placements';
  */
 export const AI_CONVERSATIONS_SECTION = 'ai-conversations';
 
+/**
+ * The Evolution document: its requests, their reports and the AI sessions,
+ * megabytes on a project carried through several changes. No project-wide
+ * aggregate reads it, and every load that does declares its own key (guarded
+ * by section-sync.test.ts), so an act on a request re-runs those loads alone.
+ * A landing writes the sections of the specification, whose own changes
+ * re-run the aggregates.
+ */
+export const EVOLUTION_SECTION = 'evolution';
+
 const PAGE_SCOPED_SECTIONS: ReadonlySet<string> = new Set([
+	EVOLUTION_SECTION,
 	AI_CONVERSATIONS_SECTION,
 	// A reading of the project health changes nothing authored: the pages that
 	// show it depend on it, and a reading every 10 s while a proof runs must not
@@ -89,7 +100,7 @@ const PAGE_SCOPED_SECTIONS: ReadonlySet<string> = new Set([
 	RETROSPEC_DETECTED_SECTION
 ]);
 
-/** True for a synthetic section that only its own page depends on. */
+/** True for a section no project-wide aggregate reads: only the loads that declare its own key re-run on it. */
 export function isPageScopedSection(section: string): boolean {
 	return PAGE_SCOPED_SECTIONS.has(section);
 }

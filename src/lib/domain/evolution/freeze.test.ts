@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
 	ALL_BLOCK_FIELDS,
 	amend,
-	canAmend,
 	canCloseReport,
 	canFreeze,
 	canReceiveReport,
@@ -10,10 +9,7 @@ import {
 	fieldKey,
 	freeze,
 	isLeafScoped,
-	lineBrief,
 	rechallengePending,
-	refusedReports,
-	verifyImpliesFrozen,
 	type Actor,
 	type ImplementationFinding
 } from './index';
@@ -92,22 +88,12 @@ describe('freezing the spec', () => {
 	});
 
 	// 1d555b2d: no freeze from the Specify stage.
-	it('freezes from Challenge only, and only for a writer', () => {
-		expect(canFreeze(createEvolutionRequest({ stage: 'specification' }), { canEdit: true, criticalEmptyCount: 0 }).ok).toBe(false);
+	it('freezes from the Impact analysis only, and only for a writer', () => {
+		const fromSpecify = canFreeze(createEvolutionRequest({ stage: 'specification' }), { canEdit: true, criticalEmptyCount: 0 });
+		expect(fromSpecify.ok).toBe(false);
+		// The refusal names the crossing as the product names its steps (rule eeaf9eb5, criterion a18cf05e).
+		expect(fromSpecify.ok ? null : fromSpecify.reason).toBe('Freezing happens when crossing from the Impact analysis to the Build.');
 		expect(canFreeze(atChallenge(), { canEdit: false, criticalEmptyCount: 0 }).ok).toBe(false);
-	});
-
-	// 74aadd30: nothing to amend without a freeze.
-	it('amends a frozen spec only', () => {
-		expect(canAmend(createEvolutionRequest(), true).ok).toBe(false);
-		expect(canAmend(freeze(atChallenge(), noa, 'now'), true).ok).toBe(true);
-		expect(canAmend(freeze(atChallenge(), noa, 'now'), false).ok).toBe(false);
-	});
-
-	it('Verify implies a frozen spec', () => {
-		expect(verifyImpliesFrozen(createEvolutionRequest({ stage: 'implementation', frozen: false }))).toBe(false);
-		expect(verifyImpliesFrozen(createEvolutionRequest({ stage: 'implementation', frozen: true }))).toBe(true);
-		expect(verifyImpliesFrozen(createEvolutionRequest({ stage: 'coherence', frozen: false }))).toBe(true);
 	});
 });
 
@@ -131,23 +117,9 @@ describe('receiving an implementation report', () => {
 	it('refuses a report when nothing is frozen', () => {
 		expect(canReceiveReport(createEvolutionRequest(), 0).ok).toBe(false);
 	});
-
-	it('judges only the lines an incoming save adds, against the stored freeze', () => {
-		const stored = frozenAt1();
-		const good = { ...stored, implementationFindings: [line({ specVersion: 1 })] };
-		expect(refusedReports([stored], [good])).toEqual([]);
-		const bad = { ...stored, implementationFindings: [line({ specVersion: 0 })] };
-		expect(refusedReports([stored], [bad])).toHaveLength(1);
-		// A re-save of an already stored line is not judged again.
-		expect(refusedReports([good], [good])).toEqual([]);
-		// An incoming draft cannot freeze and report in the same breath: the
-		// stored request, not frozen, is the authority.
-		const sneaky = { ...frozenAt1(), implementationFindings: [line({ specVersion: 1 })] };
-		expect(refusedReports([createEvolutionRequest({ id: sneaky.id })], [sneaky])).toHaveLength(1);
-	});
 });
 
-describe('adoption sends the request back through the Challenge check', () => {
+describe('adoption sends the request back through the readings of the Impact analysis', () => {
 	const ready = { status: 'ready' as const, projectScore: 80, requestDelta: 0, ranAt: '2026-09-03T09:00:00Z' };
 
 	it('holds the report open while an adoption is more recent than the last coherence run', () => {
@@ -160,7 +132,8 @@ describe('adoption sends the request back through the Challenge check', () => {
 		expect(rechallengePending(r)).toBe(true);
 		const refused = canCloseReport(r);
 		expect(refused.ok).toBe(false);
-		if (!refused.ok) expect(refused.reason).toContain('Challenge');
+		// The refusal names the steps as the product names them (feat-35 a2d1bc9c, feat-31 a18cf05e).
+		if (!refused.ok) expect(refused.reason).toBe('An adoption amended the spec. Run the readings of the Impact analysis again, coherence and docking, before closing this report.');
 	});
 
 	it('closes once the amended spec was challenged again', () => {
@@ -172,25 +145,5 @@ describe('adoption sends the request back through the Challenge check', () => {
 		});
 		expect(rechallengePending(r)).toBe(false);
 		expect(canCloseReport(r).ok).toBe(true);
-	});
-});
-
-describe('the brief under an invalidated line', () => {
-	it('says what the spec expects, what the code does, where, and what to do', () => {
-		const r = createEvolutionRequest({
-			title: 'Bulk import',
-			specVersion: 1,
-			implementationFindings: [
-				line({ decision: 'invalidated' }),
-				line({ id: 'ok1', verdict: 'conform', decision: 'validated', acceptanceTestPassing: true })
-			]
-		});
-		const brief = lineBrief(r, r.implementationFindings[0]);
-		expect(brief).toContain('src/lib/import/run.ts:40-88');
-		expect(brief).toContain('The spec expects: Under 10 minutes');
-		expect(brief).toContain('The code does: Times out');
-		expect(brief).toContain('Make the code do what the spec says');
-		expect(brief).toContain('Leave untouched (conform): ok1');
-		expect(brief).toContain('spec version 1');
 	});
 });

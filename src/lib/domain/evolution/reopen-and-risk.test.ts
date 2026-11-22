@@ -169,7 +169,7 @@ describe('a team validates the steps, through a freeze and a reopening', () => {
 	const roster = new Set(['ana', 'bo']);
 	const team = (actor: Actor) => ctxFor(actor, false);
 
-	it('takes one person\'s validation, refuses the client, and holds the freeze on the Solution only, through a reopening', () => {
+	it('takes one person\'s validation, refuses the client, and holds the freeze on no step, through a reopening', () => {
 		let request: EvolutionRequest = {
 			...validated(opened()),
 			stage: 'coherence',
@@ -185,8 +185,8 @@ describe('a team validates the steps, through a freeze and a reopening', () => {
 			stepAnswers: { ...request.stepAnswers, solution: { ...request.stepAnswers.solution, examples: 'A coupon takes 10% off the cart.' } }
 		};
 		expect(reasonOf(validateStepAct(team(client), request, 'solution'))).toMatch(/AI client cannot/);
-		// The Technical spec holds nothing: the build waits for the Solution only.
-		expect(reasonOf(crossStageAct(team(person), request, { criticalEmptyCount: 0 }))).toBe('The Solution is not validated yet: a person validates it before the build.');
+		// No step holds the freeze: the build waits for the Specification only.
+		expect(crossStageAct(team(person), request, { criticalEmptyCount: 0 }).ok).toBe(true);
 
 		request = ok(validateStepAct(team(person), request, 'solution'));
 		expect(reasonOf(validateStepAct(team(person), request, 'solution'))).toBe('You already validated this step.');

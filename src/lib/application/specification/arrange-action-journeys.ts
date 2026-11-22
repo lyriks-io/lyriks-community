@@ -21,7 +21,7 @@ export function actionIdsOf(feature: Record<string, unknown> | undefined): strin
  */
 export class ArrangeActionJourneysUseCase {
 	constructor(
-		private readonly behavior: BehaviorPort,
+		private readonly behavior: Pick<BehaviorPort, 'readFeature'>,
 		private readonly residue: ProjectResidueRepositoryPort
 	) {}
 

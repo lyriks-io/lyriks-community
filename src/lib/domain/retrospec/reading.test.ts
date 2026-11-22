@@ -9,9 +9,9 @@ import { createEmptyGlossaryDraft } from '../glossary';
 import { createEmptyRulesDraft } from '../rules';
 import { createEmptyScopeDraft } from '../scope';
 import { createEmptyUsersDraft } from '../users';
-import { readRetrospec, readingItemIds, type RetrospecSpec } from './reading';
+import { readRetrospec, type RetrospecSpec } from './reading';
 import { retrospecFindings } from './findings';
-import { codeCoverage, rebuiltTiles, reviewNote, summaryNote, tracedShare } from './summary';
+import { codeCoverage, rebuiltTiles, summaryNote, tracedShare } from './summary';
 
 const P = 'p-1';
 
@@ -153,11 +153,20 @@ describe('reading the rebuilt specification', () => {
 		expect(tab('data').items.map((i) => i.id)).toEqual(['data:datamap', 'data:orphans']);
 	});
 
+	it('reads where the product runs from its hosts and databases, a kind with nothing in it left out', () => {
+		expect(tab('infra').items.map((i) => [i.title, i.desc])).toEqual([
+			['Hosting', 'Two servers.'],
+			['Databases', '1 database.']
+		]);
+		const noHost = spec();
+		noHost.data.hosts = [];
+		expect(readRetrospec(noHost, 'Facturo').tabs.find((t) => t.key === 'infra')?.items.map((i) => i.title)).toEqual(['Databases']);
+	});
+
 	it('orders the journey steps and counts what the summary shows', () => {
 		const journey = tab('experience').items.find((i) => i.id === 'journey:j-1')!;
 		expect(journey.steps).toEqual(['New invoice', 'Send']);
 		expect(reading.counts).toMatchObject({ features: 2, featuresWithBehavior: 1, actions: 1, rules: 1, entities: 3, relations: 1, orphanTables: 1, openIssues: 1, steps: 2, stepsOnScreen: 1 });
-		expect(new Set(readingItemIds(reading)).size).toBe(readingItemIds(reading).length);
 	});
 });
 
@@ -227,11 +236,9 @@ describe('the summary', () => {
 		]);
 	});
 
-	it('writes the note from the counts, and its last line from the tab', () => {
+	it('writes the note from the counts', () => {
 		const note = summaryNote(reading.counts, 'Facturo');
 		expect(note.title).toBe('We rebuilt the specification of Facturo.');
 		expect(note.taken.map((l) => l.text)).toEqual(['Rebuilt 2 features and 1 action.', 'Mapped 3 entities and 1 relation.', 'Described the stack and architecture.']);
-		const review = reviewNote(reading.counts, 'Facturo', 20, reading.tabs[1]);
-		expect(review.todo).toEqual(['Validate or reject each feature.']);
 	});
 });

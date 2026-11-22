@@ -91,21 +91,3 @@ export function notificationsFor(events: readonly ActivityEvent[], me: string): 
 		})
 		.sort(newestFirst);
 }
-
-/**
- * What the event says to this reader after the actor's name: a message that
- * names them or answers them says so ("mentioned you"); to anyone else it
- * reads as what was done.
- */
-export function lineFor(e: ActivityEvent, me: string): string {
-	if (concerns(e, me) && e.kind === 'mention') return 'mentioned you';
-	if (concerns(e, me) && e.kind === 'reply') return 'replied to your comment';
-	if (concerns(e, me) && e.kind === 'shared') return 'shared an item with you';
-	if (concerns(e, me) && e.kind === 'reminder') return 'is waiting for your validation';
-	return e.line;
-}
-
-/** The events of several projects as one stream, newest first. */
-export function mergeActivity(...streams: readonly (readonly ActivityEvent[])[]): ActivityEvent[] {
-	return streams.flat().sort(newestFirst);
-}

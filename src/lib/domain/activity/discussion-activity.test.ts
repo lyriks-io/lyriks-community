@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DiscussionEvent } from '$domain/discussions';
-import { lineFor, notificationsFor } from './activity';
+import { notificationsFor } from './activity';
 import { discussionActivity } from './discussion-activity';
 
 const d = (over: Partial<DiscussionEvent>): DiscussionEvent => ({
@@ -26,8 +26,7 @@ describe('discussion activity', () => {
 		const events = discussionActivity('fac', [d({})]);
 		const [mine] = notificationsFor(events, 'Dylan@X.io');
 		expect(mine).toMatchObject({ kind: 'mention', actorName: 'Carmen Roux', where: 'Specification · VAT rounding rule' });
-		expect(lineFor(mine, 'dylan@x.io')).toBe('mentioned you');
-		expect(lineFor(mine, 'sarah@x.io')).toBe('opened a discussion on “VAT rounding rule”');
+		expect(mine.line).toBe('opened a discussion on “VAT rounding rule”');
 	});
 
 	it('reads a thread nobody was notified of as a discussion opened, and a resolution without its opening words', () => {

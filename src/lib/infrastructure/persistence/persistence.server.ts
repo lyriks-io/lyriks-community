@@ -7,6 +7,7 @@ import type {
 	DraftLockPort,
 	FoundationIdentityRepositoryPort,
 	ExperienceDraftRepositoryPort,
+	ImplementationIndexRevisionsPort,
 	FeaturesDraftRepositoryPort,
 	FoundationOperationsRepositoryPort,
 	ActivationRepositoryPort,
@@ -38,6 +39,7 @@ import { PgActivationRepository } from './postgres/pg-activation-repository.serv
 import { PgProjectResidueRepository } from './postgres/pg-project-residue-repository.server';
 import { PgSectionDocumentStore } from './postgres/pg-section-documents.server';
 import { PgBackSyncOutbox } from './postgres/pg-back-sync-outbox.server';
+import { PgImplementationIndexRevisions } from './postgres/pg-implementation-index-revisions.server';
 
 /** Every persistence port the composition root wires, backend-agnostic. */
 export interface Persistence {
@@ -66,6 +68,8 @@ export interface Persistence {
 	readonly draftLock: DraftLockPort;
 	/** Consolidated store for the simple sections (atomic save, revision in-row). */
 	readonly sectionDocuments: SectionDocumentStorePort;
+	/** The revision of each project's implementation index, and when each unit was last written. */
+	readonly implementationIndexRevisions: ImplementationIndexRevisionsPort;
 	/** Readiness probe for PostgreSQL (throws if it cannot answer). */
 	readonly ping: () => Promise<void>;
 }
@@ -102,6 +106,7 @@ export function buildPersistence(sectionChanges: SectionChangePublisher): Persis
 		projectResidue: new PgProjectResidueRepository(),
 		draftLock: new PgDraftLock(),
 		sectionDocuments,
+		implementationIndexRevisions: new PgImplementationIndexRevisions(),
 		ping: () =>
 			Promise.race([
 				pgQuery('SELECT 1').then(() => undefined),

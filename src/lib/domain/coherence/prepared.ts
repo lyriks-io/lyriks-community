@@ -1,5 +1,4 @@
-import type { CoherenceAnalysis, Gap, PreparedDecision, ProjectCoherenceDraft } from './draft';
-import type { DecisionVerdict } from './decisions';
+import type { CoherenceAnalysis, PreparedDecision, ProjectCoherenceDraft } from './draft';
 
 /**
  * Decisions prepared for a person to take. Pure.
@@ -20,50 +19,12 @@ import type { DecisionVerdict } from './decisions';
  *   - no reason, no preparation: the reason IS the work being handed over.
  */
 
-export interface PreparationInput {
-	gapId: string;
-	gapTitle: string;
-	status: PreparedDecision['status'];
-	reason: string;
-	by: { id: string; kind: 'person' | 'ai_client' };
-}
-
-/** Whether a decision may be prepared for this gap. */
-export function canPrepare(gap: Pick<Gap, 'blocking'> | undefined, reason: string): DecisionVerdict {
-	if (!gap) return { ok: false, why: 'This gap is not open; there is no decision to prepare.' };
-	if (gap.blocking)
-		return { ok: false, why: 'A blocking gap is fixed, not decided: nothing to prepare.' };
-	if (reason.trim() === '')
-		return { ok: false, why: 'A prepared decision without a reason gives the person nothing to weigh.' };
-	return { ok: true };
-}
-
 /** The preparation standing for a gap, if any. */
 export function preparedFor(
 	draft: Pick<ProjectCoherenceDraft, 'prepared'>,
 	gapId: string
 ): PreparedDecision | undefined {
 	return draft.prepared.find((p) => p.gapId === gapId);
-}
-
-/** Add or replace the preparation for a gap. */
-export function prepareDecision(
-	draft: ProjectCoherenceDraft,
-	input: PreparationInput,
-	id: string,
-	now: string
-): ProjectCoherenceDraft {
-	const prepared: PreparedDecision = {
-		id,
-		gapId: input.gapId,
-		gapTitle: input.gapTitle,
-		status: input.status,
-		reason: input.reason.trim(),
-		preparedById: input.by.id,
-		preparedByKind: input.by.kind,
-		preparedAt: now
-	};
-	return { ...draft, prepared: [...draft.prepared.filter((p) => p.gapId !== input.gapId), prepared] };
 }
 
 /** Drop the preparation for a gap: taken, dismissed, or no longer applicable. */

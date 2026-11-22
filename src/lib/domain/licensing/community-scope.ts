@@ -2,7 +2,8 @@
  * What a Community installation holds (EVO-001, spec version 1): one user, one
  * project, no Evolutions, no solver. The installation applies it itself, in the
  * code, from the edition it runs: every refusal names the plan that opens what
- * it refuses, so each limit is a way up.
+ * it refuses, so each limit is a way up. What Solo Builder opens reads as an
+ * offer: what the plan makes available, then Upgrade (EVO-006).
  */
 
 /** A scope check: allowed, or refused with the sentence to show and the plan that opens it. */
@@ -21,8 +22,14 @@ export const UPGRADE_PLAN_NAMES: Readonly<Record<UpgradePlan, string>> = {
 	enterprise: 'Enterprise'
 };
 
+/** Whether a value read at an edge (a refusal's JSON body) names one of the plans. */
+export const isUpgradePlan = (value: unknown): value is UpgradePlan => typeof value === 'string' && Object.hasOwn(UPGRADE_PLAN_NAMES, value);
+
 /** Where each plan is offered. */
 export const PRICING_URL = 'https://lyriks.io/pricing';
+
+/** The same address written as text, where the installation allows no link out. */
+export const PRICING_ADDRESS = PRICING_URL.replace(/^https?:\/\//, '');
 
 /** The capabilities Community locks, each with the plan that opens it. */
 export const COMMUNITY_LOCKS = {
@@ -45,14 +52,23 @@ export function lockedSentence(lock: CommunityLock): string {
 	const plan = UPGRADE_PLAN_NAMES[planOpening(lock)];
 	switch (lock) {
 		case 'secondProject':
-			return `Community holds one project. ${plan} opens several.`;
+			return `More active projects are available from the ${plan} plan. Upgrade to keep building.`;
 		case 'evolutions':
-			return `Evolutions are not part of Community. ${plan} opens them.`;
+			return `Evolutions are available from the ${plan} plan. Upgrade to keep building.`;
 		case 'sharing':
 			return `Community holds one user. ${plan} opens sharing with your team.`;
 		case 'solver':
 			return `Proving a rule for every value is part of ${plan}.`;
 	}
+}
+
+/**
+ * What opening an evolution from a page says on Community (New change on a
+ * point of What Lyriks noticed, or on the points picked): the offer of
+ * Evolutions, for this evolution (EVO-006).
+ */
+export function evolutionOpeningSentence(): string {
+	return `Evolutions are available from the ${UPGRADE_PLAN_NAMES[planOpening('evolutions')]} plan. Upgrade to open this evolution and keep building.`;
 }
 
 /** The refusal of a capability Community locks. */

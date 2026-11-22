@@ -7,7 +7,7 @@ import {
 	featuresResidueFromDraft,
 	type FeaturesResidue
 } from './features-projection';
-import { createEmptyFeaturesDraft, type WorkAssignment } from '$domain/features';
+import { createEmptyFeaturesDraft } from '$domain/features';
 
 function feat(id: string, name: string, tags: { type: string; value: string }[]): UnspaFeatureSnapshot {
 	return { format: UNSPA_FEATURE_FORMAT, version: UNSPA_VERSION, feature: { id, name, description: '', tags } };
@@ -26,9 +26,6 @@ describe('buildFeaturesProjection', () => {
 		families: [
 			{ id: 'fam-rec', name: 'Recurring', coreId: 'core-bill', parentFamilyId: null, description: '' }
 		],
-		releases: [
-			{ id: 'rel-1', name: 'MVP', version: 'V1', weekStart: 1, weekEnd: 6, order: 0, description: '' }
-		],
 		lastSavedAt: null
 	};
 
@@ -38,9 +35,7 @@ describe('buildFeaturesProjection', () => {
 			features: [
 				feat('f1', 'Invoice', [
 					{ type: 'core', value: 'Billing' },
-					{ type: 'family', value: 'Recurring' },
-					{ type: 'mvp', value: 'must' },
-					{ type: 'phase', value: 'V1' }
+					{ type: 'family', value: 'Recurring' }
 				]),
 				feat('f2', 'Dunning', [{ type: 'core', value: 'Billing' }])
 			]
@@ -57,8 +52,6 @@ describe('buildFeaturesProjection', () => {
 		expect(f1.coreId).toBe('core-bill');
 		expect(f1.parentFamilyId).toBe('fam-rec');
 		expect(f1.unspaghettitFeatureId).toBe('f1');
-		expect(draft.mvpAssignments).toEqual([{ featureId: 'f1', tier: 'must' }]);
-		expect(draft.roadmapAssignments).toEqual([{ featureId: 'f1', releaseId: 'rel-1' }]);
 	});
 
 	it('matches membership tags case-insensitively (kernel lowercases tag values on write)', () => {
@@ -70,9 +63,7 @@ describe('buildFeaturesProjection', () => {
 			features: [
 				feat('f1', 'Invoice', [
 					{ type: 'core', value: 'billing' },
-					{ type: 'family', value: 'recurring' },
-					{ type: 'mvp', value: 'must' },
-					{ type: 'phase', value: 'v1' }
+					{ type: 'family', value: 'recurring' }
 				])
 			]
 		};
@@ -80,7 +71,6 @@ describe('buildFeaturesProjection', () => {
 		const f1 = draft.features.find((f) => f.id === 'f1')!;
 		expect(f1.coreId).toBe('core-bill');
 		expect(f1.parentFamilyId).toBe('fam-rec');
-		expect(draft.roadmapAssignments).toEqual([{ featureId: 'f1', releaseId: 'rel-1' }]);
 	});
 
 	it('invents no decoration for a leaf the kernel does not place', () => {
@@ -161,48 +151,31 @@ describe('buildFeaturesProjection', () => {
 		expect(draft.features.map((f) => f.id)).toEqual(['a', 'b']);
 	});
 
-	it('round-trips sprints + assignments through residue (Lyriks-owned decoration)', () => {
-		const kernel = { project: proj(['f1']), features: [feat('f1', 'Invoice', [{ type: 'core', value: 'Billing' }])] };
-		const withWork: FeaturesResidue = {
-			...residue,
-			sprints: [{ id: 's1', name: 'Sprint 1', order: 0 }],
-			assignments: [
-				{ id: 'w1', kind: 'feature', featureId: 'f1', assigneeId: 'u1', sprintId: 's1', order: 0 }
-			]
+	it('ignores the roadmap a stored residue or a kernel tag still holds, and saves without it', () => {
+		const kernel = {
+			project: proj(['f1']),
+			features: [feat('f1', 'Invoice', [{ type: 'core', value: 'Billing' }, { type: 'phase', value: 'V1' }, { type: 'mvp', value: 'must' }])]
 		};
-		const draft = buildFeaturesProjection('p1', kernel, withWork);
-		expect(draft.sprints).toEqual(withWork.sprints);
-		expect(draft.assignments).toEqual(withWork.assignments);
-		// And the inverse split keeps them in the residue.
-		expect(featuresResidueFromDraft(draft).assignments).toEqual(withWork.assignments);
-		expect(featuresResidueFromDraft(draft).sprints).toEqual(withWork.sprints);
-	});
-
-	it('never turns sprints/assignments into BehaviorOps (invisible to the kernel)', () => {
-		const draft = createEmptyFeaturesDraft('p1');
-		draft.cores = [{ id: 'c', name: 'Billing', description: '', tone: 'invoicing' }];
-		draft.features = [
-			{ id: 'f1', name: 'Invoice', coreId: 'c', parentFamilyId: null, unspaghettitFeatureId: 'f1', description: '' }
-		];
-		draft.sprints = [{ id: 's1', name: 'Sprint 1', order: 0 }];
-		draft.assignments = [
-			{ id: 'w1', kind: 'action', featureId: 'f1', actionId: 'send', assigneeId: 'u1', sprintId: 's1', order: 0 } as WorkAssignment
-		];
-		const ops = featuresDraftToBehaviorOps(draft, { auxFeatureIds: [], currentProjectTags: [] });
-		const serialized = JSON.stringify(ops);
-		expect(serialized).not.toContain('w1');
-		expect(serialized).not.toContain('s1');
-		expect(serialized).not.toContain('assignee');
-		// The kernel sees the shell, the leaf's criteria, the leaf-id list and the
-		// project tags, and nothing from the work distribution.
-		expect(
-			ops.every(
-				(o) =>
-					o.kind.startsWith('upsert') ||
-					o.kind.startsWith('setProject') ||
-					o.kind === 'mirrorFeatureAcceptance'
-			)
-		).toBe(true);
+		// Residue saved while the product had a roadmap: no migration rewrote it.
+		const stored = {
+			...residue,
+			releases: [{ id: 'rel-1', name: 'MVP', version: 'V1', weekStart: 1, weekEnd: 6, order: 0, description: '' }],
+			sprints: [{ id: 's1', name: 'Sprint 1', order: 0 }],
+			assignments: [{ id: 'w1', kind: 'feature', featureId: 'f1', assigneeId: 'u1', sprintId: 's1', order: 0 }],
+			actionAssignments: { 'f1::send': 'u1' },
+			featureRoles: { f1: ['u1'] },
+			mvpAssignments: [{ featureId: 'f1', tier: 'must' }],
+			leafMeta: { f1: { status: 'done', objective: 'Bill on time.' } }
+		} as FeaturesResidue;
+		const draft = buildFeaturesProjection('p1', kernel, stored);
+		for (const key of ['releases', 'roadmapAssignments', 'sprints', 'assignments', 'actionAssignments', 'featureRoles', 'mvpAssignments'])
+			expect(draft, key).not.toHaveProperty(key);
+		const written = JSON.stringify(featuresResidueFromDraft(draft));
+		for (const word of ['rel-1', 's1', 'w1', 'u1', '"status"']) expect(written, word).not.toContain(word);
+		expect(draft.leafMeta?.f1).toEqual({ objective: 'Bill on time.' });
+		const ops = JSON.stringify(featuresDraftToBehaviorOps(draft, { auxFeatureIds: [], currentProjectTags: [] }));
+		expect(ops).not.toContain('"phase"');
+		expect(ops).not.toContain('"mvp"');
 	});
 });
 

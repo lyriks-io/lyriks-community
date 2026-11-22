@@ -6,6 +6,90 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.50] - 2026-11-22
+
+Several AIs work on one project at once, the next Reverse-Specification runs
+from Mismatch with your AI, and a change request reaches its landing with
+fewer gestures.
+
+### Added
+
+- Several AIs of one person stay connected to the same project at once:
+  opening a session no longer ends another. A click goes to the AI already
+  holding what it touches, else to the free AI opened most recently, else it
+  waits; an AI that leaves hands its untreated clicks back. Ask my AI lists
+  each AI in session with its state, what it does and its own End, and an AI
+  can read its person's other sessions and ask one of them a question.
+- Mismatch offers the next Reverse-Specification at its head: Full, Delta or
+  Resume analysis, the default following one rule (no specification: Full; a
+  run closed before its final check: Resume; otherwise Delta). Run it with my
+  AI hands the run to the AI in session, or copies its prompt without one.
+  While it runs, a preview replaces the waiting card, with Resume it with my
+  AI when the run pauses.
+- An element of the specification can be disabled: it stays readable, says
+  who disabled it and why, and no reading takes it into account. Each action
+  shows a closed line of its scenarios, N scenarios and how many are proven
+  against the code.
+- Sign-up asks the password twice and lets the browser offer one.
+- For AI clients, the index sync finds which feature and unit hold index
+  keys, moves located lines without replacing any report, guards every write
+  on the index revision, and hands out a sync command that signs in by itself.
+- Change requests (Enterprise): a landed request validates in Knowledge what
+  its code proved; the Simulation lists what a request touches without a
+  validation and asks for it; when a request lands, every open request that
+  shares a feature or a table with it is told and read again, overlapping
+  requests land in the order set at their freeze, and declaring one live
+  before its turn asks for a reason.
+
+### Changed
+
+- Withdrawing one's own validation in Knowledge takes a click and a
+  confirmation instead of resting the pointer on the check, and a refused
+  withdrawal says why.
+- The control that validates a whole section reads Validate the whole
+  section wherever a section is validated at once; Validate all stays on a
+  step's foot and on the Mismatch report.
+- On Community, a locked capability reads as an offer with a View plans link,
+  and Ask my AI is reachable: the MCP keeps the session tools.
+- The roadmap is gone: a feature's delivery status comes from its code
+  coverage, and the release tiers are removed.
+- Change requests (Enterprise): before the Impact analysis only the Need and
+  the description of the Solution are owed, and a request whose texts are
+  written enters it on its own; the build waits for the Specification alone;
+  the freeze follows the last validation of a person, and a settled build
+  enters Approval on its own; a frozen version is corrected in the Build
+  without going back to Specify.
+- Pages answer faster: a tab out of sight waits and refreshes once it shows
+  again, the journeys diagram shows each change at once and saves it behind,
+  and an AI waiting in session no longer rewrites the change requests every
+  30 seconds.
+- Dependencies: the collaboration relay runs from @y/websocket-server
+  (y-websocket 3), mermaid 12 keeps the dagre layout and ships without ELK,
+  the Anthropic SDK 1.12 uses the connected key as its only credential,
+  unspaghettit 0.30.0.
+
+### Fixed
+
+- An installation behind a proxy that runs in a container works, and says
+  so; a refused install with --with-proxy puts LYRIKS_WITH_PROXY back.
+- Validation stamps read the reader first, then who is awaited, then who
+  validated, and a fourth person shows as initials instead of +1.
+- The Home card of a stopped Reverse-Specification copies its resume prompt
+  before opening it.
+- A section check names one element in the singular correctly (1
+  technology).
+- Change requests (Enterprise): the criteria a request brings are read as its
+  own and hold its Build until proven, and a draft whose criteria live in its
+  behaviour model is no longer reported as having none.
+
+### Security
+
+- Runtime packages with published advisories are raised to their first
+  patched version, as floors rather than exact pins so later fixes are
+  picked up: hono 4.13.19, @hono/node-server 2.1.9, fast-uri 3.1.9,
+  ip-address 10.7.6, qs 6.17.1, protobufjs 7.6.6 in the MCP gateway; SvelteKit
+  2.70.4, cookie 0.7.2 and source-map-js 1.2.2 in the app.
+
 ## [0.9.49] - 2026-11-19
 
 The Changes board no longer waits on the behaviour engine.

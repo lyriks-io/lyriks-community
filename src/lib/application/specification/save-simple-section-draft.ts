@@ -1,4 +1,5 @@
 import type { ClockPort, TelemetryPort, SectionDraftSaveOptions } from '../ports';
+import type { SpecLanguage } from '$domain/language';
 
 /** What every simple-section repository shares: an atomic save returning the
  *  new revision, or null when the expected revision is stale. */
@@ -23,6 +24,24 @@ export interface SaveSimpleSectionDraftResult {
 }
 
 /**
+ * Per-section behaviour of the save. A section with a local coherence fold must
+ * say where the spec's language comes from: the messages a save returns are
+ * written in it, so the type refuses a fold wired without one.
+ */
+export type SimpleSectionSaveHooks<TDraft> = {
+	/** Pre-save transform (e.g. strip a derived mirror rebuilt on load). */
+	prepare?: (draft: TDraft) => TDraft;
+} & (
+	| { coherence?: undefined; languageOf?: undefined }
+	| {
+			/** Local coherence fold, computed on the authored draft, its messages in `lang`. */
+			coherence: (draft: TDraft, lang: SpecLanguage) => SectionCoherenceResult;
+			/** The spec's language. */
+			languageOf: (projectId: string) => Promise<SpecLanguage>;
+	  }
+);
+
+/**
  * The one save use-case for every "simple" section (consolidated
  * `project_section_documents` store): stamp `lastSavedAt`, atomic save (null =
  * stale revision, the caller answers 409), emit `<section>.autosaved`, and —
@@ -30,18 +49,13 @@ export interface SaveSimpleSectionDraftResult {
  * Replaces the previous per-section line-for-line copies; per-section behavior
  * lives entirely in the hooks wired at the composition root.
  */
-export class SaveSimpleSectionDraftUseCase<TDraft extends { lastSavedAt: string | null }> {
+export class SaveSimpleSectionDraftUseCase<TDraft extends { projectId: string; lastSavedAt: string | null }> {
 	constructor(
 		private readonly section: string,
 		private readonly drafts: SimpleSectionDraftRepository<TDraft>,
 		private readonly clock: ClockPort,
 		private readonly telemetry: TelemetryPort,
-		private readonly hooks: {
-			/** Pre-save transform (e.g. strip a derived mirror rebuilt on load). */
-			prepare?: (draft: TDraft) => TDraft;
-			/** Local coherence fold, computed on the authored draft. */
-			coherence?: (draft: TDraft) => SectionCoherenceResult;
-		} = {}
+		private readonly hooks: SimpleSectionSaveHooks<TDraft> = {}
 	) {}
 
 	async execute(
@@ -56,7 +70,7 @@ export class SaveSimpleSectionDraftUseCase<TDraft extends { lastSavedAt: string 
 		this.telemetry.emit({ type: `${this.section}.autosaved`, savedAt });
 		if (!this.hooks.coherence) return { savedAt, revision };
 
-		const coherence = this.hooks.coherence(draft);
+		const coherence = this.hooks.coherence(draft, await this.hooks.languageOf(draft.projectId));
 		this.telemetry.emit({
 			type: `${this.section}.local_coherence.computed`,
 			score: coherence.score,

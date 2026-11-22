@@ -101,7 +101,7 @@ fuller brief.
 
 1. **Load the playbooks**: `sync_skills` with `client` set to what you are; with Node in the repository, `self_install: true` and run its `selfInstall.command`; otherwise install each `installTargets` entry. Then follow this skill in full.
 2. **Resolve the target project, never create a second one**: "create the project X" is `create_wizard_project` (domain resolved with `list_domains`) unless an empty one of that name exists; a named project is resolved with `list_wizard_projects`; no name, ask.
-3. **Harvest what the client's other MCP servers reach, and register each source with the web address the tool answer carries**: backlogs (epics and stories make the tree and the roadmap, their criteria the rules and scenarios), wiki pages (`foundation`, `users`, `glossary`), BMAD or Spec Kit files in the repository, Figma (`experience`, per lyriks-design), documents the user hands you.
+3. **Harvest what the client's other MCP servers reach, and register each source with the web address the tool answer carries**: backlogs (epics and stories make the tree, their criteria the rules and scenarios), wiki pages (`foundation`, `users`, `glossary`), BMAD or Spec Kit files in the repository, Figma (`experience`, per lyriks-design), documents the user hands you.
 4. **What no source says is a recorded decision**, presented at checkpoints. Never fill a gap a source left open.
 5. Then the build order, every section assessed.
 
@@ -113,7 +113,7 @@ memory. Several projects: assess each, audit and finish each alone.
 
 1. `create_wizard_project` (or the existing slug), then **documents**, then the **scope** inventory.
 2. **foundation**: `identity`, `definition`, `operations`. `identity.brief` is the product summary the Overview reads whole: 500 characters at most (what, for whom, why); a longer write is refused.
-3. **features** (cores, families, leaves, MVP, releases), then `/lyriks-behavior` on every included leaf, at full depth or at the user's target stage.
+3. **features** (cores, families, leaves), then `/lyriks-behavior` on every included leaf, at full depth or at the user's target stage.
 4. **users**: personas first; the permission pass comes at step 9.
 5. **data**, **rules**, **architecture**, each claim tied to the evidence register. The data model is a loop: write, read the write's `coherenceIssues`, fix. Every entity relates to what owns it or what points at it (*No orphan table* below). Logical architecture may precede technology choices.
 6. **experience**: journeys (actor roles, core), ordered steps, each step on a screen of the inventory (`screens[]`: name, route, device, description), what it does (`stepOperations`) and the data it reads or writes (`stepDataReads`). There is no screen prototype: never author a layout.
@@ -176,7 +176,6 @@ user wonders whether spec and code agree.
 
 | Page | Place |
 |---|---|
-| roadmap, release, end of life, planned feature | `apply_roadmap_batch` |
 | test plan and results | `documents` row `evidence` (result, `criterionIds`) |
 | ADR | `documents` row with its `decision` status |
 | traceability matrix | each requirement id cited as a passage on its rule or criterion |
@@ -187,7 +186,7 @@ user wonders whether spec and code agree.
 | import (CSV, another tool) | a feature |
 | known bug (KI-xxx) | a `rules` issue: a person decides it |
 | mock-up | the screen's source |
-| runbook, standards, minutes, support | source, set aside |
+| roadmap, release plan, runbook, standards, minutes, support | source, set aside |
 
 ## Verify locally, then prove global completion
 

@@ -17,8 +17,8 @@ describe('an old address of a project page (criterion 84162c34)', () => {
 		expect(to('features', 'feature=gone', false)).toBe('/projects/p-1/spec/features');
 	});
 
-	it('keeps the Roadmap and Evolution tabs of the old Features on Changes', () => {
-		expect(to('features', 'tab=roadmap')).toBe('/projects/p-1/evolution?tab=roadmap');
+	it('opens Changes for the Evolution tab and the retired Roadmap tab of the old Features', () => {
+		expect(to('features', 'tab=roadmap')).toBe('/projects/p-1/evolution');
 		expect(to('features', 'tab=evolution')).toBe('/projects/p-1/evolution');
 		expect(to('features', 'tab=evolution&request=req-9&at=proposal__x')).toBe('/projects/p-1/evolution?request=req-9&at=proposal__x');
 	});

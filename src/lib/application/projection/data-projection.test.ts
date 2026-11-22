@@ -100,6 +100,13 @@ describe('data-projection', () => {
 		expect(buildDataProjection('p1', kernel, null).fields.find((f) => f.id === 'f5')!.enumValues).toEqual(['draft', 'paid', 'shipped']);
 	});
 
+	it('tells the engine no values for a field that is no longer a choice, even if it still holds its old ones', () => {
+		const draft = sampleDraft('p1');
+		draft.fields.push({ id: 'f6', entityId: 'e2', parentFieldId: null, name: 'note', type: 'string', isId: false, isUnique: false, isRequired: false, isList: false, defaultValue: '', relationTargetEntityId: null, enumValues: ['draft', 'paid'] });
+		const order = (kernelDataModel(draft).feature.entities as { id: string; fields: Record<string, unknown>[] }[]).find((e) => e.id === 'ent-e2')!;
+		expect(order.fields.find((f) => f.id === 'fld-f6')).not.toHaveProperty('enumValues');
+	});
+
 	it('derives databaseId from the kernel resource ref (null when unhosted)', () => {
 		const draft = sampleDraft('p1');
 		const back = buildDataProjection('p1', kernelDataModel(draft), dataResidueFromDraft(draft));

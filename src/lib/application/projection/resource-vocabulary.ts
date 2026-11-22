@@ -64,21 +64,8 @@ const RESOURCE_SCOPE_LABELS: Record<ResourceScope, string> = {
 export const RESOURCE_SENSITIVITIES = ['public', 'internal', 'confidential', 'restricted'] as const;
 export type ResourceSensitivity = (typeof RESOURCE_SENSITIVITIES)[number];
 
-const RESOURCE_SENSITIVITY_LABELS: Record<ResourceSensitivity, string> = {
-	public: 'Public',
-	internal: 'Internal',
-	confidential: 'Confidential',
-	restricted: 'Restricted'
-};
-
 /** Every `accessMode` the kernel accepts. */
 export type ResourceAccessMode = 'read' | 'write' | 'read_write';
-
-const ACCESS_MODE_LABELS: Record<ResourceAccessMode, string> = {
-	read: 'Read-only',
-	write: 'Write-only',
-	read_write: 'Read & write'
-};
 
 /** Every `authentication` method the kernel accepts. */
 export type ResourceAuthMethod =
@@ -92,18 +79,6 @@ export type ResourceAuthMethod =
 	| 'session_cookie'
 	| 'service_account';
 
-const AUTH_METHOD_LABELS: Record<ResourceAuthMethod, string> = {
-	none: 'None',
-	api_key: 'API key',
-	oauth2: 'OAuth 2.0',
-	jwt: 'JWT',
-	basic_auth: 'Basic auth',
-	iam_role: 'IAM role',
-	mtls: 'Mutual TLS',
-	session_cookie: 'Session cookie',
-	service_account: 'Service account'
-};
-
 /* ── labels (tolerant: an unknown code is shown, never swallowed) ──────── */
 
 const labelOf = <T extends string>(table: Record<T, string>, code: string): string =>
@@ -111,10 +86,6 @@ const labelOf = <T extends string>(table: Record<T, string>, code: string): stri
 
 export const resourceKindLabel = (code: string): string => labelOf(RESOURCE_KIND_LABELS, code);
 export const resourceScopeLabel = (code: string): string => labelOf(RESOURCE_SCOPE_LABELS, code);
-export const resourceSensitivityLabel = (code: string): string =>
-	labelOf(RESOURCE_SENSITIVITY_LABELS, code);
-export const resourceAccessModeLabel = (code: string): string => labelOf(ACCESS_MODE_LABELS, code);
-export const resourceAuthLabel = (code: string): string => labelOf(AUTH_METHOD_LABELS, code);
 
 export const isResourceKind = (v: unknown): v is ResourceKind =>
 	typeof v === 'string' && (RESOURCE_KINDS as readonly string[]).includes(v);

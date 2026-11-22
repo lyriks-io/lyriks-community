@@ -1,8 +1,8 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMcpServer } from '../server.js'
 import { SELF_INSTALL_SCRIPTS, SKILL_SYNC_CONTENT_CAP, fitGuideAnswer, getSkillHandler, selfInstallCommand, syncSkillsHandler } from '../tools/skills.js'
-import { RESULT_CAP } from '../util/shape.js'
 import type { LyriksClient } from '../lyriks-client.js'
+import { FakeHttpService, PLATFORM_ORIGIN, connectAgent, serveFetch, type RecordedRequest } from './support/mcp-harness.js'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -34,25 +34,6 @@ it('relays the binding and its helper scripts exactly as the platform sent them 
   const answer = bindingAnswer()
   const client = { post: vi.fn().mockResolvedValue(answer) } as unknown as LyriksClient
   expect(await syncSkillsHandler({ client: 'claude', project_id: 'p' }, client, 200000)).toBe(answer)
-})
-
-it('delivers each script whole or deferred through the registered tool, never cut', async () => {
-  const answer = bindingAnswer()
-  expect(JSON.stringify(answer).length).toBeGreaterThan(RESULT_CAP * 2)
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(answer), { status: 200, headers: { 'content-type': 'application/json' } })))
-  // @ts-expect-error calling the registered tool the way the SDK would
-  const tool = createMcpServer(null)._registeredTools.sync_skills as { handler: (a: unknown, extra: unknown) => Promise<{ content: { text: string }[] }> }
-  const text = (await tool.handler({ client: 'claude' }, {})).content[0].text
-  const out = JSON.parse(text)
-  // A capped answer would come back as { _capped, partial }: a script cut short installs broken.
-  expect(out._capped).toBeUndefined()
-  expect(text.length).toBeLessThanOrEqual(SKILL_SYNC_CONTENT_CAP)
-  for (const [i, sent] of answer.binding.tools.entries()) {
-    const got = out.binding.tools[i]
-    // A deferred script keeps its path and hash; its purpose comes back with its content.
-    if (got.deferred) expect(got).toEqual({ path: sent.path, contentHash: sent.contentHash, deferred: true })
-    else expect(got).toEqual(sent)
-  }
 })
 
 it('tells agents to install the helper scripts, as a fifth step after the four it already listed', () => {
@@ -223,20 +204,62 @@ it('answers get_skill with one copy of the guide', async () => {
   expect(await getSkillHandler({ skill_id: 'old' }, { get } as unknown as LyriksClient)).toBe(legacy)
 })
 
-// Owner request 2026-11-05 (criteria 526377e2 and 3f42911b): Claude Code takes an
-// MCP answer without counting it only up to 50,000 characters, and refused a
-// 59,056-character sync; installing through tool answers alone cost an agent
-// about 250,000 tokens.
-it('keeps every skill answer under 45,000 characters, below what Claude Code accepts unchecked [criterion:526377e2]', () => {
-  expect(SKILL_SYNC_CONTENT_CAP).toBe(45000)
-  expect(SKILL_SYNC_CONTENT_CAP).toBeLessThan(50000)
-})
-
 const withInstaller = () => {
   const answer = realisticAnswer()
   const installer = SELF_INSTALL_SCRIPTS.map((path) => ({ path, contentHash: 'i', purpose: 'p', content: `// ${path}\n${'x'.repeat(5000)}` }))
   return { ...answer, binding: { ...answer.binding, tools: [...answer.binding.tools, ...installer] } }
 }
+
+// Owner request 2026-11-05 (criteria 526377e2 and 3f42911b): Claude Code takes an
+// MCP answer without counting it only up to 50,000 characters, and refused a
+// 59,056-character sync; installing through tool answers alone cost an agent
+// about 250,000 tokens. Measured on what a client actually receives.
+describe('every skill answer a client receives', () => {
+  const LIMIT = 45_000
+  let platform: FakeHttpService
+  beforeEach(() => {
+    platform = new FakeHttpService(PLATFORM_ORIGIN)
+    serveFetch(platform)
+  })
+
+  it('stays under 45,000 characters for an oversize catalog, every file whole or deferred, never cut [criterion:526377e2]', async () => {
+    const full = withInstaller()
+    const metadata = realisticAnswer()
+    for (const s of metadata.skills) delete (s as { installContent?: string }).installContent
+    platform.on('POST', '/api/skills/sync', (r: RecordedRequest) => ((r.body as { includeContent?: boolean }).includeContent === false ? metadata : full))
+    const block = 'b'.repeat(1500)
+    platform.on('GET', '/api/skills/lyriks-evolution', {
+      id: 'lyriks-evolution', installContent: 'g'.repeat(40000),
+      installTargets: ['claude', 'codex', 'gemini', 'copilot', 'generic'].map((client) => ({ client, path: 'SKILL.md', pointerPath: 'AGENTS.md', pointerBlock: block })),
+    })
+    expect(sizeOf(full)).toBeGreaterThan(LIMIT * 2)
+
+    const agent = await connectAgent({ selfInstall: source() })
+    const answers = [
+      await agent.call('sync_skills', { client: 'claude' }),
+      await agent.call('sync_skills', { client: 'claude', include_content: false }),
+      await agent.call('sync_skills', { client: 'claude', self_install: true }),
+      await agent.call('get_skill', { skill_id: 'lyriks-evolution' }),
+    ]
+    await agent.close()
+
+    for (const [i, answer] of answers.entries()) {
+      expect(answer.isError, `answer ${i}`).toBe(false)
+      expect(answer.text.length, `answer ${i}`).toBeLessThanOrEqual(LIMIT)
+      // The generic result cap would answer a projection: a file cut short installs broken.
+      expect(answer.json(), `answer ${i}`).not.toHaveProperty('_capped')
+    }
+    const sent = new Map([...full.skills.map((s) => [s.id, s.installContent] as const), ...full.binding.tools.map((t) => [t.path, t.content] as const)])
+    const out = answers[0].json<{ skills: Array<{ id: string; installContent?: string }>; binding: { tools: Array<{ path: string; content?: string; deferred?: boolean }> } }>()
+    for (const s of out.skills) if (s.installContent !== undefined) expect(s.installContent).toBe(sent.get(s.id))
+    for (const t of out.binding.tools) {
+      if (t.deferred) expect(t.content).toBeUndefined()
+      else expect(t.content).toBe(sent.get(t.path))
+    }
+    expect(answers[3].json<{ installContent: string }>().installContent).toHaveLength(40000)
+  })
+})
+
 const source = (token: string | null = 'lyriks_mcp_ticket') => ({
   mcpUrl: 'https://studio.example/mcp',
   signIn: vi.fn(() => ({ token, expiresAt: '2026-11-05T12:10:00.000Z' })),

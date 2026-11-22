@@ -169,6 +169,3 @@ export function createKpi(): KpiEntry {
 export function createCompetitor(name: string): CompetitorEntry {
 	return { name, logoUrl: null, strengths: [], weaknesses: [] };
 }
-
-/** Hard cap from the feature-level invariant "Differentiators capped at 5". */
-export const MAX_DIFFERENTIATORS = 5;

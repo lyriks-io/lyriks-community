@@ -32,10 +32,10 @@ describe('3.4 Datamap is validated like the rest of the Specification [criterion
 		expect(liveDataDrafts([amend, { ...amend, id: 'data:landed', materialisedAt: '2026-10-28T10:00:00.000Z' }])).toEqual([amend]);
 	});
 
-	it('holds the Simulation until a person validated the data changes, an AI client aside', () => {
+	it('holds the Simulation until the data changes stand validated, by a person or by their AI in their name', () => {
 		const answer = { validation: 'validated', humanValidated: true };
 		expect(specificationLeft(specificationHold([answer, { validation: 'unvalidated' }]))).toBe(1);
-		expect(specificationLeft(specificationHold([answer, { validation: 'validated' }]))).toBe(1);
-		expect(specificationLeft(specificationHold([answer, answer]))).toBe(0);
+		expect(specificationLeft(specificationHold([answer, { validation: 'refused' }]))).toBe(1);
+		expect(specificationLeft(specificationHold([answer, { validation: 'validated' }]))).toBe(0);
 	});
 });

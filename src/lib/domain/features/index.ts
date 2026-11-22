@@ -1,8 +1,5 @@
 export * from './enums';
 export * from './draft';
-export * from './queue';
-export * from './roadmap';
-export * from './roadmap-ops';
 export * from './tree';
 export * from './coherence';
 export * from './maturity-breakdown';
@@ -13,3 +10,5 @@ export * from './suggestions';
 export * from './readable-name';
 export * from './first-seen';
 export * from './action-journeys';
+export * from './build-status';
+export * from './disable-ops';

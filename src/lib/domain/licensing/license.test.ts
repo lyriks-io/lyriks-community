@@ -10,10 +10,12 @@ import {
 	isLicenseEnforced,
 	isLicenseValid,
 	licenseBoundEmail,
+	licenseDigest,
 	openedEdition,
 	licenseEmailMatches,
 	shouldAdvanceClockFloor,
-	type LicenseEntitlements
+	type LicenseEntitlements,
+	type LicenseView
 } from './license';
 
 const NOW = '2026-07-07T00:00:00.000Z';
@@ -71,6 +73,28 @@ describe('isExpired', () => {
 describe('daysUntil', () => {
 	it('counts whole days to expiry', () => {
 		expect(daysUntil('2026-07-17T00:00:00.000Z', NOW)).toBe(10);
+	});
+
+	it('counts no days, never a non-number, for an expiry it cannot read', () => {
+		expect(daysUntil('next summer', NOW)).toBe(0);
+	});
+});
+
+describe('the licence block of a support report', () => {
+	const view = (over: Partial<LicenseView> = {}): LicenseView => ({ status: 'active', entitlements: ent(), daysRemaining: 178, activatedAt: '2026-02-01T09:00:00.000Z', ...over });
+
+	it('carries what the Account panel shows: id, edition, seats, status, holder and dates', () => {
+		const digest = licenseDigest(view());
+		for (const fact of ['lic_123', 'enterprise', '25 seats', 'active', 'Acme Corp', '2026-01-01', '2027-01-01', '178', '2026-02-01']) expect(digest).toContain(fact);
+		const perpetual = licenseDigest(view({ entitlements: ent({ seats: 1, expiresAt: null }), daysRemaining: null, activatedAt: null }));
+		expect(perpetual).toContain('1 seat,');
+		expect(perpetual).not.toContain('expires');
+	});
+
+	it('says no licence holds, and in which state, without inventing a holder', () => {
+		const digest = licenseDigest(view({ status: 'unlicensed', entitlements: null, daysRemaining: null, activatedAt: null }));
+		expect(digest).toContain('unlicensed');
+		expect(digest).not.toContain('Acme Corp');
 	});
 });
 
@@ -195,6 +219,7 @@ describe('shouldAdvanceClockFloor', () => {
 
 	it('never advances from an unreadable now, and repairs an unreadable floor', () => {
 		expect(shouldAdvanceClockFloor('not-a-date', NOW)).toBe(false);
+		expect(shouldAdvanceClockFloor('not-a-date', null)).toBe(false);
 		expect(shouldAdvanceClockFloor(NOW, 'garbage')).toBe(true);
 	});
 });

@@ -143,20 +143,29 @@ export async function readFeaturePage(services: AppServices, projectId: string, 
 		const behavior = await readBehavior(services, projectId);
 		return { kind: 'core' as const, core: coreView(found.core, behavior.actions) };
 	}
-	const [behavior, users, derived, evolution, identity] = await Promise.all([
+	const [behavior, users, derived, evolution, identity, coverage] = await Promise.all([
 		readBehavior(services, projectId),
 		services.loadUsersDraft.execute(projectId),
 		services.refreshDerivedCapabilities.execute(projectId),
 		services.loadEvolutionDraft.execute(projectId).catch(() => null),
-		services.loadFoundationDraft.loadIdentity(projectId)
+		services.loadFoundationDraft.loadIdentity(projectId),
+		// What proves each action against the code, from the implementation index the last sync reported.
+		services.implementationCoverage.get(projectId).catch(() => ({}) as Awaited<ReturnType<AppServices['implementationCoverage']['get']>>)
 	]);
+	const proofs =
+		(coverage as Record<string, { actions?: Record<string, { provenAt?: string; scenarioResults?: Record<string, { passed: boolean; at: string }> }> }>)[id]
+			?.actions ?? {};
 	const feature = featureView({
 		core: found.core,
 		featureId: id,
 		features,
 		actions: behavior.actions,
 		rules: behavior.kernelRules,
-		users: withCarriedGrants(users, derived)
+		users: withCarriedGrants(users, derived),
+		...(behavior.disabledFeatures ? { disabledFeatures: behavior.disabledFeatures } : {}),
+		...(behavior.scenarios ? { scenarios: behavior.scenarios } : {}),
+		provenAt: Object.fromEntries(Object.entries(proofs).map(([actionId, row]) => [actionId, row.provenAt])),
+		scenarioResults: Object.fromEntries(Object.entries(proofs).map(([actionId, row]) => [actionId, row.scenarioResults]))
 	});
 	// The evolution that created the feature, when one did: its added draft became this leaf.
 	const requests = evolution?.requests ?? [];

@@ -848,7 +848,8 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 				...(args.runScenarios ? { runScenarios: true } : {}),
 				...(args.modelCheck ? { modelCheck: args.modelCheck } : {}),
 				...(args.includeFeature ? { includeFeature: true } : {}),
-				...(args.projectId ? { projectId: args.projectId } : {})
+				...(args.projectId ? { projectId: args.projectId } : {}),
+				...(args.disable && args.disable.length > 0 ? { disable: [...args.disable] } : {})
 			},
 			budget ? { timeoutMs: budget.timeoutMs } : undefined
 		);

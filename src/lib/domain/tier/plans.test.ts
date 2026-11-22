@@ -37,16 +37,6 @@ describe('PLANS [criterion:001fd4a4]', () => {
 		expect(PLANS.filter((p) => p.free).map((p) => p.id)).toEqual(['community']);
 		for (const plan of PLANS) expect(JSON.stringify(plan)).not.toMatch(/[$€£]|\d+\s*\/\s*(month|year)/i);
 	});
-
-	it('says each offer in the words of the plans page', () => {
-		expect(planOf(null).pitch).toBe('Discover Lyriks on one project.');
-		expect(planOf(null).includes).toEqual(['1 active project (unlimited inactive)', '1 user', 'Reverse: reverse specification', 'Knowledge: knowledge base']);
-		expect(planOf('solo').includes).toEqual(['1 active project per project bought', '1 user', 'Reverse and Knowledge', 'Changes: evolutions, impact simulation and verification']);
-		expect(planOf('team').pitch).toBe('Collaborative, end-to-end SDLC.');
-		expect(planOf('team').includes).toContain('5 users per project bought');
-		expect(planOf('enterprise').includes).toEqual(['Projects and users as per contract', 'Everything in Team', 'Dedicated CSM']);
-		for (const plan of PLANS) expect(plan.excludes).toEqual([]);
-	});
 });
 
 describe('showsPlan', () => {

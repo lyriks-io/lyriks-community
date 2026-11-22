@@ -59,6 +59,14 @@ describe('getKnowledgeGraphHandler', () => {
     expect(url.searchParams.get('limit')).toBe('10')
   })
 
+  it('KG02b: each scoping argument alone switches off the overview', async () => {
+    for (const scope of [{ contexts: ['behavior'] }, { kinds: ['feature'] }, { q: 'checkout' }, { focus_node: 'entity:order' }]) {
+      const { lyriks, get } = makeLyriks()
+      await getKnowledgeGraphHandler({ project_id: 'causette', ...scope }, lyriks)
+      expect(calledPath(get).searchParams.get('view'), JSON.stringify(scope)).toBeNull()
+    }
+  })
+
   it('KG04: a focus expansion is walked one way when direction is given', async () => {
     for (const direction of ['in', 'out', 'both'] as const) {
       const { lyriks, get } = makeLyriks()

@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { Icon } from '$ui/design-system';
 	import type { CrossEvolutionReading } from '$lib/server/evolution-cross.server';
-	import type { crossWords } from './impact-board';
-	import { KICKER } from './evo-look';
+	import { orderWords, type crossWords } from './impact-board';
+	import { KICKER, SECONDARY_44 } from './evo-look';
 	import { CROSS_BADGE } from './SimulationSummary.svelte';
 
 	/**
@@ -12,9 +12,12 @@
 	 * why it fits or is not checked yet. The other request is one click away on
 	 * its own page.
 	 *
-	 * The design's ways out of a conflict ("Make a decision", the solutions to
-	 * validate, "Notify the owner") are left out: the platform has no act that
-	 * settles a conflict between two requests, nor a notice to send its owner.
+	 * Two requests that share something read which lands first (EVO-005): a
+	 * person who writes the request sets it from this row, Lands first or Lands
+	 * after, and a conflict is decided there too, by the order or by accepting
+	 * the risk with a reason. A reader sees the order, not the controls. No
+	 * notice is sent to the other request's owner: the board and its own
+	 * Simulation say it.
 	 */
 	interface Props {
 		cross: CrossEvolutionReading;
@@ -25,12 +28,17 @@
 		hereLabel?: string;
 		/** Its element id where the same evolution reads in several rows. */
 		rowId?: string;
+		/** The order and the conflict, set from the row by someone who writes the request; absent where nobody may (a reader, a report). */
+		ordering?: { readonly onSet: (landsFirst: 'this' | 'other') => void; readonly onAcceptRisk: () => void } | null;
 	}
-	let { cross, words, open, onToggle, hereLabel = 'This evolution', rowId }: Props = $props();
+	let { cross, words, open, onToggle, hereLabel = 'This evolution', rowId, ordering = null }: Props = $props();
 
 	const badge = $derived(CROSS_BADGE[cross.verdict]);
 	const conflict = $derived(cross.verdict === 'conflict');
 	const key = $derived(cross.key ?? cross.title);
+	/** Lands before, lands after, or not ordered yet: only a pair that shares something is ordered (criterion 4162228b). */
+	const order = $derived(orderWords({ key, verdict: cross.verdict, order: cross.order ?? null, decision: cross.decision ?? null }));
+	const settable = $derived(!!ordering && cross.open !== false && !!order);
 </script>
 
 <div id={rowId ?? `xe-${cross.id}`} class="border-t border-line">
@@ -40,6 +48,9 @@
 			<span class="font-bold">{words.head}</span>
 			{#if !words.issue}
 				<span class="text-[0.8125rem] text-ink-3"><span class="font-evo-mono text-xs">{key}</span> · {words.sub}</span>
+			{/if}
+			{#if order}
+				<span class="text-[0.8125rem] text-ink-2" data-order={cross.order ?? 'none'}><span class="font-evo-mono text-xs">{key}</span> · {order.line}</span>
 			{/if}
 		</span>
 		<span aria-hidden="true" class="grid size-7 flex-none place-items-center text-ink transition-transform duration-200 {open ? 'rotate-180' : ''}"><Icon name="chevron-down" size={18} /></span>
@@ -55,6 +66,18 @@
 				<p class="leading-[1.6] text-ink-3">
 					<a class="font-semibold text-blue-ink hover:underline" href={cross.href}>{key} · {cross.title}</a> is at the {words.step} step.
 				</p>
+				{#if order}
+					<div class="flex flex-wrap items-center gap-2.5" aria-label="Landing order with {key}">
+						{#if order.decided}<span class="min-w-0 flex-[1_1_320px] text-[0.8125rem] leading-normal {cross.verdict === 'conflict' && !cross.decision ? 'text-red-ink' : 'text-ink-2'}">{order.decided}</span>{/if}
+						{#if settable && ordering}
+							<button type="button" class="{SECONDARY_44} min-h-9" aria-pressed={cross.order === 'before'} aria-label="{key} lands first" onclick={() => ordering.onSet('other')}>Lands first</button>
+							<button type="button" class="{SECONDARY_44} min-h-9" aria-pressed={cross.order === 'after'} aria-label="{key} lands after" onclick={() => ordering.onSet('this')}>Lands after</button>
+							{#if cross.verdict === 'conflict' && !cross.decision}
+								<button type="button" class="{SECONDARY_44} min-h-9" onclick={ordering.onAcceptRisk}>Accept the risk</button>
+							{/if}
+						{/if}
+					</div>
+				{/if}
 				{#each words.meets as meet, i (i)}
 					<div class="overflow-hidden rounded-xl border-[1.5px] bg-paper {conflict ? 'border-red-ink' : 'border-orange-ink'}">
 						<div class="px-5 pt-4 text-[0.8125rem] font-bold text-evo-ink">{meet.what}</div>

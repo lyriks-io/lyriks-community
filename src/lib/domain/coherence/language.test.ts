@@ -1,14 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { applyDecisions, settleGap } from './decisions';
-import { keepActionablePreparations, prepareDecision } from './prepared';
+import { keepActionablePreparations } from './prepared';
 import { createEmptyCoherenceDraft, type Gap } from './draft';
-import { CHECKS, checkLabel } from './checks';
 import { computeCoherenceLocal } from './coherence';
 import { missingCoherenceRequirements } from './can-advance';
 import { countOf, sectionTone } from './section-tone';
 import { computeFeaturesCoherence, createEmptyFeaturesDraft } from '$domain/features';
 import { computeGlossaryCoherence, createEmptyGlossaryDraft } from '$domain/glossary';
-import { NBSP } from '$domain/language';
 
 const gap = (title: string): Gap => ({
 	id: 'gap-glossary-unapproved-terms',
@@ -36,13 +34,8 @@ describe('a gap keeps its decision when its text changes language (382e5227)', (
 		expect(applied.settled?.[0].gap.title).toBe('2 termes attendent une approbation');
 		expect(applied.settled?.[0].decision.gapTitle).toBe('2 terms are waiting for approval');
 
-		draft = prepareDecision(
-			createEmptyCoherenceDraft('p'),
-			{ gapId: english.id, gapTitle: english.title, status: 'accepted_risk', reason: 'Cheap', by: person },
-			'p1',
-			'2026-09-30T10:00:00.000Z'
-		);
-		expect(keepActionablePreparations(draft.prepared, { gaps: [french] })).toHaveLength(1);
+		const prepared = [{ id: 'p1', gapId: english.id, gapTitle: english.title, status: 'accepted_risk' as const, reason: 'Cheap', preparedById: person.id, preparedByKind: person.kind, preparedAt: '2026-09-30T10:00:00.000Z' }];
+		expect(keepActionablePreparations(prepared, { gaps: [french] })).toHaveLength(1);
 	});
 });
 
@@ -69,11 +62,5 @@ describe('section texts in the spec language', () => {
 		);
 		expect(missingCoherenceRequirements(draft, analysis, 'fr')).toContain('générer les spécifications');
 		expect(missingCoherenceRequirements(draft, analysis)).toContain('generate the specifications');
-	});
-
-	it('labels every check in French, and falls back to English for none', () => {
-		for (const check of CHECKS) expect(checkLabel(check, 'fr')).not.toBe(check.label);
-		expect(checkLabel(CHECKS[0])).toBe(CHECKS[0].label);
-		expect(NBSP).toBe(' ');
 	});
 });

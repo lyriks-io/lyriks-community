@@ -1,8 +1,9 @@
-import { isDescribedStep, skippedQuestionOf, STEP_QUESTIONS, type EvolutionRequest, type StepQuestion } from './draft';
+import { skippedQuestionOf, STEP_QUESTIONS, type EvolutionRequest, type StepQuestion } from './draft';
 import { isStepValidated, type StepReading } from './path';
 import { openCustomQuestions } from './custom-questions';
+import { correctionNext } from './correction';
 import { FUNCTIONAL_DIAGRAM_KEY } from './functional-diagram';
-import { diagramBehindTexts, solutionDiagramOwed, textsBehindDiagram } from './functional-sync';
+import { drawnDiagramBehind, textsBehindDiagram } from './functional-sync';
 
 /**
  * What to do next on a request, said to whoever drives it: the AI client that
@@ -37,8 +38,16 @@ export interface CoachFacts {
 	readonly gate: { readonly ok: boolean; readonly reason: string | null };
 	readonly collisions: number;
 	readonly frictions: number;
-	/** Report lines this request brought that nobody decided. */
+	/**
+	 * Report lines this request brought that wait for a person's decision: an
+	 * addition out of scope, a regression, a table change to confirm.
+	 */
 	readonly undecidedLines: number;
+	/**
+	 * Report lines this request brought that wait for the code or a passing test:
+	 * they close at the next index sync, nobody decides them (criterion 4913a449).
+	 */
+	readonly linesAwaitingCode?: number;
 	/** True when one person is the whole workspace: they carry each step alone. */
 	readonly solo: boolean;
 	/** Need and Solution are validated answer by answer: how many answers they hold, and how many are validated. */
@@ -55,6 +64,8 @@ export interface CoachFacts {
 interface InputTally {
 	readonly total: number;
 	readonly validated: number;
+	/** Why the actions of the Specification could not be read: nothing it counts is the whole of it then. */
+	readonly unread?: string;
 }
 
 const needQuestion: Record<string, string> = {
@@ -79,36 +90,15 @@ export const stepDescriptionQuestionOf = (step: string): string | null => stepDe
 const READ_THE_DESCRIPTION =
 	'Read the description: propose a value on each empty field of the step, citing it, and ask_question for what only this request needs answered (five open at most).';
 
-/** What the Solution's description owes in the same batch: the page shows 2.1 and its drawing with it (ac-evo-sol-with-diagram). */
-const SOLUTION_WITH_DIAGRAM =
-	'The use case diagram is owed: the page shows the Solution, the Functional spec and the Technical spec as ONE Solution tab, so the Solution never goes without 2.1 Functional requirements and its use case diagram. In the same batch, from the Solution: update_step_description {step: "functional_spec", description} (walked through as the person using it does it), answer_step {step: "functional_spec", question: "refusals" | "failures", answer}, then redraw_diagram {step: "functional_spec", diagram} drawn from those texts.';
-/** The technical side, when there is one, comes with its own diagram (ac-evo-sol-with-diagram). */
-const TECHNICAL_WITH_DIAGRAM =
-	'When the change has a technical side (a new store, a new dependency, a call that can fail), write 2.2 Technical requirements and draw its technical diagram in the same batch: update_step_description {step: "technical_spec", description}, then redraw_diagram {step: "technical_spec", diagram}; when it has none, mark_step_not_applicable {step: "technical_spec", reason}.';
-
 const emptyAnswer = (request: EvolutionRequest, q: StepQuestion): boolean =>
 	(request.stepAnswers[q.step][q.key] ?? '').trim() === '' && !skippedQuestionOf(request, `step.${q.step}.${q.key}`);
 
-const SOLUTION_TAB = ['solution', 'functional_spec', 'technical_spec'] as const;
-
 /**
- * The required texts the Solution tab still owes, across its three steps (criterion
- * 6c37a06f): the page shows the Solution, the Functional spec and the Technical spec
- * as one tab, and a step written but missing one of them refuses its Validate. A step
- * not written yet is asked by its own description first; one marked not applicable owes nothing.
+ * What the Solution tab offers and never owes (EVO-013, criteria c1db73b7,
+ * e5ba6571): written when the change needs them, never asked as owed.
  */
-export function owedInSolutionTab(request: EvolutionRequest): StepQuestion[] {
-	const written = (step: (typeof SOLUTION_TAB)[number]) => request.stepDescriptions[step].trim() !== '' && !request.skippedSteps.some((s) => s.step === step);
-	return STEP_QUESTIONS.filter((q) => q.required && (SOLUTION_TAB as readonly string[]).includes(q.step) && written(q.step as (typeof SOLUTION_TAB)[number]) && emptyAnswer(request, q));
-}
-
-/** How a required text of the tab is asked, named as the page shows it (2.1 lines carry their kind on a chip). */
-const OWED_IN_TAB: Readonly<Record<string, string>> = {
-	'solution.examples':
-		'2.1 Example is owed: the Solution cannot be validated without how we will know it works. answer_step {step: "solution", question: "examples", answer}: one checkable example per line, in the person\'s words.',
-	'functional_spec.refusals':
-		'2.1 Rule is owed: the Functional spec cannot be validated without its rules, and the person\'s Validate is refused while it is empty. answer_step {step: "functional_spec", question: "refusals", answer}: what the product allows or refuses and why, one rule per line. A change that refuses nothing new says so in one line (Nothing new: the product refuses what it refused before), or skip_question {fieldPath: "step.functional_spec.refusals", reason} says why it is not asked; never hand the Solution over with it empty.'
-};
+const OFFERED_ON_DEMAND =
+	'The Solution\'s examples, the Functional spec and the Technical spec, with their diagrams, are offered, never owed: write them only when the person asks for them or Prefill with my AI hands you their section. Once the Solution says what changes, draft it: add_draft_leaf (add | amend | remove), add_data_draft, add_section_draft, add_rule_draft; the request enters the Impact analysis on its own.';
 
 function validationAsk(step: StepReading, solo: boolean, inputs?: CoachFacts['inputs'], needed = 1): string[] {
 	if (!step.validation || step.validation.validated || step.progress !== 'done') return [];
@@ -164,44 +154,18 @@ export function coachOf(request: EvolutionRequest, facts: CoachFacts): Coaching 
 		case 'solution':
 		case 'functional_spec':
 		case 'technical_spec': {
-			// Prose up to the Impact analysis (ac-evo-sol-prose, ac-evo-func-prose, ac-evo-tech-prose).
-			// The diagram is drawn by the AI from the texts, never asked of the person (ac-evo-func-uml-ai).
+			// Prose up to the Impact analysis (ac-evo-sol-prose, ac-evo-func-prose, ac-evo-tech-prose); the
+			// diagram is drawn by the AI from the texts, never asked of the person (ac-evo-func-uml-ai). Only the
+			// Solution's description is owed: the rest is offered, asked as optional, never listed as owed (EVO-013).
 			const unanswered = STEP_QUESTIONS.filter((q) => q.step === step && q.key !== FUNCTIONAL_DIAGRAM_KEY && emptyAnswer(request, q));
-			for (const q of unanswered) ask.push(q.required ? q.question : `${q.question} (optional)`);
+			for (const q of unanswered) ask.push(`${q.question} (optional)`);
 			if (unanswered.length > 0)
 				then.push(
-					`answer_step {step: "${step}", question: ${unanswered.map((q) => `"${q.key}"`).join(' | ')}, answer}: their words, verbatim. Cite an element of the product as @[name](kind:id) (kind feature, screen, rule or term).`
+					`answer_step {step: "${step}", question: ${unanswered.map((q) => `"${q.key}"`).join(' | ')}, answer}: their words, verbatim, only what they answer. Cite an element of the product as @[name](kind:id) (kind feature, screen, rule or term).`
 				);
-			// The tab's other steps are validated with it: a required text they owe is owed now (criterion 6c37a06f).
-			const owedInTab = owedInSolutionTab(request).filter((q) => q.step !== step);
-			for (const q of owedInTab) {
-				ask.push(q.question);
-				then.push(OWED_IN_TAB[`${q.step}.${q.key}`] ?? `answer_step {step: "${q.step}", question: "${q.key}", answer}: required before the Solution is handed over.`);
-			}
-			// The Solution tab is the Solution, the Functional and the Technical spec as one: its texts come
-			// with the requirements and the use case diagram drawn from them, in the same batch (ac-evo-sol-with-diagram).
-			if (step === 'solution' && request.stepDescriptions.solution.trim() !== '') {
-				if (solutionDiagramOwed(request) && request.stepDescriptions.functional_spec.trim() === '') then.unshift(SOLUTION_WITH_DIAGRAM);
-				if (request.stepDescriptions.technical_spec.trim() === '' && !request.skippedSteps.some((s) => s.step === 'technical_spec'))
-					then.push(TECHNICAL_WITH_DIAGRAM);
-			}
-			// Validating is optional until the build; the freeze waits for the Solution's validation only.
-			const tabWritten = (['solution', 'functional_spec', 'technical_spec'] as const).every(
-				(s) => request.skippedSteps.some((k) => k.step === s) || request.stepDescriptions[s].trim() !== ''
-			);
-			if (unanswered.every((q) => !q.required) && owedInTab.length === 0 && tabWritten)
-				then.push(
-					'Hand the person the link to the Solution (its texts and its two diagrams): validating it is optional now, and it is the one validation the build waits for. The Specification may be drafted at once: add_draft_leaf, add_data_draft, add_section_draft and add_rule_draft.'
-				);
-			const SAY: Record<string, string> = {
-				solution: 'Say what changes in the product, and how we will know it works.',
-				functional_spec: 'Say how it goes for the person using it, and what the product refuses.',
-				technical_spec: 'Say what the change asks of the technique: the constraints and risks you know of, and the data it moves.'
-			};
-			say =
-				current.progress === 'done'
-						? current.detail
-						: SAY[step];
+			then.push(OFFERED_ON_DEMAND);
+			// The Functional and the Technical spec are read here only while a drawn diagram and its texts differ.
+			say = step === 'solution' && current.progress !== 'done' ? 'Say what changes in the product.' : current.detail;
 			break;
 		}
 		case 'impact_analysis':
@@ -224,10 +188,17 @@ export function coachOf(request: EvolutionRequest, facts: CoachFacts): Coaching 
 				say = facts.frictions > 0 ? `The change fits, with ${facts.frictions} point${facts.frictions === 1 ? ' that rubs' : 's that rub'}.` : 'The change fits the product.';
 			}
 			// What an AI wrote of the Specification is read and validated by a person before the Simulation and any freeze (ac-evo-form-step-lock).
-			if (request.leafIds.length > 0 && facts.questionsOwed === 0 && specificationLeft > 0) {
-				say = `${say} The Specification waits for a person's validation.`;
+			// Actions the engine could not read are never counted as none (criterion c623df9c).
+			if (facts.specification?.unread) say = `${say} ${facts.specification.unread} Try again in a moment.`;
+			else if (request.leafIds.length > 0 && facts.questionsOwed === 0 && specificationLeft > 0) {
+				say = `${say} The Specification waits for its validation.`;
 				decides.push(
-					`Validate the Specification: each answer of the features touched, the values an AI typed on a draft included, each action, each path of the journey and each change to the data (validate_field on each, as the page's Specification offers it): ${specificationLeft} of ${facts.specification?.total} left, waiting on ${facts.solo ? 'you' : 'anyone with access to the project'}. The version is frozen once a person validated them.`
+					`Validate the Specification: each answer of the features touched, the values an AI typed on a draft included, each action, each path of the journey and each change to the data (validate_field on each with the fieldPath and leafId get_evolution part "specification" lists, never a key built from the diagram or the code): ${specificationLeft} of ${facts.specification?.total} left, waiting on ${facts.solo ? 'you' : 'anyone with access to the project, or on you in their name when they tell you'}.`
+				);
+				// The freeze stays a person's act: their validation that leaves nothing waiting freezes the version in that act,
+				// one an AI gives never does (criterion 4913a449, EVO-011 criteria b84841c8 and 16778a7e).
+				decides.push(
+					`Then version ${request.specVersion + 1} freezes in the act of the person whose validation leaves nothing of it waiting, once the rest of the gate is met: a person's act, never a validation you give, under delegation or not; a person may also freeze it (cross_stage).`
 				);
 			}
 			break;
@@ -235,8 +206,22 @@ export function coachOf(request: EvolutionRequest, facts: CoachFacts): Coaching 
 			then.push(
 				`Write the code against spec version ${request.specVersion} (lyriks-delivery), sync_implementation_index as usual (the entries naming what this request adds are held on it until the change is declared live), then build_implementation_report.`
 			);
-			if (facts.undecidedLines > 0) decides.push(`Decide the ${facts.undecidedLines} report line${facts.undecidedLines === 1 ? '' : 's'} this change brought (decide_line).`);
+			// What a test closes is no one's decision (feat-25 f27ab2f8, 127dba2b): said apart from what waits for a person (criterion 4913a449).
+			if ((facts.linesAwaitingCode ?? 0) > 0) {
+				const n = facts.linesAwaitingCode ?? 0;
+				then.push(`${n} report line${n === 1 ? '' : 's'} this change brought wait${n === 1 ? 's' : ''} for the code or a passing test (not built yet, or found and not tested yet): write or prove ${n === 1 ? 'it' : 'them'}, then sync the index; ${n === 1 ? 'it closes' : 'they close'} on ${n === 1 ? 'its' : 'their'} own, nobody decides ${n === 1 ? 'it' : 'them'}.`);
+			}
+			if (facts.undecidedLines > 0)
+				decides.push(`Decide the ${facts.undecidedLines} report line${facts.undecidedLines === 1 ? '' : 's'} this change brought that wait${facts.undecidedLines === 1 ? 's' : ''} for a person (decide_line): an addition out of scope, a regression, a table change to confirm.`);
 			say = `Version ${request.specVersion} is frozen on the request: build it. Nothing of it is official until it is declared live.`;
+			{
+				// A correction in the Build says what version N+1 waits for before it freezes (EVO-012).
+				const correcting = correctionNext(request, facts.specification);
+				if (correcting) {
+					say = `${say} ${correcting.say}`;
+					decides.push(...correcting.decides);
+				}
+			}
 			break;
 		case 'approval':
 			ask.push('Walk the change: what did you see that is wrong, could be better, or reveals a new need?');
@@ -253,8 +238,9 @@ export function coachOf(request: EvolutionRequest, facts: CoachFacts): Coaching 
 			break;
 	}
 
-	// The description first, then what it leaves unsaid (ac-evo-form-step-description, ac-evo-llm-step-description).
-	if (isDescribedStep(step) && request.stage !== 'implementation' && request.stage !== 'acceptance' && request.stage !== 'delivered') {
+	// The description first, then what it leaves unsaid (ac-evo-form-step-description, ac-evo-llm-step-description);
+	// of the steps of prose only the Solution owes it (EVO-013).
+	if (step === 'solution' && request.stage !== 'implementation' && request.stage !== 'acceptance' && request.stage !== 'delivered') {
 		if (request.stepDescriptions[step].trim() === '' && !skippedQuestionOf(request, `step.${step}.description`)) {
 			ask.unshift(stepDescriptionQuestion[step]);
 			then.unshift(`update_step_description {step: "${step}", description}: the person's own words, verbatim.`);
@@ -274,31 +260,28 @@ export function coachOf(request: EvolutionRequest, facts: CoachFacts): Coaching 
 	decides.push(...validationAsk(current, facts.solo, facts.inputs, request.validationsPerAnswer));
 	// Every spec step validated and the gate met: the next move is the crossing.
 	const crossing = step === 'impact_analysis' || step === 'build' || step === 'approval';
-	const specificationWaits = step === 'impact_analysis' && specificationLeft > 0;
-	if (crossing && facts.gate.ok && current.validation?.validated !== false && !specificationWaits)
+	const specificationWaits = step === 'impact_analysis' && (specificationLeft > 0 || !!facts.specification?.unread);
+	// A settled Build is nobody's decision: it moves into Approval on its own (EVO-011, criterion 21b6ca55).
+	if (crossing && facts.gate.ok && step === 'build')
+		then.push('The report is settled: the Build moves into Approval on its own at the next report build (build_implementation_report); the approval then fixes the commit that goes live.');
+	else if (crossing && facts.gate.ok && current.validation?.validated !== false && !specificationWaits)
 		decides.push(
 			step === 'impact_analysis'
 				? `Freeze version ${request.specVersion + 1} on the request (cross_stage); nothing becomes official before it is declared live.`
-				: step === 'build'
-					? 'Accept the Build (cross_stage): the code matches the frozen version. Nothing becomes official before the change is declared live.'
-					: 'Move on (cross_stage).'
+				: 'Move on (cross_stage).'
 		);
 	else if (crossing && !facts.gate.ok && facts.gate.reason) say = `${say} The next gate says: ${facts.gate.reason}`;
-	// Validating is optional until the build: the Solution is the one validation the freeze waits for, named before it refuses.
-	if (step === 'impact_analysis' && !isStepValidated(request, 'solution'))
-		decides.push(
-			`Validate the Solution (validate_step {step: "solution"}): the one validation the build waits for, by ${facts.solo ? 'you' : 'anyone with access to the project'}. The Need, the Functional and the Technical spec may stay unvalidated.`
-		);
 
-	// The diagram behind its texts is caught up first, whatever step the request stands on, while the texts
+	// A drawn diagram behind its texts is caught up first, whatever step the request stands on, while the texts
 	// still edit: an act is always due while one says something the other does not (ac-evo-func-uml-sync, -ai).
-	if (diagramBehindTexts(request, 'technical_spec') && !request.frozen && request.status === 'open')
+	// One never drawn is offered, never owed (EVO-013).
+	if (drawnDiagramBehind(request, 'technical_spec') && !request.frozen && request.status === 'open')
 		then.unshift(
-			`${(request.stepAnswers.technical_spec[FUNCTIONAL_DIAGRAM_KEY] ?? '').trim() === '' ? 'Draw' : 'Redraw'} the Technical spec's diagram from its description first: redraw_diagram {step: "technical_spec", diagram} in the notation of the tool (component / store / system / actor <name>, ": new" after what the change adds; link <a> -> <b>: <what goes through>; note <element>: <constraint or risk>; sequence <name> with "<a> -> <b>: <message>" lines, "-->" for an answer, and their "goes wrong when <condition>: <what then happens>" lines). A component that is a feature the product already has ends with @[name](feature:<featureId>), a store that is a table of the Data model with @[name](entity:<tableId>). It rewrites no text. Then say to the person it is your drawing of their description, to correct on the page.`
+			`Redraw the Technical spec's diagram from its description first: redraw_diagram {step: "technical_spec", diagram} in the notation of the tool (component / store / system / actor <name>, ": new" after what the change adds; link <a> -> <b>: <what goes through>; note <element>: <constraint or risk>; sequence <name> with "<a> -> <b>: <message>" lines, "-->" for an answer, and their "goes wrong when <condition>: <what then happens>" lines). A component that is a feature the product already has ends with @[name](feature:<featureId>), a store that is a table of the Data model with @[name](entity:<tableId>). It rewrites no text. Then say to the person it is your drawing of their description, to correct on the page.`
 		);
-	if (diagramBehindTexts(request) && !request.frozen && request.status === 'open')
+	if (drawnDiagramBehind(request) && !request.frozen && request.status === 'open')
 		then.unshift(
-			`${(request.stepAnswers.functional_spec[FUNCTIONAL_DIAGRAM_KEY] ?? '').trim() === '' ? 'Draw' : 'Redraw'} the Functional spec's diagram from its texts first: redraw_diagram {diagram} in the notation of the tool (actor / system, use case <name>: <who>, flow <use case> with "<who>: <step>" lines and their "refused when" / "goes wrong when" ways out, states <thing> with "<from> -> <to>: <cause>"). A use case that is a feature the product already has ends with @[name](feature:<featureId>), a step that is an action it already has with @[name](action:<featureId>/<actionId>). It rewrites no text. Then say to the person it is your drawing of their texts, to correct on the page. Editing the diagram later (answer_step question diagram) leaves the texts it changes behind it, to rewrite from it.`
+			`Redraw the Functional spec's diagram from its texts first: redraw_diagram {diagram} in the notation of the tool (actor / system, use case <name>: <who>, flow <use case> with "<who>: <step>" lines and their "refused when" / "goes wrong when" ways out, states <thing> with "<from> -> <to>: <cause>"). A use case that is a feature the product already has ends with @[name](feature:<featureId>), a step that is an action it already has with @[name](action:<featureId>/<actionId>). It rewrites no text. Then say to the person it is your drawing of their texts, to correct on the page. Editing the diagram later (answer_step question diagram) leaves the texts it changes behind it, to rewrite from it.`
 		);
 	// A text the diagram moved past is rewritten before anything else, the diagram's redraw included:
 	// it is no longer shown until it is, and a redraw from it would undo the diagram's edit (ac-evo-func-uml-sync, -ai).

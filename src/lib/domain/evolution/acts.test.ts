@@ -146,7 +146,8 @@ describe('opening and describing a request', () => {
 
 	it('keeps the Briefing of a frozen request: who asked and where it comes from are refused, a new title is not (issue 45)', () => {
 		const frozen = { ...opened(), frozen: true, specVersion: 2 };
-		const refusal = 'The specification is frozen as version 2. Rebrief the request before changing its Briefing.';
+		// The Need is rewritten after a rebrief only, never corrected in the Build (EVO-012, criterion ac1e6bb8).
+		const refusal = 'The specification is frozen as version 2: the Need, the Solution and the specs are not corrected in the Build. Reopen the spec for revision v3 to rewrite them.';
 		expect(reasonOf(updateRequestAct(ctxFor(person), frozen, { requester: 'Ana' }))).toBe(refusal);
 		expect(reasonOf(updateRequestAct(ctxFor(person), frozen, { origin: 'regulatory' }))).toBe(refusal);
 		expect(ok(updateRequestAct(ctxFor(person), frozen, { title: 'Coupons, frozen' })).title).toBe('Coupons, frozen');
@@ -229,7 +230,7 @@ describe('proposals: a client proposes, a person decides', () => {
 		const frozen = { ...suggested, frozen: true, specVersion: 2 };
 		const id = frozen.proposals[0].id;
 		expect(reasonOf(decideProposalAct(ctxFor(person), frozen, id, { decision: 'accept' }, () => ALLOW))).toBe(
-			'The specification is frozen as version 2. Rebrief the request before changing its Briefing.'
+			'The specification is frozen as version 2: the Need, the Solution and the specs are not corrected in the Build. Reopen the spec for revision v3 to rewrite them.'
 		);
 		expect(ok(decideProposalAct(ctxFor(person), frozen, id, { decision: 'refuse', comment: 'Not now.' }, () => ALLOW)).proposals[0].decision).toBe('refused');
 	});
@@ -540,6 +541,46 @@ describe('the reports are computed, and the gates decide', () => {
 		expect(request.iterations[0].reportStatus).toBe('closed');
 	});
 
+	it('the summary of a built report leads with the request\'s own lines, and counts every line once [criterion:46dc1372]', () => {
+		let request = ok(crossStageAct(ctxFor(relay), specValidated(opened()), { criticalEmptyCount: 0 }));
+		request = ok(runCoherenceAct(ctxFor(client), request, { report: { status: 'ready', projectScore: 80, requestDelta: 0, ranAt: 'now' }, findings: [] }));
+		request = ok(crossStageAct(ctxFor(relay), request, { criticalEmptyCount: 0 }));
+		const line = (id: string, verdict: 'missing' | 'non_conform' | 'conform', scope: 'request' | 'inherited') => ({
+			id,
+			iteration: 1,
+			verdict,
+			requirement: id,
+			filePath: '',
+			lineRange: '',
+			specStatement: '',
+			codeStatement: '',
+			hasRequirementAnchor: true,
+			anchorForeignLeaf: false,
+			acceptanceTestPassing: verdict === 'conform',
+			specVersion: 1,
+			decision: 'undecided' as const,
+			decidedBy: null,
+			decidedAt: null,
+			scope
+		});
+		const lines = [
+			line('own-1', 'missing', 'request'),
+			line('own-2', 'missing', 'request'),
+			...Array.from({ length: 4 }, (_, i) => line(`old-${i}`, 'non_conform', 'inherited')),
+			line('old-gone', 'missing', 'inherited')
+		];
+		const built = buildReportAct(ctxFor(client), request, lines);
+		if (!built.ok) throw new Error(built.reason);
+		expect(built.summary).toBe(
+			'Report for version 1: 2 lines of this request: 0 conform, 2 to build. 5 inherited lines, the backlog of the features touched, never hold the gate: 1 to build, 4 found, not tested yet.'
+		);
+		// What the summary counts is what the report keeps: the request's lines and the inherited ones add up.
+		const kept = built.request.implementationFindings.filter((l) => l.iteration === built.request.iteration);
+		expect(kept).toHaveLength(7);
+		expect(kept.filter((l) => l.scope !== 'inherited')).toHaveLength(2);
+		expect(kept.filter((l) => l.scope === 'inherited')).toHaveLength(5);
+	});
+
 	it('a rebrief goes back to Specify and amends a frozen spec', () => {
 		let request = ok(crossStageAct(ctxFor(relay), specValidated(opened()), { criticalEmptyCount: 0 }));
 		request = ok(runCoherenceAct(ctxFor(client), request, { report: { status: 'ready', projectScore: 80, requestDelta: 0, ranAt: 'now' }, findings: [] }));
@@ -756,5 +797,13 @@ describe('each reading of the code at Build, as its log says it', () => {
 		const after = [finding('a', 'conform'), finding('b', 'non_conform'), finding('i', 'conform', 'inherited')];
 		expect(codeReadSummary(before, after)).toBe('Code read: 1 tested (+1) · 1 found, not tested yet (+1) · 0 not found (−2)');
 		expect(codeReadSummary(after, after)).toBeNull();
+	});
+});
+
+// The steps read as the product names them (feat-31 a18cf05e).
+describe('the report names the step it is built at as the product names it', () => {
+	it('refuses a report out of the Build with The report is built at Build. (rule c067942a)', () => {
+		const accepted: EvolutionRequest = { ...createEvolutionRequest({ status: 'open', stage: 'acceptance' }), frozen: true, specVersion: 1 };
+		expect(reasonOf(buildReportAct(ctxFor(client), accepted, []))).toBe('The report is built at Build.');
 	});
 });

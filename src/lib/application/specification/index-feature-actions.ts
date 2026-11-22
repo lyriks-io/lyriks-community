@@ -1,4 +1,6 @@
-import type { UnspaFeatureSnapshot } from '$lib/unspa-schema';
+import { disabledMarkerOf, type DisabledMarker, type UnspaFeatureSnapshot } from '$lib/unspa-schema';
+import { featureStatements } from '$lib/unspa-schema/requirement-sentences';
+import type { SpecLanguage } from '$domain/language';
 import { isAuxFeatureId } from '../projection/aux-feature-ids';
 
 /**
@@ -25,6 +27,8 @@ export interface FeatureAction {
 	/** Where the action lives — a screen/context name, rendered bare in the UI. */
 	surfaceId: string;
 	surfaceName: string;
+	/** Set while the action (or its whole feature) is disabled: who, when and why. */
+	disabled?: DisabledMarker;
 }
 
 /** Actions of every feature, keyed by feature id. */
@@ -51,6 +55,8 @@ function borrowedSurfaceIds(
 
 function actionsOf(snap: UnspaFeatureSnapshot | null, borrowed: Set<string>): FeatureAction[] {
 	const feature = (snap?.feature ?? {}) as Record<string, unknown>;
+	// A disabled feature disables every action it holds.
+	const featureOff = disabledMarkerOf(feature);
 	const actions: FeatureAction[] = [];
 	for (const surfaceRaw of arr(feature.surfaces)) {
 		const surface = (surfaceRaw ?? {}) as Record<string, unknown>;
@@ -61,12 +67,14 @@ function actionsOf(snap: UnspaFeatureSnapshot | null, borrowed: Set<string>): Fe
 			const action = (actionRaw ?? {}) as Record<string, unknown>;
 			const id = str(action.id);
 			if (!id) continue;
+			const disabled = disabledMarkerOf(action) ?? featureOff;
 			actions.push({
 				id,
 				name: str(action.name) || id,
 				intent: str(action.intent),
 				surfaceId,
-				surfaceName
+				surfaceName,
+				...(disabled ? { disabled } : {})
 			});
 		}
 	}
@@ -82,6 +90,83 @@ export function indexFeatureActions(
 		if (isAuxFeatureId(featureId)) continue; // the tree lists leaves, not aux features
 		const actions = actionsOf(snapshot, borrowed);
 		if (actions.length > 0) index[featureId] = actions;
+	}
+	return index;
+}
+
+/**
+ * The features disabled as a whole, by id, with who disabled them, when and
+ * why: what their page shows in its head and what Knowledge leaves out of its
+ * counts while they stay disabled.
+ */
+export function indexDisabledFeatures(
+	featureSnapshots: ReadonlyArray<{ featureId: string; snapshot: UnspaFeatureSnapshot | null }>
+): Record<string, DisabledMarker> {
+	const disabled: Record<string, DisabledMarker> = {};
+	for (const { featureId, snapshot } of featureSnapshots) {
+		const marker = disabledMarkerOf(snapshot?.feature);
+		if (marker) disabled[featureId] = marker;
+	}
+	return disabled;
+}
+
+/** One scenario of an action, as the feature's page reads it. */
+export interface FeatureScenario {
+	id: string;
+	name: string;
+	/** Given / When / Then, as Lyriks writes it from the model (the `statements` of a behaviour read). */
+	statement: string;
+	/** When the scenario last changed in the spec, when the model stamps it: a proof taken before reads stale. */
+	changedAt?: string;
+	/** Set while the scenario is disabled, on its own or with the action or feature holding it. */
+	disabled?: DisabledMarker;
+}
+
+/** Scenarios of every feature, by feature id then action id. Kept apart from the actions, whose reading Knowledge validates. */
+export type FeatureScenarioIndex = Record<string, Record<string, FeatureScenario[]>>;
+
+/**
+ * Every action's scenarios, each written as Given / When / Then exactly as a
+ * behaviour read gives it, with the version it last changed under and its
+ * disabled marker. Own surfaces only, like the actions.
+ */
+export function indexFeatureScenarios(
+	featureSnapshots: ReadonlyArray<{ featureId: string; snapshot: UnspaFeatureSnapshot | null }>,
+	lang: SpecLanguage = 'en'
+): FeatureScenarioIndex {
+	const index: FeatureScenarioIndex = {};
+	const borrowed = borrowedSurfaceIds(featureSnapshots);
+	for (const { featureId, snapshot } of featureSnapshots) {
+		if (isAuxFeatureId(featureId)) continue;
+		const feature = (snapshot?.feature ?? {}) as Record<string, unknown>;
+		const featureOff = disabledMarkerOf(feature);
+		const versions = (feature.elementVersions ?? {}) as Record<string, unknown>;
+		let statements: Record<string, string> | null = null;
+		for (const surfaceRaw of arr(feature.surfaces)) {
+			const surface = (surfaceRaw ?? {}) as Record<string, unknown>;
+			if (borrowed.has(str(surface.id))) continue;
+			for (const actionRaw of arr(surface.actions)) {
+				const action = (actionRaw ?? {}) as Record<string, unknown>;
+				const actionId = str(action.id);
+				const scenarios = arr(action.scenarios);
+				if (!actionId || scenarios.length === 0) continue;
+				statements ??= featureStatements(feature, lang);
+				const held = disabledMarkerOf(action) ?? featureOff;
+				(index[featureId] ??= {})[actionId] = scenarios.map((raw) => {
+					const scenario = (raw ?? {}) as Record<string, unknown>;
+					const id = str(scenario.id);
+					const disabled = disabledMarkerOf(scenario) ?? held;
+					const changedAt = str(versions[`scenario:${id}`]);
+					return {
+						id,
+						name: str(scenario.name) || id,
+						statement: statements?.[`scenario:${id}`] ?? '',
+						...(changedAt ? { changedAt } : {}),
+						...(disabled ? { disabled } : {})
+					};
+				});
+			}
+		}
 	}
 	return index;
 }

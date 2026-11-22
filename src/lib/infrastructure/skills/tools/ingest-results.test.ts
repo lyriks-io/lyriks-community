@@ -9,8 +9,17 @@ import { fileURLToPath } from 'node:url';
 // one: a child process in a throwaway repository, never an import.
 const script = fileURLToPath(new URL('./ingest-results.mjs', import.meta.url));
 
-type Entry = { file?: string; line?: number; signature?: string; status?: string; verifiedAt?: string; verifiedScenarios?: number };
-type ActionRow = { key: string; actionId: string; passed: number; total: number; verified: boolean; outcome: string };
+type ScenarioResult = { passed: boolean; at: string; revision?: string; dirty?: boolean };
+type Entry = {
+	file?: string;
+	line?: number;
+	signature?: string;
+	status?: string;
+	verifiedAt?: string;
+	verifiedScenarios?: number;
+	scenarioResults?: Record<string, ScenarioResult>;
+};
+type ActionRow = { key: string; actionId: string; passed: number; total: number; verified: boolean; outcome: string; scenarios: Record<string, boolean> };
 type Report = {
 	indexFile: string | null;
 	dryRun: boolean;
@@ -20,6 +29,7 @@ type Report = {
 	verified: number;
 	stamped: number;
 	cleared: number;
+	recorded: number;
 	unindexed: string[];
 	actions: ActionRow[];
 };
@@ -122,8 +132,9 @@ describe('ingest-results.mjs (test results come back into the index)', () => {
 			['action:act-brake', 0, 1, 'failing']
 		]);
 		const index = readIndex(dir);
-		expect(index['action:act-boost']).toEqual(located);
-		expect(index['action:act-brake']).toEqual(located);
+		const at = expect.any(String);
+		expect(index['action:act-boost']).toEqual({ ...located, scenarioResults: { 'scn-1': { passed: true, at }, 'scn-2': { passed: false, at } } });
+		expect(index['action:act-brake']).toEqual({ ...located, scenarioResults: { 'scn-3': { passed: false, at } } });
 	});
 
 	it('reports a passing action that has no index entry and never creates one', () => {
@@ -159,8 +170,51 @@ describe('ingest-results.mjs (test results come back into the index)', () => {
 		const file = reportFile(dir, [[`${token('act-boost', 'scn-1')} boosts`, 'passed']]);
 		const lines = run(dir, [file]).stdout.trimEnd().split('\n');
 		expect(lines[0]).toBe('action:act-boost  1/1 passed  verifiedAt stamped');
-		expect(lines[1]).toContain('1 actions tested, 1 fully passing, 0 with failures; 1 stamped, 0 cleared, 0 passing but not in the index.');
+		expect(lines[1]).toContain(
+			'1 actions tested, 1 fully passing, 0 with failures; 1 stamped, 0 cleared, 0 passing but not in the index; 1 actions given the result of each scenario.'
+		);
 		expect(lines).toHaveLength(2);
+	});
+
+	// feat-100: a scenario must be able to read failing, so its own last result is kept, never only verifiedAt.
+	it('keeps the last result of each scenario on its action, failing ones included, beside the unchanged verifiedAt rule [criterion:d0f1688f] [criterion:7ab34030]', () => {
+		const earlier = { passed: true, at: '2026-09-01T08:00:00.000Z', revision: 'old1234' };
+		const dir = repo({
+			'action:act-boost': { ...located, verifiedAt: '2026-09-01T08:00:00.000Z', verifiedScenarios: 3, scenarioResults: { 'scn-1': earlier, 'scn-9': earlier } },
+			'action:act-brake': located
+		});
+		const file = reportFile(dir, [
+			[`${token('act-boost', 'scn-1')} boosts a fuelled car`, 'passed'],
+			[`${token('act-boost', 'scn-2')} refuses an empty tank`, 'passed'],
+			// One scenario run by two tests fails as soon as one of them does.
+			[`${token('act-boost', 'scn-2')} refuses an empty tank, again`, 'failed'],
+			[`${token('act-brake', 'scn-3')} brakes`, 'passed']
+		]);
+		const { status, report } = json(dir, [file, '--revision', 'abc1234']);
+
+		expect(status).toBe(0);
+		expect(report).toMatchObject({ stamped: 1, cleared: 1, recorded: 2, written: true });
+		expect(report.actions.find((a) => a.key === 'action:act-boost')?.scenarios).toEqual({ 'scn-1': true, 'scn-2': false });
+		const index = readIndex(dir);
+		const boost = index['action:act-boost'];
+		const at = boost.scenarioResults!['scn-1'].at;
+		expect(Date.parse(at)).not.toBeNaN();
+		expect(boost.scenarioResults).toEqual({
+			'scn-1': { passed: true, at, revision: 'abc1234' },
+			'scn-2': { passed: false, at, revision: 'abc1234' },
+			// A scenario this run did not reach keeps the result it had.
+			'scn-9': earlier
+		});
+		// verifiedAt keeps its own rule: a failing result removes it.
+		expect(boost.verifiedAt).toBeUndefined();
+		expect(boost.verifiedScenarios).toBeUndefined();
+		const brake = index['action:act-brake'];
+		expect(brake).toMatchObject({ ...located, verifiedAt: at, verifiedScenarios: 1 });
+		expect(brake.scenarioResults).toEqual({ 'scn-3': { passed: true, at, revision: 'abc1234' } });
+
+		// The printed line names the scenarios that failed.
+		const said = run(dir, [file, '--revision', 'abc1234', '--dry-run']).stdout;
+		expect(said).toContain('action:act-boost  2/3 passed  a result fails, no verifiedAt to remove (failing: scn-2)');
 	});
 
 	it('finds the index from a subfolder, walking up', () => {
@@ -344,6 +398,7 @@ describe('ingest-results.mjs ties every result to the commit of code it ran on [
 		const said = run(dir, [file]).stdout;
 		expect(said).toContain('with uncommitted code');
 		expect(stampedOf(dir, 'action:act-boost')).toMatchObject({ verifiedRevision: code, verifiedDirty: true });
+		expect(stampedOf(dir, 'action:act-boost').scenarioResults?.['sc-1']).toMatchObject({ passed: true, revision: code, dirty: true });
 		expect(stampedOf(dir, 'criterion:c-1').verification?.lastResult).toMatchObject({ revision: code, dirty: true });
 
 		git(dir, ['commit', '-qam', 'more code']);
@@ -351,6 +406,7 @@ describe('ingest-results.mjs ties every result to the commit of code it ran on [
 		run(dir, [file]);
 		expect(stampedOf(dir, 'action:act-boost')).toMatchObject({ verifiedRevision: next });
 		expect(stampedOf(dir, 'action:act-boost').verifiedDirty).toBeUndefined();
+		expect(stampedOf(dir, 'action:act-boost').scenarioResults?.['sc-1']).toEqual({ passed: true, at: expect.any(String), revision: next });
 		expect(stampedOf(dir, 'criterion:c-1').verification?.lastResult?.dirty).toBeUndefined();
 	});
 

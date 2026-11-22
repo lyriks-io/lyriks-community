@@ -126,7 +126,9 @@ function mergeAction(projected: Node, existing: Node): Node {
 		rules: enginePreferred(existing.rules, projected.rules),
 		invariants: enginePreferred(existing.invariants, projected.invariants),
 		effects: mergeEffects(projected.effects, existing.effects),
-		...(existing.scenarios !== undefined ? { scenarios: existing.scenarios } : {})
+		...(existing.scenarios !== undefined ? { scenarios: existing.scenarios } : {}),
+		// Disabling is engine-owned: a projected action put aside stays so.
+		...(existing.disabled !== undefined ? { disabled: existing.disabled } : {})
 	};
 }
 

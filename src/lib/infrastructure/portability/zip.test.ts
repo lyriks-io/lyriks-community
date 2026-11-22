@@ -124,3 +124,37 @@ describe('untrusted ZIP size declarations', () => {
 		expect(decodeZip(archive, { maxEntries: 10, maxTotalBytes: 3 }).size).toBe(2);
 	});
 });
+
+describe('untrusted central directory', () => {
+	/** The end-of-central-directory record of an archive this codec wrote (no comment): the last 22 bytes. */
+	const eocdOf = (archive: Buffer) => archive.length - 22;
+
+	it('rejects a central directory offset that points past the end of the file', () => {
+		const archive = Buffer.from(encodeZip([{ path: 'a', bytes: utf8('abc') }]));
+		archive.writeUInt32LE(archive.length - 10, eocdOf(archive) + 16);
+		expect(() => decodeZip(archive)).toThrow(/central directory is truncated/);
+	});
+
+	it('rejects a central directory offset that points at something else than a central header', () => {
+		const archive = Buffer.from(encodeZip([{ path: 'a', bytes: utf8('abc') }]));
+		// Offset 0 is the local header: a well-formed record of the wrong kind.
+		archive.writeUInt32LE(0, eocdOf(archive) + 16);
+		expect(() => decodeZip(archive)).toThrow(/central directory is truncated/);
+	});
+
+	it('rejects a central header that starts right but is cut short by the end of the file', () => {
+		// The archive comment ends the file; a central directory offset aimed at it
+		// finds a genuine signature followed by too few bytes for a header.
+		const plain = Buffer.from(encodeZip([{ path: 'a', bytes: utf8('abc') }]));
+		const comment = Buffer.from([0x50, 0x4b, 0x01, 0x02, 0, 0]);
+		plain.writeUInt16LE(comment.length, eocdOf(plain) + 20);
+		plain.writeUInt32LE(plain.length, eocdOf(plain) + 16);
+		expect(() => decodeZip(Buffer.concat([plain, comment]))).toThrow(/central directory is truncated/);
+	});
+
+	it('rejects an archive declaring more entries than its central directory holds', () => {
+		const archive = Buffer.from(encodeZip([{ path: 'a', bytes: utf8('abc') }]));
+		archive.writeUInt16LE(2, eocdOf(archive) + 10);
+		expect(() => decodeZip(archive)).toThrow(/central directory is truncated/);
+	});
+});

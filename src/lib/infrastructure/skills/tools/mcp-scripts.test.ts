@@ -999,3 +999,186 @@ describe('sync-skills.mjs [criterion:3f42911b]', () => {
 		expect(existsSync(join(dir, '..', 'outside'))).toBe(false);
 	});
 });
+
+// feat-100: the sync command sends what changed since a commit, moves lines
+// without their unit, guards on the revision it printed, signs in with what its
+// command carries, and prints counters only.
+describe('sync-index.mjs, the index sync tooling of feat-100', () => {
+	const git = (cwd: string, args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t.test', ...args], { cwd, encoding: 'utf8' }).trim();
+	const SINCE_INDEX = {
+		...TWO_FEATURES,
+		'criterion:c-fuel': { verification: { kind: 'unit', lastResult: { passed: true, at: 'x' } } }
+	};
+
+	/** A checkout whose index was committed, then gained, moved and lost entries. */
+	function changedRepo() {
+		const dir = repoWithIndex(SINCE_INDEX);
+		git(dir, ['init', '-q', '-b', 'main']);
+		git(dir, ['add', '-A']);
+		git(dir, ['commit', '-qm', 'index']);
+		const next: Record<string, unknown> = { ...SINCE_INDEX, 'rule:boost-needs-fuel': entry(13), 'criterion:c-new': { verification: { kind: 'unit' } }, 'rule:typo': entry(90) };
+		delete next['event:boost_applied'];
+		writeFileSync(join(dir, '.unspa.json'), JSON.stringify({ format: 'unspaghettit-index', version: 1, projectId: 'vector-rally', index: next }, null, 2));
+		return dir;
+	}
+
+	const BOOST_OWNERS = {
+		projectId: 'vector-rally',
+		asked: 4,
+		features: [{ featureId: 'feat-boost', units: [{ unit: 'action:boost', keys: ['action:boost', 'rule:boost-needs-fuel', 'event:boost_applied'] }], alone: ['criterion:c-new'] }],
+		orphans: ['rule:typo']
+	};
+
+	it('with --since, asks which units hold the keys that changed and sends each whole from the local index, and nothing else [criterion:bae110ba]', async () => {
+		const dir = changedRepo();
+		fake.tools.get_implementation_status = () => ({ json: BOOST_OWNERS });
+		fake.tools.sync_implementation_index = () => ({ json: { ...SYNC_ANSWER, revision: 4 } });
+		const out = await run('sync-index.mjs', ['--since', 'HEAD', '--no-git', '--url', url], { cwd: dir });
+		expect(toolCalls().map((call) => call.message.params?.name)).toEqual(['get_implementation_status', 'sync_implementation_index']);
+		expect(argsOf(toolCalls()[0])).toEqual({ project_id: 'vector-rally', keys: ['rule:boost-needs-fuel', 'criterion:c-new', 'rule:typo', 'event:boost_applied'] });
+		// The unit goes whole, without the child it lost; the other feature and the orphan stay home.
+		expect(argsOf(toolCalls()[1]).index).toEqual({ 'action:boost': entry(10), 'rule:boost-needs-fuel': entry(13), 'criterion:c-new': { verification: { kind: 'unit' } } });
+		const printed = JSON.parse(out.stdout);
+		expect(printed.since).toEqual({ revision: 'HEAD', changed: 4, features: ['feat-boost'], units: ['action:boost'], orphans: ['rule:typo'] });
+		expect(printed.counters.revision).toBe(4);
+		// A key no feature declares fails the run although the sync was accepted.
+		expect(out.status).toBe(1);
+	});
+
+	it('with --since, asks at most 150 keys per call and asks again for the keys an answer left until none remain [criterion:bae110ba] [criterion:25196523]', async () => {
+		const many = Object.fromEntries(Array.from({ length: 160 }, (_, i) => [`rule:r${i}`, entry(i + 1)]));
+		const dir = repoWithIndex({});
+		git(dir, ['init', '-q', '-b', 'main']);
+		git(dir, ['add', '-A']);
+		git(dir, ['commit', '-qm', 'empty index']);
+		writeFileSync(join(dir, '.unspa.json'), JSON.stringify({ projectId: 'vector-rally', index: many }, null, 2));
+		fake.tools.get_implementation_status = (args) => {
+			const keys = args.keys as string[];
+			// The first answer fits ten keys and names the rest.
+			const answered = keys.length === 150 && keys[0] === 'rule:r0' ? keys.slice(0, 10) : keys;
+			return { json: { features: [{ featureId: 'feat-x', units: answered.map((key) => ({ unit: `action:${key.slice(5)}`, keys: [key] })), alone: [] }], orphans: [], remainingKeys: keys.slice(answered.length) } };
+		};
+		fake.tools.sync_implementation_index = () => ({ json: SYNC_ANSWER });
+		const out = await run('sync-index.mjs', ['--since', 'HEAD', '--no-git', '--url', url], { cwd: dir });
+		expect(out.status).toBe(0);
+		const lookups = toolCalls().filter((call) => call.message.params?.name === 'get_implementation_status').map((call) => (argsOf(call).keys as string[]).length);
+		// 150 asked, 10 answered: the 140 left go again first, with the 10 never asked yet.
+		expect(lookups).toEqual([150, 150]);
+		expect(argsOf(toolCalls()[1]).keys).toEqual([...Array.from({ length: 140 }, (_, i) => `rule:r${i + 10}`), ...Array.from({ length: 10 }, (_, i) => `rule:r${i + 150}`)]);
+		expect(Object.keys(argsOf(toolCalls().at(-1)!).index as object)).toHaveLength(160);
+	});
+
+	it('with --since, sends the unit a draft of an open request places a changed key in, like any other, and names the request [criterion:a501859a]', async () => {
+		const dir = repoWithIndex(TWO_FEATURES);
+		git(dir, ['init', '-q', '-b', 'main']);
+		git(dir, ['add', '-A']);
+		git(dir, ['commit', '-qm', 'index']);
+		// The code of a request's draft: a rule the specification will hold once the change lands.
+		writeFileSync(join(dir, '.unspa.json'), JSON.stringify({ projectId: 'vector-rally', index: { ...TWO_FEATURES, 'rule:boost-held': entry(16) } }, null, 2));
+		fake.tools.get_implementation_status = () => ({
+			json: {
+				features: [],
+				requests: [{ requestId: 'req-7', draftId: 'd-boost', units: [{ unit: 'action:boost', keys: ['action:boost', 'rule:boost-needs-fuel', 'event:boost_applied', 'rule:boost-held'] }], alone: [] }],
+				orphans: []
+			}
+		});
+		const held = { ...SYNC_ANSWER, heldForEvolution: [{ requestId: 'req-7', keys: ['rule:boost-held'] }] };
+		fake.tools.sync_implementation_index = () => ({ json: held });
+		const out = await run('sync-index.mjs', ['--since', 'HEAD', '--no-git', '--url', url], { cwd: dir });
+		expect(out.status).toBe(0);
+		expect(argsOf(toolCalls()[0]).keys).toEqual(['rule:boost-held']);
+		// The draft's unit goes whole from the local index; the sync holds the new rule on the request.
+		expect(argsOf(toolCalls()[1]).index).toEqual({
+			'action:boost': entry(10),
+			'rule:boost-needs-fuel': entry(12),
+			'event:boost_applied': entry(14),
+			'rule:boost-held': entry(16)
+		});
+		expect(JSON.parse(out.stdout).since).toEqual({ revision: 'HEAD', changed: 1, features: [], units: ['action:boost'], requests: [{ requestId: 'req-7', draftId: 'd-boost' }], orphans: [] });
+	});
+
+	it('refuses a revision git cannot read, before the network [rule:a4edf0a4]', async () => {
+		const dir = changedRepo();
+		const out = await run('sync-index.mjs', ['--since', 'no-such-commit', '--url', url], { cwd: dir });
+		expect(out.status).toBe(1);
+		expect(out.stderr.trim()).toBe(
+			'git cannot read no-such-commit in this checkout: nothing was sent. Name a commit, a tag or a branch git knows here, or run without --since to send the whole index.'
+		);
+		const notARepo = await run('sync-index.mjs', ['--since', 'HEAD', '--url', url], { cwd: repoWithIndex(TWO_FEATURES) });
+		expect(notARepo.status).toBe(1);
+		expect(notARepo.stderr).toContain('git cannot read HEAD in this checkout');
+		expect(fake.seen).toHaveLength(0);
+	});
+
+	it('with --positions, sends places only, and with --since only the entries that changed [criterion:e9699cc6]', async () => {
+		const dir = changedRepo();
+		const moved = { ok: false, positionsOnly: true, sent: 3, moved: 1, units: { total: 1, entries: ['action:boost'] }, notLocated: { total: 1, entries: ['criterion:c-new'] }, orphans: { total: 1, entries: ['rule:typo'] }, failedAcks: [], revision: 5 };
+		fake.tools.sync_implementation_index = () => ({ json: moved });
+		const out = await run('sync-index.mjs', ['--since', 'HEAD', '--positions', '--url', url], { cwd: dir });
+		// No unit travels with a moved line, and no lookup is needed.
+		expect(toolCalls().map((call) => call.message.params?.name)).toEqual(['sync_implementation_index']);
+		expect(argsOf(toolCalls()[0])).toEqual({ project_id: 'vector-rally', positions_only: true, index: { 'rule:boost-needs-fuel': entry(13), 'criterion:c-new': { verification: { kind: 'unit' } }, 'rule:typo': entry(90) } });
+		const printed = JSON.parse(out.stdout);
+		expect(printed.counters).toMatchObject({ ok: false, moved: 1, notLocated: 1, orphans: 1, revision: 5 });
+		expect(printed.notLocated).toEqual(['criterion:c-new']);
+		expect(out.status).toBe(1);
+	});
+
+	it('sends the revision --expect names and prints the one the write left [criterion:fbe61ab1]', async () => {
+		fake.tools.sync_implementation_index = () => ({ json: { ...SYNC_ANSWER, revision: 8 } });
+		const out = await run('sync-index.mjs', ['--expect', '7', '--no-git', '--url', url], { cwd: repoWithIndex(TWO_FEATURES) });
+		expect(out.status).toBe(0);
+		expect(argsOf(toolCalls()[0]).expected_revision).toBe(7);
+		expect(JSON.parse(out.stdout).counters.revision).toBe(8);
+		const wrong = await run('sync-index.mjs', ['--expect', 'latest', '--url', url], { cwd: repoWithIndex(TWO_FEATURES) });
+		expect(wrong.status).toBe(1);
+		expect(wrong.stderr).toContain('--expect takes the revision an earlier sync printed');
+	});
+
+	it('prints a write refused where another checkout wrote the same units since, and fails the run [criterion:93abb7df]', async () => {
+		const refused = { ok: false, refused: 'revision', message: 'The index of this project changed since revision 3: 1 of the units sent were written since by another sync or report (action:boost). Nothing was written.', expectedRevision: 3, currentRevision: 5, units: ['action:boost'], total: 1 };
+		fake.tools.sync_implementation_index = () => ({ json: refused });
+		const out = await run('sync-index.mjs', ['--expect', '3', '--no-git', '--url', url], { cwd: repoWithIndex(TWO_FEATURES) });
+		expect(out.status).toBe(1);
+		expect(JSON.parse(out.stdout).refused).toEqual({ message: refused.message, units: ['action:boost'], total: 1, currentRevision: 5 });
+	});
+
+	it('signs in with the ticket its command carries, whatever the environment points at, and says what to do without one [criterion:2452b3d7] [rule:031003f7] [rule:1b113f69]', async () => {
+		fake.requireToken = 'lyriks_mcp_ticket';
+		fake.tools.sync_implementation_index = () => ({ json: SYNC_ANSWER });
+		const elsewhere = { LYRIKS_MCP_URL: 'http://127.0.0.1:9/mcp', LYRIKS_MCP_TOKEN: 'studio-token' };
+		const handed = await run('sync-index.mjs', ['--project', 'vector-rally', '--url', url, '--token', 'lyriks_mcp_ticket', '--no-git'], { cwd: repoWithIndex(TWO_FEATURES), env: elsewhere });
+		expect(handed.status).toBe(0);
+		expect(fake.seen[0].headers.authorization).toBe('Bearer lyriks_mcp_ticket');
+		const SENTENCE =
+			'Lyriks refused the call (401): this installation asks for sign-in. Ask your AI for the sync command (sync_implementation_index with command:true) and run it as it comes: it signs in by itself for twelve hours.';
+		for (const flags of [[], ['--positions']]) {
+			const bare = await run('sync-index.mjs', ['--url', url, ...flags], { cwd: repoWithIndex(TWO_FEATURES) });
+			expect(bare.status).toBe(1);
+			expect(bare.stderr.trim()).toBe(SENTENCE);
+		}
+	});
+
+	it('prints the project and where it was named, the entries sent, the counters and their meaning, never the whole answer [criterion:8a19b0cf]', async () => {
+		fake.tools.sync_implementation_index = () => ({ json: { ...SYNC_ANSWER, revision: 2 } });
+		const out = await run('sync-index.mjs', ['--no-git', '--url', url], { cwd: repoWithIndex(TWO_FEATURES) });
+		expect(out.status).toBe(0);
+		const printed = JSON.parse(out.stdout);
+		expect(printed).toEqual({
+			project: 'vector-rally',
+			projectSource: expect.any(String),
+			sent: 5,
+			counters: { ok: true, synced: 1, successes: 1, failures: 0, skipped: 7, revision: 2, orphans: 0, shared: 2, failedAcks: 0 },
+			semantics: SYNC_ANSWER.semantics
+		});
+	});
+});
+
+describe('the bound of a key lookup', () => {
+	it('is the same number in the sync command and on the server', async () => {
+		// Read as text: the script ships as a file and is not typed.
+		const script = /export const MAX_KEYS_PER_LOOKUP = (\d+);/.exec(readFileSync(scriptPath('index-since.mjs'), 'utf8'))?.[1];
+		const { MAX_KEYS_PER_LOOKUP: server } = await import('$domain/implementation');
+		expect(Number(script)).toBe(server);
+	});
+});

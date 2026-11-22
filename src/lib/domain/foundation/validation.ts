@@ -30,20 +30,6 @@ export type Validation = FieldError | null;
 
 const tooLong = (n: number): FieldError => ({ message: `Keep it under ${n} characters.` });
 
-/** Required + max length. */
-export function validateText(value: string, max: number, label = 'This field'): Validation {
-	const v = value.trim();
-	if (v.length === 0) return { message: `${label} is required.` };
-	if (value.length > max) return tooLong(max);
-	return null;
-}
-
-/** Optional text that still has a ceiling (e.g. a single criterion). */
-export function validateOptionalText(value: string, max: number): Validation {
-	if (value.length > max) return tooLong(max);
-	return null;
-}
-
 /** The brief has both a floor and a ceiling. */
 export function validateBrief(value: string): Validation {
 	const v = value.trim();
@@ -63,8 +49,4 @@ export function summaryRefusal(next: string, before: string): string | null {
 	const length = next.trim().length;
 	if (next === before || length <= LIMITS.brief) return null;
 	return `The product summary holds ${LIMITS.brief} characters at most; this one has ${length}. Shorten it to what the product is, for whom and why.`;
-}
-
-export function isFiniteNumber(value: unknown): value is number {
-	return typeof value === 'number' && Number.isFinite(value);
 }

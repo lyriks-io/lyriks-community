@@ -11,6 +11,12 @@
 //                           located first (index entry), proven second.
 // "Located" and "proven" are two claims. An index entry says where the code is;
 // only a passing run of the real code earns `verifiedAt`.
+// Each scenario's own last result is kept too, on the entry of its action:
+// `scenarioResults: { <scenarioId>: { passed, at, revision?, dirty? } }`, passed
+// when every test carrying its token passed. A scenario this run did not reach
+// keeps the result it had. The sync carries them with the action's report, so
+// a scenario that failed reads failing instead of only "not proven yet"
+// (scenario-results.mjs holds that half).
 // Acceptance criteria come back the same way (criteria-results.mjs): a test
 // whose title carries `[criterion:<id>]` (or that --criteria maps to one) sets
 // `verification.lastResult { passed, at, summary, revision }` on the entry
@@ -27,78 +33,7 @@ import { resolve } from 'node:path';
 import { CRITERION_KINDS, applyCriterion, criterionResults, readCriteriaMap } from './criteria-results.mjs';
 import { gitState } from './git-state.mjs';
 import { findIndexFile, loadIndexFile, writeIndexFile } from './index-file.mjs';
-
-// The engine's token, as its codegen emits it (cli/scenarios/results.ts).
-const TOKEN = /\[unspa:([^:\]]+):([^:\]]+):([^:\]]+)\]/;
-
-/**
- * Per-scenario pass or fail from a jest-shaped report. A test without a token
- * is someone's own test and is ignored; a report of another shape yields none.
- * The token is looked for in `title`, and in `fullName` only when there is no
- * title: exactly what the engine does, so both always agree on one report.
- */
-function parseScenarioResults(report) {
-	const results = [];
-	const files = Array.isArray(report?.testResults) ? report.testResults : [];
-	for (const file of files) {
-		const assertions = Array.isArray(file?.assertionResults) ? file.assertionResults : [];
-		for (const assertion of assertions) {
-			const match = TOKEN.exec(String(assertion?.title ?? assertion?.fullName ?? ''));
-			if (!match) continue;
-			const [, surfaceId, actionId, scenarioId] = match;
-			results.push({ surfaceId, actionId, scenarioId, passed: assertion.status === 'passed' });
-		}
-	}
-	return results;
-}
-
-/** Rolled up per action: verified when it has at least one result and every one passed. */
-function summarizeByAction(results) {
-	const byAction = new Map();
-	for (const result of results) {
-		const tally = byAction.get(result.actionId) ?? { total: 0, passed: 0 };
-		tally.total += 1;
-		if (result.passed) tally.passed += 1;
-		byAction.set(result.actionId, tally);
-	}
-	return [...byAction].map(([actionId, { total, passed }]) => ({
-		actionId,
-		total,
-		passed,
-		verified: total > 0 && passed === total
-	}));
-}
-
-const isEntry = (entry) => Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry);
-
-/** Applies one action's verdict to the index in place and says what it did. */
-function applyVerdict(index, action, stampedAt, { revision = null, dirty = false } = {}) {
-	const key = `action:${action.actionId}`;
-	const entry = isEntry(index[key]) ? index[key] : null;
-	if (action.verified) {
-		if (!entry) return 'unindexed';
-		// The commit the proof was taken on replaces the one before, and so does its dirtiness.
-		const { verifiedRevision: _rev, verifiedDirty: _dirty, ...kept } = entry;
-		const proof = { ...(revision ? { verifiedRevision: revision } : {}), ...(dirty ? { verifiedDirty: true } : {}) };
-		index[key] = { ...kept, verifiedAt: stampedAt, verifiedScenarios: action.passed, ...proof };
-		return 'stamped';
-	}
-	if (entry && entry.verifiedAt !== undefined) {
-		// It was proven and a result now fails: the proof is stale, drop it.
-		const { verifiedAt: _at, verifiedScenarios: _count, verifiedRevision: _rev, verifiedDirty: _dirty, ...rest } = entry;
-		index[key] = rest;
-		return 'cleared';
-	}
-	return entry ? 'failing' : 'failing-unindexed';
-}
-
-const OUTCOMES = {
-	stamped: 'verifiedAt stamped',
-	cleared: 'verifiedAt removed, a result fails',
-	unindexed: 'passing but not in the index: nothing written, record where it is implemented, then ingest again',
-	failing: 'a result fails, no verifiedAt to remove',
-	'failing-unindexed': 'a result fails, and the action is not in the index'
-};
+import { OUTCOMES, applyVerdict, failedScenarios, parseScenarioResults, summarizeByAction } from './scenario-results.mjs';
 
 function printReport(report) {
 	if (report.actions.length === 0 && report.criteria.length === 0) {
@@ -111,11 +46,16 @@ function printReport(report) {
 	}
 	const width = Math.max(...report.actions.map((action) => action.key.length));
 	for (const action of report.actions) {
-		console.log(`${action.key.padEnd(width)}  ${action.passed}/${action.total} passed  ${OUTCOMES[action.outcome]}`);
+		const failed = failedScenarios(action);
+		console.log(
+			`${action.key.padEnd(width)}  ${action.passed}/${action.total} passed  ${OUTCOMES[action.outcome]}` +
+				(failed.length > 0 ? ` (failing: ${failed.join(', ')})` : '')
+		);
 	}
 	console.log(
 		`${report.indexFile}: ${report.tested} actions tested, ${report.verified} fully passing, ${report.tested - report.verified} with failures; ` +
 			`${report.stamped} stamped, ${report.cleared} cleared, ${report.unindexed.length} passing but not in the index` +
+			(report.recorded > 0 ? `; ${report.recorded} actions given the result of each scenario` : '') +
 			(report.revision ? `; taken on ${report.revision.slice(0, 12)}${report.dirty ? ' with uncommitted code (proves no commit: commit, then run the tests again)' : ''}` : '') +
 			(report.criteria.length > 0 ? `; ${report.criteria.length} criteria given a lastResult` : '') +
 			(report.dryRun ? ' (dry run: nothing written).' : report.written ? '.' : ' (nothing to write).')
@@ -157,7 +97,7 @@ function main() {
 	const perAction = summarizeByAction(parseScenarioResults(raw));
 	const indexPath = findIndexFile();
 	const perCriterion = criterionResults(raw, flags.criteria ? readCriteriaMap(resolve(flags.criteria)) : undefined, indexPath ? resolve(indexPath, '..') : process.cwd());
-	const report = { reportFile, indexFile: null, dryRun, written: false, stampedAt: null, revision: null, dirty: false, tested: perAction.length, verified: 0, stamped: 0, cleared: 0, unindexed: [], actions: [], criteria: [] };
+	const report = { reportFile, indexFile: null, dryRun, written: false, stampedAt: null, revision: null, dirty: false, tested: perAction.length, verified: 0, stamped: 0, cleared: 0, recorded: 0, unindexed: [], actions: [], criteria: [] };
 	// Like the engine, a report without tagged tests never needs the index at all.
 	if (perAction.length + perCriterion.length > 0) {
 		const loaded = loadIndexFile();
@@ -176,11 +116,12 @@ function main() {
 			if (outcome === 'stamped') report.stamped += 1;
 			if (outcome === 'cleared') report.cleared += 1;
 			if (outcome === 'unindexed') report.unindexed.push(action.actionId);
+			if (!outcome.endsWith('unindexed')) report.recorded += 1;
 		}
 		for (const result of perCriterion) {
 			report.criteria.push(applyCriterion(loaded.index, result, { at: report.stampedAt, kind, revision, dirty, reportFile }));
 		}
-		if (!dryRun && report.stamped + report.cleared + report.criteria.length > 0) {
+		if (!dryRun && report.recorded + report.criteria.length > 0) {
 			writeIndexFile(loaded);
 			report.written = true;
 		}

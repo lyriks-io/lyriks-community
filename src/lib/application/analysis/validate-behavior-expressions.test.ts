@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import ts from 'typescript';
 import {
 	CONDITION_KINDS,
 	EXPRESSION_KINDS,
@@ -9,38 +9,60 @@ import {
 } from './validate-behavior-expressions';
 
 /**
- * One of the engine's domain source files, read as TEXT. The application layer
- * may not import the engine (hexagonal boundary), and its published bundle
- * re-exports none of these vocabularies, so every mirror is proven against the
- * source instead. Reading text also keeps the engine's own module graph (and
- * its internal `$shared` aliases) out of our typecheck.
+ * The vocabularies the engine publishes, read from its shipped type
+ * declarations through the TypeScript checker. The application layer may not
+ * import the engine (hexagonal boundary) and its bundle re-exports none of
+ * them, so each mirror below is proven against the declared types: a kind the
+ * engine adds or drops fails the comparison.
  */
-function engineSource(file: string): string {
+function engineDeclarations(file: string): { checker: ts.TypeChecker; source: ts.SourceFile } {
 	const require = createRequire(import.meta.url);
-	const enginePkg = require.resolve('unspaghettit/package.json');
-	const root = new URL(`file://${enginePkg.replace(/package\.json$/, '')}`);
-	const dir = file === 'Expression.ts' || file === 'RuleCondition.ts' ? 'value-objects' : 'entities';
-	return readFileSync(
-		new URL(`./src/features/behavior-model/domain/${dir}/${file}`, root),
-		'utf8'
-	);
+	const root = require.resolve('unspaghettit/package.json').replace(/package\.json$/, '');
+	const path = `${root}dist/types/features/behavior-model/domain/${file}`;
+	const program = ts.createProgram([path], { noEmit: true, skipLibCheck: true });
+	const source = program.getSourceFile(path);
+	if (!source) throw new Error(`${file} is not in the engine's declarations`);
+	return { checker: program.getTypeChecker(), source };
+}
+
+const literals = (type: ts.Type): string[] =>
+	(type.isUnion() ? type.types : [type]).flatMap((t) => (t.isStringLiteral() ? [t.value] : []));
+
+/** The string literals of a declared const tuple (`readonly ['a', 'b']`). */
+function tupleKinds(file: string, name: string): string[] {
+	const { checker, source } = engineDeclarations(file);
+	const declaration = source.statements
+		.filter(ts.isVariableStatement)
+		.flatMap((s) => [...s.declarationList.declarations])
+		.find((d) => ts.isIdentifier(d.name) && d.name.text === name);
+	if (!declaration) throw new Error(`${name} is not declared in ${file}`);
+	const tuple = checker.getTypeAtLocation(declaration.name) as ts.TypeReference;
+	return checker.getTypeArguments(tuple).flatMap(literals).sort();
+}
+
+/** The `kind` literals of every member of a declared type alias, or its own literals. */
+function aliasKinds(file: string, name: string): string[] {
+	const { checker, source } = engineDeclarations(file);
+	const alias = source.statements.find((s): s is ts.TypeAliasDeclaration => ts.isTypeAliasDeclaration(s) && s.name.text === name);
+	if (!alias) throw new Error(`${name} is not declared in ${file}`);
+	const type = checker.getTypeAtLocation(alias.name);
+	const members = type.isUnion() ? type.types : [type];
+	const kinds = members.flatMap((member) => {
+		if (member.isStringLiteral()) return [member.value];
+		const kind = member.getProperty('kind');
+		return kind ? literals(checker.getTypeOfSymbol(kind)) : [];
+	});
+	return [...new Set(kinds)].sort();
 }
 
 describe('EXPRESSION_KINDS mirror', () => {
-	// The application layer may not import the engine (hexagonal boundary — only
-	// infrastructure may), and the engine's published bundle does not re-export
-	// EXPRESSION_KINDS anyway. So the vocabulary is copied, and this test reads
-	// the engine's source as TEXT to prove the copy has not drifted: a kind added
-	// upstream must be added here too, or the validator starts rejecting valid
-	// expressions. Reading text keeps the engine's own module graph (and its
-	// internal `$shared` aliases) out of our typecheck.
+	// The engine treats an object whose kind is not in its vocabulary as a
+	// literal; a kind it adds must be added here too, or the validator starts
+	// rejecting valid expressions.
 	it('matches the engine vocabulary exactly', () => {
-		const source = engineSource('Expression.ts');
-		const block = /export const EXPRESSION_KINDS = \[([\s\S]*?)\] as const;/.exec(source);
-		expect(block, 'EXPRESSION_KINDS not found in the engine source').not.toBeNull();
-		const engineKinds = [...block![1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+		const engineKinds = tupleKinds('value-objects/Expression.d.ts', 'EXPRESSION_KINDS');
 		expect(engineKinds.length).toBeGreaterThan(10);
-		expect([...EXPRESSION_KINDS].sort()).toEqual(engineKinds.sort());
+		expect([...EXPRESSION_KINDS].sort()).toEqual(engineKinds);
 	});
 });
 
@@ -233,35 +255,22 @@ describe('expressionKindErrors', () => {
 });
 
 describe('CONDITION_KINDS mirror', () => {
-	// Same anti-corruption copy as EXPRESSION_KINDS, read from the engine's
-	// source as text. Two declarations own the vocabulary: the composite guard
-	// and the quantifier type. A naive scan of the file would also pick up the
-	// `{ kind:'param' }` LEFT OPERAND, which is not a condition, so both are
-	// extracted precisely.
+	// The composite and quantifier conditions own the vocabulary; a leaf
+	// condition carries no kind, and its `{ kind: 'param' }` left operand is
+	// not a condition.
 	it('matches the engine vocabulary exactly', () => {
-		const source = engineSource('RuleCondition.ts');
-		// The guard opens with an early `return false`, so match the discriminating
-		// return, not the first one.
-		const guard = /export const isCompositeCondition[\s\S]*?return (k === [^;]+);/.exec(source);
-		expect(guard, 'isCompositeCondition not found in the engine source').not.toBeNull();
-		const quantifier = /export type QuantifierCondition = \{\s*readonly kind: ([^;]+);/.exec(
-			source
-		);
-		expect(quantifier, 'QuantifierCondition not found in the engine source').not.toBeNull();
-		const kinds = [...guard![1].matchAll(/'([a-z_]+)'/g), ...quantifier![1].matchAll(/'([a-z_]+)'/g)]
-			.map((m) => m[1])
-			.sort();
+		const kinds = [
+			...aliasKinds('value-objects/RuleCondition.d.ts', 'CompositeRuleCondition'),
+			...aliasKinds('value-objects/RuleCondition.d.ts', 'QuantifierCondition')
+		].sort();
+		expect(kinds.length).toBeGreaterThan(3);
 		expect([...CONDITION_KINDS].sort()).toEqual(kinds);
 	});
 });
 
 describe('REACHABILITY_GOAL_KINDS mirror', () => {
 	it('matches the engine vocabulary exactly', () => {
-		const source = engineSource('ReachabilityGoal.ts');
-		const block = /export type ReachabilityGoalKind = ([^;]+);/.exec(source);
-		expect(block, 'ReachabilityGoalKind not found in the engine source').not.toBeNull();
-		const kinds = [...block![1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]).sort();
-		expect([...REACHABILITY_GOAL_KINDS].sort()).toEqual(kinds);
+		expect([...REACHABILITY_GOAL_KINDS].sort()).toEqual(aliasKinds('entities/ReachabilityGoal.d.ts', 'ReachabilityGoalKind'));
 	});
 });
 

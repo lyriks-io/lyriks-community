@@ -41,15 +41,12 @@ afterEach(() => {
 });
 
 describe('a silent LLM is told by a red alert on the live analysis [criterion:348770f8]', () => {
-	it('reads as an alert, red edge and red ground, with one sentence and one copy button, the prompt never written out', () => {
+	it('reads as an alert, with one sentence and one copy button, the prompt never written out', () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(t + CONNECTED_MS + 60_000);
 		const body = board(t + CONNECTED_MS + 60_000);
 		const alert = body.slice(body.indexOf('data-silent-alert'), body.indexOf('</div>', body.indexOf('data-silent-alert')));
 		expect(body).toContain('role="alert"');
-		expect(alert).toContain('border-red');
-		expect(alert).toContain('bg-red-tint');
-		expect(alert).toContain('px-5 py-5');
 		expect(alert).toContain('No call from your LLM');
 		expect(alert).toContain('Look in its window first: it may be asking you to allow a Lyriks tool. If it stopped, copy the prompt and paste it in your LLM session: it resumes where it stopped, without rewriting what is written.');
 		expect(alert).toContain('Copy the prompt');

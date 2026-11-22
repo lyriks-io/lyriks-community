@@ -23,8 +23,6 @@ export interface TraceabilityRow {
 	actionCount: number;
 	scenarioCount: number;
 	maturity: number;
-	mvpTier: string | null;
-	releaseName: string | null;
 	/** Human labels for the links this requirement is still missing. */
 	gaps: string[];
 }
@@ -34,7 +32,6 @@ export interface TraceabilitySummary {
 	withAcceptance: number;
 	withBehavior: number;
 	withSource: number;
-	withRelease: number;
 	/** Leaves neither depending on, nor depended on by, any other leaf. */
 	orphanCount: number;
 }
@@ -53,9 +50,6 @@ export function buildTraceability(
 ): Traceability {
 	const leaves = leafFeatures(features);
 	const coreName = new Map(features.cores.map((c) => [c.id, c.name]));
-	const mvpTier = new Map(features.mvpAssignments.map((m) => [m.featureId, m.tier]));
-	const releaseName = new Map(features.releases.map((r) => [r.id, r.name]));
-	const releaseOf = new Map(features.roadmapAssignments.map((a) => [a.featureId, a.releaseId]));
 	const behaviorById = new Map(behavior.features.map((f) => [f.featureId, f]));
 	const sourceIds = new Set(sources.map((source) => source.id));
 
@@ -83,8 +77,6 @@ export function buildTraceability(
 		const missingSourceCount = linkedSourceIds.length - validSourceCount;
 		const sourceCount = validSourceCount + (nonEmpty(meta.sourceLink) ? 1 : 0);
 		const hasSource = sourceCount > 0;
-		const relId = releaseOf.get(leaf.id) ?? null;
-		const relName = relId ? (releaseName.get(relId) ?? null) : null;
 
 		const gaps: string[] = [];
 		if (acceptanceCount === 0) gaps.push('acceptance criteria');
@@ -93,7 +85,6 @@ export function buildTraceability(
 		if (missingSourceCount > 0) gaps.push(
 			`${missingSourceCount} broken source ${missingSourceCount === 1 ? 'reference' : 'references'}`
 		);
-		if (!relName) gaps.push('release');
 
 		return {
 			featureId: leaf.id,
@@ -110,8 +101,6 @@ export function buildTraceability(
 			actionCount,
 			scenarioCount: beh?.scenarioCount ?? 0,
 			maturity: beh?.maturity ?? 0,
-			mvpTier: mvpTier.get(leaf.id) ?? null,
-			releaseName: relName,
 			gaps
 		};
 	});
@@ -123,7 +112,6 @@ export function buildTraceability(
 			withAcceptance: rows.filter((r) => r.acceptanceCount > 0).length,
 			withBehavior: rows.filter((r) => r.surfaceCount > 0 || r.actionCount > 0).length,
 			withSource: rows.filter((r) => r.hasSource).length,
-			withRelease: rows.filter((r) => r.releaseName).length,
 			orphanCount: rows.filter(
 				(r) => r.dependencyCount === 0 && !dependedOn.has(r.featureId)
 			).length

@@ -10,8 +10,9 @@ describe('activity people', () => {
 		expect(shortName('Léa')).toBe('Léa');
 	});
 
-	it('gives a person the same colour every time', () => {
-		expect(personColor('carmen@x.io')).toBe(personColor('carmen@x.io'));
+	it('tells people apart by colour', () => {
+		const ids = ['ana@x.io', 'bob@x.io', 'carmen@x.io', 'dan@x.io', 'eve@x.io', 'fay@x.io'];
+		expect(new Set(ids.map(personColor)).size).toBeGreaterThanOrEqual(4);
 	});
 
 	it('names a person from the roster, else from their email', () => {

@@ -16,3 +16,9 @@ it('a workspace writer cannot access the installation-wide store', () => {
 	expect(canUseSharedEditor(event)).toBe(true);
 	expect(canUseSharedEditor({ locals: { services: getServices(), authRequired: true, session: { isAuthenticated: false } } } as never)).toBe(false);
 });
+
+it('opens the installation-wide store to whoever runs an installation with sign-in off', () => {
+	deps.identity.multiUser = true;
+	deps.admin.mockReturnValue(false);
+	expect(canUseSharedEditor({ locals: { services: getServices(), authRequired: false, session: { isAuthenticated: false } } } as never)).toBe(true);
+});

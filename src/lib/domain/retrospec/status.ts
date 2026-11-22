@@ -150,7 +150,10 @@ export function analysisOf(facts: RetrospecFacts, lastWritten?: string | null): 
 		checked: checked || readAll,
 		mode: runSourceOf(run, facts.rebuiltFrom),
 		lastWritten,
-		behavior: behaviorOfRun(facts, run)
+		behavior: behaviorOfRun(facts, run),
+		// A Resume analysis starts from the phases the closed run read; a run that writes nothing follows what its AI says (EVO-014).
+		readBefore: run?.complementary?.scope === 'resume' ? run.complementary.resumable?.read : undefined,
+		reported: run?.phaseReported ?? null
 	});
 	const checkedAt = checked ? (facts.auditTimes.filter((at) => since === null || at >= since).sort().at(-1) ?? null) : (run?.readingDoneAt ?? null);
 	return { progress, finished: checked || readAll || !!run?.analysisEndedAt, checkedAt };

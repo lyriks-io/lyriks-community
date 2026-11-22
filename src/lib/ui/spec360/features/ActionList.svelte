@@ -22,6 +22,9 @@
 	import { useSources } from '$ui/spec360/sources.svelte';
 	import ActionDetails from './ActionDetails.svelte';
 	import ActionRules from './ActionRules.svelte';
+	import ActionScenarios from './ActionScenarios.svelte';
+	import DisabledBadge from './DisabledBadge.svelte';
+	import ElementMenu from './ElementMenu.svelte';
 	import { activateRow } from '$ui/shell/activate-row';
 
 	/**
@@ -78,7 +81,8 @@
 				{:else}
 					<div class="col-span-full grid grid-cols-subgrid items-start max-[700px]:flex max-[700px]:flex-wrap max-[700px]:gap-2.5">
 						<span class="w-[26px] flex-none font-evo-mono text-xs text-ink-3 tabular-nums">{whole ? '' : i + 1}</span>
-						<div class="flex min-w-0 flex-col gap-1 max-[700px]:flex-[1_1_220px]">
+						<!-- A disabled action reads in place, greyed, its badge saying who, when and why (criterion c4071631). -->
+						<div class="flex min-w-0 flex-col gap-1 max-[700px]:flex-[1_1_220px] {action.disabled ? 'opacity-60' : ''}" data-disabled={action.disabled ? true : undefined}>
 							<!-- Read whole from the diagram, its marked card is its title: the name is not repeated. -->
 							<span class="flex min-w-0 items-center gap-2.5 {whole ? 'hidden' : ''}">
 								<strong class="min-w-0 text-[0.9375rem] [overflow-wrap:anywhere]"
@@ -86,6 +90,7 @@
 								>
 								{#if verdict}<RuleVerdictMark {verdict} />{/if}
 							</span>
+							{#if action.disabled}<DisabledBadge marker={action.disabled} />{/if}
 							<p class="m-0 text-sm leading-normal whitespace-pre-line text-ink-2">
 								<StagedText {anchor} {read} field="desc" multiline label="What it is for" editable={editable(anchor)}>
 									{#if shown.desc}<GlossaryText text={shown.desc} />{:else}<span class="text-ink-3">The behavior model does not say what this action is for yet.</span>{/if}
@@ -96,7 +101,7 @@
 							Details<Icon name="chevron-down" size={14} class="transition-transform {open ? 'rotate-180' : ''}" />
 						</button>{/if}
 						<!-- Last, so an action's acts end on the same edge as those of its rules. -->
-						<span data-row-isolated class="justify-self-end"><SpecControls {anchor} title={shown.text} values={shown} validates={!editable(anchor)} inline cites trailing /></span>
+						<span data-row-isolated class="inline-flex items-center gap-1 justify-self-end"><SpecControls {anchor} title={shown.text} values={shown} validates={!editable(anchor) && !action.disabled} inline cites trailing /><ElementMenu {featureId} elementId={action.id} title={shown.text} disabled={action.disabled} /></span>
 					</div>
 					{#if open}<div class="col-span-full"><ActionDetails who={action.who} data={whole ? undefined : actionData[action.id]} /></div>{/if}
 				{/if}
@@ -106,6 +111,7 @@
 				<button type="button" class={LINK} aria-expanded={rulesShown} aria-controls="action-rules-{action.id}" disabled={mode.active} onclick={() => ruleChoices.set(action.id, !rulesShown)}>{rulesShown ? 'Hide rules' : 'Show rules'} ({action.rules.length})</button>
 			</div>
 			{#if rulesShown}<div id="action-rules-{action.id}" class="col-span-full"><ActionRules {action} {featureId} onEdit={() => ruleChoices.set(action.id, true)} /></div>{/if}
+			<div class="col-span-full pl-9"><ActionScenarios {featureId} {action} /></div>
 		</li>
 	{/each}
 </ol>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RetrospecEvent } from '$domain/retrospec';
-import { lineFor, notificationsFor } from './activity';
+import { notificationsFor } from './activity';
 import { retrospecActivity } from './retrospec-activity';
 
 const r = (over: Partial<RetrospecEvent>): RetrospecEvent => ({ kind: 'item_validated', authorEmail: 'carmen@x.io', authorName: 'Carmen Roux', at: '2026-10-26T10:00:00.000Z', text: 'validated “Invoicing”', href: '/projects/fac/retrospec?step=validation&item=f1', ...over });
@@ -17,8 +17,8 @@ describe('retrospec activity', () => {
 	it('tells the person an item was shared with, and feeds the validations to the others', () => {
 		const events = retrospecActivity('fac', [r({}), r({ kind: 'item_shared', text: 'shared “VAT rounding” with Dylan', toEmail: 'dylan@x.io', at: '2026-10-26T11:00:00.000Z' })]);
 		const [shared] = notificationsFor(events, 'dylan@x.io');
-		expect(lineFor(shared, 'dylan@x.io')).toBe('shared an item with you');
-		expect(events.map((e) => lineFor(e, 'sarah@x.io'))).toEqual(['validated “Invoicing”', 'shared “VAT rounding” with Dylan']);
+		expect(shared.kind).toBe('shared');
+		expect(events.map((e) => e.line)).toEqual(['validated “Invoicing”', 'shared “VAT rounding” with Dylan']);
 	});
 });
 
@@ -28,7 +28,6 @@ describe('the Specification 360° in the bell', () => {
 	it('tells a reminded validator, from the person who reminded them, and nobody else', () => {
 		const events = retrospecActivity('fac', [r({ ...base, kind: 'reminder', toEmail: 'sarah@x.io', toName: 'Sarah K.', text: 'Your validation of “Branding” is awaited in the Specification 360°.', href: '/projects/fac/spec/experience#kbt-branding' })]);
 		expect(notificationsFor(events, 'sarah@x.io')).toEqual([expect.objectContaining({ kind: 'reminder', where: 'Specification 360°', href: '/projects/fac/spec/experience#kbt-branding' })]);
-		expect(lineFor(events[0], 'sarah@x.io')).toBe('is waiting for your validation');
 		expect(notificationsFor(events, 'dylan@x.io')).toEqual([]);
 	});
 

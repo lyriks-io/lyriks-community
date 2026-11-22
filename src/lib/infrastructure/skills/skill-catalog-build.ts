@@ -444,12 +444,12 @@ export const BINDING_TOOLS: ReadonlyArray<{ file: string; purpose: string }> = [
 	{
 		file: 'ingest-results.mjs',
 		purpose:
-			'`node .lyriks/tools/ingest-results.mjs <report.json> [--criteria <map.json>] [--kind <kind>] [--revision <sha>] [--dry-run] [--json]`: reads a vitest or jest JSON report, keeps the tests whose title carries a scenario token `[unspa:<surfaceId>:<actionId>:<scenarioId>]` (the `titleToken` of export_behavior_scenarios), and stamps `verifiedAt` on each action whose every result passed, removes it from one with a failing result, and only reports an action that has no index entry. Located and proven are two claims: this is the only way `verifiedAt` gets written. It is also how an acceptance criterion becomes verified at the Verify step: a test whose title carries `[criterion:<id>]` (or that the --criteria map `{ "<criterionId>": ["<test title>"] }` names) writes `verification.lastResult { passed, at, summary, revision }` on the `criterion:<id>` entry (created when missing, kind from --kind, default unit), passed only when all its tests passed; the next sync reports it verified or failing. Every result names the commit of code it ran on (the last commit touching code, .unspa.json and test-report.json left out), with `dirty: true` when the tree held uncommitted code; a stamped action gets `verifiedRevision`. No network.'
+			'`node .lyriks/tools/ingest-results.mjs <report.json> [--criteria <map.json>] [--kind <kind>] [--revision <sha>] [--dry-run] [--json]`: reads a vitest or jest JSON report, keeps the tests whose title carries a scenario token `[unspa:<surfaceId>:<actionId>:<scenarioId>]` (the `titleToken` of export_behavior_scenarios), and stamps `verifiedAt` on each action whose every result passed, removes it from one with a failing result, and only reports an action that has no index entry. Each located action also keeps the last result of each of its scenarios, `scenarioResults: { <scenarioId>: { passed, at, revision, dirty? } }` (a scenario the run did not reach keeps the one it had), which the sync carries with the report of the action so a scenario that failed reads failing on the feature page. Located and proven are two claims: this is the only way `verifiedAt` gets written. It is also how an acceptance criterion becomes verified at the Verify step: a test whose title carries `[criterion:<id>]` (or that the --criteria map `{ "<criterionId>": ["<test title>"] }` names) writes `verification.lastResult { passed, at, summary, revision }` on the `criterion:<id>` entry (created when missing, kind from --kind, default unit), passed only when all its tests passed; the next sync reports it verified or failing. Every result names the commit of code it ran on (the last commit touching code, .unspa.json and test-report.json left out), with `dirty: true` when the tree held uncommitted code; a stamped action gets `verifiedRevision`. No network.'
 	},
 	{
 		file: 'sync-index.mjs',
 		purpose:
-			'`node .lyriks/tools/sync-index.mjs [--feature <featureId>] [--project <id>] [--base-branch <branch>] [--no-git]`: sends .unspa.json to sync_implementation_index (the whole index, or the keys of one feature) and prints the counters with what each one means. The project is --project, else the projectId of the index, else the binding block; when the index and the binding block disagree it sends nothing and prints the command to run. In a git checkout it then reports what git says to the request built on the branch (report_code_state: repository without its credentials, branch, start commit, head, last commit of code, uncommitted code, proofs taken on another commit, the commits of the branch since its start) and prints the answer under `codeState`; a refusal is a warning, a branch no open Evolution request is built on is a note (`noRequest`).'
+			'`node .lyriks/tools/sync-index.mjs [--feature <featureId>] [--since <revision>] [--positions] [--expect <revision>] [--project <id>] [--base-branch <branch>] [--no-git]`: sends .unspa.json to sync_implementation_index (the whole index, or the keys of one feature) and prints the counters with what each one means, the revision of the project\'s index the write left among them, and exits 1 when the answer is not ok. Ask your AI for the sync command (sync_implementation_index with command:true) and run it as it comes: it names the server and signs in by itself for twelve hours, nothing to set. --since <revision> sends what changed since that git revision: Lyriks says which action or surface each changed key travels with, each goes whole from the local index, keys no feature declares are printed and never sent. --positions sends places only: the file, line and code line of keys already located move, no report is replaced, coverage stays (with --since, only the entries that changed). --expect <revision> refuses the write where another checkout wrote the same units since that revision. The project is --project, else the projectId of the index, else the binding block; when the index and the binding block disagree it sends nothing and prints the command to run. In a git checkout it then reports what git says to the request built on the branch (report_code_state: repository without its credentials, branch, start commit, head, last commit of code, uncommitted code, proofs taken on another commit, the commits of the branch since its start) and prints the answer under `codeState`; a refusal is a warning, a branch no open Evolution request is built on is a note (`noRequest`).'
 	},
 	{
 		file: 'report-merge.mjs',
@@ -494,6 +494,10 @@ export const BINDING_TOOLS: ReadonlyArray<{ file: string; purpose: string }> = [
 		purpose: 'Not run directly: rewrites only the entries that changed in the text of .unspa.json, in the style of their neighbours.'
 	},
 	{
+		file: 'index-since.mjs',
+		purpose: 'Not run directly: what changed in .unspa.json since a git revision, and the units those keys travel with, for sync-index.mjs --since.'
+	},
+	{
 		file: 'index-project.mjs',
 		purpose:
 			'Not run directly: picks the Lyriks project a script addresses (--project, the projectId of .unspa.json, the binding block) and warns when they disagree.'
@@ -501,6 +505,10 @@ export const BINDING_TOOLS: ReadonlyArray<{ file: string; purpose: string }> = [
 	{
 		file: 'criteria-results.mjs',
 		purpose: 'Not run directly: the acceptance-criterion half of ingest-results.mjs.'
+	},
+	{
+		file: 'scenario-results.mjs',
+		purpose: 'Not run directly: the scenario half of ingest-results.mjs (verifiedAt by its own rule, and the last result of each scenario).'
 	},
 	{
 		file: 'git-state.mjs',

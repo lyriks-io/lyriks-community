@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AppServices } from '$composition/container.server';
 import type { SpecElement } from '$domain/retrospec';
-import { SpecElementsReader } from './spec-elements.server';
+import { SpecElementsReader, specElementsKey } from './spec-elements.server';
 
 const services = {} as AppServices;
 const elements = (id: string): SpecElement[] => [{ id, title: id, owner: 'tech' }];
@@ -66,14 +66,59 @@ describe('concurrent specification validation reads', () => {
 		expect(read).toHaveBeenCalledTimes(2);
 	});
 
-	it('retries failed builds and retains the existing fifteen-second freshness limit', async () => {
+	it('retries failed builds and reads again past its five-minute net', async () => {
 		let now = 0;
 		const read = vi.fn().mockRejectedValueOnce(new Error('temporarily unavailable')).mockResolvedValue(elements('fresh'));
 		const reader = new SpecElementsReader(read, async () => 'same-revision', () => now);
 		await expect(reader.execute(services, 'project')).rejects.toThrow('temporarily unavailable');
 		await reader.execute(services, 'project');
-		now = 15_001;
+		now = 5 * 60_000 + 1;
 		await reader.execute(services, 'project');
 		expect(read).toHaveBeenCalledTimes(3);
+	});
+});
+
+describe('the elements are read again when what they read moves, not on a timer', () => {
+	/** A project whose section revisions and behaviour folder the test moves. */
+	function project() {
+		const revisions = new Map<string, number>([['features', 4], ['evolution', 900], ['coherence', 12]]);
+		let behavior = 'folder-1';
+		const services = {
+			sectionDocuments: { currentRevisions: async () => revisions, currentRevision: async (_: string, s: string) => revisions.get(s) ?? 0 },
+			draftLock: { currentRevisions: async () => new Map<string, number>(), current: async () => 0 },
+			behaviorSignature: () => behavior
+		} as unknown as AppServices;
+		return { services, revisions, setBehavior: (next: string) => void (behavior = next) };
+	}
+
+	it('keeps its key while a change request acts or the coherence analysis writes', async () => {
+		const p = project();
+		const before = await specElementsKey(p.services, 'p');
+		p.revisions.set('evolution', 901);
+		p.revisions.set('coherence', 13);
+		expect(await specElementsKey(p.services, 'p')).toBe(before);
+	});
+
+	it('moves its key with a section it reads and with the behaviour folder', async () => {
+		const p = project();
+		const before = await specElementsKey(p.services, 'p');
+		p.revisions.set('features', 5);
+		const afterFeatures = await specElementsKey(p.services, 'p');
+		expect(afterFeatures).not.toBe(before);
+		p.setBehavior('folder-2');
+		expect(await specElementsKey(p.services, 'p')).not.toBe(afterFeatures);
+	});
+
+	it('serves the same list long after 15 s while nothing moved, and reads again past its net', async () => {
+		let now = 0;
+		const read = vi.fn().mockResolvedValue(elements('only'));
+		const reader = new SpecElementsReader(read, async () => 'same', () => now);
+		await reader.execute(services, 'project');
+		now = 60_000;
+		await reader.execute(services, 'project');
+		expect(read).toHaveBeenCalledTimes(1);
+		now = 6 * 60_000;
+		await reader.execute(services, 'project');
+		expect(read).toHaveBeenCalledTimes(2);
 	});
 });

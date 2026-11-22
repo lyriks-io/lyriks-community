@@ -2,8 +2,8 @@ import { error } from '@sveltejs/kit';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { requireEvolutionAccess } from '$lib/server/community-locks.server';
 import { loadEvolutionView } from '$lib/server/evolution-view.server';
-import { draftFeature } from '$lib/server/evolution-graph.server';
-import { findRequestByRef, isTestRunner, pendingDraftFor, touchedLeafIds, type TestKitFeature } from '$domain/evolution';
+import { readDraftFeature, readStoredFeature } from '$lib/server/evolution-graph.server';
+import { asBuilt, builtCriteria, findRequestByRef, isTestRunner, pendingDraftFor, TESTS_NOT_PUT_TOGETHER, touchedLeafIds, type TestKitFeature } from '$domain/evolution';
 import { mapLimit } from '$lib/shared/map-limit';
 import type { RequestHandler } from './$types';
 
@@ -16,6 +16,8 @@ import type { RequestHandler } from './$types';
  * Each touched feature is read as the version makes it: the draft's feature
  * while the change is not official, the feature itself once it landed. A
  * removed feature has nothing left to test. Reading is enough to take them.
+ * A draft the engine did not answer for makes no archive, empty or partial:
+ * the answer is 503 with the reason (rule b10172f4).
  */
 export const GET: RequestHandler = async (event) => {
 	requireEvolutionAccess(event.locals.services);
@@ -31,19 +33,21 @@ export const GET: RequestHandler = async (event) => {
 	const view = await loadEvolutionView(services, projectId);
 	const lookup = findRequestByRef(view.draft.requests.filter((r) => r.status !== 'deleted'), requestRef);
 	if (lookup.kind !== 'found') error(404, `No request "${requestRef}" on this project.`);
-	const request = lookup.request;
+	// While version N+1 is in correction the tests are version N's, the version the code is built against (EVO-012, criterion 3baf05de).
+	const request = asBuilt(lookup.request);
+	const evolution = request === lookup.request ? view.draft : { ...view.draft, requests: view.draft.requests.map((r) => (r.id === request.id ? request : r)) };
 	if (request.specVersion <= 0) error(409, 'Freeze a version first: its tests are what the code is built against.');
 
 	const features = (
 		await mapLimit([...touchedLeafIds(request)], 2, async (id): Promise<TestKitFeature | null> => {
 			const draft = pendingDraftFor(request, id);
 			if (draft?.kind === 'remove') return null;
-			const snapshot = draft
-				? await draftFeature(services, view.draft, draft.id)
-				: ((await services.readBehaviorFeature.execute(projectId, id).catch(() => null))?.feature as Record<string, unknown> | undefined) ?? null;
+			const reading = draft ? await readDraftFeature(services, evolution, draft.id) : await readStoredFeature(services, projectId, id);
+			if (reading.status === 'unanswered') error(503, TESTS_NOT_PUT_TOGETHER);
+			const snapshot = 'feature' in reading ? reading.feature : null;
 			const own = Array.isArray(snapshot?.acceptanceCriteria) ? (snapshot.acceptanceCriteria as Record<string, unknown>[]) : [];
 			const carried = draft
-				? [...draft.acceptanceCriteria, ...(view.features.leafMeta?.[draft.id]?.acceptanceCriteria ?? [])].map((c) => ({ id: `ac-leaf-${c.id}`, text: c.text }))
+				? [...draft.acceptanceCriteria, ...builtCriteria(lookup.request, draft.id, view.features.leafMeta?.[draft.id]?.acceptanceCriteria ?? [])].map((c) => ({ id: `ac-leaf-${c.id}`, text: c.text }))
 				: [];
 			const criteria = [
 				...own.map((c) => ({ id: String(c.id ?? ''), text: String(c.title ?? c.description ?? '') })),

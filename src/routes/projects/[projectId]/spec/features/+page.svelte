@@ -31,7 +31,7 @@
 	 * 74f14936, 89d4c960); what entered or changed in it lately reads New
 	 * or Changed until the reader opens it (criteria 2a6bff42, b0950115).
 	 * Every element of every feature still waiting on the reader is validated
-	 * from the band's Validate all section, which no check in the head repeats
+	 * from the band's Validate the whole section, which no check in the head repeats
 	 * (criterion d7cd4e43).
 	 */
 	let { data }: { data: PageData } = $props();

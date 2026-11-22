@@ -167,11 +167,6 @@ export function specEditLines(edits: SpecEdits | undefined): SpecEdit[] {
 		.sort((a, b) => a.firstAt.localeCompare(b.firstAt));
 }
 
-/** The marks Changed since the last retrospecification, by element anchor. */
-export function specEditMarks(edits: SpecEdits | undefined): SpecEdit[] {
-	return Object.values(edits ?? {}).filter((e) => !e.implemented);
-}
-
 /** Lines still waiting for a reading of the code or a decision: what counts to review. */
 export const specEditsToReview = (edits: SpecEdits | undefined) => specEditLines(edits).filter((e) => ['unchecked', 'differs'].includes(specEditStatus(e))).length;
 

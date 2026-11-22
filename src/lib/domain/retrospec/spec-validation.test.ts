@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { applyRetrospecActs, type ActContext, type RetrospecAct } from './acts';
 import { emptyRetrospecDocument, type RetrospecDocument } from './document';
-import { canReviewElement, specValidationBoard, specValidationSummary, waitingOn, type SpecElement } from './spec-validation';
+import { canReviewElement, specValidationBoard, waitingOn, type SpecElement } from './spec-validation';
 import { requiredValidators, type TeamMember } from './spec-validators';
-import type { Baseline } from '../baselines';
 
 const ana = { id: 'ana@acme.io', name: 'Ana P.' };
 const bob = { id: 'bob@acme.io', name: 'Bob R.' };
@@ -28,7 +27,6 @@ const team: TeamMember[] = [
 	{ person: bob, jobIds: ['design'] },
 	{ person: cleo, jobIds: [] }
 ];
-const baseline = (id: string, min: number): Baseline => ({ id, name: id, note: '', createdAt: at(min), readiness: 0, coherence: 0, featureCount: 0, content: '' });
 
 describe('who must validate an element', () => {
 	it('is the lead and the people holding the job that owns it, each once', () => {
@@ -62,14 +60,10 @@ describe('the validation of the Specification 360°', () => {
 		expect(board.pct).toBe(50);
 	});
 
-	it('is complete once every required validator validated, then VALIDATED with v1.0 once published', () => {
+	it('is complete once every required validator validated', () => {
 		let doc = act(emptyRetrospecDocument(), [validate('problem'), validate('branding'), validate('datamap')]);
 		doc = act(doc, [validate('branding')], ctx(bob, 1));
 		expect(specValidationBoard({ doc, elements, team, viewer: ana, baselines: [] }).complete).toBe(true);
-		doc = act(doc, [{ op: 'publish', baselineId: 'b1', notify: [ana, bob] }], ctx(ana, 2));
-		const summary = specValidationSummary({ doc, elements, team, viewer: ana, baselines: [baseline('b1', 2), baseline('b2', 5)] });
-		expect(summary.state).toBe('validated');
-		expect(summary.version).toEqual({ label: 'v1.1', previous: 'v1.0', baselineId: 'b2' });
 	});
 
 	it('does not count a validation by someone not required', () => {

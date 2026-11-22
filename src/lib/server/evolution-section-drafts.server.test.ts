@@ -4,7 +4,7 @@ import { createEmptyIdentityDraft } from '$domain/foundation';
 import { createEmptyDefinitionDraft } from '$domain/foundation';
 import { createEmptyOperationsDraft } from '$domain/foundation';
 import type { SectionDraft, SectionEdit } from '$domain/evolution';
-import { checkSectionEdits, prepareSectionLanding, readSectionDrafts, writeSectionLandings } from './evolution-section-drafts.server';
+import { checkSectionEdits, prepareSectionLanding, readSectionDrafts, sectionDraftHolds, writeSectionLandings } from './evolution-section-drafts.server';
 
 /**
  * The pages of the spec a request changes, against the sections as they stand:
@@ -112,5 +112,23 @@ describe('a section change lands through its section\'s own save [criterion:ac-l
 		expect(written.ok).toBe(false);
 		expect(written.ok ? '' : written.reason).toMatch(/^At a glance could not be written: This section was changed by someone else/);
 		expect(saved).toHaveLength(0);
+	});
+});
+
+describe('whether a landed section change is on its page', () => {
+	const api: SectionEdit = { op: 'add_to_set', path: 'identity.formFactors', value: 'api' };
+
+	it('holds when laying it again on the page as it stands changes nothing', async () => {
+		const { services, foundation } = servicesWith('Kutt shortens links.');
+		foundation.identity.formFactors = ['web_interface', 'api'];
+		expect(await sectionDraftHolds(services, 'p', draftOf([api]))).toBe(true);
+	});
+
+	it('does not hold when the page still lacks it, or lacks one of its edits', async () => {
+		const { services, foundation } = servicesWith('Kutt shortens links.');
+		foundation.identity.formFactors = ['web_interface'];
+		expect(await sectionDraftHolds(services, 'p', draftOf([api]))).toBe(false);
+		foundation.identity.formFactors = ['web_interface', 'api'];
+		expect(await sectionDraftHolds(services, 'p', draftOf([api, { ...api, value: 'cli' }]))).toBe(false);
 	});
 });

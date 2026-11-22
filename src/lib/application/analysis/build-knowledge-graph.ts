@@ -185,7 +185,7 @@ export function buildKnowledgeGraph(input: KnowledgeGraphInput): KnowledgeGraph 
 		}
 	}
 
-	// ── Features (core → family → feature) + roadmap releases ──────────────
+	// ── Features (core → family → feature) ──────────────────────────────────
 	if (input.features) {
 		for (const core of input.features.cores) {
 			const cid = add('core', 'features', core.id, core.name || 'Core', trunc(core.description), {
@@ -205,10 +205,8 @@ export function buildKnowledgeGraph(input: KnowledgeGraphInput): KnowledgeGraph 
 				kind: 'contains'
 			});
 		}
-		const mvp = new Map(input.features.mvpAssignments.map((m) => [m.featureId, m.tier]));
 		for (const feat of input.features.features) {
-			const meta = mvp.has(feat.id) ? { mvp: mvp.get(feat.id) as string } : undefined;
-			add('feature', 'features', feat.id, feat.name || 'Feature', trunc(feat.description), meta);
+			add('feature', 'features', feat.id, feat.name || 'Feature', trunc(feat.description));
 			const parent = feat.parentFamilyId
 				? nodeId('family', feat.parentFamilyId)
 				: nodeId('core', feat.coreId);
@@ -217,21 +215,6 @@ export function buildKnowledgeGraph(input: KnowledgeGraphInput): KnowledgeGraph 
 				from: parent,
 				to: nodeId('feature', feat.id),
 				kind: 'contains'
-			});
-		}
-		for (const rel of input.features.releases) {
-			const rid = add('release', 'features', rel.id, rel.name || rel.version || 'Release', trunc(rel.description), {
-				version: rel.version,
-				weeks: `${rel.weekStart}-${rel.weekEnd}`
-			});
-			g.addEdge({ id: `e:proj-rel:${rel.id}`, from: root, to: rid, kind: 'contains' });
-		}
-		for (const ra of input.features.roadmapAssignments) {
-			g.addEdge({
-				id: `e:roadmap:${ra.featureId}:${ra.releaseId}`,
-				from: nodeId('feature', ra.featureId),
-				to: nodeId('release', ra.releaseId),
-				kind: 'scheduled'
 			});
 		}
 	}

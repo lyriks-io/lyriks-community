@@ -16,8 +16,7 @@ function entityNames(snapshot: UnspaFeatureSnapshot | null): string[] {
 }
 
 /**
- * One leaf feature's behavioral maturity, joined to its owning Core and the
- * Release it's assigned to on the roadmap. Consumed by Step 09's Behavior
+ * One leaf feature's behavioral maturity, joined to its owning Core. Consumed by Step 09's Behavior
  * Maturity reading, so the row carries display-ready names.
  * `maturity` is 0–100; 0 when the feature has no authored Unspaghettit shell.
  */
@@ -26,8 +25,6 @@ export interface FeatureMaturityRow {
 	name: string;
 	coreId: string | null;
 	coreName: string;
-	releaseId: string | null;
-	releaseName: string;
 	maturity: number;
 	/** Entity names this leaf's behavior model declares; the completion gate
 	 *  checks each one is represented in the data section. */
@@ -54,25 +51,17 @@ export class LoadFeatureMaturityUseCase {
 	async execute(projectId: string): Promise<FeatureMaturityRow[]> {
 		const features = await this.loadFeatures.execute(projectId);
 		const coreName = new Map(features.cores.map((c) => [c.id, c.name]));
-		const releaseById = new Map(features.releases.map((r) => [r.id, r]));
-		const releaseByFeature = new Map(
-			features.roadmapAssignments.map((a) => [a.featureId, a.releaseId])
-		);
 
 		const leaves = leafFeatures(features);
 		return Promise.all(
 			leaves.map(async (leaf) => {
 				const snapshot = await this.behavior.loadFeature(projectId, leaf.id);
 				const maturity = this.maturityScorer.score(snapshot);
-				const releaseId = releaseByFeature.get(leaf.id) ?? null;
-				const release = releaseId ? releaseById.get(releaseId) : undefined;
 				return {
 					featureId: leaf.id,
 					name: leaf.name,
 					coreId: leaf.coreId ?? null,
 					coreName: (leaf.coreId && coreName.get(leaf.coreId)) || '',
-					releaseId: release ? release.id : null,
-					releaseName: release ? release.name : '',
 					maturity,
 					entities: entityNames(snapshot)
 				};

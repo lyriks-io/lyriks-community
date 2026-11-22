@@ -1,3 +1,4 @@
+import { mintUuid } from '$domain/shared';
 import { makeProjectId } from '$domain/catalog';
 import { readBundle, rehomeSnapshot, type ProjectSnapshot } from '$domain/portability';
 import { humanizeDomainName } from '$domain/portfolio';
@@ -85,7 +86,7 @@ export class ImportProjectUseCase {
 		private readonly lock: ProjectLockPort,
 		private readonly archive: ArchiveCodecPort,
 		private readonly clock: ClockPort,
-		private readonly randomSuffix: () => string = () => crypto.randomUUID().slice(0, 6),
+		private readonly randomSuffix: () => string = () => mintUuid().slice(0, 6),
 		private readonly scope?: Pick<CheckProjectCreationUseCase, 'execute'>
 	) {}
 

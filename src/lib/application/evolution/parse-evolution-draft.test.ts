@@ -40,6 +40,18 @@ describe('an impact finding read back from storage', () => {
 		expect(stored({ fromLeafId: 'feat-a' }).fromLeafId).toBe('feat-a');
 	});
 
+	it('reads each closed vocabulary back strictly, a value it does not know falling back', () => {
+		expect(stored({ codeWork: 'change', ruleWork: 'rewrite', migrationImplied: true })).toMatchObject({ codeWork: 'change', ruleWork: 'rewrite', migrationImplied: true, nodeKind: 'role', severity: 'high' });
+		expect(stored({ codeWork: 'refactor', ruleWork: 'redo', migrationImplied: 'yes', nodeKind: 'gadget', severity: 'dire', hypothesis: 'maybe' })).toMatchObject({
+			codeWork: null,
+			ruleWork: null,
+			migrationImplied: null,
+			nodeKind: 'feature',
+			severity: 'none',
+			hypothesis: 'add'
+		});
+	});
+
 	it('leaves an older reading without one as it was', () => {
 		expect('fromLeafId' in stored({})).toBe(false);
 		// A row reached from a feature the change uses as it stands keeps saying so (ac-evo-imp-used).

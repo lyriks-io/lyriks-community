@@ -25,34 +25,11 @@ export type CoreTone = (typeof CORE_TONES)[number]['code'];
 export const isCoreTone = (v: unknown): v is CoreTone =>
 	typeof v === 'string' && (CORE_TONES as readonly Option[]).some((t) => t.code === v);
 
-export const MVP_TIERS = [
-	{ code: 'must', label: 'Must have' },
-	{ code: 'should', label: 'Should have' },
-	{ code: 'later', label: 'Later' },
-	{ code: 'out', label: 'Out of scope' }
-] as const satisfies readonly Option[];
-export type MvpTier = (typeof MVP_TIERS)[number]['code'];
-export const isMvpTier = (v: unknown): v is MvpTier =>
-	typeof v === 'string' && (MVP_TIERS as readonly Option[]).some((t) => t.code === v);
-
-export type FeaturesTab =
-	| 'tree'
-	| 'mvp'
-	| 'roadmap'
-	| 'behavior'
-	| 'rules'
-	| 'reuse'
-	| 'mywork'
-	| 'delivery';
-
 /**
  * Tag prefixes used when mirroring the wizard into Unspaghettit project tags.
- * Each leaf Feature shell carries `core:<name>`, `family:<path>`, optionally
- * `mvp:<tier>`, and optionally `phase:<version>`.
+ * Each leaf Feature shell carries `core:<name>` and `family:<path>`.
  */
 export const TAG_TYPES = {
 	core: 'core',
-	family: 'family',
-	mvp: 'mvp',
-	phase: 'phase'
+	family: 'family'
 } as const;

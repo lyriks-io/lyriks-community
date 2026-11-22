@@ -12,22 +12,38 @@ import { permissionMatrix, specUsers } from '$application/spec360/users';
 import type { SpecElement } from '$domain/retrospec';
 import { SECTIONS } from '$lib/shared/sections';
 import { readBehavior } from './behavior-read.server';
+import { readSignature } from './engine-cache-staleness';
 
 /**
  * The elements of a project's Specification 360°, read from every section the
  * pages read, once per change: the list is kept per project under the
- * revisions of its sections, with a short life so a behaviour written straight
- * into the engine (it moves no section revision) is read again soon.
+ * revisions of the sections it reads and the signature of the behaviour folder,
+ * which moves when a behaviour or an implementation report is written straight
+ * into the engine. A 15 s timer used to stand for that signature: every click
+ * after a pause rebuilt the whole list (a second or more on a large project).
  */
 
-const TTL_MS = 15_000;
+/** The net for what neither the revisions nor the signature see. */
+const TTL_MS = 5 * 60_000;
 
-async function revisionKey(services: AppServices, projectId: string): Promise<string> {
-	const revisions = await readSectionRevisions(services.sectionDocuments, services.draftLock, projectId, SECTIONS).catch(() => ({}));
-	return Object.entries(revisions)
+/**
+ * Sections the list never reads: a change request's acts and the background
+ * coherence analysis write them all day long, and must not throw the list away.
+ */
+const UNREAD: ReadonlySet<string> = new Set(['evolution', 'coherence']);
+const READ_SECTIONS = SECTIONS.filter((section) => !UNREAD.has(section));
+
+/** What the list depends on: the revisions of the sections it reads and the behaviour folder. */
+export async function specElementsKey(services: AppServices, projectId: string): Promise<string> {
+	const revisions = await readSectionRevisions(services.sectionDocuments, services.draftLock, projectId, READ_SECTIONS).catch(() => ({}));
+	// A store that answers in bulk gives every section of the project: only those the list reads count.
+	const sections = Object.entries(revisions)
+		.filter(([section]) => READ_SECTIONS.includes(section as (typeof READ_SECTIONS)[number]))
 		.sort(([a], [b]) => a.localeCompare(b))
 		.map(([k, v]) => `${k}=${v}`)
 		.join('|');
+	// No signature (no behaviour folder here): the key is the revisions alone, and the TTL is the net.
+	return `${sections}|behavior=${readSignature(services.behaviorSignature, projectId) ?? 'unsigned'}`;
 }
 
 async function readFresh(services: AppServices, projectId: string): Promise<SpecElement[]> {
@@ -63,6 +79,7 @@ async function readFresh(services: AppServices, projectId: string): Promise<Spec
 		outline,
 		actions: behavior.actions,
 		rules: behavior.kernelRules,
+		...(behavior.disabledFeatures ? { disabledFeatures: behavior.disabledFeatures } : {}),
 		experience: experienceView(experience),
 		entityCount: data.entities.length,
 		dataFacts: dataFacts(foundation.definition, data),
@@ -94,7 +111,7 @@ export class SpecElementsReader {
 
 	constructor(
 		private readonly read = readFresh,
-		private readonly revisions = revisionKey,
+		private readonly revisions = specElementsKey,
 		private readonly now = Date.now
 	) {}
 

@@ -22,10 +22,15 @@ function toGiB(bytes: number): number {
 	return Math.round((bytes / BYTES_PER_GIB) * 10) / 10;
 }
 
-async function memoryLimitBytes(): Promise<number | null> {
+/** Reads one cgroup file; the process's own filesystem unless a test hands another. */
+export type CgroupReader = (path: string) => Promise<string>;
+
+const readCgroupFile: CgroupReader = (path) => readFile(path, 'utf8');
+
+async function memoryLimitBytes(read: CgroupReader): Promise<number | null> {
 	for (const file of MEMORY_LIMIT_FILES) {
 		try {
-			const raw = (await readFile(file, 'utf8')).trim();
+			const raw = (await read(file)).trim();
 			if (raw === 'max') return null;
 			const bytes = Number(raw);
 			if (!Number.isFinite(bytes) || bytes <= 0 || bytes >= UNLIMITED_FROM) return null;
@@ -47,9 +52,11 @@ async function memoryLimitBytes(): Promise<number | null> {
  * 32 GiB, the engine was granted 12, and Lyriks is killed against the second.
  */
 export class ProcessResources implements ContainerResourcesPort {
+	constructor(private readonly readCgroup: CgroupReader = readCgroupFile) {}
+
 	async read(): Promise<ContainerResources | null> {
 		try {
-			const limit = await memoryLimitBytes();
+			const limit = await memoryLimitBytes(this.readCgroup);
 			return {
 				cpus: availableParallelism(),
 				memoryLimitGiB: limit === null ? null : toGiB(limit),

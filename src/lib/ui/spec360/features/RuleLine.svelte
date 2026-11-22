@@ -9,6 +9,8 @@
 	import { useValidation } from '$ui/spec360/validation.svelte';
 	import { useEditMode } from '../edit-mode.svelte';
 	import RuleEditor from './RuleEditor.svelte';
+	import DisabledBadge from './DisabledBadge.svelte';
+	import ElementMenu from './ElementMenu.svelte';
 	import { LINK } from '../page/look';
 
 	/**
@@ -41,10 +43,11 @@
 <li id={anchorDomId(anchor)} data-evo-waits={validation.waitsOnMe(anchor) || undefined} class="flex scroll-mt-44 flex-col pl-2.5">
 	<div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 py-1">
 		<span class="flex size-4 flex-none items-center justify-center">{#if verdict}<RuleVerdictMark {verdict} />{/if}</span>
-		<span class="min-w-0 flex-[1_1_260px] text-sm leading-normal [overflow-wrap:anywhere]"
-			><EarsText {text} variables={rule.refusal && text === rule.refusal.case ? rule.refusal.variables : rule.variables} />{#if message}<span class="ml-2 font-evo-mono text-xs text-violet-ink">shows “{message}”</span>{/if}</span
+		<!-- A disabled rule still reads as its sentence, greyed, with its badge; its discussion stays open (criterion 1344f0bf). -->
+		<span class="min-w-0 flex-[1_1_260px] text-sm leading-normal [overflow-wrap:anywhere] {rule.disabled ? 'opacity-60' : ''}" data-disabled={rule.disabled ? true : undefined}
+			><EarsText {text} variables={rule.refusal && text === rule.refusal.case ? rule.refusal.variables : rule.variables} />{#if message}<span class="ml-2 font-evo-mono text-xs text-violet-ink">shows “{message}”</span>{/if}{#if rule.disabled}<span class="ml-2"><DisabledBadge marker={rule.disabled} /></span>{/if}</span
 		>
-		<span class="ml-auto flex flex-none items-center gap-2">{#if editable}<button type="button" class={LINK} onclick={() => { onEdit?.(); editing = true; }}>Edit rule</button>{/if}<SpecControls {anchor} title={rule.text} validates={!editing} trailing /></span>
+		<span class="ml-auto flex flex-none items-center gap-2">{#if editable}<button type="button" class={LINK} onclick={() => { onEdit?.(); editing = true; }}>Edit rule</button>{/if}<SpecControls {anchor} title={rule.text} validates={!editing && !rule.disabled} trailing /><ElementMenu {featureId} elementId={rule.id} title={rule.text} disabled={rule.disabled} /></span>
 	</div>
 	<!-- A flaw shows its proof in full: the reader decides from it, not from a tooltip. -->
 	{#if verdict?.flaw && verdict.detail}

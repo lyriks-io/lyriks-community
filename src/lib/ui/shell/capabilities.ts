@@ -85,7 +85,7 @@ export const CAPABILITIES: Capability[] = [
 	{
 		id: 'features',
 		title: 'Features',
-		subtitle: 'Tree & work queue',
+		subtitle: 'Tree of features',
 		icon: 'grid',
 		tier: 'oss',
 		status: 'built',
@@ -175,8 +175,7 @@ export const CAPABILITIES: Capability[] = [
 		partOf: 'features'
 	},
 	{
-		// Relocated to the header user-menu "Project tools" section (see
-		// PROJECT_TOOL_CAPABILITIES); deep-linkable, off the left nav.
+		// Deep-linkable, off the left nav.
 		id: 'documents',
 		title: 'Documents & Sources',
 		subtitle: 'Interviews, research, links & evidence',
@@ -258,8 +257,8 @@ export const CAPABILITIES: Capability[] = [
 	{
 		// Merged into "Tech & Data" as its "Knowledge graph" tab: the graph is
 		// the whole model seen at once, which belongs beside the data spine rather
-		// than as a page of its own. Kept as a hidden alias so Control Center
-		// "Fix now" + the legacy /graph route resolve to the merged tab.
+		// than as a page of its own. Kept as a hidden alias so the Fix of a
+		// point + the legacy /graph route resolve to the merged tab.
 		id: 'graph',
 		title: 'Knowledge graph',
 		subtitle: 'The whole project as one graph',
@@ -340,18 +339,3 @@ export const sectionsOf = (id: string): Capability[] => CAPABILITIES.filter((c) 
 
 /** The entries of the left nav one reader is shown: an admin-only entry only to whoever administers the project. */
 export const navCapabilitiesFor = (administers: boolean): Capability[] => NAV_CAPABILITIES.filter((c) => !c.adminOnly || administers);
-
-/**
- * Capabilities relocated out of the left nav into the header user-menu's
- * "Project tools" section — still first-class, just not everyday rail entries.
- * Order here == menu order. Documents & Sources is the evidence register every
- * other capability cites, so it belongs here rather than in the rail. Reuse is
- * hidden for now — no menu entry, no Features tab.
- *
- * Traceability is deliberately absent: it stays deep-linkable (a point's Fix now
- * "Fix now", /baselines + /approvals redirects) but is off the menu until its
- * role in the product is settled.
- */
-export const PROJECT_TOOL_CAPABILITIES: Capability[] = ['documents']
-	.map((id) => BY_ID.get(id))
-	.filter((c): c is Capability => c !== undefined);

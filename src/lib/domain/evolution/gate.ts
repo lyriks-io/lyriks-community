@@ -220,26 +220,3 @@ export function canLiftWaiver(actor: Actor, request: EvolutionRequest): Guarded 
 		)
 	);
 }
-
-/**
- * The board refuses a drop into a stage whose gate is unmet, and refuses to pull
- * a delivered card back: going back is a rebrief on the request itself, not a
- * drag.
- */
-export function canDropCard(
-	request: EvolutionRequest,
-	targetGateMet: boolean
-): Guarded {
-	return firstRefusal(
-		guard(
-			request.stage === 'delivered',
-			'A delivered request cannot be dragged back into a stage.',
-			'The Delivered column is the end of the board; going back is a rebrief on the request itself, not a drag.'
-		),
-		guard(
-			!targetGateMet,
-			'The gate for this column is not met. Grant a waiver to cross anyway.',
-			'The drop is refused rather than silently accepted, and the refusal offers the waiver as the named way through.'
-		)
-	);
-}

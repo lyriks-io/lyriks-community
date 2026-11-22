@@ -19,7 +19,6 @@ export interface TreeLeaf {
 }
 
 export interface TreeLeafMeta {
-	status?: 'backlog' | 'in-progress' | 'done';
 	objective?: string;
 	problem?: string;
 	expectedEffect?: string;
@@ -79,7 +78,7 @@ export function featureIdFor(name: string, taken: ReadonlySet<string>): string {
 /** Where a new leaf hangs when the draft did not say: the first core of the tree. */
 const fallbackCore = (features: Tree): string | null => features.cores[0]?.id ?? null;
 
-function criteriaOf(draft: DraftLeaf): { readonly id: string; text: string }[] {
+function criteriaOf(draft: Pick<DraftLeaf, 'acceptanceCriteria'>): { readonly id: string; text: string }[] {
 	return draft.acceptanceCriteria.map((c) => ({ id: c.id, text: c.text }));
 }
 
@@ -191,6 +190,14 @@ export function editedDescription(base: string, draft: Pick<DraftLeaf, 'descript
 	return append ? (out.trim() ? `${out.trimEnd()}\n\n${append}` : append) : out;
 }
 
+/**
+ * The description the landing writes: the draft's own, else the feature's with
+ * its patches and appended text. What a validation of the Description item
+ * stands behind (criterion e384d594).
+ */
+export const landedDescription = (draft: Pick<DraftLeaf, 'description' | 'descriptionPatch' | 'descriptionAppend'>, base: string): string =>
+	draft.description || editedDescription(base, draft);
+
 /** The feature's criteria less what the amendment retires, with its rewordings, ids kept. */
 function delta(
 	criteria: readonly { readonly id: string; text: string }[] | undefined,
@@ -201,6 +208,20 @@ function delta(
 	return (criteria ?? [])
 		.filter((c) => !retired.has(c.id))
 		.map((c) => (reworded.has(c.id) ? { id: c.id, text: reworded.get(c.id) as string } : c));
+}
+
+/**
+ * The text criteria a feature holds once a draft lands: its own with the draft's
+ * rewordings and retirements applied, then what was signed on the draft, else
+ * what the draft added. What a validation of the Acceptance criteria answer
+ * stands behind is this very list (criterion c0a6eef3).
+ */
+export function landedCriteria(
+	before: readonly { readonly id: string; text: string }[] | undefined,
+	draft: Pick<DraftLeaf, 'retireCriteria' | 'changeCriteria' | 'acceptanceCriteria'>,
+	signed: readonly { readonly id: string; text: string }[] | undefined
+): { readonly id: string; text: string }[] {
+	return mergeCriteria(delta(before, draft), signed?.length ? signed : criteriaOf(draft));
 }
 
 /** What the freeze says it wrote, in the language of the spec. Names and ids stay as they are. */
@@ -327,7 +348,7 @@ export function materialiseDrafts<T extends Tree>(
 					? {
 							...f,
 							name: draft.name || f.name,
-							description: draft.description || editedDescription(f.description, draft),
+							description: landedDescription(draft, f.description),
 							coreId: core,
 							parentFamilyId:
 								draft.parentFamilyId !== null ? draft.parentFamilyId : f.parentFamilyId
@@ -349,7 +370,6 @@ export function materialiseDrafts<T extends Tree>(
 		const note = behaviourNote(draft);
 		meta[id] = {
 			...before,
-			status: before.status ?? 'backlog',
 			objective: signed.objective || draft.objective || before.objective,
 			// A new feature is not asked its problem or its value: the request's need
 			// says why once (ac-evo-need-6), so its situation and its cost become the
@@ -361,10 +381,7 @@ export function materialiseDrafts<T extends Tree>(
 			// joining it, or the two say the same thing twice in different words. The
 			// merge stays for what the EXISTING feature already carried, which an
 			// amendment must never silently drop.
-			acceptanceCriteria: mergeCriteria(
-				delta(before.acceptanceCriteria, draft),
-				signed.acceptanceCriteria?.length ? signed.acceptanceCriteria : criteriaOf(draft)
-			),
+			acceptanceCriteria: landedCriteria(before.acceptanceCriteria, draft, signed.acceptanceCriteria),
 			dependsOn: [...new Set([...(before.dependsOn ?? []), ...draft.dependsOn.map(resolve)])],
 			sourceIds: [...new Set([...(before.sourceIds ?? []), ...draft.sourceIds])],
 			code: note || before.code

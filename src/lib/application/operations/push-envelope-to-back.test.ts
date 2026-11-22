@@ -30,6 +30,27 @@ function backLinksStub(link: BackProjectLink | null = linkFixture()) {
 	} satisfies BackLinkRepositoryPort;
 }
 
+/** The link row of the local mirror, held in memory: a status write replaces the recorded error. */
+class LinkTable implements BackLinkRepositoryPort {
+	#link: BackProjectLink | null;
+	#version = 0;
+	constructor(link: BackProjectLink | null) {
+		this.#link = link;
+	}
+	async find() {
+		return this.#link;
+	}
+	async save() {}
+	async markStatus(_projectId: string, status: BackProjectLink['status'], lastError?: string) {
+		if (!this.#link) return;
+		const { lastError: _previous, ...rest } = this.#link;
+		this.#link = { ...rest, status, ...(lastError ? { lastError } : {}) };
+	}
+	async nextEnvelopeVersion() {
+		return this.#link ? ++this.#version : null;
+	}
+}
+
 function createUseCase(
 	pushEnvelope: ProjectMirrorPort['pushEnvelope'],
 	identity = mutableRepository({ productName: 'Project' }),
@@ -212,21 +233,26 @@ describe('PushEnvelopeToBackUseCase', () => {
 		await expect(useCase.execute('project-1')).resolves.toBe(false);
 	});
 
-	it('sends the bumped envelope_version with the push', async () => {
-		const pushEnvelope = vi.fn<ProjectMirrorPort['pushEnvelope']>(async () => 'synced');
-		const { useCase, backLinks } = createUseCase(pushEnvelope);
+	it('sends a higher envelope version at each push, so the back can refuse an older one arriving late', async () => {
+		const versions: (number | undefined)[] = [];
+		const links = new LinkTable(linkFixture());
+		const { useCase } = createUseCase(async (_id, _envelope, version) => (versions.push(version), 'synced'), undefined, links);
 
 		await useCase.execute('project-1');
-		expect(backLinks.nextEnvelopeVersion).toHaveBeenCalledWith('project-1');
-		expect(pushEnvelope.mock.calls[0][2]).toBe(1);
+		await useCase.execute('project-1');
+		expect(versions).toEqual([1, 2]);
 	});
 
-	it('treats a stale (409) push as terminal success — the newer mirror owns the gap', async () => {
-		const { useCase, backLinks } = createUseCase(async () => 'stale' as const);
+	it('takes a push the back refuses as stale for a closed gap, clearing the error a failed push recorded', async () => {
+		const links = new LinkTable(linkFixture());
+		const failing = createUseCase(async () => 'failed' as const, undefined, links);
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+		await failing.useCase.execute('project-1');
+		expect((await links.find())?.lastError).toBeTruthy();
 
-		await expect(useCase.execute('project-1')).resolves.toBe(true);
-		// Terminal success clears any recorded mirror error instead of recording one.
-		expect(backLinks.find).toHaveBeenCalled();
+		const stale = createUseCase(async () => 'stale' as const, undefined, links);
+		await expect(stale.useCase.execute('project-1')).resolves.toBe(true);
+		expect(await links.find()).toEqual(linkFixture({ status: 'linked' }));
 	});
 
 	it('pushes unversioned when no link row can be bumped (legacy last-write-wins)', async () => {
@@ -294,11 +320,5 @@ describe('feeding the formal graph', () => {
 		const { useCase } = createUseCase(pushEnvelope, undefined, undefined, kernel);
 		await useCase.execute('p1');
 		expect(kernel.propagateFeature).not.toHaveBeenCalled();
-	});
-
-	it('pushes the envelope alone when no kernel is wired', async () => {
-		const pushEnvelope = vi.fn<ProjectMirrorPort['pushEnvelope']>(async () => 'synced');
-		const { useCase } = createUseCase(pushEnvelope);
-		await expect(useCase.execute('p1')).resolves.toBe(true);
 	});
 });

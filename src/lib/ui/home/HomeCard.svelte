@@ -5,6 +5,8 @@
 	import { feedLead } from '$domain/activity';
 	import type { FeedCard } from '$lib/shared/home-feed';
 	import { activateRow } from '$ui/shell/activate-row';
+	import { copyPrompt } from '$ui/evolution/copy-prompt';
+	import { runCardAction } from './card-action';
 
 	/**
 	 * A card of Home's feed (feat-home, criterion 45137624): the bell's card,
@@ -29,6 +31,9 @@
 	const project = $derived(cut < 0 ? card.where : card.where.slice(0, cut));
 	const section = $derived(cut < 0 ? '' : card.where.slice(cut + 3));
 	const text = $derived(feedLead(whenSaid(card.at, Date.now(), timeZone), section, card.body));
+
+	/** The card's action: what it copies for the person's AI first (Relaunch the analysis, criterion 2012cc93), then where it happened. */
+	const act = () => runCardAction(card.action, onopen, copyPrompt);
 </script>
 
 <article use:activateRow class="fc cursor-pointer" class:read={!unread} class:critical={card.level === 'critical'} data-level={card.level}>
@@ -49,7 +54,7 @@
 	{#if card.action || unread}
 		<div class="fc-a">
 			{#if card.action}
-				<button type="button" class="bev" data-own-press onclick={onopen}>
+				<button type="button" class="bev" data-own-press onclick={act}>
 					<span>
 						{#if card.action.icon === 'relaunch'}<Icon name="rotate" size={15} />{/if}
 						{card.action.label}

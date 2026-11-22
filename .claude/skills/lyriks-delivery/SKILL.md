@@ -14,12 +14,12 @@ index (delivery).
 
 | Direction | The spec is | A gap means | The work list comes from |
 |---|---|---|---|
-| **Forward** (spec first) | ahead of the code | planned work | the roadmap's backlog and releases |
+| **Forward** (spec first) | ahead of the code | planned work | the gap report |
 | **Adopted** (code first) | a model of what exists | a **defect** | the gap and drift reports |
 
-Most projects are both. A feature whose `implementation` is null on
-`get_roadmap` was never mapped; one assigned to a future release is planned.
-Never put a defect and an unbuilt capability in the same epic.
+Most projects are both. A feature whose `get_implementation_status` locates
+nothing was never mapped. Never put a defect and an unbuilt capability in the
+same epic.
 
 ## One copy of the spec
 
@@ -44,17 +44,8 @@ around.
 
 ## Step 1: find the work
 
-**`get_roadmap(project_id)` first**: one call, no index needed. Each leaf comes
-with its status, its coverage (`percent`, `found`, `expected`, `updatedAt`,
-`specUpdatedAt`) and a drift flag:
-
-| Flag | Means | Next |
-|---|---|---|
-| `spec-moved-since-sync` | the spec changed after the last sync | read the feature, size the delta, ticket it |
-| `done-but-code-incomplete` | done, but not every element located | code missing or index stale: check first |
-| `code-complete-but-not-done` | everything located, not done | `reconcile_roadmap_statuses`, not a ticket |
-
-Then, from the checkout (both need the `index` of `.unspa.json`):
+`get_implementation_status({project_id, feature_id})` reads one feature's
+coverage without an index. Then, from the checkout (both need the `index` of `.unspa.json`):
 
 - `get_implementation_gaps({project_id, index})`: the roll-up per feature; with `feature_id`, the elements and their index keys.
 - `get_implementation_drift({project_id, index, feature_id?})`: elements whose spec moved after the code was mapped. `scope: element` is evidence; `scope: feature` is suspicion by association.
@@ -146,9 +137,9 @@ decision, target and multiplicity; preserve associations and rationales.
    - **Send a partial index**: the features you touched, each action or surface WITH all its children (a report replaces what was located under it).
    - `synced` counts reports, one per action and surface; `stale` and `healed` there are about code location and are never checked on an inline index. Spec drift is `get_implementation_drift`.
    - **The scripts ship with the skills** under `.lyriks/tools/` (plain Node; `LYRIKS_MCP_URL`, `LYRIKS_MCP_TOKEN`): `check-index.mjs --fix` finds each signature by its TEXT and rewrites moved lines; `sync-index.mjs [--feature <id>]` sends what does not fit a tool call; `apply-batch.mjs` and `mcp-call.mjs` do the same for a batch or any tool. Never hand-write a JSON-RPC client.
+   - **Sync with the command Lyriks hands you**: `sync_implementation_index` with `command:true` answers the exact `sync-index.mjs` command, naming this server and signing in by itself for twelve hours; run it as it comes, never set a token. Add `--since <commit>` to send only the actions and surfaces whose keys changed since that commit, `--positions` when lines only moved (coverage stays), `--expect <revision>` with the revision the last answer printed so another checkout's write is never replaced in silence.
    - **Proof comes back by script**: `export_behavior_scenarios` gives fixtures with a `titleToken` (`[unspa:<surfaceId>:<actionId>:<scenarioId>]`); the repository's tests call the REAL code through one adapter and carry the token in their title; `node .lyriks/tools/ingest-results.mjs <report.json>` stamps `verifiedAt` on every action whose results all passed (no network). Located and proven are two claims; never type a `verifiedAt`.
-4. `reconcile_roadmap_statuses` (it only upgrades).
-5. Then close the ticket, once `get_roadmap` no longer flags the feature. If it still does, say so.
+4. Then close the ticket, once `get_implementation_gaps` lists none of the feature's elements and `get_implementation_drift` names none of them. If it still does, say so.
 
 An index export must be complete before saving: compare keys with the native
 denominator, reject truncated signatures/paths and shape placeholders, and page
@@ -173,13 +164,13 @@ node .lyriks/tools/sync-index.mjs          # only where the job can reach Lyriks
 ## A spec enriched by someone else
 
 Told "we added X on feature Y": go to `get_behavior_feature`. Not told:
-`get_roadmap` flags `spec-moved-since-sync` and the drift names the elements.
-Never take silence for no change.
+`get_implementation_drift` names the elements whose spec moved since the code
+was mapped. Never take silence for no change.
 
 ## What these tools cannot tell you
 
 - **A key several features share holds ONE location** (a `state:` key carries a path, not a feature): the sync's `shared` block names them.
-- **The index lives in the checkout**: gaps and drift move only when someone runs them from the repository. `get_roadmap` is the exception.
+- **The index lives in the checkout**: gaps and drift move only when someone runs them from the repository.
 - **A green coverage is a past sync, not working code**: read `updatedAt` before `percent`.
 - **Drift says what changed, not what it says now**: read the feature.
 - **A located line is not a proven behaviour**: only a test run of the code proves it.
@@ -197,5 +188,5 @@ Never take silence for no change.
 - Let a story overwrite the snapshot, or decompose a stale one.
 - Create, update or close tracker items without an explicit go.
 - Use `generate_artifact` with `type:"user_stories"` on a behavior-kernel project: it ignores your rules and scenarios.
-- Close a ticket whose feature still flags in `get_roadmap`.
+- Close a ticket whose feature still has gaps or drift.
 - Code a change the bound project does not carry yet.

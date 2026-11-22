@@ -406,6 +406,18 @@ WHERE workspace_id IS NULL AND (SELECT COUNT(DISTINCT back_workspace_id) FROM ba
 ALTER TABLE IF EXISTS product_activation ALTER COLUMN license_key DROP NOT NULL;
 ALTER TABLE IF EXISTS product_activation ALTER COLUMN activated_at DROP NOT NULL;
 `
+	},
+	{
+		// The revision of each project's implementation index (feat-100, criteria
+		// fbe61ab1 and 93abb7df): the platform keeps no copy of any index, only how
+		// many writes landed and when each unit (an action, a surface, a criterion
+		// record) was last written, so a write sent against an older index is
+		// refused only where a write since then touched what it sends.
+		id: '0020-implementation-index-revisions',
+		sql: `
+CREATE TABLE IF NOT EXISTS implementation_index_revisions (project_id TEXT PRIMARY KEY, revision INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS implementation_index_unit_writes (project_id TEXT NOT NULL, unit_key TEXT NOT NULL, revision INTEGER NOT NULL, PRIMARY KEY (project_id, unit_key));
+`
 	}
 ];
 

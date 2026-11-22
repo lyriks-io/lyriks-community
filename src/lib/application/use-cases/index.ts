@@ -85,12 +85,9 @@ export {
 	type FeatureGapStats,
 	type GapSweep
 } from '../analysis/sweep-implementation-gaps';
-export {
-	ReconcileImplementationStatusesUseCase,
-	planStatusUpgrades,
-	type ReconcilePlan,
-	type StatusReconciliation
-} from '../specification/reconcile-implementation-statuses';
+export { FindIndexKeyOwnersUseCase, type KeyOwnersAnswer } from '../analysis/find-index-key-owners';
+export { GuardIndexWriteUseCase, type GuardedIndexWrite, type IndexWriteOutcome } from '../analysis/guard-index-write';
+export { MoveIndexPositionsUseCase, type PositionsOutcome } from '../analysis/move-index-positions';
 export {
 	SaveFeaturesDraftUseCase,
 	type SaveFeaturesDraftResult

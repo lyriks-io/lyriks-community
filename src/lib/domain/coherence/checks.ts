@@ -1,5 +1,4 @@
 import type { GapKind, GapProvenance } from './draft';
-import type { SpecLanguage } from '$domain/language';
 
 /**
  * THE catalogue of coherence checks: one declared entry per thing the product
@@ -94,49 +93,6 @@ const BY_ID = new Map(CHECKS.map((c) => [c.id, c]));
 
 export function checkById(id: string): CheckDef | undefined {
 	return BY_ID.get(id);
-}
-
-/** The catalogue labels in French, by check id. Names are never translated. */
-const LABELS_FR: Readonly<Record<string, string>> = {
-	'features.has-leaf': 'Au moins une fonctionnalité feuille existe',
-	'features.maturity': 'Les fonctionnalités portent un comportement rédigé',
-	'features.kernel-record': 'Chaque fonctionnalité garde son enregistrement de comportement',
-	'features.core-journey': 'Chaque domaine qui porte des fonctionnalités a un parcours',
-	'users.feature-reachable': 'Chaque fonctionnalité est accordée à au moins un rôle',
-	'users.roles-granted': 'Chaque rôle détient au moins une capacité',
-	'users.grants-resolve': 'Chaque droit nomme un rôle existant',
-	'users.matrix-guards': "La matrice d'accès s'accorde avec les gardes du comportement",
-	'experience.has-journey': "Un parcours décrit l'expérience du produit",
-	'experience.actors-resolve': 'Les acteurs des parcours sont des rôles existants',
-	'experience.plan.journey-unlinked': 'Chaque parcours se déroule sur un écran',
-	'experience.plan.screen-unvisited': 'Chaque écran est visité par une étape de parcours',
-	'experience.plan.step-unlinked': 'Chaque étape se déroule sur un écran',
-	'experience.plan.step-shallow': 'Chaque étape dit ce qu’elle fait ou lit',
-	'experience.plan.core-uncovered': 'Chaque domaine est parcouru par un parcours',
-	'experience.plan.role-unused': 'Chaque rôle effectue un parcours',
-	'experience.plan.entity-unused': 'Chaque entité est lue par une étape de parcours',
-	'rules.criteria-attached': "Chaque critère d'acceptation teste une fonctionnalité",
-	'rules.open-issues': 'Aucun problème ouvert ne subsiste dans les règles déclarées',
-	'data.tables-modeled': 'Chaque table touchée par un parcours a un schéma',
-	'data.fields-modeled': "Chaque champ lu par un parcours figure dans son entité",
-	'data.entities-unique': 'Les noms des entités sont uniques',
-	'data.entities-placed': 'Chaque entité réside sur une base de données',
-	'data.relations-resolve': 'Chaque relation vise une entité existante',
-	'architecture.references': 'Chaque choix technique cite une référence officielle',
-	'glossary.defined': 'Chaque terme gouverné a une définition',
-	'glossary.approved': 'Chaque terme gouverné est approuvé',
-	'language.prose': 'La prose du modèle est écrite dans la langue de la spec',
-	'formal.type-compat': "Les valeurs respectent le type de l'état qu'elles écrivent",
-	'formal.lca-bus': "Un bus d'état reste dans son type déclaré",
-	'formal.gluing': "Un changement préserve ce dont d'autres parties dépendent",
-	'formal.other': 'Aucune autre violation formelle',
-	'semantic.review': 'La revue de cohérence est en accord avec la spec',
-	'behavior.model-check': 'Le modèle de comportement se vérifie'
-};
-
-/** A check's label in the spec's language. */
-export function checkLabel(check: CheckDef, lang: SpecLanguage = 'en'): string {
-	return lang === 'fr' ? (LABELS_FR[check.id] ?? check.label) : check.label;
 }
 
 /** The prose-language check: it runs only on a project that declares its language. */

@@ -44,7 +44,7 @@
 	// The reader's session with their own AI on the whole project, one for every page of it (feat-ai-session).
 	// It reads the project on screen through the derived id (every reload hands a new `data`, the id
 	// changes only with the project): this layout stays mounted when the reader moves to another project.
-	const aiSession = new ProjectAiSession(() => projectId, () => data.projectName, () => data.canWrite);
+	const aiSession = new ProjectAiSession(() => projectId, () => data.projectName, () => data.canWrite, () => data.edition ?? null);
 	provideProjectAiSession(aiSession);
 	$effect(() => aiSession.listen());
 	// The floating chip reads it from above the project's pages (ac-ai-session-band).

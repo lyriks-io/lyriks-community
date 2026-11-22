@@ -8,6 +8,7 @@
 	import { Arrival, decidedNote, goneSuggestionNote, provideArrival } from './arrival.svelte';
 	import { Button, Icon, confirmDialog, pushToast } from '$ui/design-system';
 	import DevelopmentBoard from './DevelopmentBoard.svelte';
+	import { requestStanding } from './request-standing';
 	import FinalReport from './FinalReport.svelte';
 	import DecisionLog from './DecisionLog.svelte';
 	import type { ClosingReading } from '$lib/server/evolution-closing.server';
@@ -22,6 +23,7 @@
 	import { AI_ACTIVITY_EVENT, type AiActivity } from '$lib/shared/ai-activity';
 	import { readFunctionalDiagram } from '$lib/domain/evolution';
 	import { EvolutionWrites, provideEvolutionWrites } from './evolution-writes.svelte';
+	import { stageMoveNote, stageMoveToast } from './crossings-said';
 	import { provideRequestLanguage } from './request-language.svelte';
 	import { requirementOrder } from './requirement-kinds';
 	import { overlayActions, overlayDossier, overlayProposals, overlayReport, patchKey, type Patches } from './dossier-overlay';
@@ -64,6 +66,7 @@
 	import DataChanges from './DataChanges.svelte';
 	import { mentionedRefs } from '$lib/domain/evolution';
 	import { STEP_QUESTIONS } from '$lib/domain/evolution';
+	import { isOwedBeforeImpact } from '$lib/domain/evolution';
 	import { FUNCTIONAL_DIAGRAM_KEY } from '$lib/domain/evolution';
 	import { questionFrame, questionText } from '$lib/domain/evolution';
 	import FunctionalDiagram from './uml/FunctionalDiagram.svelte';
@@ -79,6 +82,7 @@
 	import { noteReadKey, proseNote, specificationNote, type EditorialNote as StepNote } from './editorial-note';
 	import { markPlace, placeOnPage, scrollToBlock } from './evo-scroll';
 	import type { ActionReading } from '$lib/server/evolution-spec-actions.server';
+	import { SpecificationReadings } from './specification-readings.svelte';
 	import EvolutionCelebration from './EvolutionCelebration.svelte';
 	import { liveCelebrationOf } from './live-celebration';
 	import { mergePageChanges, pageChangeCount, type PageChanges, type PageEditor, type PageDiagramDraft } from './page-edit';
@@ -196,7 +200,8 @@
 					check: closing.landed,
 					merged: dossier.code?.mergedCommit ? { into: dossier.code.mergedInto ?? dossier.code.deploymentBranch, commit: dossier.code.mergedCommit } : null,
 					branchLeft: !!dossier.code?.mergedCommit,
-					heldEntries: dossier.heldEntries ?? 0
+					heldEntries: dossier.heldEntries ?? 0,
+					knowledge: closing.knowledge
 				})
 			: null
 	);
@@ -295,6 +300,8 @@
 	const goToTab = (tab: RequestTab) => selectTab(tab);
 	/** Nothing written before the freeze can change once the spec is frozen: the steps of specification read, they no longer edit. */
 	const specEditable = $derived(canEdit && !dossier.frozen && dossier.status === 'open');
+	/** In the Build, what the request proposes is still corrected on the Specification; its texts are not (EVO-012). */
+	const correctable = $derived(canEdit && dossier.status === 'open' && dossier.stage === 'implementation');
 	/** The answers of the steps of prose edit while the request stands at one of them (ac-evo-form-edit-anytime). */
 	const answersEditable = $derived(specEditable && answersEditableAt(currentStep));
 	const nameOf = (id: string) => personName(id, members);
@@ -469,11 +476,21 @@
 		}, 2000);
 	};
 
-	/** Leaving the Impact freezes the version and opens the development at once, while the version is written. */
+	/** Leaving the Impact freezes the version and opens the development at once, while the version is written; the toast comes once it is read back. */
 	async function startImplementation() {
-		const frozen = dossier.specVersion + 1;
-		if (await cross('implementation', 'development')) pushToast({ level: 'success', message: `Version ${frozen} frozen: the evolution moves into development` });
+		await cross('implementation', 'development');
 	}
+
+	// The request moving on in an act is said once the server says it, whoever's act it was: the person's last
+	// validation freezing the version, its toast offering Implementation, or the Build settled into Approval.
+	// The page stays where the reader is (EVO-011, criterion eca6943c; ac-evo-form-validate-next).
+	let standing = untrack(() => ({ stage: saved.stage, specVersion: saved.specVersion }));
+	$effect(() => {
+		const now = { stage: saved.stage, specVersion: saved.specVersion };
+		const moved = stageMoveNote(standing, now);
+		standing = now;
+		if (moved) untrack(() => pushToast(stageMoveToast(moved, openTab, (tab) => selectTab(tab))));
+	});
 
 
 	const keyOf = (path: string, leafId: string | null) => (leafId ? `${path}@${leafId}` : path);
@@ -485,7 +502,8 @@
 			path: `step.${step}.description`,
 			block: 'step',
 			label: labelOf(`step.${step}.description`, 'In your own words'),
-			critical: step === 'solution' || step === 'functional_spec',
+			// Of the steps' descriptions only the Solution's is owed (EVO-013).
+			critical: isOwedBeforeImpact(`step.${step}.description`),
 			leafId: null,
 			value: d.value,
 			filled: d.value.trim() !== '',
@@ -552,11 +570,18 @@
 	const descriptionText = (step: string) =>
 		step === 'need' ? (dossier.need.fields.find((f) => f.path.endsWith('description'))?.value ?? '') : (descriptionOf(step)?.value ?? '');
 
-	/** The graph of the request, drawn on demand and redrawn when the request moves. */
-	let graph = $state<LocalGraph | null>(null);
-	/** Where each action of the specification stands, read with the graph (spec-actions.ts). */
-	let actionReadings = $state<Record<string, ActionReading>>({});
-	let graphLoading = $state(false);
+	/**
+	 * The graph of the request and where each action of the specification stands (spec-actions.ts), drawn on
+	 * demand and redrawn when the request moves: the reading begun last is the one held (criterion b33f1a03).
+	 */
+	const readings = new SpecificationReadings<ActionReading>(async () => {
+		const res = await fetch(`/api/evolution?projectId=${encodeURIComponent(projectId)}&requestId=${encodeURIComponent(dossier.id)}&part=graph`);
+		if (!res.ok) return null;
+		const body = (await res.json()) as { graph: LocalGraph | null; actions?: Record<string, ActionReading>; readAt?: string | null; version: string; unread?: string };
+		return { graph: body.graph, actions: body.actions ?? {}, readAt: body.readAt ?? null, version: body.version, ...(body.unread ? { unread: body.unread } : {}) };
+	});
+	const graph = $derived(readings.graph);
+	const actionReadings = $derived(readings.actions);
 	/** Where each link of the two diagrams opens, and whether it still points at something (ac-evo-func-uml-link). */
 	const diagramLinks = $derived(new DiagramLinkStatus(projectId));
 	// The decision card reads the graph for its size rank (ac-evo-form-decision-size-rank), so it loads with the page.
@@ -570,10 +595,11 @@
 	/**
 	 * A person stands behind the Specification as the page asks it (ac-evo-form-step-lock): each answer of the
 	 * touched features, the values an AI typed on a draft included, each action it offers, each path of the
-	 * journey and each change to the data. The actions come with the graph: until it is read, they are not known to be validated.
+	 * journey and each change to the data. The actions come with the graph: until it is read, they are not known to be validated,
+	 * nor while the engine does not answer (criterion c623df9c).
 	 */
 	function specificationHeld(): boolean {
-		if (graph === null) return false;
+		if (graph === null || readings.unread) return false;
 		const hold = specificationHold([
 			...dossier.fields.filter((f) => f.leafId !== null && f.filled).map((f) => f.trail ?? {}),
 			...Object.values(shownActions).map((a) => a.trail),
@@ -586,17 +612,7 @@
 	async function loadGraph(stamp: string) {
 		if (stamp === graphStamp) return;
 		graphStamp = stamp;
-		graphLoading = true;
-		try {
-			const res = await fetch(`/api/evolution?projectId=${encodeURIComponent(projectId)}&requestId=${encodeURIComponent(dossier.id)}&part=graph`);
-			if (res.ok) {
-				const body = (await res.json()) as { graph: LocalGraph; actions?: Record<string, ActionReading> };
-				graph = body.graph;
-				actionReadings = body.actions ?? {};
-			}
-		} finally {
-			graphLoading = false;
-		}
+		await readings.load();
 	}
 
 	const dataLanded = $derived(dossier.data.drafts.length > 0 && dossier.data.drafts.every((d) => d.materialisedAt !== null));
@@ -669,6 +685,7 @@
 	const pageEditing = $derived(editingSection === 'all');
 	const pageEditReason = $derived(
 		!canEdit ? 'You do not have permission to edit this request.'
+			: correctable && openTab === 'specification' ? null
 			: !specEditable ? 'This request is not editable at its current stage.'
 				: openTab === 'specification' ? null
 					: !['briefing', 'solutioning'].includes(openTab) ? 'This page is generated from the request and its implementation.'
@@ -831,7 +848,8 @@
 	 */
 	const outOfStep = (step: 'functional_spec' | 'technical_spec'): string | null => {
 		const sync = step === 'functional_spec' ? dossier.functionalDiagram : dossier.technicalDiagram;
-		if (sync.behind) return 'Its diagram is behind its texts: bring the diagram in step with them before validating';
+		// A diagram never drawn has nothing to keep in step: it holds no validation (EVO-013).
+		if (sync.behind && (diagramField(step)?.value ?? '').trim() !== '') return 'Its diagram is behind its texts: bring the diagram in step with them before validating';
 		if (sync.textsBehind.length > 0) return 'A text is behind its diagram: rewrite it from the diagram before validating';
 		return null;
 	};
@@ -1054,7 +1072,7 @@
 		return REQUEST_TABS.map((tab, i) => ({ id: tab.id, label: tab.label, ticked: done.slice(i).some(Boolean), waits: locks[tab.id] ?? null }));
 	});
 	const barStatus = $derived(dossier.status === 'open' ? 'In progress' : dossier.status === 'cancelled' ? 'Cancelled' : 'Closed');
-	const barStanding = $derived(`Stands at ${tabLabel(currentTab)} · ${barTabs.filter((t) => t.ticked).length} of ${barTabs.length} steps done`);
+	const barStanding = $derived(requestStanding(dossier.correction, tabLabel(currentTab), barTabs.filter((t) => t.ticked).length, barTabs.length));
 	/** The step on screen offers to prefill all of it, while something is left to prefill (ac-evo-live-prefill-step). */
 	const barPrefill = $derived.by(() => {
 		const sections = answersEditable && dossier.status === 'open' && !tabValidated(openTab) ? stepPrefillSections[openTab] : undefined;
@@ -1151,7 +1169,6 @@
 		openOwed={openOwedSolution}
 		diagramShown={(id) => !!solutionDiagrams[id]}
 		onDiagram={(id, shown) => (solutionDiagrams = { ...solutionDiagrams, [id]: shown })}
-		diagramOwed={dossier.functionalDiagram.owed}
 		drawings={{ functional_spec: diagramField('functional_spec'), technical_spec: diagramField('technical_spec') }}
 		{outOfStep}
 		onGoSpecification={() => advance(['draft'], 'specification')}
@@ -1246,13 +1263,14 @@
 			{dossier}
 			{members}
 			{actorId}
-			canEdit={specEditable}
+			canEdit={specEditable || correctable}
 			{pageEditing}
 			canValidate={canEdit && dossier.status === 'open' && !pageEditing}
 			canComment={dossier.status === 'open'}
 			{graph}
 			actionReadings={shownActions}
-			actionsRead={() => actionReadings}
+			readActionsAgain={() => readings.readAgain()}
+			actionsUnread={readings.unread}
 			fieldsOf={(leafId) => fieldsOf(leafId)}
 			labelOf={(path) => metaOf(path).label}
 			journeyField={diagramField('functional_spec')}
@@ -1285,6 +1303,7 @@
 			{impacts}
 			{proposes}
 			canEdit={canEdit && !dossier.frozen && dossier.status === 'open'}
+			canOrder={canEdit && dossier.status === 'open'}
 			{onFixNow}
 			{members}
 			{actorId}
@@ -1304,7 +1323,7 @@
 
 {#snippet developmentBody()}
 	<!-- Step 5: who develops the frozen version, then the code read against it as it is synced (ac-evo-impl-9). -->
-	<DevelopmentBoard {projectId} {dossier} {report} {history} {canEdit} onReport={() => goToTab('final_report')} onImpact={() => goToTab('impact')} />
+	<DevelopmentBoard {projectId} {dossier} {report} {history} {canEdit} {members} onReport={() => goToTab('final_report')} onImpact={() => goToTab('impact')} />
 {/snippet}
 
 {#snippet finalReportBody()}

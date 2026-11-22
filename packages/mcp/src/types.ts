@@ -8,16 +8,6 @@ export interface HonoVariables {
   token_scope?: string | null
   /** The live session a "session-wait" grant may wait in (session-ticket.ts). */
   token_session?: string | null
-}
-
-export interface ApiError {
-  code:    string
-  message: string
-  field:   string | null
-}
-
-export interface ApiEnvelope<T> {
-  data:   T
-  meta:   { request_id: string; timestamp: string; pagination?: unknown }
-  errors: ApiError[]
+  /** The project an "index-sync" grant may sync the index of (index-ticket.ts). */
+  token_project?: string | null
 }

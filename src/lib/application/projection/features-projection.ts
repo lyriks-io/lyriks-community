@@ -2,19 +2,13 @@ import {
 	createEmptyFeaturesDraft,
 	type ActionJourneys,
 	familyPathOf,
-	isMvpTier,
 	leafFeatures,
 	TAG_TYPES,
 	type Core,
 	type Family,
 	type Feature,
 	type LeafMeta,
-	type MvpAssignment,
-	type ProjectFeaturesDraft,
-	type Release,
-	type RoadmapAssignment,
-	type Sprint,
-	type WorkAssignment
+	type ProjectFeaturesDraft
 } from '$domain/features';
 import type { BehaviorOp } from '$application/ports';
 import type { SpecLanguage } from '$domain/language';
@@ -24,37 +18,23 @@ import type { UnspaFeatureSnapshot, UnspaProjectSnapshot, UnspaTag } from '$lib/
 /**
  * The Lyriks-owned decoration for the Features section — the organizational
  * scaffolding unspa cannot model. The kernel owns the leaf SET and each leaf's
- * core/family/mvp/phase MEMBERSHIP (as tags); this owns the core/family/release
- * OBJECTS (ids, tone, descriptions, week ranges, order). Stored in
- * the residue repo under section "features".
+ * core/family MEMBERSHIP (as tags); this owns the core/family OBJECTS (ids,
+ * tone, descriptions). Stored in the residue repo under section "features".
+ *
+ * Residue written while the product had a roadmap may still hold its releases,
+ * sprints, work assignments, action owners, contributors and per-leaf statuses,
+ * and kernel shells may still carry `mvp:` and `phase:` tags: none of it is read,
+ * and the next save of the section writes the residue and the tags without it.
  */
 export interface FeaturesResidue {
 	cores: Core[];
 	families: Family[];
-	releases: Release[];
 	/** Per-leaf authoring/status decoration, keyed by feature id. Lyriks-owned —
 	 * serialized verbatim into the residue blob, invisible to the kernel. Optional
 	 * so residue written before this field existed still typechecks/parses. */
 	leafMeta?: Record<string, LeafMeta>;
-	/** Per-action ownership (`featureId::actionId` → collaborator id). The actions
-	 * are the kernel's; only who owns them is Lyriks-owned. Optional for the same
-	 * reason as `leafMeta`. */
-	actionAssignments?: Record<string, string>;
-	/** Per-action release (`featureId::actionId` → release id). Lyriks-owned.
-	 * Optional for back-compat. */
-	actionRelease?: Record<string, string>;
-	/** Per-feature RBAC scope (feature id → role ids). Lyriks-owned. Optional. */
-	featureRoles?: Record<string, string[]>;
-	/** Per-action RBAC scope (`featureId::actionId` → role ids). Lyriks-owned. Optional. */
-	actionRoles?: Record<string, string[]>;
-	/** Work-queue sprints — first-class Lyriks objects (like releases), invisible to
-	 * the kernel. Optional so residue written before this field parses unchanged. */
-	sprints?: Sprint[];
 	/** When each core feature and feature first entered the spec (criterion 2a6bff42). Optional for back-compat. */
 	firstSeenAt?: Record<string, string>;
-	/** Work assignments (who owns which core/feature/action, in which sprint/order).
-	 * Lyriks-owned decoration; produces no BehaviorOps. Optional for back-compat. */
-	assignments?: WorkAssignment[];
 	/** The journeys each feature's actions are arranged in, keyed by feature id. Optional for back-compat. */
 	actionJourneys?: ActionJourneys;
 	/** UI/meta: last autosave instant. Kept in the residue since it is not behavior. */
@@ -65,14 +45,7 @@ export function emptyFeaturesResidue(): FeaturesResidue {
 	return {
 		cores: [],
 		families: [],
-		releases: [],
 		leafMeta: {},
-		actionAssignments: {},
-		actionRelease: {},
-		featureRoles: {},
-		actionRoles: {},
-		sprints: [],
-		assignments: [],
 		lastSavedAt: null
 	};
 }
@@ -85,7 +58,7 @@ interface KernelView {
 /**
  * Build the Features wizard draft by JOINING the behavior kernel with the Lyriks
  * residue. Leaves + their membership come from the kernel (feature snapshots +
- * tags); cores/families/releases come from the residue. Pure and framework-free —
+ * tags); cores/families come from the residue. Pure and framework-free:
  * unit-testable, no IO. The inverse (draft → BehaviorOps + residue) lives with the
  * Phase-1 save use-case.
  */
@@ -98,15 +71,11 @@ export function buildFeaturesProjection(
 	const draft = createEmptyFeaturesDraft(projectId);
 	draft.cores = deco.cores;
 	draft.families = deco.families;
-	draft.releases = deco.releases;
-	// Verbatim passthrough; `?? {}` tolerates residue written before leafMeta existed.
-	draft.leafMeta = deco.leafMeta ?? {};
-	draft.actionAssignments = deco.actionAssignments ?? {};
-	draft.actionRelease = deco.actionRelease ?? {};
-	draft.featureRoles = deco.featureRoles ?? {};
-	draft.actionRoles = deco.actionRoles ?? {};
-	draft.sprints = deco.sprints ?? [];
-	draft.assignments = deco.assignments ?? [];
+	// Verbatim passthrough, but for the status a leaf once carried by hand: whether a
+	// feature is built is read from the code, so a stored one is dropped here and
+	// the next save writes the residue without it. `?? {}` tolerates residue
+	// written before leafMeta existed.
+	draft.leafMeta = withoutStoredStatus(deco.leafMeta ?? {});
 	draft.firstSeenAt = deco.firstSeenAt ?? {};
 	draft.actionJourneys = deco.actionJourneys ?? {};
 	draft.lastSavedAt = deco.lastSavedAt;
@@ -127,15 +96,12 @@ export function buildFeaturesProjection(
 	// (data-projection already matches entity names this way.)
 	const coreIdByName = new Map(draft.cores.map((c) => [normTag(c.name), c.id]));
 	const familyIdByPath = new Map([...familyPathById].map(([id, path]) => [normTag(path), id]));
-	const releaseIdByLabel = buildReleaseLookup(deco.releases);
 
 	// Kernel is the source of the leaf set + order.
 	const order = kernel.project?.project.featureIds ?? kernel.features.map((f) => featureId(f));
 	const byId = new Map(kernel.features.map((f) => [featureId(f), f]));
 
 	const features: Feature[] = [];
-	const mvpAssignments: MvpAssignment[] = [];
-	const roadmapAssignments: RoadmapAssignment[] = [];
 
 	for (const id of order) {
 		const snap = byId.get(id);
@@ -153,19 +119,19 @@ export function buildFeaturesProjection(
 			parentFamilyId: (familyPath && familyIdByPath.get(normTag(familyPath))) || null,
 			unspaghettitFeatureId: id
 		});
-
-		const tier = tagValue(tags, TAG_TYPES.mvp);
-		if (tier && isMvpTier(tier)) mvpAssignments.push({ featureId: id, tier });
-
-		const phase = tagValue(tags, TAG_TYPES.phase);
-		const releaseId = phase ? releaseIdByLabel.get(normTag(phase)) : undefined;
-		if (releaseId) roadmapAssignments.push({ featureId: id, releaseId });
 	}
 
 	draft.features = features;
-	draft.mvpAssignments = mvpAssignments;
-	draft.roadmapAssignments = roadmapAssignments;
 	return draft;
+}
+
+function withoutStoredStatus(meta: Record<string, LeafMeta>): Record<string, LeafMeta> {
+	return Object.fromEntries(
+		Object.entries(meta).map(([id, entry]) => {
+			const { status: _retired, ...kept } = entry as LeafMeta & { status?: unknown };
+			return [id, kept];
+		})
+	);
 }
 
 function featureId(snap: UnspaFeatureSnapshot): string {
@@ -280,17 +246,6 @@ function buildFamilyPaths(families: Family[]): Map<string, string> {
 	return paths;
 }
 
-/** A release is tagged by version, else name, else id — resolve any of them back. */
-function buildReleaseLookup(releases: Release[]): Map<string, string> {
-	const map = new Map<string, string>();
-	for (const r of releases) {
-		for (const label of [r.version, r.name, r.id]) {
-			if (label && !map.has(normTag(label))) map.set(normTag(label), r.id);
-		}
-	}
-	return map;
-}
-
 // ── Inverse: draft → kernel ops + residue (the write side of the projection) ──
 
 /** Split the Lyriks-owned decoration (residue) out of the wizard draft. */
@@ -298,14 +253,7 @@ export function featuresResidueFromDraft(draft: ProjectFeaturesDraft): FeaturesR
 	return {
 		cores: draft.cores,
 		families: draft.families,
-		releases: draft.releases,
 		leafMeta: draft.leafMeta ?? {},
-		actionAssignments: draft.actionAssignments ?? {},
-		actionRelease: draft.actionRelease ?? {},
-		featureRoles: draft.featureRoles ?? {},
-		actionRoles: draft.actionRoles ?? {},
-		sprints: draft.sprints ?? [],
-		assignments: draft.assignments ?? [],
 		firstSeenAt: draft.firstSeenAt ?? {},
 		actionJourneys: draft.actionJourneys ?? {},
 		lastSavedAt: draft.lastSavedAt
@@ -391,7 +339,6 @@ function mergeTags(existing: UnspaTag[], incoming: UnspaTag[]): UnspaTag[] {
 	return out;
 }
 
-/** Membership tags for a leaf — core, family path, optional mvp tier and release version. */
 /**
  * How long a projected criterion's title may be before the prose moves to its
  * description. A wizard criterion is one free-text field; the model's is a titled
@@ -432,6 +379,7 @@ function leafAcceptanceCriteria(
 	return out;
 }
 
+/** Membership tags for a leaf: its core and its family path. */
 function leafTags(draft: ProjectFeaturesDraft, leafId: string): UnspaTag[] {
 	const leaf = draft.features.find((f) => f.id === leafId);
 	if (!leaf) return [];
@@ -440,13 +388,6 @@ function leafTags(draft: ProjectFeaturesDraft, leafId: string): UnspaTag[] {
 	if (core) tags.push({ type: TAG_TYPES.core, value: core.name || core.id });
 	const path = familyPathOf(draft, leaf);
 	if (path) tags.push({ type: TAG_TYPES.family, value: path });
-	const mvp = draft.mvpAssignments.find((m) => m.featureId === leafId);
-	if (mvp) tags.push({ type: TAG_TYPES.mvp, value: mvp.tier });
-	const ra = draft.roadmapAssignments.find((r) => r.featureId === leafId);
-	if (ra) {
-		const rel = draft.releases.find((r) => r.id === ra.releaseId);
-		if (rel) tags.push({ type: TAG_TYPES.phase, value: rel.version || rel.name || rel.id });
-	}
 	return tags;
 }
 

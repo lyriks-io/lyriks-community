@@ -47,49 +47,30 @@ describe('parseFeaturesDraft — tree-position normalization', () => {
 	});
 });
 
-describe('parseFeaturesDraft — work distribution (sprints + assignments)', () => {
-	it('keeps well-formed sprints and coerces order', () => {
-		const draft = parseFeaturesDraft(
-			{ sprints: [{ id: 's1', name: 'Sprint 1', order: 'nope' }, { name: 'no id' }] },
-			'p'
-		);
-		expect(draft.sprints).toEqual([{ id: 's1', name: 'Sprint 1', startDate: undefined, endDate: undefined, order: 0 }]);
-	});
-
-	it('keeps valid assignments and drops malformed ones (bad kind, missing target id, bad assignee)', () => {
+describe('parseFeaturesDraft, a draft that still carries the roadmap, the MVP tiers or a status', () => {
+	it('parses without its releases, sprints, work assignments, action owners, contributors, MVP tiers and status', () => {
 		const draft = parseFeaturesDraft(
 			{
 				cores: [{ id: 'c1', name: 'Core', tone: 'customer' }],
 				features: [{ id: 'f1', name: 'Feature', coreId: 'c1' }],
+				releases: [{ id: 'r1', name: 'V1', version: 'V1', weekStart: 1, weekEnd: 6, order: 0, description: '' }],
+				roadmapAssignments: [{ featureId: 'f1', releaseId: 'r1' }],
+				actionRelease: { 'f1::send': 'r1' },
 				sprints: [{ id: 's1', name: 'Sprint 1', order: 0 }],
-				assignments: [
-					{ id: 'ok', kind: 'feature', featureId: 'f1', assigneeId: 'u1', sprintId: null, order: 2 },
-					{ id: 'ok-null', kind: 'core', coreId: 'c1', assigneeId: null, sprintId: 's1', order: 0 },
-					{ id: 'bad-kind', kind: 'epic', featureId: 'f1', assigneeId: null },
-					{ id: 'no-target', kind: 'feature', assigneeId: null },
-					{ id: 'no-action-id', kind: 'action', featureId: 'f1', assigneeId: null },
-					{ id: 'bad-assignee', kind: 'feature', featureId: 'f1', assigneeId: 42 }
-				]
+				assignments: [{ id: 'ok', kind: 'feature', featureId: 'f1', assigneeId: 'u1', sprintId: 's1', order: 2 }],
+				actionAssignments: { 'f1::send': 'u1' },
+				featureRoles: { f1: ['u1'] },
+				actionRoles: { 'f1::send': ['u1'] },
+				mvpAssignments: [{ featureId: 'f1', tier: 'must' }],
+				leafMeta: { f1: { status: 'done', objective: 'Bill on time.' } }
 			},
 			'p'
 		);
-		expect(draft.assignments!.map((a) => a.id)).toEqual(['ok', 'ok-null']);
-		expect(draft.assignments![0]).toMatchObject({ kind: 'feature', featureId: 'f1', assigneeId: 'u1', order: 2 });
-		expect(draft.assignments![1]).toMatchObject({ kind: 'core', coreId: 'c1', assigneeId: null, sprintId: 's1' });
-	});
-
-	it('preserves legacy actionAssignments (for one-time migration)', () => {
-		const draft = parseFeaturesDraft(
-			{ actionAssignments: { 'f1::send': 'u1', bogus: 5 } },
-			'p'
-		);
-		expect(draft.actionAssignments).toEqual({ 'f1::send': 'u1' });
-	});
-
-	it('defaults sprints/assignments to empty arrays when absent', () => {
-		const draft = parseFeaturesDraft({}, 'p');
-		expect(draft.sprints).toEqual([]);
-		expect(draft.assignments).toEqual([]);
+		for (const key of ['releases', 'roadmapAssignments', 'actionRelease', 'sprints', 'assignments', 'actionAssignments', 'featureRoles', 'actionRoles', 'mvpAssignments'])
+			expect(draft, key).not.toHaveProperty(key);
+		expect(draft.features.map((f) => f.id)).toEqual(['f1']);
+		// Whether a feature is built is read from the code, never from a stored status.
+		expect(draft.leafMeta?.f1).toEqual({ objective: 'Bill on time.' });
 	});
 });
 

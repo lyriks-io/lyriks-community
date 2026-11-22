@@ -7,6 +7,10 @@
 export type SpecValidationAct =
 	/** A rejection asks for a change (criterion a4ef7658): the element's validations go and it waits on its validators again. */
 	| { readonly op: 'validate' | 'withdraw' | 'reject'; readonly itemId: string }
+	/** The same validation, given from the Simulation of a change request (EVO-003): its version must not be frozen. */
+	| { readonly op: 'validate'; readonly itemId: string; readonly fromRequest: string }
+	/** Take back the validation a landed change request gave the element (EVO-002). */
+	| { readonly op: 'withdraw_request_validation'; readonly itemId: string }
 	| { readonly op: 'remind'; readonly itemId: string; readonly to: string }
 	| { readonly op: 'request_validation' | 'cancel_validation_request'; readonly itemId: string; readonly to: string }
 	| { readonly op: 'finalize' }
@@ -29,9 +33,15 @@ function one(raw: unknown): SpecValidationAct | string {
 	switch (o.op) {
 		case 'validate':
 		case 'withdraw':
-		case 'reject': {
+		case 'reject':
+		case 'withdraw_request_validation': {
 			const itemId = id(o.itemId);
-			return itemId ? { op: o.op, itemId } : 'itemId is required.';
+			if (!itemId) return 'itemId is required.';
+			if (o.op === 'validate' && o.fromRequest !== undefined) {
+				const fromRequest = id(o.fromRequest, 200);
+				return fromRequest ? { op: 'validate', itemId, fromRequest } : 'fromRequest names a change request by its id.';
+			}
+			return o.op === 'withdraw_request_validation' ? { op: o.op, itemId } : { op: o.op, itemId };
 		}
 		case 'remind':
 		case 'request_validation':

@@ -264,8 +264,3 @@ export function tabOfItem(itemId: string): RetroTabKey | null {
 	};
 	return byKind[kind] ?? null;
 }
-
-/** Every item id of a reading, in review order. */
-export function readingItemIds(reading: RetroReading): string[] {
-	return reading.tabs.flatMap((t) => t.items.map((i) => i.id));
-}

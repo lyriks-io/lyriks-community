@@ -8,12 +8,15 @@ interface Grant {
   /**
    * "skills": the playbook installer's sign-in, which reads playbooks only (skills-ticket.ts).
    * "session-wait": the waiting command of a live session, which only waits in it (session-ticket.ts).
+   * "index-sync": the sync command of one project's index, which only reads where index keys belong and sends that index (index-ticket.ts).
    */
   scope?: TokenScope
   /** The one live session a "session-wait" grant may wait in. */
   sessionId?: string
+  /** The one project an "index-sync" grant may read keys of and send the index of. */
+  projectId?: string
 }
-export type TokenScope = 'skills' | 'session-wait'
+export type TokenScope = 'skills' | 'session-wait' | 'index-sync'
 const grants = new Map<string, Grant>()
 const MAX_GRANTS = 1000
 export const ACCESS_TOKEN_TTL_SECONDS = 3600
@@ -30,7 +33,7 @@ export function issueAccessToken(
   session: string,
   subject: string,
   clientId: string,
-  opts: { scope?: TokenScope; ttlSeconds?: number; sessionId?: string } = {},
+  opts: { scope?: TokenScope; ttlSeconds?: number; sessionId?: string; projectId?: string } = {},
 ): string | null {
   for (const [key, grant] of grants) if (grant.expiresAt <= Date.now()) grants.delete(key)
   if (grants.size >= MAX_GRANTS) return null
@@ -40,6 +43,7 @@ export function issueAccessToken(
     session, subject, clientId, expiresAt,
     ...(opts.scope ? { scope: opts.scope } : {}),
     ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
+    ...(opts.projectId ? { projectId: opts.projectId } : {}),
   })
   return token
 }

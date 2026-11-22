@@ -4,11 +4,7 @@ import { industryLabelOf } from '$domain/foundation';
 import { toProductCoherence } from '$domain/coherence/incoherence';
 import { leafFeatures } from '$domain/features';
 import { administersProject } from '$domain/team';
-import {
-	maturityByCore,
-	maturityByFeature,
-	maturityByRelease
-} from '$domain/features';
+import { maturityByCore, maturityByFeature } from '$domain/features';
 import { capabilityById, CAPABILITIES, resolveVisibleCapability } from '$ui/shell/capabilities';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { callerCanWrite } from '$lib/server/writer-gate.server';
@@ -114,8 +110,7 @@ export const load: LayoutServerLoad = async (event) => {
 	const featureMaturity = productCoherence.featureMaturity ?? {};
 	const maturityBreakdown = {
 		features: maturityByFeature(featuresDraft, featureMaturity),
-		cores: maturityByCore(featuresDraft, featureMaturity),
-		releases: maturityByRelease(featuresDraft, featureMaturity)
+		cores: maturityByCore(featuresDraft, featureMaturity)
 	};
 
 	return {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { mintUuid } from '$ui/shell/mint-id';
 	import { goto } from '$app/navigation';
 	import { capabilityById } from '$ui/shell/capabilities';
 	import { toastNotifier } from '$ui/composition/client-container';
@@ -58,7 +59,7 @@
 	 * its steps), which exists only once the server wrote it.
 	 */
 	async function create(title: string): Promise<boolean> {
-		const id = crypto.randomUUID();
+		const id = mintUuid();
 		const ok = await applyEvolution(projectId, [{ op: 'open_request', id, title, origin: 'internal_idea', leafIds: [] }], { what: 'the new evolution' });
 		if (ok) {
 			creating = false;
@@ -69,7 +70,7 @@
 
 	/** A suggestion becomes an evolution: the server words it from its deferred line (criterion 03b7eacf). */
 	async function startSuggestion(lineId: string) {
-		const id = crypto.randomUUID();
+		const id = mintUuid();
 		if (await applyEvolution(projectId, [{ op: 'open_request', id, deferredLineId: lineId, leafIds: [] }], { what: 'the new evolution' })) await goto(`${base}?request=${encodeURIComponent(id)}`);
 	}
 
@@ -140,7 +141,6 @@
 		onNew={() => (creating = true)}
 		onOpenLine={(href) => goto(href)}
 		onStart={startSuggestion}
-		roadmapHref="{base}?tab=roadmap"
 	/>
 {/if}
 

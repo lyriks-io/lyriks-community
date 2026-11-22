@@ -155,6 +155,7 @@ const many = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 function launchedWhat(scope: string): string {
 	if (scope === 'delta') return 'launched a delta analysis';
 	if (scope === 'whole') return 'launched a full analysis';
+	if (scope === 'resume') return 'launched a resume analysis';
 	return 'started the first Reverse-Specification';
 }
 
@@ -164,7 +165,7 @@ function whatOf({ action, subject, count, note }: HistoryEntry): string {
 		case 'analysis_launched':
 			return launchedWhat(note);
 		case 'scope_chosen':
-			return note === 'whole' ? 'chose to read the whole product' : 'chose to read only what changed';
+			return note === 'whole' ? 'chose to read the whole product' : note === 'resume' ? 'chose to resume where the last run stopped' : 'chose to read only what changed';
 		case 'prompt_received':
 			return 'received the prompt';
 		case 'commit_recorded':

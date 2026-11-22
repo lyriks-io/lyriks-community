@@ -110,14 +110,34 @@ export interface RunComplementary {
 	readonly fromRunId: string | null;
 	/** The commit it read, null when it recorded none or the run reads the documentation alone. */
 	readonly fromCommit: string | null;
-	/** What the AI reads: what changed, or the whole product again from what is gathered (criterion 98612117). */
+	/** What the AI reads: what changed, the whole product again, or where the last run stopped (EVO-014). */
 	readonly scope: RetrospecScope;
+	/** Where the run before stopped, when a person closed it before its final check: what a Resume analysis reads (EVO-014). */
+	readonly resumable?: RunResume;
 }
 
-/** What a later run reads; either way it starts from the specification gathered and erases nothing. */
-export const RETROSPEC_SCOPES = ['delta', 'whole'] as const;
+/**
+ * What a later run reads; whatever it reads, it starts from the specification
+ * gathered and erases nothing: what changed (Delta analysis), the whole product
+ * again (Full analysis), or where the last run stopped (Resume analysis).
+ */
+export const RETROSPEC_SCOPES = ['delta', 'whole', 'resume'] as const;
 export type RetrospecScope = (typeof RETROSPEC_SCOPES)[number];
-export const isRetrospecScope = (v: unknown): v is RetrospecScope => v === 'delta' || v === 'whole';
+export const isRetrospecScope = (v: unknown): v is RetrospecScope => typeof v === 'string' && (RETROSPEC_SCOPES as readonly string[]).includes(v);
+
+/**
+ * Where a run a person closed before its final check stopped, phase by phase
+ * (EVO-014): what it read whole, the phases it stopped in, the ones it never
+ * reached, and the commit a Resume analysis reads the code delta from (the
+ * one it recorded, else the one it started from).
+ */
+export interface RunResume {
+	readonly fromRunId: string;
+	readonly read: readonly string[];
+	readonly interrupted: readonly string[];
+	readonly left: readonly string[];
+	readonly fromCommit: string | null;
+}
 
 /**
  * A validation a complementary run carries from the last validated run: it
@@ -127,6 +147,27 @@ export const isRetrospecScope = (v: unknown): v is RetrospecScope => v === 'delt
 export interface CarriedValidation {
 	readonly fingerprint: string;
 	readonly validatedBy: readonly ItemValidation[];
+}
+
+/**
+ * A validation a change request gave an element at its landing (EVO-002): the
+ * request wrote the element and its code proved every line of it. It counts as
+ * every validation the element waits on while the element reads as it landed;
+ * a person the element waits on takes it back, and a request never gives it
+ * twice, so a withdrawal is kept rather than erased.
+ */
+export interface RequestValidation {
+	readonly requestId: string;
+	/** The request as the board names it (EVO-002), kept so Knowledge names it without reading the dossier. */
+	readonly requestKey: string;
+	/** The people who approved the request. */
+	readonly approvedBy: readonly PersonRef[];
+	/** When the request landed. */
+	readonly at: string;
+	/** What the element read as it landed: the validation stands while it reads the same. */
+	readonly fingerprint: string;
+	/** Set once a person took it back (or requested a change on the element): it no longer counts. */
+	readonly withdrawn?: { readonly by: PersonRef; readonly at: string };
 }
 
 /**
@@ -206,6 +247,8 @@ export interface RetrospecRun {
 	readonly fingerprints?: Readonly<Record<string, string>>;
 	/** The validations a complementary run carried from the last validated run, by element id. */
 	readonly carried?: Readonly<Record<string, CarriedValidation>>;
+	/** The validations change requests gave at their landing, by element id (EVO-002), taken back ones included. */
+	readonly throughRequests?: Readonly<Record<string, RequestValidation>>;
 	/** What the specification read when this later run started. */
 	readonly atStart?: RunStartReading;
 	/** This later run writes nothing until a person validated it on Mismatch (criterion 50b00229 of feat-ai-session). */
@@ -218,6 +261,10 @@ export interface RetrospecRun {
 	readonly writingOpenedAt?: string;
 	/** Where the documentation it reads is, once the person said it (criterion b6ad9ca2); on this computer until then. */
 	readonly docsAt?: DocsLocation;
+	/** The phase of the order of work its AI last said it reads (EVO-014): what a run that writes nothing as it reads is followed by. */
+	readonly phaseReported?: string;
+	/** The features its AI said it finished re-reading, each once (EVO-014). */
+	readonly featuresRead?: readonly string[];
 	/** The next run started before this one was validated: this one closed and stays in the history (criterion 2dbed801). */
 	readonly closedAt?: string | null;
 	readonly closedBy?: PersonRef | null;
@@ -405,12 +452,15 @@ function run(v: unknown): RetrospecRun | null {
 		...complementaryOf(o.complementary),
 		...('fingerprints' in o ? { fingerprints: strings(o.fingerprints) } : {}),
 		...('carried' in o ? { carried: carriedOf(o.carried) } : {}),
+		...('throughRequests' in o ? { throughRequests: requestValidationsOf(o.throughRequests) } : {}),
 		...('atStart' in o ? { atStart: { fingerprints: strings(obj(o.atStart).fingerprints), titles: strings(obj(o.atStart).titles) } } : {}),
 		...('holds' in o && o.holds === true ? { holds: true } : {}),
 		...('report' in o ? { report: parseReport(o.report) } : {}),
 		...(strOrNull(o.readingDoneAt) ? { readingDoneAt: strOrNull(o.readingDoneAt) as string } : {}),
 		...(strOrNull(o.writingOpenedAt) ? { writingOpenedAt: strOrNull(o.writingOpenedAt) as string } : {}),
 		...('docsAt' in o ? { docsAt: parseDocsLocation(o.docsAt) } : {}),
+		...(strOrNull(o.phaseReported) ? { phaseReported: strOrNull(o.phaseReported) as string } : {}),
+		...('featuresRead' in o ? { featuresRead: [...new Set(arr(o.featuresRead).map(str).filter(Boolean))] } : {}),
 		...('closedAt' in o ? { closedAt: strOrNull(o.closedAt), closedBy: person(o.closedBy) } : {})
 	};
 }
@@ -425,7 +475,18 @@ function commitOf(v: unknown): { commit?: RunCommit } {
 function complementaryOf(v: unknown): { complementary?: RunComplementary } {
 	if (v === null || typeof v !== 'object' || Array.isArray(v)) return {};
 	const o = obj(v);
-	return { complementary: { fromRunId: strOrNull(o.fromRunId), fromCommit: strOrNull(o.fromCommit), scope: o.scope === 'whole' ? 'whole' : 'delta' } };
+	const resumable = resumeOf(o.resumable);
+	const scope: RetrospecScope = isRetrospecScope(o.scope) && (o.scope !== 'resume' || resumable) ? o.scope : 'delta';
+	return { complementary: { fromRunId: strOrNull(o.fromRunId), fromCommit: strOrNull(o.fromCommit), scope, ...(resumable ? { resumable } : {}) } };
+}
+
+function resumeOf(v: unknown): RunResume | null {
+	if (v === null || typeof v !== 'object' || Array.isArray(v)) return null;
+	const o = obj(v);
+	const fromRunId = str(o.fromRunId).trim();
+	if (!fromRunId) return null;
+	const keys = (x: unknown) => arr(x).map(str).filter(Boolean);
+	return { fromRunId, read: keys(o.read), interrupted: keys(o.interrupted), left: keys(o.left), fromCommit: strOrNull(o.fromCommit) };
 }
 
 function carriedOf(v: unknown): Record<string, CarriedValidation> {
@@ -439,6 +500,28 @@ function carriedOf(v: unknown): Record<string, CarriedValidation> {
 			return p && at ? [{ person: p, at }] : [];
 		});
 		if (fingerprint && validatedBy.length > 0) out[id] = { fingerprint, validatedBy };
+	}
+	return out;
+}
+
+function requestValidationsOf(v: unknown): Record<string, RequestValidation> {
+	const out: Record<string, RequestValidation> = {};
+	for (const [id, raw] of Object.entries(obj(v))) {
+		const o = obj(raw);
+		const requestId = str(o.requestId).trim();
+		const at = str(o.at);
+		const fingerprint = str(o.fingerprint);
+		if (!requestId || !at) continue;
+		const withdrawnBy = person(obj(o.withdrawn).by);
+		const withdrawnAt = str(obj(o.withdrawn).at);
+		out[id] = {
+			requestId,
+			requestKey: str(o.requestKey).trim() || requestId,
+			approvedBy: people(o.approvedBy),
+			at,
+			fingerprint,
+			...(withdrawnBy && withdrawnAt ? { withdrawn: { by: withdrawnBy, at: withdrawnAt } } : {})
+		};
 	}
 	return out;
 }

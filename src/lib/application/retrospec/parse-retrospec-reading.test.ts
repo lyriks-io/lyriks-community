@@ -3,11 +3,11 @@ import { parseRetrospecReading } from './parse-retrospec-reading';
 
 describe('what a person’s AI reports of its retrospecification [criterion:c50587fb]', () => {
 	it('reads the commit, as an object or a bare hash, and the checks', () => {
-		expect(parseRetrospecReading({ commit: { sha: ' abc1234 ', repository: 'shop' } })).toEqual({ ok: true, reading: { commit: { sha: 'abc1234', repository: 'shop' }, checks: [], received: false, changes: [], withdrawn: [], finished: false, written: [] } });
-		expect(parseRetrospecReading({ commit: 'abc1234' })).toEqual({ ok: true, reading: { commit: { sha: 'abc1234', repository: null }, checks: [], received: false, changes: [], withdrawn: [], finished: false, written: [] } });
+		expect(parseRetrospecReading({ commit: { sha: ' abc1234 ', repository: 'shop' } })).toEqual({ ok: true, reading: { commit: { sha: 'abc1234', repository: 'shop' }, checks: [], received: false, changes: [], withdrawn: [], finished: false, written: [], phase: null, read: [] } });
+		expect(parseRetrospecReading({ commit: 'abc1234' })).toEqual({ ok: true, reading: { commit: { sha: 'abc1234', repository: null }, checks: [], received: false, changes: [], withdrawn: [], finished: false, written: [], phase: null, read: [] } });
 		expect(parseRetrospecReading({ checks: [{ anchor: 'action:f:a', says: 'other', code: 'x', where: 'a.ts:1' }] })).toEqual({
 			ok: true,
-			reading: { commit: null, checks: [{ itemId: 'action:f:a', verdict: 'other', code: 'x', where: 'a.ts:1' }], received: false, changes: [], withdrawn: [], finished: false, written: [] }
+			reading: { commit: null, checks: [{ itemId: 'action:f:a', verdict: 'other', code: 'x', where: 'a.ts:1' }], received: false, changes: [], withdrawn: [], finished: false, written: [], phase: null, read: [] }
 		});
 	});
 
@@ -22,7 +22,7 @@ describe('what a person’s AI reports of its retrospecification [criterion:c505
 	});
 
 	it('reads nothing as a reading of where the run stands', () => {
-		expect(parseRetrospecReading(null)).toEqual({ ok: true, reading: { commit: null, checks: [], received: false, changes: [], withdrawn: [], finished: false, written: [] } });
+		expect(parseRetrospecReading(null)).toEqual({ ok: true, reading: { commit: null, checks: [], received: false, changes: [], withdrawn: [], finished: false, written: [], phase: null, read: [] } });
 	});
 
 	it('refuses a check that says neither same nor other [criterion:23397c95]', () => {
@@ -56,6 +56,16 @@ describe('what a run that holds its changes reports [criterion:50b00229]', () =>
 
 	it('takes a removal without what it would read', () => {
 		expect(reading({ changes: [{ ...change, kind: 'removed', proposed: undefined }] }).changes[0].proposed).toBe('');
+	});
+
+	it('takes up to 2000 changes and written changes in one reading, and refuses a list of one more', () => {
+		const many = <T>(n: number, item: (i: number) => T) => Array.from({ length: n }, (_, i) => item(i));
+		const writtenEntry = (i: number) => ({ change: `c${i}`, elements: [{ anchor: `action:f:a${i}` }] });
+		expect(reading({ changes: many(2000, (i) => ({ ...change, id: `c${i}` })) }).changes).toHaveLength(2000);
+		expect(reading({ written: many(2000, writtenEntry) }).written).toHaveLength(2000);
+		expect(parseRetrospecReading({ changes: many(2001, (i) => ({ ...change, id: `c${i}` })) })).toMatchObject({ ok: false });
+		expect(parseRetrospecReading({ written: many(2001, writtenEntry) })).toMatchObject({ ok: false });
+		expect(parseRetrospecReading({ withdrawn: many(2001, (i) => `c${i}`) })).toMatchObject({ ok: false });
 	});
 
 	it('reads what a validated change became [criterion:1aaa8316]', () => {

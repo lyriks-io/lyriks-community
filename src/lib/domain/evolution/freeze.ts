@@ -27,7 +27,7 @@ export function canFreeze(
 		),
 		guard(
 			request.stage !== 'coherence',
-			'Freezing happens when crossing from Challenge to Verify.',
+			'Freezing happens when crossing from the Impact analysis to the Build.',
 			'The freeze is the act of that one crossing.'
 		),
 		canCrossToImplementation(request, input.criticalEmptyCount)
@@ -46,24 +46,14 @@ export function freeze(request: EvolutionRequest, actor: Actor, at: string): Evo
 	};
 }
 
-/** Amending applies to a frozen spec only; without a freeze it is plain editing. */
-export function canAmend(request: EvolutionRequest, canEdit: boolean): Guarded {
-	return firstRefusal(
-		guard(!canEdit, 'You can read this request but not amend it.', 'Amending is a write on the request.'),
-		guard(
-			!request.frozen,
-			'Nothing is frozen; edit the spec directly.',
-			'Amending is the act of unfreezing; without a freeze it is plain editing.'
-		)
-	);
-}
-
 /**
  * The spec moves again. The frozen version stays readable; the report of the
  * iteration stays readable too, but no longer judges the current spec.
  */
 export function amend(request: EvolutionRequest): EvolutionRequest {
-	return { ...request, frozen: false };
+	// A correction open in the Build does not survive the reopening: the next freeze makes the next version (EVO-012).
+	const { correction: _closed, ...reopened } = request;
+	return { ...reopened, frozen: false };
 }
 
 /**
@@ -98,32 +88,4 @@ export function incomingReportLines(
 	return incoming.implementationFindings.filter(
 		(l) => l.iteration === incoming.iteration && !known.has(l.id)
 	);
-}
-
-/**
- * Every refusal an incoming evolution draft earns on its reports, request by
- * request. The stored request is the authority on what is frozen: an incoming
- * draft cannot freeze and report in the same breath.
- */
-export function refusedReports(
-	stored: readonly EvolutionRequest[],
-	incoming: readonly EvolutionRequest[]
-): { requestId: string; reason: string }[] {
-	const refusals: { requestId: string; reason: string }[] = [];
-	for (const request of incoming) {
-		const before = stored.find((r) => r.id === request.id);
-		const lines = incomingReportLines(before, request);
-		if (lines.length === 0) continue;
-		const reference = before ?? request;
-		for (const version of new Set(lines.map((l) => l.specVersion))) {
-			const allowed = canReceiveReport(reference, version);
-			if (!allowed.ok) refusals.push({ requestId: request.id, reason: allowed.reason });
-		}
-	}
-	return refusals;
-}
-
-/** Verify implies a frozen spec. */
-export function verifyImpliesFrozen(request: EvolutionRequest): boolean {
-	return request.stage !== 'implementation' || request.frozen;
 }

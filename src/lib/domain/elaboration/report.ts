@@ -1,5 +1,5 @@
 import type { ProjectFoundationDraft } from '../foundation';
-import type { ProjectFeaturesDraft } from '../features';
+import type { FeatureBuildStatus, ProjectFeaturesDraft } from '../features';
 import type { ProjectScopeDraft, ProjectCompletionReport } from '../scope';
 import type { ProjectUsersDraft } from '../users';
 
@@ -14,6 +14,10 @@ export interface ElaborationInput {
 	    them. Null when the model could not be read; a feature missing from the map
 	    has no model record yet, and the features draft answers for it. */
 	acceptanceCriteriaByFeature: Readonly<Record<string, number>> | null;
+	/** Whether each feature is built, read from the coverage the implementation
+	    index records: never a status written by hand. Null when the coverage
+	    could not be read; a feature missing from the map is not started. */
+	buildStatusByFeature: Readonly<Record<string, FeatureBuildStatus>> | null;
 	unavailable: readonly string[];
 }
 

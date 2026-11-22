@@ -17,7 +17,9 @@ export class SectionDocumentDraftRepository<T extends { projectId: string }>
 	constructor(
 		private readonly store: SectionDocumentStorePort,
 		private readonly section: string,
-		private readonly parse: (raw: unknown, projectId: string) => T
+		private readonly parse: (raw: unknown, projectId: string) => T,
+		/** How the draft is written, when the section keeps less than it reads back (the parse's counterpart). */
+		private readonly serialize: (draft: T) => unknown = (draft) => draft
 	) {}
 
 	async load(projectId: string): Promise<T | null> {
@@ -29,7 +31,7 @@ export class SectionDocumentDraftRepository<T extends { projectId: string }>
 		return this.store.save(
 			draft.projectId,
 			this.section,
-			draft,
+			this.serialize(draft),
 			opts?.expectedRevision ?? null,
 			opts?.origin ?? null
 		);

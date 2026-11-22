@@ -1,3 +1,4 @@
+import { mintUuid } from '../shared';
 import type {
 	EdgeOutcome,
 	IssueKind,
@@ -93,7 +94,7 @@ export function createEmptyRulesDraft(projectId: string): ProjectRulesDraft {
 }
 
 function newId(): string {
-	return crypto.randomUUID();
+	return mintUuid();
 }
 
 export function createIssue(overrides: Partial<Issue> = {}): Issue {

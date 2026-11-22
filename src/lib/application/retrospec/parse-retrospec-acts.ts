@@ -1,4 +1,4 @@
-import { COMMENT_MAX_LENGTH, isChangeVerdict, isDocsFrom, isRetrospecMode, isRetrospecScope, parseDocsLocation, type PersonRef, type RetrospecAct, type RetrospecMode } from '$domain/retrospec';
+import { COMMENT_MAX_LENGTH, isChangeVerdict, isDocsFrom, isRetrospecMode, isRetrospecScope, parseDocsLocation, type PersonRef, type RetrospecAct, type RetrospecMode, type RetrospecScope } from '$domain/retrospec';
 
 /**
  * The acts a page sends to the retrospecification, read from an untrusted body
@@ -26,11 +26,15 @@ export type IncomingRetrospecAct =
 			| { op: 'withdraw_changes' }
 			| { op: 'end_reading' }
 			| { op: 'record_written' }
+			| { op: 'report_phase' }
+			| { op: 'report_read' }
 	  >
-	| { readonly op: 'start'; readonly mode: RetrospecMode }
+	/** `scope` is what the person ticked on Mismatch (EVO-014); the server reads the default when it is left out. */
+	| { readonly op: 'start'; readonly mode: RetrospecMode; readonly scope?: RetrospecScope }
 	| { readonly op: 'publish' };
 
 type Raw = Record<string, unknown>;
+const SCOPE_REFUSAL = 'scope must be "delta", "whole" or "resume".';
 /** Bounds what one Validate all names; a report reaches this size only over several readings. */
 const MAX_VALIDATED_AT_ONCE = 10_000;
 const text = (v: unknown, max = 500): string | null => (typeof v === 'string' && v.trim() !== '' && v.length <= max ? v : null);
@@ -54,10 +58,13 @@ function one(raw: unknown): IncomingRetrospecAct | string {
 	const o = raw as Raw;
 	switch (o.op) {
 		case 'start':
+			if (!isRetrospecMode(o.mode)) return 'mode must be "repo", "docs" or "both".';
+			if (o.scope !== undefined && !isRetrospecScope(o.scope)) return SCOPE_REFUSAL;
+			return { op: 'start', mode: o.mode, ...(o.scope !== undefined ? { scope: o.scope as RetrospecScope } : {}) };
 		case 'choose_mode':
 			return isRetrospecMode(o.mode) ? { op: o.op, mode: o.mode } : 'mode must be "repo", "docs" or "both".';
 		case 'choose_scope':
-			return isRetrospecScope(o.scope) ? { op: 'choose_scope', scope: o.scope } : 'scope must be "delta" or "whole".';
+			return isRetrospecScope(o.scope) ? { op: 'choose_scope', scope: o.scope } : SCOPE_REFUSAL;
 		case 'choose_docs':
 			// Where the documentation is (criterion b6ad9ca2): bounded here, a link is checked when the prompt is built.
 			return isDocsFrom(o.from) ? { op: 'choose_docs', at: parseDocsLocation(o) } : 'from must be "computer" or "links".';

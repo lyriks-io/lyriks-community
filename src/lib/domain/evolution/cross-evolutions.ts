@@ -160,6 +160,15 @@ function sharedBetween(here: Footprint, there: Footprint, mineOf: EvolutionReque
 	return shared;
 }
 
+/**
+ * What two requests both touch, read from what each declares whatever stands
+ * they are at: a request that just landed is closed, yet what it wrote is what
+ * the others under way are read again against (EVO-005).
+ */
+export function sharedWith(here: EvolutionRequest, there: EvolutionRequest): CrossElement[] {
+	return sharedBetween(footprintOf(here), footprintOf(there), here, there);
+}
+
 const RANK: Record<CrossVerdict, number> = { conflict: 0, overlap: 1, compatible: 2, spec_pending: 3 };
 
 /**

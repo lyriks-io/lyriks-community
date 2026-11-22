@@ -1,3 +1,4 @@
+import { mintUuid } from '../shared';
 import type { FlagDefault, MigrationStrategy, UiStateKey } from './operations-enums';
 
 /* ── Entities — mirror of Unspaghettit feature aae37f44 ─────────────── */
@@ -190,7 +191,7 @@ export function createEmptyOperationsDraft(projectId: string): FoundationOperati
 }
 
 function newId(): string {
-	return crypto.randomUUID();
+	return mintUuid();
 }
 
 export function createSupportedLocale(overrides: Partial<SupportedLocale> = {}): SupportedLocale {

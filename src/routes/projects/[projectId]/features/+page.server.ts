@@ -7,7 +7,7 @@ import type { PageServerLoad } from './$types';
  * An old address kept so bookmarks and stored links still open something
  * (criterion 84162c34): Features is a chapter of Knowledge now, and a link that
  * named a feature or a core feature opens its page when the specification
- * still holds it. Its Roadmap and Evolution tabs became Changes.
+ * still holds it. Its Evolution tab, and its retired Roadmap tab, open Changes.
  */
 export const load: PageServerLoad = async ({ params, url, locals }) => {
 	const id = legacyFeatureId(url.searchParams);

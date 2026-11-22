@@ -41,6 +41,8 @@ vi.mock('./evolution-view.server', async () => {
 vi.mock('./evolution-actor.server', () => ({ resolveRole: async () => 'admin' }));
 
 const { loadEvolutionTab } = await import('./evolution-tab.server');
+const { loadEvolutionView } = await import('./evolution-view.server');
+const { createDraftLeaf, createEvolutionRequest } = await import('$domain/evolution');
 
 /** The team server's record of where a project is registered; `backLinks` registers it nowhere. */
 const owned = (workspaceId: string | null) => ({ find: async () => (workspaceId ? { backWorkspaceId: workspaceId } : null) });
@@ -95,5 +97,24 @@ describe('loadEvolutionTab', () => {
 		const cookies = { get: (name: string) => (name === 'lyriks_active_ws' ? 'active' : undefined) } as never;
 		await loadEvolutionTab(services, 'p', new URL('http://x/?tab=evolution'), cookies);
 		expect(execute).toHaveBeenCalledWith('active');
+	});
+
+	it('names a drafted change by the feature it stands for in the decision log, never by its draft id', async () => {
+		const request = createEvolutionRequest({ id: 'r1', status: 'open', stage: 'specification' });
+		request.drafts = [createDraftLeaf({ id: 'draft:d1', kind: 'amend', baseLeafId: 'leaf-checkout', name: '' })];
+		request.coherenceFindings = [{
+			id: 'f1', axis: 'functional', severity: 'major', title: 'draft:d1 may charge twice', requestNodeId: 'draft:d1',
+			existingNodeId: 'leaf-pay', fixNowTarget: 'leaf-pay', published: true,
+			risk: { by: 'a@b.c', at: '2026-11-01T00:00:00.000Z', reason: 'refunds cover it' }
+		}];
+		const base = await vi.mocked(loadEvolutionView).getMockImplementation()!(undefined as never, 'p', { readerId: 'a@b.c' });
+		vi.mocked(loadEvolutionView).mockResolvedValueOnce({
+			...base,
+			draft: { ...base.draft, requests: [request] },
+			leaves: [{ id: 'leaf-pay', name: 'Payment' }, { id: 'leaf-checkout', name: 'Checkout' }]
+		} as typeof base);
+		const services = { currentSession: () => ({ email: 'a@b.c' }), backLinks, resolveActiveMemberName: { execute: async () => 'Ana' } } as never;
+		const tab = await loadEvolutionTab(services, 'p', new URL('http://x/?tab=evolution&request=r1'), { get: () => undefined } as never);
+		expect(tab.reading?.decisionLog.map((entry) => entry.what)).toContain('Accepted as a known risk · Checkout may charge twice');
 	});
 });

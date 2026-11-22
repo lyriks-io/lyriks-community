@@ -6,8 +6,6 @@ import { propagateImpact, reachedSentence } from './impact-propagation';
 import { draftCoherence } from './overlay';
 import { deriveImplementationReport } from './report-derivation';
 import { deriveCodeImpact, emptyImpactReason, impactInPlainWords, impactSummaryLine, isNothingMovesLine } from './code-impact';
-import { reachLabel, reachMeaning } from './impact';
-import { lineBrief } from './implementation';
 import { materialiseDrafts } from './materialise';
 import { withSolutionValidated } from './solution-validated.fixture';
 
@@ -113,11 +111,6 @@ describe('impact notes in French', () => {
 			"La demande ne nomme encore aucune fonctionnalité, il n'y a donc rien d'où partir."
 		);
 	});
-
-	it('explains a distance in French', () => {
-		expect(reachLabel(2, 'fr')).toBe('par ricochet');
-		expect(reachMeaning(4, 'fr')).toContain('atteint par 3 liens');
-	});
 });
 
 describe('draft coherence titles in French', () => {
@@ -190,13 +183,6 @@ describe('implementation report in French', () => {
 		const extra = lines.find((l) => l.verdict === 'out_of_scope')!;
 		expect(extra.specStatement).toBe('Rien dans la spec ne demande cela.');
 		expect(extra.codeStatement).toBe('Le code porte la balise @unspa:pay#remise.');
-
-		const r = createEvolutionRequest({ title: 'Remises', specVersion: 2, implementationFindings: lines });
-		const brief = lineBrief(r, missing, 'fr');
-		expect(brief.split('\n')[0]).toBe(`Demande${NBSP}: Remises (itération 1, version de spec 2)`);
-		expect(brief).toContain(`[manquant]`);
-		expect(brief).toContain(`À faire${NBSP}: L'implémenter${NBSP}: rien n'a été localisé pour cette exigence.`);
-		expect(brief).toContain(`Laisser intact${NBSP}: rien n'est encore conforme.`);
 	});
 });
 

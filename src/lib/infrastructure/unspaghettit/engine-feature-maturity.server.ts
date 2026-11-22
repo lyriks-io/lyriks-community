@@ -8,6 +8,7 @@ import type {
 } from '$application/ports';
 import type { UnspaFeatureSnapshot } from '$lib/unspa-schema';
 import { normalizeFeatureCollections } from './normalize-feature-collections';
+import { operativeSnapshotFeature } from '$lib/unspa-schema';
 
 /**
  * `FeatureMaturityScorerPort` backed by the engine's own scorer, exported from
@@ -69,7 +70,8 @@ export class EngineFeatureMaturityScorer implements FeatureMaturityScorerPort {
 			// scores 0. A fully modelled feature then reads as unauthored and blocks
 			// its project on missing behavior. Hand it the empty arrays instead: a
 			// well-formed snapshot is unchanged, a damaged one gets its real number.
-			return computeFeatureMaturity(normalizeFeatureCollections(feature) as never);
+			// The maturity reads the operative model: a disabled element counts in no reading.
+			return computeFeatureMaturity(operativeSnapshotFeature(normalizeFeatureCollections(feature) as Record<string, unknown>) as never);
 		} catch (error) {
 			// Still throwing after that is a snapshot this adapter cannot read, not
 			// an unauthored feature. It reads like an absent shell either way, since

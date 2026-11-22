@@ -10,6 +10,7 @@ import {
 	folderCreation,
 	folderForProject,
 	folderOrdering,
+	foldersOfWorkspaces,
 	foldersVisibleTo
 } from './folder-policy';
 
@@ -38,6 +39,11 @@ describe('folders belong to their workspace (issue 156)', () => {
 		expect(foldersVisibleTo(null, domains)).toHaveLength(3);
 	});
 
+	it('names the folders of the caller\'s workspaces whatever their breadth there, all of them with nothing to scope', () => {
+		expect(foldersOfWorkspaces(reach({ 'ws-a': designer(['zz']) }), domains).map((d) => d.id)).toEqual(['a1']);
+		expect(foldersOfWorkspaces(null, domains)).toHaveLength(3);
+	});
+
 	it('reads another workspace\'s folder as absent [rule:f019e036] [rule:26a92163]', () => {
 		expect(folderChange(reach({ 'ws-a': designer() }), folder('b1', 'ws-b'))).toEqual({ ok: false, status: 404, reason: FOLDER_NOT_FOUND });
 	});
@@ -48,6 +54,7 @@ describe('folders belong to their workspace (issue 156)', () => {
 		expect(folderForProject(r, 'ws-a', folder('a1', 'ws-a'))).toBe('ok');
 		expect(folderForProject(reach({ 'ws-a': designer(['a2']) }), 'ws-a', folder('a1', 'ws-a'))).toBe('outside');
 		expect(folderForProject(null, null, folder('b1', 'ws-b'))).toBe('ok');
+		expect(folderForProject(null, null, undefined)).toBe('missing');
 	});
 });
 
@@ -73,5 +80,13 @@ describe('a viewer does not arrange the folders (issue 155)', () => {
 	it('adds a new folder to the workspace the switcher shows', () => {
 		expect(folderCreation(reach({ 'ws-a': viewer, 'ws-b': designer() }, 'ws-b'))).toEqual({ ok: true, workspaceId: 'ws-b' });
 		expect(folderCreation(null)).toEqual({ ok: true, workspaceId: null });
+	});
+});
+
+describe('an installation with nothing to scope', () => {
+	it('lets the caller rename, delete and order every folder', () => {
+		expect(folderChange(null, folder('a1', null))).toEqual({ ok: true });
+		expect(folderOrdering(null)).toEqual({ ok: true });
+		expect(folderChange(null, undefined)).toEqual({ ok: false, status: 404, reason: FOLDER_NOT_FOUND });
 	});
 });

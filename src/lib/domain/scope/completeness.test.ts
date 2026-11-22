@@ -413,3 +413,60 @@ describe('project completion in French (spec language)', () => {
 		).toBe('"Send a message" has not been included, excluded, or deferred.');
 	});
 });
+
+describe('the completion gate, one broken promise at a time', () => {
+	/** A project the gate lets finish: audited against the evidence it is read with. */
+	function audited(overrides: Partial<ProjectScopeDraft> = {}, evidenceOverrides: Partial<CompletionEvidence> = {}) {
+		const draft = readyDraft(overrides);
+		const current = evidence(draft, evidenceOverrides);
+		const withAudit: ProjectScopeDraft = {
+			...draft,
+			audit: { performedAt: '2026-07-23T10:00:00.000Z', scopeFingerprint: current.currentScopeFingerprint, modelFingerprint: current.currentModelFingerprint }
+		};
+		return assessProjectCompletion(withAudit, current);
+	}
+	const capability = readyDraft().capabilities[0];
+	const blockers = (report: ReturnType<typeof assessProjectCompletion>) => report.issues.filter((i) => i.severity === 'blocking').map((i) => i.code);
+	const warnings = (report: ReturnType<typeof assessProjectCompletion>) => report.issues.filter((i) => i.severity === 'warning').map((i) => i.code);
+
+	it('lets the ready project finish, so every case below fails for its one reason', () => {
+		expect(audited().canFinish).toBe(true);
+	});
+
+	it('blocks a capability left unnamed, or naming a source the project does not hold', () => {
+		expect(blockers(audited({ capabilities: [{ ...capability, name: '   ' }] }))).toEqual(['capability-name-missing']);
+		expect(blockers(audited({ capabilities: [{ ...capability, sourceIds: ['source-1', 'source-gone'] }] }))).toEqual(['capability-source-unknown']);
+	});
+
+	it('blocks an included capability tied to no feature, to a feature the model lacks, or to one with no behavior', () => {
+		expect(blockers(audited({ capabilities: [{ ...capability, featureIds: [] }] }))).toEqual(['capability-feature-missing']);
+		expect(blockers(audited({ capabilities: [{ ...capability, featureIds: ['feature-gone'] }] }))).toEqual(['capability-feature-unknown']);
+		expect(blockers(audited({}, { featureMaturity: { 'feature-1': 0 } }))).toEqual(['capability-behavior-missing']);
+	});
+
+	it('takes a deferral in a selected scope once signed, reports it pending while the signature is under review, and blocks it unsigned', () => {
+		const deferred = { ...capability, featureIds: [], disposition: 'deferred' as const, rationale: 'Next release', approvalId: 'approval-1' };
+		const scoped = { mode: 'selected_scope' as const, capabilities: [capability, deferred] };
+		expect(audited(scoped, { settledApprovalIds: ['approval-1'] }).canFinish).toBe(true);
+		const pending = audited(scoped, { pendingApprovalIds: ['approval-1'] });
+		expect([pending.canFinish, warnings(pending)]).toEqual([true, ['capability-omission-approval-pending']]);
+		expect(blockers(audited(scoped))).toEqual(['capability-omission-unapproved']);
+		expect(blockers(audited({ ...scoped, capabilities: [capability, { ...deferred, rationale: ' ' }] }, { settledApprovalIds: ['approval-1'] }))).toEqual(['capability-omission-unapproved']);
+	});
+
+	it('blocks a required section not assessed ready, and a section set aside without a signature', () => {
+		const assessment = readyDraft().sectionAssessments[0];
+		expect(blockers(audited({ sectionAssessments: [{ ...assessment, status: 'in_progress' }] }))).toEqual(['section-not-ready']);
+		const setAside = { ...assessment, applicability: 'not_applicable' as const, rationale: 'No data', approvalId: 'approval-2' };
+		expect(blockers(audited({ mode: 'selected_scope', sectionAssessments: [setAside] }))).toEqual(['section-omission-unapproved']);
+		expect(audited({ mode: 'selected_scope', sectionAssessments: [setAside] }, { settledApprovalIds: ['approval-2'] }).canFinish).toBe(true);
+		expect(warnings(audited({ mode: 'selected_scope', sectionAssessments: [setAside] }, { pendingApprovalIds: ['approval-2'] }))).toEqual(['section-omission-approval-pending']);
+		expect(blockers(audited({ sectionAssessments: [setAside] }, { settledApprovalIds: ['approval-2'] }))).toEqual(['full-product-section-omission']);
+		expect(audited({ sectionAssessments: [{ ...assessment, applicability: 'derived', status: 'unassessed' }] }).canFinish).toBe(true);
+	});
+
+	it('blocks while the coherence or the experience reading is not ready', () => {
+		expect(blockers(audited({}, { coherenceReady: false }))).toEqual(['coherence-not-ready']);
+		expect(blockers(audited({}, { experienceReady: false }))).toEqual(['experience-not-ready']);
+	});
+});

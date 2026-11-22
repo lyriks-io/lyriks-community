@@ -2,6 +2,7 @@ import { aiWorkedAt } from './ai-work.server';
 import type { AppServices } from '$composition/container.server';
 import {
 	advanceStepPrefill,
+	readsSpecificationActions,
 	blockFieldByPath,
 	isOriginField,
 	ORIGIN_ANSWER_KEYS,
@@ -39,7 +40,8 @@ import {
 	type AiClick,
 	type EvolutionRequest,
 	type PageKnowledge,
-	type SessionEndReason
+	type SessionEndReason,
+	NO_ACTIONS_COUNTED
 } from '$domain/evolution';
 import type { LivePresenceStatus } from '$lib/shared/live-session';
 import { publishLiveSignal, subscribeLiveSignals, subscribeSectionChanges, type ProjectLiveSignal } from './sync-bus.server';
@@ -56,35 +58,52 @@ import { specificationActionTrails } from './evolution-spec-actions.server';
  * bus, so the node holding the call and the nodes serving the page agree.
  */
 
-const keyOf = (projectId: string, requestId: string, personId: string) => `${projectId}|${requestId}|${personId.trim().toLowerCase()}`;
+/**
+ * A request holds one session of a person at a time; the project holds one per
+ * AI of that person (EVO-015), so its signals are told apart by their session.
+ */
+const keyOf = (projectId: string, requestId: string, personId: string, sessionId: string) =>
+	`${projectId}|${requestId}|${personId.trim().toLowerCase()}${requestId === PROJECT_SESSION_KEY ? `|${sessionId}` : ''}`;
 
-/** What every node knows of each live session, fed by the bus. */
+/** What every node knows of each live session, fed by the bus; never saved (criterion ea1709d0). */
 const presence = new Map<string, ProjectLiveSignal>();
 let watching = false;
 
 export function ensureWatching(services: AppServices): void {
 	if (watching) return;
 	watching = true;
-	subscribeLiveSignals((signal) => presence.set(keyOf(signal.projectId, signal.requestId, signal.personId), signal));
+	subscribeLiveSignals((signal) => presence.set(keyOf(signal.projectId, signal.requestId, signal.personId, signal.sessionId), signal));
 	// The server's clock of the session ("Time passes in the session"): an AI
 	// between two calls that stays silent too long is gone ("Mark a silent AI gone").
 	const timer = setInterval(() => void markSilentGone(services), LIVE_SESSION.progressIntervalSeconds * 1000);
 	(timer as { unref?: () => void }).unref?.();
 }
 
-/** The person's live session on a request as this node knows it; null when none was heard of. */
-export function presenceOf(projectId: string, requestId: string, personId: string): ProjectLiveSignal | null {
-	return presence.get(keyOf(projectId, requestId, personId)) ?? null;
+/**
+ * The person's live session on a request, or one of their sessions on the
+ * project, as this node knows it; null when none was heard of. On the project
+ * without a session named: the latest one heard.
+ */
+export function presenceOf(projectId: string, requestId: string, personId: string, sessionId?: string): ProjectLiveSignal | null {
+	if (requestId !== PROJECT_SESSION_KEY) return presence.get(keyOf(projectId, requestId, personId, '')) ?? null;
+	if (sessionId) return presence.get(keyOf(projectId, requestId, personId, sessionId)) ?? null;
+	return projectPresencesOf(projectId, personId).sort((a, b) => a.at.localeCompare(b.at)).pop() ?? null;
+}
+
+/** What each of the person's AIs on the project does now, as this node heard it (EVO-015). */
+export function projectPresencesOf(projectId: string, personId: string): ProjectLiveSignal[] {
+	const person = personId.trim().toLowerCase();
+	return [...presence.values()].filter((s) => s.projectId === projectId && s.requestId === PROJECT_SESSION_KEY && s.personId.trim().toLowerCase() === person);
 }
 
 export function say(
 	services: AppServices,
 	base: { projectId: string; requestId: string; personId: string; sessionId: string },
 	status: LivePresenceStatus,
-	extra: { thinkingAbout?: string | null; saying?: string | null; step?: number | null; endReason?: SessionEndReason | null } = {}
+	extra: { thinkingAbout?: string | null; saying?: string | null; step?: number | null; endReason?: SessionEndReason | null; callHeld?: boolean } = {}
 ): void {
 	ensureWatching(services);
-	const before = presenceOf(base.projectId, base.requestId, base.personId);
+	const before = presenceOf(base.projectId, base.requestId, base.personId, base.sessionId);
 	const same = before?.sessionId === base.sessionId;
 	const live = status !== 'gone' && status !== 'ended';
 	publishLiveSignal({
@@ -95,6 +114,7 @@ export function say(
 		saying: !live ? null : extra.saying !== undefined ? extra.saying : same ? (before?.saying ?? null) : null,
 		step: !live ? null : extra.step !== undefined ? extra.step : same ? (before?.step ?? null) : null,
 		endReason: extra.endReason ?? null,
+		...(extra.callHeld ? { callHeld: true } : {}),
 		at: services.clock.nowIso()
 	});
 }
@@ -111,7 +131,7 @@ export function sayEnded(services: AppServices, base: { projectId: string; reque
 
 /** The AI's next step in one sentence, numbered from the click it took, replacing the one before (ac-evo-live-state). */
 export function sayDoing(services: AppServices, base: { projectId: string; requestId: string; personId: string; sessionId: string }, text: string): void {
-	const now = presenceOf(base.projectId, base.requestId, base.personId);
+	const now = presenceOf(base.projectId, base.requestId, base.personId, base.sessionId);
 	const same = now?.sessionId === base.sessionId;
 	say(services, base, same && now.status !== 'listening' ? now.status : 'writing', { saying: text, step: (same ? (now.step ?? 0) : 0) + 1 });
 }
@@ -517,7 +537,7 @@ export async function progressContextOf(services: AppServices, projectId: string
 	const request = requestSeenBy(stored, personId);
 	const view = await loadEvolutionView(services, projectId);
 	// At the Impact analysis the next step counts the Specification's actions too (ac-evo-form-step-lock).
-	const next = coachFor(view, request, request.stage === 'coherence' ? await specificationActionTrails(services, view, request) : []);
+	const next = coachFor(view, request, readsSpecificationActions(request) ? await specificationActionTrails(services, view, request) : NO_ACTIONS_COUNTED);
 	return {
 		happened: progress.happened,
 		step: { code: next.step, label: stepLabel(next.step) },
@@ -583,8 +603,9 @@ async function look(services: AppServices, projectId: string, requestId: string,
 	const step = await changeRequest<Step>(services, projectId, requestId, (request) => {
 		const open = openSessionOf(request, personId);
 		if (!open || open.id !== sessionId) {
-			const last = lastSessionOf(request, personId);
-			return { request: null, result: { kind: 'ended', reason: last?.id === sessionId ? (last.endReason ?? 'ended_by_person') : 'replaced' } };
+			// The session named answers its own reason: opening another AI's session never ends one (EVO-015).
+			const named = (request.liveSessions ?? []).find((s) => s.id === sessionId) ?? lastSessionOf(request, personId);
+			return { request: null, result: { kind: 'ended', reason: named?.endReason ?? 'ended_by_person' } };
 		}
 		const turn = first ? closeTurn(request, personId, now) : null;
 		const cancelled = turn?.cancelled ?? null;

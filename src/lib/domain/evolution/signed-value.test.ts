@@ -69,7 +69,7 @@ describe('a value signed on a draft reaches the feature', () => {
 		// on the draft object.
 		const out = materialiseDrafts(
 			tree({
-				'feat-a': { status: 'done', objective: 'Give the operator the levers.' },
+				'feat-a': { objective: 'Give the operator the levers.' },
 				[draftId]: {
 					objective: 'Make every switch read as something you may untick.',
 					problem: 'A round dot reads as a decision already taken.',
@@ -141,10 +141,10 @@ describe('a value signed on a draft reaches the feature', () => {
 	});
 
 	it('forgets the rows of a request that no longer exists', () => {
-		const before = tree({ 'feat-a': { status: 'done' }, 'draft:gone': { objective: 'Signed, then deleted.' } });
+		const before = tree({ 'feat-a': { problem: 'Seats run out.' }, 'draft:gone': { objective: 'Signed, then deleted.' } });
 		const after = pruneDraftMeta(before, ['draft:gone']);
 		expect(after.changed).toBe(true);
 		expect(after.features.leafMeta?.['draft:gone']).toBeUndefined();
-		expect(after.features.leafMeta?.['feat-a']?.status).toBe('done');
+		expect(after.features.leafMeta?.['feat-a']?.problem).toBe('Seats run out.');
 	});
 });

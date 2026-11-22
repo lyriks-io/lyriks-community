@@ -1,4 +1,5 @@
 import { analyzeElaboration, elaborationLanguage } from '$domain/elaboration';
+import { buildStatusByFeature } from '$domain/features';
 import { fingerprint } from '$domain/scope';
 import type { ProjectElaborationPorts } from '../ports/project-elaboration';
 
@@ -13,26 +14,29 @@ export class ReadProjectElaborationUseCase {
 			catch { unavailable.push(name); return null; }
 		};
 		const before = await read('model-revision', () => this.ports.modelRevision.fingerprint(projectId));
-		const [foundation, scope, users, features, completion, behavior] = await Promise.all([
+		const [foundation, scope, users, features, completion, behavior, coverage] = await Promise.all([
 			read('foundation', () => this.ports.foundation.execute(projectId)),
 			read('scope', () => this.ports.scope.execute(projectId)),
 			read('users', () => this.ports.users.execute(projectId)),
 			read('features', () => this.ports.features.execute(projectId)),
 			includeChecks ? read('completion', () => this.ports.completion.execute(projectId)) : Promise.resolve(null),
-			read('behavior', () => this.ports.behavior.execute(projectId))
+			read('behavior', () => this.ports.behavior.execute(projectId)),
+			read('coverage', () => this.ports.coverage.get(projectId))
 		]);
 		// The domain is handed counts, not the model reading: it may not import the
 		// application layer, and a count is all the acceptance question needs.
 		const acceptanceCriteriaByFeature = behavior
 			? Object.fromEntries(behavior.features.map((f) => [f.featureId, f.acceptanceCriteria.length]))
 			: null;
+		// Whether a feature is built is what the code holds, read from the index coverage.
+		const buildStatus = features && coverage ? buildStatusByFeature(features.features.map((f) => f.id), coverage) : null;
 		const [after, latestScope] = await Promise.all([
 			read('model-revision', () => this.ports.modelRevision.fingerprint(projectId)),
 			read('scope', () => this.ports.scope.execute(projectId))
 		]);
 		const scopeFingerprint = scope ? fingerprint(scope) : null;
 		const stable = unavailable.length === 0 && before !== null && before === after && scopeFingerprint !== null && latestScope !== null && scopeFingerprint === fingerprint(latestScope);
-		const input = { foundation, scope, users, features, completion, acceptanceCriteriaByFeature, unavailable: [...new Set(unavailable)].sort() };
+		const input = { foundation, scope, users, features, completion, acceptanceCriteriaByFeature, buildStatusByFeature: buildStatus, unavailable: [...new Set(unavailable)].sort() };
 		const lang = elaborationLanguage(input);
 		const report = analyzeElaboration(input, lang);
 		return {

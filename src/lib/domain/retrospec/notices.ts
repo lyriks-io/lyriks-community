@@ -144,12 +144,16 @@ export function startedNotice(f: StartedFacts): ActivityNotice {
 	};
 }
 
+/** What Relaunch the analysis says once it copied the prompt that resumes the run, as the paused run's own copy says. */
+export const RESUME_COPIED = 'Prompt copied: paste it in your LLM session to reconnect it and resume the analysis';
+
 /**
  * The run's LLM went silent: the run stopped at its share, after what it wrote.
  * A later run names its share alone, since the specification already held what
- * an earlier run gathered.
+ * an earlier run gathered. Relaunch the analysis copies `resume`, the prompt
+ * that resumes the run, so nobody looks for it on the Reverse page (criterion 2012cc93).
  */
-export function stoppedNotice(pct: number, figures: BuiltFigures | null, product: string): ActivityNotice {
+export function stoppedNotice(pct: number, figures: BuiltFigures | null, product: string, resume: string): ActivityNotice {
 	const wrote = figures && figures.features > 0;
 	const after: NoticeRun[] = wrote
 		? [plain(', after '), strong(counted(figures.features, 'feature')), ...(figures.rules > 0 ? [plain(' and '), strong(counted(figures.rules, 'rule'))] : [])]
@@ -161,7 +165,7 @@ export function stoppedNotice(pct: number, figures: BuiltFigures | null, product
 		title: 'The Reverse-Specification stopped unexpectedly.',
 		body: [plain('The AI went silent and interrupted Lyriks at '), strong(`${pct}%`), ...after, plain('. What was analyzed is kept: relaunch the process to finish the specification.')],
 		line: shortLine(`Stopped at ${pct}% on ${product}.`),
-		action: { label: 'Relaunch the analysis', icon: 'relaunch' },
+		action: { label: 'Relaunch the analysis', icon: 'relaunch', copies: { text: resume, said: RESUME_COPIED } },
 		visual: { kind: 'gauge', pct, status: 'Stopped · AI silent', kept: `${kept} kept` }
 	};
 }

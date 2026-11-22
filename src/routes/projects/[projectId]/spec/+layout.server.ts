@@ -6,7 +6,8 @@ import { discussionAuthor, discussionRoster } from '$lib/server/spec360-discussi
 import { readSpecValidationPage } from '$lib/server/spec360-validation-page.server';
 import { sourcesIndex } from '$application/spec360/sources';
 import { readSpecSources } from '$lib/server/spec360-sources.server';
-import { firstValidatedAt, landedChanges, specNews } from '$application/spec360/spec-news';
+import { firstValidatedAt, specNews } from '$application/spec360/spec-news';
+import { readLandedChanges } from '$lib/server/landed-changes.server';
 import { loadSpecSeen } from '$lib/server/spec-seen.server';
 import { callerCanWrite } from '$lib/server/writer-gate.server';
 import type { LayoutServerLoad } from './$types';
@@ -49,13 +50,13 @@ export const load: LayoutServerLoad = async (event) => {
 		// Each block's own sources; who cites a source is read by the Sources page alone.
 		timedPart('spec:sources', readSpecSources(services, params.projectId).then(sourcesIndex)),
 		services.loadDisplaySettings.execute(),
-		timedPart('spec:evolution', services.loadEvolutionDraft.execute(params.projectId).catch(() => null)),
+		timedPart('spec:evolution', readLandedChanges(services, params.projectId).catch(() => [])),
 		timedPart('spec:validation', validationRead),
 		timedPart('spec:seen', seenRead)
 	]);
 	const person = { id: me.email, name: me.name };
 	// What reads New or Changed, and what this reader opened since (criteria 2a6bff42, b0950115): nothing before
 	// the specification's first validation, what a Reverse-Specification wrote being its starting point.
-	const news = specNews(features.firstSeenAt, landedChanges(evolution?.requests ?? []), Date.now(), display.newBadgeDays, firstValidatedAt(validation.doc.runs));
+	const news = specNews(features.firstSeenAt, evolution, Date.now(), display.newBadgeDays, firstValidatedAt(validation.doc.runs));
 	return { spec, me, person, roster, canWrite, validation, sources, news, seen };
 };

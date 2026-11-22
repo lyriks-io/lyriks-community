@@ -6,6 +6,9 @@ import { applyRetrospecActs } from './acts';
 import { emptyRetrospecDocument, type RetrospecDocument } from './document';
 import { retrospecEvents } from './events';
 import { CONNECTED_MS } from './presence';
+import { RESUME_COPIED } from './notices';
+import { resumeRetrospecPrompt } from './source-prompt';
+import { DEFAULT_DOCS_LOCATION } from './docs-location';
 
 /** What the notifications of a Reverse-Specification and of its validation say, in the brief's feed order (feat-ai-session, feat-feedback-docs). */
 
@@ -134,6 +137,8 @@ describe('a Reverse-Specification whose LLM went silent tells the person who sta
 			href: '/projects/tsk/retrospec',
 			notice: { section: 'Reverse-Specification', level: 'drift', title: 'The Reverse-Specification stopped unexpectedly.', action: { label: 'Relaunch the analysis', icon: 'relaunch' } }
 		});
+		// Relaunch the analysis hands over the prompt that resumes the run, the one the paused run's own Copy hands over [criterion:2012cc93].
+		expect(e?.notice?.action?.copies).toEqual({ text: resumeRetrospecPrompt('repo', 'Taskora', 'tsk', DEFAULT_DOCS_LOCATION, false), said: RESUME_COPIED });
 		expect(read(e?.notice?.body)).toBe(
 			'The AI went silent and interrupted Lyriks at **62%**, after **14 features** and **131 rules**. What was analyzed is kept: relaunch the process to finish the specification.'
 		);

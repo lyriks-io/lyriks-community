@@ -1,3 +1,4 @@
+import { mintUuid } from '../shared';
 import type { GlossaryLocale, GlossaryStatus } from './enums';
 
 /* ── Entities — mirror of Unspaghettit feature 297051ca ─────────────── */
@@ -46,7 +47,7 @@ export function createEmptyGlossaryDraft(projectId: string): ProjectGlossaryDraf
 }
 
 function newId(): string {
-	return crypto.randomUUID();
+	return mintUuid();
 }
 
 export function createTerm(overrides: Partial<GlossaryTerm> = {}): GlossaryTerm {

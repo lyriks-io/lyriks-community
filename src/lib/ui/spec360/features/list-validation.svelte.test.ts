@@ -158,7 +158,7 @@ describe('Features lists expose the same personal validation as their detail pag
 			reset({ doc: approve(source.doc, anchor, bob) });
 			const send = vi.fn().mockResolvedValue(Response.json({ ok: true }));
 			vi.stubGlobal('fetch', send);
-			expect(shownRow(level)).toContain('You validated: rest on it to withdraw');
+			expect(shownRow(level)).toContain('You validated this element · click to withdraw');
 			validation.control(anchor)!.run!();
 			expect(validation.saving(anchor)).toBe(true);
 			expect(validation.mine(anchor)).toBe(true);
@@ -190,6 +190,14 @@ describe('Features lists expose the same personal validation as their detail pag
 		expect(actions).not.toContain('data-evo-validate');
 		expect(actions).not.toContain('data-reject-state');
 		expect(actions).toContain('aria-label="Comments"');
+	});
+
+	it('closes the Features lead with the comments of the product and repeats no Validate all in its head: the band at the top of Knowledge holds it [criterion:d7cd4e43] [criterion:14a1164c]', () => {
+		const html = rootList();
+		const lead = html.match(/<p\b[^>]*>[\s\S]*?<\/p>/)?.[0] ?? '';
+		expect(lead).toContain('Everything Ledger does');
+		expect(lead).toContain('title="Open the comments"');
+		expect(html).not.toContain('data-validate-all');
 	});
 
 	it('removes individual approval controls once the specification is definitive', () => {

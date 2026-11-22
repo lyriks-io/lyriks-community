@@ -47,7 +47,7 @@ export function tabOfStep(step: EvolutionStep, specificationWaits = false): Requ
 	}
 }
 
-/** An answer as the step lock reads it: whether it is written, where its current version stands, and whether a person validated it. */
+/** An answer as the step lock reads it: whether it is written and where its current version stands. */
 export interface AnswerHold {
 	readonly filled: boolean;
 	readonly validation?: string;
@@ -55,12 +55,13 @@ export interface AnswerHold {
 }
 
 /**
- * Whether every written answer carries a person's validation, an AI client's
- * own aside: the Specification's reading (ac-evo-form-step-lock). Unlike a step
- * of prose, a Specification that holds no written answer holds nothing back.
+ * Whether every written answer stands validated, by a person or by their AI in
+ * their name: the Specification's reading, the same as the freeze reads it
+ * (ac-evo-form-step-lock). Unlike a step of prose, a Specification that holds no
+ * written answer holds nothing back.
  */
 export function nothingWaitsOnPeople(answers: readonly AnswerHold[]): boolean {
-	return answers.filter((a) => a.filled).every((a) => a.validation !== 'refused' && !!a.humanValidated);
+	return answers.filter((a) => a.filled).every((a) => a.validation === 'validated');
 }
 
 export interface StepLockFacts {
@@ -76,8 +77,8 @@ export interface StepLockFacts {
  * Why each tab does not open yet, in one sentence, or null when it opens.
  * Validating is optional until the build: the Solution and the Specification
  * always open, and no tab waits for a validation; the later tabs wait for the
- * request itself to reach them. The freeze is where the Solution's validation
- * is asked, on the crossing itself.
+ * request itself to reach them. The freeze is where the Specification's
+ * validation is asked, on the crossing itself.
  */
 export function tabLocks(facts: StepLockFacts): Record<RequestTab, string | null> {
 	return {

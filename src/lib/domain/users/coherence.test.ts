@@ -23,6 +23,18 @@ function draft(over: Partial<ProjectUsersDraft> = {}): ProjectUsersDraft {
 }
 
 describe('permissionCoverage', () => {
+	it('brings a system facility into scope once granted, and never a grant to a capability the product no longer has', () => {
+		const d = draft({
+			permissions: [
+				{ roleId: 'r1', capabilityId: 'view_audit_logs', capabilitySource: 'system' },
+				{ roleId: 'r1', capabilityId: 'feat-gone', capabilitySource: 'feature' }
+			]
+		});
+		const cov = permissionCoverage(d, ['feat-x']);
+		expect(cov.totalCapabilities).toBe(2);
+		expect(cov.uncoveredCapabilityIds).toEqual(['feat-x']);
+	});
+
 	it('counts a capability covered when ANY role holds it, and flags orphans', () => {
 		const d = draft({
 			roles: [
@@ -89,6 +101,14 @@ describe('computeUsersCoherence — coverage-based', () => {
 			permissions: [...sys('r1'), { roleId: 'r2', capabilityId: 'feat-x', capabilitySource: 'feature' }]
 		});
 		expect(computeUsersCoherence(d, ['feat-x']).score).toBe(100);
+	});
+
+	it('flags a role left without a name, and scores it lower than the same role named', () => {
+		const covered = [...sys('r1'), { roleId: 'r1', capabilityId: 'feat-x', capabilitySource: 'feature' as const }];
+		const blank = draft({ roles: [{ ...draft().roles[0], name: '   ' }], permissions: covered });
+		const res = computeUsersCoherence(blank, ['feat-x']);
+		expect(res.issues.map((i) => i.code)).toEqual(['role-unnamed']);
+		expect(res.score).toBeLessThan(computeUsersCoherence(draft({ permissions: covered }), ['feat-x']).score);
 	});
 });
 
