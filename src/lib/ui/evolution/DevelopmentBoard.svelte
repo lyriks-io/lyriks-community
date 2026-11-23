@@ -343,12 +343,16 @@
 	</p>
 {/if}
 {#if !frozen}
-	<!-- The go-ahead comes from the impact analysis: nothing is developed against a version that is not frozen. -->
-	<ImplementationWaitingCard title="Waiting for the go-ahead from the impact analysis" text={waiting}>
-		{#snippet actions()}
-			<button type="button" class={SECONDARY_48} onclick={onImpact}>{undecided.length > 0 ? 'Make the decisions' : 'Go to Simulation'}</button>
-		{/snippet}
-	</ImplementationWaitingCard>
+	<div class="flex flex-col gap-5">
+		<!-- The go-ahead comes from the impact analysis: nothing is developed against a version that is not frozen. -->
+		<ImplementationWaitingCard title="Waiting for the go-ahead from the impact analysis" text={waiting}>
+			{#snippet actions()}
+				<button type="button" class={SECONDARY_48} onclick={onImpact}>{undecided.length > 0 ? 'Make the decisions' : 'Go to Simulation'}</button>
+			{/snippet}
+		</ImplementationWaitingCard>
+		<!-- The freeze waits for the deployment branch: it is named here, before the freeze (criterion 5411b88e). -->
+		{#if dossier.branchAwaitedByFreeze}<CodeBranchCard {projectId} {dossier} {canEdit} {members} />{/if}
+	</div>
 {:else if !following}
 	<div class="flex flex-col gap-5">
 		<CodeBranchCard {projectId} {dossier} {canEdit} {members} />

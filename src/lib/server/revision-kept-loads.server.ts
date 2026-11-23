@@ -1,3 +1,5 @@
+import { cloneData } from './clone-data.server';
+
 /**
  * A section's load, parsed once per revision of the section. The Evolution
  * document of a project carried through several change requests weighs
@@ -25,13 +27,13 @@ export function keepPerRevision<V, L extends ProjectLoader<V>>(loader: L, revisi
 		// The revision first: a write landing during the load is kept under the older revision, so the next read loads again.
 		const revision = await revisionOf(projectId).catch(() => null);
 		const hit = held.get(projectId);
-		if (revision !== null && hit && hit.revision === revision) return structuredClone(hit.value);
+		if (revision !== null && hit && hit.revision === revision) return cloneData(hit.value);
 		const value = await load(projectId);
 		if (revision === null) return value;
 		held.delete(projectId);
 		held.set(projectId, { revision, value });
 		if (held.size > HELD) held.delete(held.keys().next().value!);
-		return structuredClone(value);
+		return cloneData(value);
 	}) as L['execute'];
 	return loader;
 }

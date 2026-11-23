@@ -129,6 +129,9 @@ const ROLE_CHECK_UNAVAILABLE_MESSAGE =
 const READER_MESSAGE =
 	'MCP access is reserved to designers and above in this workspace. As a viewer, you read your projects in the app.';
 
+const OUTSIDE_MESSAGE =
+	'Your account belongs to no workspace on this installation yet. Ask an owner or admin for an invitation, open its link and press Accept & join, then connect your AI client again.';
+
 /**
  * Browser authorization is role-gated before proxying. Opaque bearer grants
  * are checked inside the MCP gateway through the platform session endpoint.
@@ -154,7 +157,7 @@ async function refuseReader(event: RequestEvent): Promise<Response | null> {
 				headers: { 'content-type': 'text/plain; charset=utf-8', 'retry-after': '5' }
 			});
 		}
-		return new Response(READER_MESSAGE, {
+		return new Response(verdict === 'outside' ? OUTSIDE_MESSAGE : READER_MESSAGE, {
 			status: 403,
 			headers: { 'content-type': 'text/plain; charset=utf-8' }
 		});

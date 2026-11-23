@@ -30,6 +30,9 @@ export class NoProjectMirror implements ProjectMirrorPort {
 	async propagateProject(): Promise<void> {}
 	async propagateFeature(): Promise<void> {}
 	async deleteProject(): Promise<void> {}
+	canPushNow(): boolean {
+		return false;
+	}
 }
 
 export class NoLicenceSync implements BackLicenceSyncPort {

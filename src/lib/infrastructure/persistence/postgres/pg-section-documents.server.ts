@@ -43,6 +43,15 @@ export class PgSectionDocumentStore implements SectionDocumentStorePort {
 		return new Map(rows.map((row) => [row.section, row.revision]));
 	}
 
+	async recentlyWritten(limit: number): Promise<readonly string[]> {
+		const { rows } = await pgQuery<{ project_id: string }>(
+			`SELECT project_id FROM project_section_documents
+			 GROUP BY project_id ORDER BY max(updated_at) DESC LIMIT $1`,
+			[limit]
+		);
+		return rows.map((row) => row.project_id);
+	}
+
 	async save(
 		projectId: string,
 		section: string,

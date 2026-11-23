@@ -5,6 +5,14 @@ import { specVersionOf } from '../specification/spec-version-memo';
 import type { LoadFeaturesDraftUseCase } from '../specification/load-features-draft';
 
 /**
+ * Whether code is linked: at least one feature has something located in the
+ * code (state health.codeLinked). A project specified from documentation or a
+ * design alone has none.
+ */
+export const codeIsLinked = (coverage: Readonly<Record<string, { readonly found: number }>>): boolean =>
+	Object.values(coverage).some((row) => row.found > 0);
+
+/**
  * One leaf feature's code-implementation coverage, folded from the engine's
  * implementation-status sidecar (the record `sync_implementation_index` /
  * `report_implementation_status` pushed). `found`/`expected` count the spec

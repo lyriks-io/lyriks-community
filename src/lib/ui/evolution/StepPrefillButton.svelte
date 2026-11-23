@@ -30,7 +30,7 @@
 	const blocked = $derived(sections.length === 0 || elsewhere);
 	const tip = $derived(
 		[
-			`Prefill the whole ${label} with my AI: section by section, Lyriks suggests answers and asks what it misses, then moves on to the next section.`,
+			`Prefill the whole ${label} with my AI: section by section, your AI writes the answers and asks what it misses, then moves on to the next section.`,
 			run?.state === 'done' ? `Your AI prefilled the ${label}: click to prefill it again.` : null,
 			sections.length === 0 ? NOTHING_TO_PREFILL : elsewhere ? ANOTHER_STEP_PREFILL : refusal
 		]
@@ -57,7 +57,7 @@
 			seen = key;
 			if (current?.state === 'running') void placeOnPage([current.sectionId]).then((el) => el && markPlace(el));
 			else if (current?.state === 'done')
-				pushToast({ level: 'success', message: `Your AI prefilled the ${label}: accept or reject its suggestions, then validate each section` });
+				pushToast({ level: 'success', message: `Your AI prefilled the ${label}: read what it wrote, then validate each section` });
 		});
 	});
 </script>

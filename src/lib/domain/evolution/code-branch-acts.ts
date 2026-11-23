@@ -37,6 +37,19 @@ export function deploymentBranchAllowed(ctx: ActContext, branch: string): Guarde
 	);
 }
 
+/**
+ * An AI pre-fills the card Code on its branch with the branch it read from git
+ * (action db883b80): never over a branch a person named, and never naming one.
+ */
+export function deploymentBranchSuggestionAllowed(ctx: ActContext, named: string, branch: string, why: string): Guarded {
+	return firstRefusal(
+		guard(ctx.actor.role === 'viewer', 'forbidden', 'A suggestion is written on the project, so only an AI acting for someone who may write it sends one.'),
+		guard(!!named, 'The project already names its deployment branch: a person changes it on the card.', "A branch a person named is the project's decision: an AI never suggests over it."),
+		deploymentBranchRefusal(branch),
+		guard(!why.trim(), 'Say what in git the branch was read from.', 'The card shows why the branch is suggested.')
+	);
+}
+
 /** The AI reports where the request's code stands at an index sync (ac-evo-branch-state, ac-evo-branch-derived). */
 export function reportCodeStateAct(ctx: ActContext, request: EvolutionRequest, deploymentBranch: string, expectedBranch: string, report: CodeReport): ActOutcome {
 	const allowed = codeReportRefusal(request, deploymentBranch, expectedBranch, report);

@@ -579,22 +579,31 @@ export function automaticLinks(
 	declined: ReadonlySet<string> = new Set()
 ): ProposedLink[] {
 	const carried = new Set(links.values());
+	// Each free state read into words once, filed under the words of its own name: a
+	// field then meets only the states named like it. Reading every state's path again
+	// for every field took over a second of the server's thread after each write to
+	// the behaviour of a large project (hundreds of fields, thousands of states).
+	const byName = new Map<string, { readonly state: BehaviourState; readonly rest: ReadonlySet<string> }[]>();
+	for (const state of states) {
+		if (carried.has(state.path)) continue;
+		const segments = state.path.split('.');
+		const name = wordsKey(tokens(segments.at(-1) ?? ''));
+		const filed = byName.get(name) ?? [];
+		filed.push({ state, rest: tokens(segments.slice(0, -1).join('.')) });
+		byName.set(name, filed);
+	}
 	const found: ProposedLink[] = [];
 	for (const entity of draft.entities) {
-		const table = tokens(entity.name);
-		if (table.size === 0) continue;
+		const table = [...tokens(entity.name)];
+		if (table.length === 0) continue;
 		for (const field of rootFieldsOfEntity(draft, entity.id)) {
 			if (field.isId || links.has(field.id) || declined.has(field.id)) continue;
 			const own = tokens(field.name);
 			if (own.size === 0) continue;
-			const fits = states.filter((state) => {
-				if (carried.has(state.path) || incompatibility(field, state) !== null) return false;
-				const segments = state.path.split('.');
-				const last = tokens(segments.at(-1) ?? '');
-				const rest = tokens(segments.slice(0, -1).join('.'));
-				return sameSet(last, own) && [...table].every((t) => rest.has(t));
-			});
-			if (fits.length === 1) found.push({ fieldId: field.id, statePath: fits[0]!.path });
+			const fits = (byName.get(wordsKey(own)) ?? []).filter(
+				({ state, rest }) => incompatibility(field, state) === null && table.every((t) => rest.has(t))
+			);
+			if (fits.length === 1) found.push({ fieldId: field.id, statePath: fits[0]!.state.path });
 		}
 	}
 	const taken = new Map<string, number>();
@@ -602,7 +611,8 @@ export function automaticLinks(
 	return found.filter((link) => taken.get(link.statePath) === 1);
 }
 
-const sameSet = (a: ReadonlySet<string>, b: ReadonlySet<string>) => a.size === b.size && [...a].every((t) => b.has(t));
+/** Two sets of words are the same set exactly when their keys are equal. */
+const wordsKey = (words: ReadonlySet<string>) => [...words].sort().join('\u0000');
 
 /**
  * The states an AI client weighs to link a field, best first: of a fitting kind

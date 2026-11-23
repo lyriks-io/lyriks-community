@@ -49,6 +49,7 @@ export function issueAccessToken(
 }
 
 export function resolveAccessToken(token: string): Readonly<Grant> | null {
+  if (token.startsWith(TICKET_PREFIX)) return resolveTicket(token)
   if (!/^lyriks_mcp_[A-Za-z0-9_-]{43}$/.test(token)) return null
   const key = digest(token)
   const grant = grants.get(key)
@@ -60,7 +61,86 @@ export function resolveAccessToken(token: string): Readonly<Grant> | null {
 }
 
 export function revokeAccessToken(token: string): void {
+  if (token.startsWith(TICKET_PREFIX)) {
+    const grant = openTicket(token)
+    pruneRevokedTickets()
+    if (grant) revokedTickets.set(digest(token), grant.expiresAt)
+    return
+  }
   grants.delete(digest(token))
+}
+
+// ── Tickets of the commands an AI runs ───────────────────────────────────────
+// The waiting command of a live session (session-ticket.ts) and the sync command
+// of an index (index-ticket.ts) hold their ticket for twelve hours. Kept in the
+// map above like an access token, a ticket died with the gateway: every deploy
+// restarts it, the command then got 401, and the AI opened a second session
+// beside the first or asked for a new command (criteria d3916c06, 6b918030).
+// A ticket is self-contained instead, like a refresh token: its grant, encrypted
+// and authenticated (AES-256-GCM) under a key of its own derived from the secret
+// the gateway shares with the platform. It is exactly as narrow as before: every
+// call still checks the platform session it carries (auth.ts), so signing out
+// cuts it, its scope and what it is bound to (the one live session, the one
+// project) travel inside the authenticated part, and the scope guards still
+// refuse anything else. A revoked ticket is remembered until it expires; across
+// a restart, the session check alone still refuses one whose sign-in is over.
+const TICKET_PREFIX = 'lyriks_mcp_ticket_'
+const revokedTickets = new Map<string, number>()
+const MAX_REVOKED_TICKETS = 10_000
+
+function ticketKey(): Buffer {
+  return Buffer.from(hkdfSync('sha256', process.env.JWT_SECRET ?? 'dev-secret', '', 'lyriks-mcp-session-ticket', 32))
+}
+
+function pruneRevokedTickets(): void {
+  for (const [key, expiresAt] of revokedTickets) if (expiresAt <= Date.now()) revokedTickets.delete(key)
+  while (revokedTickets.size >= MAX_REVOKED_TICKETS) revokedTickets.delete(revokedTickets.keys().next().value!)
+}
+
+/** What a ticket is bound to: the live session it waits in, or the project whose index it sends. */
+type TicketBinding = { scope: 'session-wait'; sessionId: string } | { scope: 'index-sync'; projectId: string }
+
+/** A ticket for one command, for `ttlSeconds`, backed by `session` and bound as `binding` says. */
+export function issueTicket(session: string, subject: string, clientId: string, binding: TicketBinding, ttlSeconds: number): string {
+  const iv = randomBytes(12)
+  const cipher = createCipheriv('aes-256-gcm', ticketKey(), iv)
+  const bound = binding.scope === 'session-wait' ? { i: binding.sessionId } : { p: binding.projectId }
+  const claims = JSON.stringify({ s: session, u: subject, c: clientId, k: binding.scope, ...bound, e: Date.now() + ttlSeconds * 1000 })
+  const body = Buffer.concat([cipher.update(claims, 'utf8'), cipher.final()])
+  return TICKET_PREFIX + Buffer.concat([iv, cipher.getAuthTag(), body]).toString('base64url')
+}
+
+/** A ticket that only waits in one live session, for `ttlSeconds`, backed by `session`. */
+export function issueSessionWaitTicket(session: string, subject: string, clientId: string, sessionId: string, ttlSeconds: number): string {
+  return issueTicket(session, subject, clientId, { scope: 'session-wait', sessionId }, ttlSeconds)
+}
+
+const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.length > 0
+
+function openTicket(token: string): Grant | null {
+  if (!token.startsWith(TICKET_PREFIX) || token.length > 8192) return null
+  try {
+    const raw = Buffer.from(token.slice(TICKET_PREFIX.length), 'base64url')
+    if (raw.length < 29) return null
+    const decipher = createDecipheriv('aes-256-gcm', ticketKey(), raw.subarray(0, 12))
+    decipher.setAuthTag(raw.subarray(12, 28))
+    const claims = JSON.parse(Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString('utf8'))
+    if (typeof claims.s !== 'string' || typeof claims.u !== 'string' || typeof claims.c !== 'string' || typeof claims.e !== 'number') return null
+    const grant = { session: claims.s, subject: claims.u, clientId: claims.c, expiresAt: claims.e }
+    // A ticket always carries one narrow scope and what it is bound to; anything else opens nothing.
+    if (claims.k === 'session-wait' && nonEmpty(claims.i)) return { ...grant, scope: 'session-wait', sessionId: claims.i }
+    if (claims.k === 'index-sync' && nonEmpty(claims.p)) return { ...grant, scope: 'index-sync', projectId: claims.p }
+    return null
+  } catch {
+    return null
+  }
+}
+
+function resolveTicket(token: string): Readonly<Grant> | null {
+  const grant = openTicket(token)
+  if (!grant || grant.expiresAt <= Date.now()) return null
+  const revokedUntil = revokedTickets.get(digest(token))
+  return revokedUntil !== undefined && revokedUntil > Date.now() ? null : grant
 }
 
 // ── Refresh tokens ───────────────────────────────────────────────────────────

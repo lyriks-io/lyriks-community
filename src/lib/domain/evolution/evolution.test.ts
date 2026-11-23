@@ -23,7 +23,6 @@ import {
 	canRecord,
 	canRefuseProposal,
 	canRemove,
-	canRewordProposal,
 	canRule,
 	canRunCheck,
 	canSaveField,
@@ -727,11 +726,6 @@ describe('the LLM completion', () => {
 			canonicalPath: 'x'
 		});
 		expect(canAcceptProposal(person, p).ok).toBe(false);
-	});
-
-	it('rewords only an undecided proposal', () => {
-		expect(canRewordProposal(createProposal({ decision: 'pending' })).ok).toBe(true);
-		expect(canRewordProposal(createProposal({ decision: 'accepted' })).ok).toBe(false);
 	});
 
 	it('lets no AI client refuse a proposal either', () => {

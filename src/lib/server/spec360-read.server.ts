@@ -35,6 +35,7 @@ import { glossaryEntries, type NamedElement, type ProsePlace } from '$applicatio
 import { text } from '$application/spec360/labels';
 import { noticedPoints } from '$domain/retrospec';
 import { readBehavior } from './behavior-read.server';
+import { readOnRevision } from './read-on-revision.server';
 
 /**
  * The reads behind the Specification 360°: one function per sub-page, each
@@ -45,18 +46,37 @@ import { readBehavior } from './behavior-read.server';
 
 /** What every sub-page shares: the product's name, the shape of the feature tree, the latest baseline. */
 export async function readSpecFrame(services: AppServices, projectId: string) {
-	const [identity, features, baselines] = await Promise.all([
+	const [identity, features, published] = await Promise.all([
 		services.loadFoundationDraft.loadIdentity(projectId),
 		services.loadFeaturesDraft.execute(projectId),
-		services.loadBaselinesDraft.execute(projectId).catch(() => null)
+		latestBaseline(services, projectId)
 	]);
-	const latest = [...(baselines?.baselines ?? [])].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
 	return {
 		productName: text(identity.productName) || 'Untitled project',
 		outline: specOutline(features),
 		/** A baseline is a frozen, published version of the spec: the latest one, if any. */
-		published: latest ? { name: text(latest.name), at: latest.createdAt } : null
+		published
 	};
+}
+
+/**
+ * The latest baseline's name and date, read once per revision of the baselines:
+ * every page of the Specification 360° shows it, and the baselines carry the
+ * frozen copies of the spec they publish (11 MB on the Lyriks project).
+ */
+function latestBaseline(services: AppServices, projectId: string): Promise<{ name: string; at: string } | null> {
+	return readOnRevision(
+		services,
+		projectId,
+		'baselines',
+		async () => {
+			// A failed read is not kept (it rejects): the next page asks again.
+			const baselines = await services.loadBaselinesDraft.execute(projectId);
+			const latest = [...baselines.baselines].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+			return latest ? { name: text(latest.name), at: latest.createdAt } : null;
+		},
+		'latest'
+	).catch(() => null);
 }
 
 /** Actions and rules counted the way the pages list them: the actions of the tree's own features, every kernel rule. */

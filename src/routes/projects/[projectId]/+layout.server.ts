@@ -31,15 +31,14 @@ export const load: LayoutServerLoad = async (event) => {
 	await requireProjectAccess(event, params.projectId, 'read');
 	// The app bar keeps pointing at this project from Home and Settings.
 	rememberCurrentProject(event.cookies, params.projectId);
-	// Whether the caller may author here: designer and above in the workspace that
-	// owns the project, never the switcher's. The behavior editor is offered to
-	// writers alone; the server refuses a reader, this keeps the tab honest.
-	const canWrite = await timedPart('project:canWrite', callerCanWrite(event, params.projectId));
 	const services = event.locals.services;
 
 	// Read once, shared: the language reading checks its prose without a second read.
 	const featuresRead = services.loadFeaturesDraft.execute(params.projectId);
+	// The caller's two role reads go to the Back beside the sections, not one after the other.
 	const [
+		canWrite,
+		projectRole,
 		draft,
 		coherence,
 		team,
@@ -49,6 +48,15 @@ export const load: LayoutServerLoad = async (event) => {
 		documentsRevision,
 		specLanguage
 	] = await Promise.all([
+			// Whether the caller may author here: designer and above in the workspace that
+			// owns the project, never the switcher's. The behavior editor is offered to
+			// writers alone; the server refuses a reader, this keeps the tab honest.
+			timedPart('project:canWrite', callerCanWrite(event, params.projectId)),
+			// Whether the reader may change the project's options, so the left nav shows
+			// Settings to them alone (ac-proj-settings): their role in the workspace that
+			// owns the project, never the one the switcher shows (no workspace in the
+			// open-source build), or their ownership of the project.
+			timedPart('project:role', callerRoleInProjectWorkspace(services, params.projectId)),
 			timedPart('project:identity', services.loadFoundationDraft.loadIdentity(params.projectId)),
 			timedPart('project:coherence', services.loadCoherenceDraft.execute(params.projectId)),
 			timedPart('project:team', services.loadTeam.execute(params.projectId)),
@@ -62,6 +70,10 @@ export const load: LayoutServerLoad = async (event) => {
 			// it. Its prose is read from the features loaded above, never twice.
 			services.loadSpecLanguage.execute(params.projectId, featuresRead)
 		]);
+
+	// A copy of this project Back has not taken yet goes now, with the sign-in of a
+	// person who writes here: Back answers a signed-in person only (criterion b7048daa).
+	if (canWrite) services.catchUpBackSync(params.projectId);
 
 	// The governed vocabulary, exposed to every capability page so the in-context
 	// Term Highlighting layer can mark governed words with a hover definition.
@@ -100,11 +112,6 @@ export const load: LayoutServerLoad = async (event) => {
 		};
 	});
 
-	// Whether the reader may change the project's options, so the left nav shows
-	// Settings to them alone (ac-proj-settings): their role in the workspace that
-	// owns the project, never the one the switcher shows (no workspace in the
-	// open-source build), or their ownership of the project.
-	const projectRole = await timedPart('project:role', callerRoleInProjectWorkspace(services, params.projectId));
 	const administers = administersProject(projectRole, team, services.currentSession().email);
 
 	const featureMaturity = productCoherence.featureMaturity ?? {};

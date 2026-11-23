@@ -87,16 +87,40 @@
 	// ── Password (Enterprise: the credential lives in lyriks-back) ───────────────
 	let pwCurrent = $state('');
 	let pwNew = $state('');
+	let pwConfirm = $state('');
 	let pwStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
 	let pwError = $state('');
-	async function changePassword() {
+
+	/**
+	 * Hand the new password to the browser's password manager. The form is sent
+	 * by fetch, which a browser cannot always tell from a failed attempt; where it
+	 * can be asked (the Credential Management API), it is asked right away, under
+	 * the account's address. Elsewhere the form's markup (a hidden username, the
+	 * new-password fields) is what the browser reads.
+	 */
+	async function offerToSavePassword(email: string | undefined, password: string): Promise<void> {
+		const ctor = (globalThis as { PasswordCredential?: new (data: { id: string; password: string }) => Credential })
+			.PasswordCredential;
+		if (!email || !ctor || !navigator.credentials?.store) return;
+		await navigator.credentials.store(new ctor({ id: email, password })).catch(() => undefined);
+	}
+
+	async function changePassword(event?: SubmitEvent) {
+		event?.preventDefault();
+		// Typed twice: a slip in the new password would lock the person out of
+		// their own account (rule 8f7bbfea), so nothing is sent until both match.
+		if (pwConfirm !== pwNew) {
+			pwError = 'The two passwords do not match.';
+			pwStatus = 'error';
+			return;
+		}
 		pwStatus = 'saving';
 		pwError = '';
 		try {
 			const res = await fetch('/api/account/password', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ currentPassword: pwCurrent, newPassword: pwNew })
+				body: JSON.stringify({ currentPassword: pwCurrent, newPassword: pwNew, confirmPassword: pwConfirm })
 			});
 			if (!res.ok) {
 				// Show what was actually wrong: "current password is incorrect" and
@@ -109,8 +133,10 @@
 				pwStatus = 'error';
 				return;
 			}
+			void offerToSavePassword(account?.email ?? undefined, pwNew);
 			pwCurrent = '';
 			pwNew = '';
+			pwConfirm = '';
 			pwStatus = 'saved';
 			if (pwWall) {
 				pwWall = false;
@@ -624,7 +650,11 @@
 								: 'mt-4 space-y-2 border-t border-line pt-4'}
 						>
 							<p class="font-evo-mono text-xs tracking-[0.08em] text-ink-3 uppercase">Password</p>
-							<div class="flex flex-wrap items-end gap-2">
+							<!-- A real form, so a password manager reads it as one: the address
+							     travels hidden as the account's username, the current password and
+							     both new fields are marked for what they are (criterion 57feb524). -->
+							<form class="flex flex-wrap items-end gap-2" onsubmit={changePassword}>
+								<input type="email" name="username" autocomplete="username" value={account?.email ?? ''} readonly hidden />
 								<label class="sr-only" for="pw-current">Current password</label>
 								<input
 									id="pw-current"
@@ -643,15 +673,23 @@
 									placeholder="New password"
 									class="min-w-48 flex-1 border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue"
 								/>
+								<label class="sr-only" for="pw-confirm">Confirm new password</label>
+								<input
+									id="pw-confirm"
+									type="password"
+									autocomplete="new-password"
+									bind:value={pwConfirm}
+									placeholder="Confirm new password"
+									class="min-w-48 flex-1 border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue"
+								/>
 								<button
-									type="button"
-									onclick={changePassword}
-									disabled={pwStatus === 'saving' || !pwCurrent || !pwNew}
+									type="submit"
+									disabled={pwStatus === 'saving' || !pwCurrent || !pwNew || !pwConfirm}
 									class="pressable border-[1.5px] border-ink bg-brand-500 px-4 py-2 text-xs font-bold tracking-[0.07em] text-paper uppercase disabled:opacity-60"
 								>
 									{pwStatus === 'saving' ? 'Changing…' : 'Change password'}
 								</button>
-							</div>
+							</form>
 							{#if pwStatus === 'saved'}
 								<p class="text-xs font-medium text-green-ink">Password changed.</p>
 							{:else if pwStatus === 'error'}

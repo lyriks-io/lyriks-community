@@ -56,6 +56,12 @@ export interface SectionDocumentStorePort {
 	 * revision reader falls back to one `currentRevision` per section.
 	 */
 	currentRevisions?(projectId: string): Promise<ReadonlyMap<string, number>>;
+	/**
+	 * The projects whose sections were written last, most recent first, at most
+	 * `limit`: the ones worth reading ahead after a restart. Optional: an
+	 * adapter that cannot tell omits it.
+	 */
+	recentlyWritten?(limit: number): Promise<readonly string[]>;
 }
 
 /** Options a versioned caller (the autosave route) passes through to `save`. */

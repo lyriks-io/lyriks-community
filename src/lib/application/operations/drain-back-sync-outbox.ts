@@ -24,13 +24,19 @@ const DRAIN_BATCH_LIMIT = 25;
 export class DrainBackSyncOutboxUseCase {
 	constructor(
 		private readonly outbox: BackSyncOutboxPort,
-		private readonly pushEnvelope: EnvelopePusher
+		private readonly pushEnvelope: EnvelopePusher,
+		/**
+		 * Whether Back could take a push now. Where it answers a signed-in person
+		 * only, a pass with nobody signed in would fail every row and count it
+		 * (criterion b7048daa): it does not run.
+		 */
+		private readonly canPushNow: () => boolean = () => true
 	) {}
 
 	#inFlight = false;
 
 	async execute(): Promise<void> {
-		if (this.#inFlight) return;
+		if (this.#inFlight || !this.canPushNow()) return;
 		this.#inFlight = true;
 		try {
 			const due = await this.outbox.due(DRAIN_BATCH_LIMIT);
@@ -45,6 +51,18 @@ export class DrainBackSyncOutboxUseCase {
 		} finally {
 			this.#inFlight = false;
 		}
+	}
+
+	/**
+	 * One project, under the person whose request runs it: a save sends the copy
+	 * of the project saved and never another's, and a page of a project whose
+	 * copy still waits sends it with the sign-in of the person who writes there
+	 * (criterion b7048daa). Nothing when the copy is up to date. Never rejects.
+	 */
+	async executeFor(projectId: string): Promise<void> {
+		if (!this.canPushNow()) return;
+		const queued = await this.outbox.isQueued(projectId).catch(() => false);
+		if (queued) await this.#push(projectId);
 	}
 
 	/** One project: push, then settle the outbox row. Never rejects. */

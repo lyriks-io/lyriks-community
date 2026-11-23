@@ -1,3 +1,4 @@
+import { cloneData } from './clone-data.server';
 import { subscribeSectionChanges } from './sync-bus.server';
 
 /**
@@ -31,7 +32,7 @@ export function coalesceLoads<L extends ProjectLoader>(loader: L): L {
 			running.set(projectId, started);
 			run = started;
 		}
-		return run.then((draft) => structuredClone(draft));
+		return run.then((draft) => cloneData(draft));
 	}) as L['execute'];
 	return loader;
 }

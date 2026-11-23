@@ -1,4 +1,4 @@
-import { ALLOW, firstRefusal, guard, type Guarded } from './guard';
+import { ALLOW, firstRefusal, guard, refuse, type Guarded } from './guard';
 
 /**
  * The code of a request on a branch of its own, from its start to its merge
@@ -239,6 +239,27 @@ export function bringsCode(request: ChangeCarrier): boolean {
 	if ((request.findingDrafts?.length ?? 0) === 0) return true;
 	const drafted = [request.drafts, request.dataDrafts, request.sectionDrafts, request.ruleDrafts].some((list) => (list?.length ?? 0) > 0);
 	return drafted || (request.proposals ?? []).some((p) => p.acceptedAt !== null && p.canonicalSection !== 'request');
+}
+
+/** What the freeze reads of the project: whether its code is linked, and the branch it deploys from. */
+export interface FreezeBranchHold {
+	readonly codeLinked: boolean;
+	readonly deploymentBranch: string;
+}
+
+/**
+ * Once the project's code is linked, a change goes through a commit: its code
+ * is written on a branch derived from the deployment branch and goes live by
+ * its merge, so the freeze waits until the project names that branch (rules
+ * 148c6e2a, ca4c5e50), and a waiver never stands in for it (rule 7aa5cb55).
+ * A project with no code linked, or a request that brings none, freezes as before.
+ */
+export function freezeBranchRefusal(request: ChangeCarrier, hold: FreezeBranchHold | undefined, waived = false): Guarded {
+	if (!hold?.codeLinked || hold.deploymentBranch || !bringsCode(request)) return ALLOW;
+	return refuse(
+		waived ? 'A waiver does not replace the deployment branch: name it before the build.' : 'Name the deployment branch before the build: this change goes through a commit on a branch of its own.',
+		'Once the project\'s code is linked, every change is written on a branch derived from the deployment branch and goes live by its merge: name it on the card Code on its branch.'
+	);
 }
 
 /**

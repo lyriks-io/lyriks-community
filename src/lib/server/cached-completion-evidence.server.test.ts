@@ -168,4 +168,24 @@ describe('CachedCompletionEvidence', () => {
 		}
 		expect(spy).toHaveBeenCalledTimes(15);
 	});
+
+	it('keeps the reading through a change request click and reports the model as it is now', async () => {
+		// The key reads the sections the evidence is read from; the reported model reads every section.
+		const inputs = revisions('inputs-1');
+		const whole = revisions('whole-1');
+		const spy = vi.fn(async () => evidence({ currentModelFingerprint: 'whole-1' }));
+		const cache = new CachedCompletionEvidence({ execute: spy }, inputs.port, () => 'kernel-1', () => 0, whole.port);
+
+		await cache.execute('project-1', scope());
+		whole.set('whole-2'); // an act in Evolution: the change request's document moved, nothing the evidence reads did
+		const after = await cache.execute('project-1', scope());
+
+		expect(spy).toHaveBeenCalledTimes(1);
+		// An audit taken before the click no longer matches, exactly as when the evidence was rebuilt.
+		expect(after.currentModelFingerprint).toBe('whole-2');
+
+		inputs.set('inputs-2'); // a section the evidence reads moved
+		await cache.execute('project-1', scope());
+		expect(spy).toHaveBeenCalledTimes(2);
+	});
 });

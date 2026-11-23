@@ -445,10 +445,6 @@
 			}}
 			{ask}
 			onpublish={live ? (messageId) => live.publish(messageId) : null}
-			ondecide={canEdit
-				? (messageId, decision) =>
-						send([{ op: 'decide_thread_suggestion', ...target(ownerOf(messageId)), messageId, decision }], decision === 'accept' ? 'the suggestion accepted' : 'the suggestion refused')
-				: null}
 			onrule={(messageId, ruling) =>
 				send(
 					[{ op: ruling === 'validated' ? 'validate_topic' : ruling === 'resolved' ? 'resolve_topic' : 'reopen_topic', ...target(ownerOf(messageId)), messageId }],

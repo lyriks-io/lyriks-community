@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { brandExportJson, brandExportMarkdown, coerceBrand, defaultBrand } from '$domain/experience';
+import { coerceBrand, defaultBrand } from '$domain/experience';
 
 const typographyOf = (typography: unknown) => coerceBrand({ typography }).typography;
 
@@ -56,26 +56,6 @@ describe('brand typography roles', () => {
 		expect(roles.map((role) => role.name)).toEqual(['wordmark', 'display', '']);
 		expect(new Set(roles.map((role) => role.id)).size).toBe(roles.length);
 		expect(typographyOf({ roles: 'nonsense' }).roles).toEqual([]);
-	});
-
-	it('exports named roles as tokens and in the brandbook, and skips unnamed ones', () => {
-		const brand = coerceBrand({
-			typography: {
-				roles: [
-					{ id: 'a', name: 'display', stack: '"Playfair Display"', fallback: 'serif', usage: 'Titles only' },
-					{ id: 'b', name: '', stack: '"Nameless"' }
-				]
-			}
-		});
-
-		const tokens = brandExportJson(brand) as { tokens?: { typography?: { roles?: unknown } } };
-		const exported = JSON.stringify(tokens);
-		expect(exported).toContain('"display":{"stack":"\\"Playfair Display\\"","fallback":"serif","usage":"Titles only"}');
-		expect(exported).not.toContain('Nameless');
-
-		const markdown = brandExportMarkdown(brand);
-		expect(markdown).toContain('- **display.** "Playfair Display", fallback: serif (Titles only)');
-		expect(markdown).not.toContain('Nameless');
 	});
 });
 

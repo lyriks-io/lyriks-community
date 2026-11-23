@@ -2,7 +2,7 @@ import { proofImpactHeadline } from '$lib/domain/evolution/proof-impact';
 import { boardOrderOf, crossEvolutionsOf, landingOrderReading } from './evolution-cross.server';
 import type { SpecLanguage } from '$domain/language';
 import type { AppServices } from '$composition/container.server';
-import { codeReadingOf, deferredCarriers, deferredSuggestions, freezeHeldOf, withBuildCodeGate } from '$domain/evolution';
+import { codeReadingOf, deferredCarriers, deferredSuggestions, freezeBranchRefusal, freezeHeldOf, withBuildCodeGate, type FreezeBranchHold } from '$domain/evolution';
 import { correctionReading } from '$domain/evolution';
 import { assistantAvailable } from '$domain/settings';
 import {
@@ -146,7 +146,7 @@ import { resolveWalkTarget } from '$application/analysis/simulate-behavior';
 import { leafFeatures, type ProjectFeaturesDraft } from '$domain/features';
 import type { ProjectDataDraft } from '$domain/data';
 import type { GlossaryTerm } from '$domain/glossary';
-import type { FeatureImplementationCoverage } from '$application/use-cases';
+import { codeIsLinked, type FeatureImplementationCoverage } from '$application/use-cases';
 import { boundPart, boundSummary } from './evolution-summary-bound';
 
 /** One member of the workspace, as the dossier reads them. */
@@ -887,7 +887,8 @@ function fieldVersionsByKey(request: EvolutionRequest, { excerpt = true }: { exc
 				byKind: v.byKind,
 				source: v.source,
 				at: v.at,
-				validatedBy: request.fieldValidations.filter((x) => x.versionId === v.id).map((x) => x.by)
+				// A refusal never stands behind a version (criterion 6936f86a reads the last validated one).
+				validatedBy: request.fieldValidations.filter((x) => x.versionId === v.id && x.verdict !== 'refused').map((x) => x.by)
 			}))
 		])
 	);
@@ -1795,6 +1796,20 @@ export function requestPart(
  * feature and paged, so this answer is the same size whether the request
  * touches one feature or twenty.
  */
+/** The branch an AI read from git while the project names none, with whose AI suggested it (action db883b80); null otherwise. */
+function branchSuggestionOf(view: Pick<EvolutionView, 'draft' | 'members'>) {
+	const suggestion = view.draft.deploymentBranch ? undefined : view.draft.suggestedDeploymentBranch;
+	if (!suggestion) return null;
+	const name = view.members.find((m) => m.id === suggestion.by)?.name ?? suggestion.by;
+	return { branch: suggestion.branch, why: suggestion.why, by: `${name}'s AI`, at: suggestion.at };
+}
+
+/** What the freeze reads of the project: its code linked or not, and the branch it deploys from (rule 148c6e2a). */
+export const freezeBranchHoldOf = (view: Pick<EvolutionView, 'coverage' | 'draft'>): FreezeBranchHold => ({
+	codeLinked: codeIsLinked(view.coverage),
+	deploymentBranch: view.draft.deploymentBranch ?? ''
+});
+
 /** Absent while no evolution carries a line of the request, so a dossier keeps its size. */
 function carriersOf(view: EvolutionView, request: EvolutionRequest): { deferredCarriers?: ReturnType<typeof deferredCarriers> } {
 	const carriers = deferredCarriers(view.draft.requests, request);
@@ -1808,7 +1823,7 @@ export function requestSummary(view: EvolutionView, request: EvolutionRequest, a
 	const coherence = readCoherence(request);
 	// The Build's gate reads its branch too: Start acceptance testing says what holds it (EVO-011, criterion 3cf58130).
 	const gate = withBuildCodeGate(
-		gateReading(request, maturity.criticalEmptyCount, specificationHoldOf(view, request, specificationActions), concurrentHoldOf(request, view.draft.requests)),
+		gateReading(request, maturity.criticalEmptyCount, specificationHoldOf(view, request, specificationActions), concurrentHoldOf(request, view.draft.requests), freezeBranchHoldOf(view)),
 		request,
 		view.draft.deploymentBranch ?? ''
 	);
@@ -1889,6 +1904,10 @@ export function requestSummary(view: EvolutionView, request: EvolutionRequest, a
 		deployment: request.deployment,
 		// Where its code stands in git, from its branch to its merge; null where the project names no deployment branch (feat-evo-code-branch).
 		code: codeReadingOf(request, requestKeyOf(view.draft.requests, request.id) ?? 'EVO', view.draft.deploymentBranch ?? ''),
+		// The branch an AI read from git, pre-filling the card while the project names none (action db883b80).
+		deploymentBranchSuggestion: branchSuggestionOf(view),
+		// The freeze waits for the deployment branch: Implementation shows the card to name it before the freeze (criterion 5411b88e).
+		branchAwaitedByFreeze: !freezeBranchRefusal(request, freezeBranchHoldOf(view)).ok,
 		// The index entries still held for the change, when there are any: once it is live, a sync resolves them (ac-evo-branch-merge-syncs).
 		...heldEntriesOf(request),
 		// Why, by whom and when it was cancelled, while it is (ac-evo-req-cancel).
@@ -2161,7 +2180,11 @@ export function coachFor(view: EvolutionView, request: EvolutionRequest, specifi
 	const rows = dossierFieldRows(view, request);
 	// The Specification as the step lock reads it: its answers, its journey and the actions read with the graph (ac-evo-form-step-lock).
 	const specification = specificationHoldOf(view, request, specificationActions, rows);
-	const gate = withBuildCodeGate(gateReading(request, maturity.criticalEmptyCount, specification, concurrentHoldOf(request, view.draft.requests)), request, view.draft.deploymentBranch ?? '');
+	const gate = withBuildCodeGate(
+		gateReading(request, maturity.criticalEmptyCount, specification, concurrentHoldOf(request, view.draft.requests), freezeBranchHoldOf(view)),
+		request,
+		view.draft.deploymentBranch ?? ''
+	);
 	const pending = pendingProposals(request).length;
 	const owed = rows.filter((f) => (!f.filled || f.openQuestion) && f.pendingProposalId === null).length;
 	const counts = dockingCounts(dockingOf(view, request));

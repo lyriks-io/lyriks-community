@@ -9,13 +9,16 @@ import { discussionActivity } from '$domain/activity';
 import { retrospecActivity } from '$domain/activity';
 import { teamActivity } from '$domain/activity';
 import { loadRetrospecDocument } from '$application/retrospec/retrospec-store';
+import { RETROSPEC_SECTION } from '$domain/retrospec';
+import { SPEC_DISCUSSIONS_SECTION } from '$lib/shared/section-sync';
 import { readRetrospecEvents, retrospecUnderWay } from './retrospec-status.server';
 import { discussionEvents, openDiscussionCount } from '$domain/discussions';
 import { parseReads, type ActivityReads } from '$domain/activity';
 import { mapLimit } from '$lib/shared/map-limit';
 import { callerWorkspaceScope } from './workspace-scope.server';
 import { callerCanSeeProject } from './project-scope.server';
-import { projectWorkspaceId } from './caller-workspace.server';
+import { pickActiveWorkspace, projectWorkspaceId } from './caller-workspace.server';
+import type { WorkspaceSummary } from '$application/ports';
 
 /**
  * The activity of the projects a reader can see, and what they have read of
@@ -47,14 +50,14 @@ export async function visibleProjects(
  * workspace reads the active one's; a workspace the caller is not in is not read.
  */
 export async function workspaceRoster(
-	services: AppServices,
+	services: Pick<AppServices, 'backLinks' | 'workspaces'>,
 	projects: readonly VisibleProject[],
-	activeWorkspaceId: string | undefined
+	workspaces: readonly WorkspaceSummary[],
+	activeWorkspaceId: string | null
 ): Promise<ActivityMember[]> {
 	try {
-		const workspaces = await services.workspaces.listForCaller();
 		const mine = new Set(workspaces.map((w) => w.id));
-		const active = (activeWorkspaceId && workspaces.find((w) => w.id === activeWorkspaceId)) || workspaces[0];
+		const active = pickActiveWorkspace(workspaces, activeWorkspaceId);
 		const owners = await mapLimit(projects, 8, (p) => projectWorkspaceId(services, p.id));
 		const ids = new Set(owners.map((owner) => owner ?? active?.id).filter((id): id is string => !!id && mine.has(id)));
 		if (ids.size === 0 && active) ids.add(active.id);
@@ -105,6 +108,10 @@ const discussionsCache = new Map<string, { revision: number; read: ProjectDiscus
 
 /** A project's Specification 360° discussions as activity, read once per revision. */
 export async function projectDiscussions(services: AppServices, projectId: string): Promise<ProjectDiscussions> {
+	// The revision alone tells whether anything moved: the bar asks it of every visible project on every page.
+	const revision = await services.sectionDocuments.currentRevision(projectId, SPEC_DISCUSSIONS_SECTION).catch(() => -1);
+	const kept = discussionsCache.get(projectId);
+	if (kept && revision >= 0 && kept.revision === revision) return kept.read;
 	const loaded = await services.loadDiscussions.execute(projectId).catch(() => null);
 	if (!loaded) return { events: [], openCount: 0 };
 	const hit = discussionsCache.get(projectId);
@@ -117,7 +124,7 @@ export async function projectDiscussions(services: AppServices, projectId: strin
 	return read;
 }
 
-const retrospecCache = new Map<string, { key: string; events: ActivityEvent[] }>();
+const retrospecCache = new Map<string, { key: string; events: ActivityEvent[]; underWay: boolean }>();
 /** How long a run under way keeps what its notifications say: its share and the silence of its LLM move without a revision. */
 const UNDER_WAY_MS = 30_000;
 
@@ -128,14 +135,24 @@ const UNDER_WAY_MS = 30_000;
  * has nothing to say.
  */
 export async function projectRetrospecActivity(services: AppServices, projectId: string): Promise<ActivityEvent[]> {
-	const { doc, revision } = await loadRetrospecDocument(services.sectionDocuments, projectId).catch(() => ({ doc: null, revision: -1 }));
-	if (!doc || doc.runs.length === 0) return [];
-	const scopeRevision = await services.sectionDocuments.currentRevision(projectId, 'scope').catch(() => -1);
-	const key = `${revision}:${scopeRevision}${retrospecUnderWay(doc) ? `:${Math.floor(Date.now() / UNDER_WAY_MS)}` : ''}`;
-	const hit = retrospecCache.get(projectId);
-	if (hit && hit.key === key) return hit.events;
+	// The revisions first: the review document is large, and the bar asks it of every visible project on every page.
+	const [revision, scopeRevision] = await Promise.all([
+		services.sectionDocuments.currentRevision(projectId, RETROSPEC_SECTION).catch(() => -1),
+		services.sectionDocuments.currentRevision(projectId, 'scope').catch(() => -1)
+	]);
+	const settled = `${revision}:${scopeRevision}`;
+	const kept = retrospecCache.get(projectId);
+	if (kept && revision >= 0 && !kept.underWay && kept.key === settled) return kept.events;
+	const { doc } = await loadRetrospecDocument(services.sectionDocuments, projectId).catch(() => ({ doc: null }));
+	if (!doc || doc.runs.length === 0) {
+		if (revision >= 0) retrospecCache.set(projectId, { key: settled, events: [], underWay: false });
+		return [];
+	}
+	const underWay = retrospecUnderWay(doc);
+	const key = `${settled}${underWay ? `:${Math.floor(Date.now() / UNDER_WAY_MS)}` : ''}`;
+	if (kept && kept.key === key) return kept.events;
 	const events = retrospecActivity(projectId, await readRetrospecEvents(services, projectId).catch(() => []));
-	retrospecCache.set(projectId, { key, events });
+	retrospecCache.set(projectId, { key, events, underWay });
 	return events;
 }
 

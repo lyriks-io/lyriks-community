@@ -44,6 +44,10 @@ class InMemoryBackSyncOutbox implements BackSyncOutboxPort {
 		const oldest = [...this.rows.values()].map((row) => row.queuedAt).sort()[0] ?? null;
 		return { count: this.rows.size, oldestQueuedAt: oldest };
 	}
+
+	async isQueued(projectId: string): Promise<boolean> {
+		return this.rows.has(projectId);
+	}
 }
 
 function createDrain(pushResults: Record<string, () => Promise<boolean>>) {
@@ -160,5 +164,44 @@ describe('DrainBackSyncOutboxUseCase', () => {
 		await outbox.enqueue('project-1');
 		await drain.execute();
 		expect(await outbox.pending()).toEqual({ count: 0, oldestQueuedAt: null });
+	});
+});
+
+describe('DrainBackSyncOutboxUseCase under a Back that answers a signed-in person only [criterion:b7048daa]', () => {
+	it('does not run a pass with nobody signed in: no push, no attempt counted', async () => {
+		const outbox = new InMemoryBackSyncOutbox();
+		await outbox.enqueue('p1');
+		const push = { execute: vi.fn(async () => true) };
+		await new DrainBackSyncOutboxUseCase(outbox, push, () => false).execute();
+		expect(push.execute).not.toHaveBeenCalled();
+		expect(outbox.rows.get('p1')?.attempts).toBe(0);
+	});
+
+	it("sends the copy of the one project asked, never another project's", async () => {
+		const outbox = new InMemoryBackSyncOutbox();
+		await outbox.enqueue('saved');
+		await outbox.enqueue('other');
+		const push = { execute: vi.fn(async () => true) };
+		await new DrainBackSyncOutboxUseCase(outbox, push, () => true).executeFor('saved');
+		expect(push.execute.mock.calls).toEqual([['saved']]);
+		expect(outbox.rows.has('saved')).toBe(false);
+		expect(outbox.rows.has('other')).toBe(true);
+	});
+
+	it('sends nothing for a project whose copy is up to date, or with nobody signed in', async () => {
+		const outbox = new InMemoryBackSyncOutbox();
+		await outbox.enqueue('waiting');
+		const push = { execute: vi.fn(async () => true) };
+		await new DrainBackSyncOutboxUseCase(outbox, push, () => true).executeFor('up-to-date');
+		await new DrainBackSyncOutboxUseCase(outbox, push, () => false).executeFor('waiting');
+		expect(push.execute).not.toHaveBeenCalled();
+		expect(outbox.rows.has('waiting')).toBe(true);
+	});
+
+	it('counts a failed push of the project asked, as a pass would', async () => {
+		const outbox = new InMemoryBackSyncOutbox();
+		await outbox.enqueue('p1');
+		await new DrainBackSyncOutboxUseCase(outbox, { execute: async () => false }, () => true).executeFor('p1');
+		expect(outbox.rows.get('p1')?.attempts).toBe(1);
 	});
 });

@@ -1,5 +1,5 @@
 import { REQUEST_STAGES, type ProjectEvolutionDraft, type EvolutionRequest, type FieldValidation, type FieldThreadMessage } from '$domain/evolution';
-import { requestKeyOf } from '$domain/evolution';
+import { membersNamedIn, requestKeyOf } from '$domain/evolution';
 import { requestPagePath } from '$domain/evolution';
 import { samePerson, type ActivityActor, type ActivityEvent } from './activity';
 import type { NoticePerson } from './notice';
@@ -63,17 +63,8 @@ function personOf(id: string, kind: string, members: readonly ActivityMember[]):
 	return { id, name: members.find((m) => samePerson(m.id, id))?.name || id };
 }
 
-function mentionedIn(body: string, members: readonly ActivityMember[], author: string): string[] {
-	const text = body.toLowerCase();
-	return members
-		.filter((m) => m.id !== author && m.name.trim())
-		.filter((m) => {
-			const full = m.name.trim().toLowerCase();
-			const first = full.split(/\s+/)[0];
-			return [full, first].some((n) => new RegExp(`(^|\\s)@${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'u').test(text));
-		})
-		.map((m) => m.id);
-}
+/** The members a message names with @ and their full name or first name, its writer aside (rule 5f1ea7b0). */
+const mentionedIn = (body: string, members: readonly ActivityMember[], author: string): string[] => membersNamedIn(body, members, author);
 
 function validationEvents(projectId: string, r: EvolutionRequest, key: string): ActivityEvent[] {
 	const given = (r.fieldValidations ?? [])

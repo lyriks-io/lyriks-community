@@ -23,9 +23,16 @@ export const POST: RequestHandler = async (event) => {
 	const body = (await event.request.json().catch(() => ({}))) as {
 		currentPassword?: string;
 		newPassword?: string;
+		/** The second typing of the new password; the page always sends it, a script may not. */
+		confirmPassword?: string;
 	};
 	if (!body.currentPassword || !body.newPassword) {
 		error(422, 'Both the current and the new password are required.');
+	}
+	// A mistyped new password would lock the person out of their own account
+	// (rule 8f7bbfea): a confirmation that was sent must match.
+	if (body.confirmPassword && body.confirmPassword !== body.newPassword) {
+		error(400, 'The two passwords do not match.');
 	}
 
 	try {

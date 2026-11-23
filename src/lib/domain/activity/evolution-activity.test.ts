@@ -89,6 +89,35 @@ describe('evolution activity', () => {
 		expect(events.find((e) => e.kind === 'comment')?.line).toBe('opened a discussion on “Target situation”');
 	});
 
+	it('tells each member a comment names with @, a full name naming that member alone [criterion:b5833eb5] [rule:5f1ea7b0] [rule:2cf7db65]', () => {
+		const team = [...members, { id: 'dyl@x.io', name: 'Dylan Roy' }];
+		const thread = (body: string, extra: Record<string, unknown> = {}) =>
+			request({
+				fieldThreads: [
+					{
+						id: 't1',
+						key: '00-need.objectives',
+						state: 'open',
+						changeValue: null,
+						changedBy: null,
+						changedAt: null,
+						messages: [{ id: 'm1', author: 'carmen@x.io', authorKind: 'person', body, postedAt: '2026-10-22T12:00:00.000Z', ...extra }]
+					}
+				]
+			});
+		const told = (body: string, extra: Record<string, unknown> = {}) =>
+			evolutionActivity('fac', { requests: [thread(body, extra)] }, team)
+				.filter((e) => e.kind === 'mention')
+				.flatMap((e) => e.to)
+				.sort();
+		expect(told('@Dylan Martin which rounding rule?')).toEqual(['dylan@x.io']);
+		expect(told('@Dylan which rounding rule?')).toEqual(['dyl@x.io', 'dylan@x.io']);
+		expect(told('@Sarah Klein and @Dylan Roy, a look?')).toEqual(['dyl@x.io', 'sarah@x.io']);
+		// The writer is never told of their own message, nor anyone of an exchange private with one's AI.
+		expect(told('@Carmen Roux note to self')).toEqual([]);
+		expect(told('@Sarah Klein a look?', { privateTo: 'carmen@x.io' })).toEqual([]);
+	});
+
 	it('tells a person what their AI finished for them, and nobody else', () => {
 		const r = request({
 			aiClicks: [

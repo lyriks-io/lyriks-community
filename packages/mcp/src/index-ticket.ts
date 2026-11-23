@@ -10,23 +10,25 @@
 // git says of the checkout to the request built on its branch (code-state.mjs:
 // the board read that names the deployment branch, then report_code_state).
 // Any other tool, any other operation, or another project, is refused. Nobody
-// copies or sets a token.
+// copies or sets a token. It outlives a restart of the gateway, since it holds
+// its own grant (criterion 6b918030).
 
 import type { Context, Next } from 'hono'
-import { issueAccessToken } from './access-tokens.js'
+import { issueTicket } from './access-tokens.js'
 import type { HonoVariables } from './types.js'
 
 /** As long as the live session's waiting command: a working day and its evening. */
 export const INDEX_TICKET_TTL_SECONDS = 12 * 3600
 
-/** A ticket for the sync command of one project, with when it stops working; null when no grant can be issued now. */
+/**
+ * A ticket for the sync command of one project, with when it stops working. It
+ * holds its own grant (access-tokens.ts), so a restart of the gateway no longer
+ * cuts it (criterion 6b918030). The null of the older in-memory grant, when too
+ * many were held, is kept in the type for the callers.
+ */
 export function issueIndexTicket(session: string, subject: string, projectId: string): { token: string; expiresAt: string } | null {
-  const token = issueAccessToken(session, subject, 'lyriks-index-sync', {
-    scope: 'index-sync',
-    projectId,
-    ttlSeconds: INDEX_TICKET_TTL_SECONDS,
-  })
-  return token ? { token, expiresAt: new Date(Date.now() + INDEX_TICKET_TTL_SECONDS * 1000).toISOString() } : null
+  const token = issueTicket(session, subject, 'lyriks-index-sync', { scope: 'index-sync', projectId }, INDEX_TICKET_TTL_SECONDS)
+  return { token, expiresAt: new Date(Date.now() + INDEX_TICKET_TTL_SECONDS * 1000).toISOString() }
 }
 
 type Args = Record<string, unknown>

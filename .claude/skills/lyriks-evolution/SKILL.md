@@ -38,7 +38,7 @@ AIs; a click goes to one of them. They stay on their pages; Ask my AI shows it.
 1. **Open it when the work calls for it, never merely because you use the MCP**: at the latest in the turn you hand the person a link to the app (an `href` a Lyriks answer carries), before that link, so their click there reaches you; when they ask to work with you on the pages; whenever you ask them something they answer on a page; when the prompt Ask my AI or "Prepare it with my AI" copies says a Lyriks session begins. In a bound repository open it yourself, in the background, silently unless it fails, and never again once the person ended it in that conversation. `start_evolution_session {project_id}` (with `request_id` when the prompt names one). Say in one sentence that you are listening, unless it opened by itself.
 2. **Wait without taking the chat away**: in Claude Code run the `wait.command` the opening answered, as given, with Bash `run_in_background`; it signs in by itself (nothing to set, no token to ask for), prints the event and wakes you. Other clients call `await_evolution_event` with a short hold and answer the chat between waits. Events:
    - `click`. Each comes with the field, its question and value, the thread, `known` (what the page holds: title, origin, requester, every answer; never ask for it) and `answerWith` (the one operation that answers it). Kinds:
-     - *Prefill with my AI* on a section: fill EVERY question of `section` you can, in one batch, a step's description first (`update_step_description`), then the questions written from it. With several members, ONE suggestion instead (see the guideline). Never call back with nothing written: ask the missing fact. *Prefill the whole step* carries `stepPrefill`: fill that section, ask its missing fact in your suggestion, and wait for the page to hand you the next.
+     - *Prefill with my AI* on a section: fill EVERY question of `section` you can, in one batch, a step's description first (`update_step_description`), then the questions written from it. Never call back with nothing written: ask the missing fact. *Prefill the whole step* carries `stepPrefill`: fill that section, ask its missing fact in your suggestion, and wait for the page to hand you the next.
      - `ask`: a message they wrote in a field's thread. A click whose `answer` is set is the answer to your suggestion's question: rewrite the suggestion, then fill what the answer allows.
      - *Draw with my AI*: a step's diagram.
      - `ticket`, on a closed request: post `ticket`'s message through YOUR tracker connector, move it to done, report with `report_ticket_post` (`note` says what could not be done). Lyriks calls no tracker.
@@ -74,10 +74,8 @@ where your suggestion waits is refused.
 place, never in words they copy.
 1. Read `known`, the thread and the page before asking.
 2. One question per message, the one that changes the text most.
-3. Never paste a text to copy. Offer it in `writes`: `post_on_field {..., body, writes: [{ fieldPath, value }]}`, each place a step text (`step.<step>.description` or `step.<step>.<question>`, listed in `answerWith`), each value the whole text, one statement per line. The page shows Accept and Refuse. The Need's verbatim and a diagram are never suggested; a field of a block takes `propose`.
-4. Once settled, offer every decided place in ONE message with a one-sentence body. Never send them to a button to get it written.
-5. With several members you write no version on a step (`answer_step`, `update_step_description` refused): every text is such a suggestion. Alone, a Prefill writes the version they validate.
-6. Read the verdict back (`suggestion {places, state}` on your message): accepted is written; refused is dropped unless they say why.
+3. Write a text of a step at its ONE place: `update_step_description {step, description}` or `answer_step {step, question, answer}`, the whole text, one statement per line, keeping every line already there. It is a version a person validates or refuses on the page, alone or in a team. A field of a block takes `propose`; the Need's verbatim stays theirs.
+4. A comment is text only: never put a text in a comment for them to accept (`writes` is refused). Suggest in plain words; write once they agree.
 
 **What reaches you**: what they send with 'Ask your AI', and every reply under
 your messages. A comment is for people: never answer or act on one. A private
@@ -150,7 +148,7 @@ questions are skipped (`skip_question`).
 - **Named validators**: `name_validators {fieldPath, leafId?}` or `{step}` with `people[]` (emails; `[]` clears). Once named, only they count. Suggest from `members[].jobs`: Product for Need and Solution, Product and Design for the Functional spec, Tech and Security & compliance for the Technical spec, Product and Business for Approval. Name only whom the person chose.
 - **Every field is versioned.** `validate_field` stands behind the version held now; a later write outdates it. Each item of the Specification is validated by the `fieldPath` and `leafId` part `specification` lists, never a key you build: Lyriks stands behind it as the page shows it. `refuse_field {fieldPath, leafId?, reason}`; `withdraw_field_verdict` takes either back. Accepting a proposal validates nothing. `skip_question` (undone by `unskip_question`) makes a question no longer owed: never ask it again.
 - **Alone in the workspace** you may carry every step; the history names the assistant.
-- **Two members or more**: every decision is a person's. Relay one with `as_person: true` only as they said it in the conversation. `tag_reviewers` asks for a look.
+- **Two members or more**: every decision is a person's. Relay one with `as_person: true` only as they said it. `@Name` in a comment (`post_on_field`) asks a member for a look.
 - **Under delegation** (`aiDelegation`, on the request or the project) you validate in their name what they validate (`validate_field`, `validate_step`) and accept your own suggestions. Never refuse, cross a stage, freeze, accept a risk, approve or close; never give or take a delegation.
 - **Always a person's**: a waiver, lifting one, deleting, cancelling or reopening a request, logging or ruling a remark. `cancel_request {requestId, reason}` with their reason only; `reopen_request`; `close_request` ends a delivered one.
 
@@ -172,7 +170,7 @@ Never `set_section` or `patch_section` on `evolution`.
 `propose {fieldPath, leafId, value, whatWasRead, whatWasInferred,
 citedSourceIds[]}`: what you READ and what you INFERRED, in the project's
 language, citing at least one source (`register_source` first). The person
-accepts, rewords or refuses; `withdraw_proposal` takes back an undecided wrong
+accepts or refuses; `withdraw_proposal` takes back an undecided wrong
 one. Use the glossary's words.
 
 ## Links and refusals

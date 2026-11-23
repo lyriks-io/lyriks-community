@@ -61,7 +61,7 @@ RUN find build -name '*.map' -type f -delete
 
 # Match the PostgreSQL 16 server shipped by the compose stack. Debian Bookworm
 # defaults to client 15, whose pg_dump refuses to back up a version 16 server.
-FROM postgres:16-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825 AS postgres-client
+FROM postgres:16-bookworm@sha256:ce3efec6bc404f6b15ebf5d9bed6b45a9d4655aea238d7dacc3467ccb05a1175 AS postgres-client
 
 FROM node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS run
 WORKDIR /app

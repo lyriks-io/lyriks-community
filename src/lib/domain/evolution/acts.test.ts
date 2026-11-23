@@ -22,7 +22,6 @@ import {
 	runCoherenceAct,
 	runImpactAct,
 	setLeavesAct,
-	tagReviewersAct,
 	updateNeedAct,
 	updateRequestAct,
 	validateFieldAct,
@@ -204,7 +203,7 @@ describe('proposals: a client proposes, a person decides', () => {
 	it('one proposal per field: a second one waits for the decision', () => {
 		const request = ok(propose(opened()));
 		expect(reasonOf(propose(request))).toBe(
-			'A proposal is already waiting on this field. The person decides it first (accept, refuse or reword).'
+			'A proposal is already waiting on this field. The person decides it first (accept or refuse).'
 		);
 	});
 
@@ -249,9 +248,6 @@ describe('proposals: a client proposes, a person decides', () => {
 		expect(reasonOf(decideProposalAct(ctxFor(client), request, id, { decision: 'refuse', comment: 'no' }, write))).toBe(
 			'An AI client may create proposals but never decide on one.'
 		);
-		expect(reasonOf(decideProposalAct(ctxFor(client), request, id, { decision: 'reword', value: 'x' }, write))).toBe(
-			'An AI client cannot reword a proposal.'
-		);
 		expect(written).toBe(0);
 		const accepted = ok(decideProposalAct(ctxFor(relay), request, id, { decision: 'accept' }, write));
 		expect(written).toBe(1);
@@ -283,17 +279,14 @@ describe('proposals: a client proposes, a person decides', () => {
 		const accepted = ok(decideProposalAct(ctxFor(person), request, id, { decision: 'accept' }, () => ALLOW));
 		expect(accepted.openQuestionKeys).toEqual([]);
 	});
-
-	it('a person rewords a pending proposal, which clears the glossary flag', () => {
-		const request = ok(propose(opened(), client, { value: 'The basket keeps the code.' }));
-		const id = request.proposals[0].id;
-		const reworded = ok(decideProposalAct(ctxFor(person), request, id, { decision: 'reword', value: 'The cart keeps the code.' }, () => ALLOW));
-		expect(reworded.proposals[0]).toMatchObject({ decision: 'reworded', bannedSynonymDetected: false, value: 'The cart keeps the code.' });
-	});
 });
 
-describe('proposals handed to tagged reviewers', () => {
-	const roster = new Set(['ana', 'bo', 'cy']);
+describe('suggestions members were asked to look at before the act was retired (criterion 6d20bc82)', () => {
+	/** A suggestion stored with members asked, as tag_reviewers left it before 2026-11-23. */
+	const asking = (request: EvolutionRequest, id: string, reviewerIds: string[]): EvolutionRequest => ({
+		...request,
+		proposals: request.proposals.map((p) => (p.id === id ? { ...p, reviewerIds } : p))
+	});
 	const bo: Actor = { id: 'bo', kind: 'person', role: 'member', channel: 'page' };
 	const cy: Actor = { id: 'cy', kind: 'person', role: 'member', channel: 'page' };
 	const proposed = () =>
@@ -314,22 +307,10 @@ describe('proposals handed to tagged reviewers', () => {
 			)
 		);
 
-	it('tags reviewers from the roster, as a person, only where a roster exists', () => {
-		const request = proposed();
-		const id = request.proposals[0].id;
-		expect(reasonOf(tagReviewersAct(ctxFor(client), request, id, ['bo'], roster))).toBe('An AI client cannot tag reviewers.');
-		expect(reasonOf(tagReviewersAct(ctxFor(person), request, id, ['bo'], null))).toBe(
-			'Reviewers can be tagged only where the workspace holds more than one member.'
-		);
-		expect(reasonOf(tagReviewersAct(ctxFor(person), request, id, ['bo', 'zed'], roster))).toBe('Not a member of the workspace: zed.');
-		const tagged = ok(tagReviewersAct(ctxFor(relay), request, id, ['bo', 'cy', 'bo'], roster));
-		expect(tagged.proposals[0].reviewerIds).toEqual(['bo', 'cy']);
-	});
-
 	it('asks for an eye but requires no verdict: anyone with access decides (ac-evo-llm-11)', () => {
 		let request = proposed();
 		const id = request.proposals[0].id;
-		request = ok(tagReviewersAct(ctxFor(person), request, id, ['bo', 'cy'], roster));
+		request = asking(request, id, ['bo', 'cy']);
 		let written = 0;
 		const write = () => {
 			written += 1;
@@ -347,12 +328,10 @@ describe('proposals handed to tagged reviewers', () => {
 		expect(byTagged.proposals[0].verdicts).toEqual([{ by: 'bo', verdict: 'validated', comment: '', at: '2026-09-10T12:00:00.000Z' }]);
 	});
 
-	it('a tagged member refusing leaves a verdict, and a rewording clears the verdicts', () => {
+	it('a tagged member refusing leaves a verdict', () => {
 		let request = proposed();
 		const id = request.proposals[0].id;
-		request = ok(tagReviewersAct(ctxFor(person), request, id, ['bo', 'cy'], roster));
-		const reworded = ok(decideProposalAct(ctxFor(person), request, id, { decision: 'reword', value: 'A coupon, before paying.' }, () => ALLOW));
-		expect(reworded.proposals[0].verdicts).toEqual([]);
+		request = asking(request, id, ['bo', 'cy']);
 		const refused = ok(decideProposalAct(ctxFor(cy), request, id, { decision: 'refuse', comment: 'Not this wording.' }, () => ALLOW));
 		expect(refused.proposals[0]).toMatchObject({ decision: 'refused', comment: 'Not this wording.' });
 		expect(refused.proposals[0].verdicts.find((v) => v.by === 'cy')).toMatchObject({ verdict: 'invalidated', comment: 'Not this wording.' });

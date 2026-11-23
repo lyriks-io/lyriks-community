@@ -222,11 +222,19 @@ export function noLongerLandsNote(proposal: Pick<AiChatProposal, 'summary' | 'fe
 	].join('\n');
 }
 
+/** What the AI is told once the person decided its change: it carries on from it without being told in the conversation. */
+export function decidedNote(proposal: Pick<AiChatProposal, 'summary' | 'featureId'>, state: 'applied' | 'rejected'): string {
+	return state === 'applied'
+		? `The person validated your change "${proposal.summary}": Lyriks wrote it on ${proposal.featureId}. Carry on from it: the code, then the index.`
+		: `The person rejected your change "${proposal.summary}": nothing was written. Ask them, in one question, what to change.`;
+}
+
 /**
  * Validate (action 16be1952) runs the dry run again and writes the change;
  * when the specification moved and it no longer lands, nothing is written and
  * the change goes back to the AI (action 8c59300e). Reject (action f1e5e330)
- * writes nothing. The caller checked that the person may edit (rule 80ef18e5).
+ * writes nothing. Whatever the decision, the AI in session learns it at once
+ * (owner 2026-11-23). The caller checked that the person may edit (rule 80ef18e5).
  */
 export async function decideChatProposal(
 	services: AppServices,
@@ -247,8 +255,18 @@ export async function decideChatProposal(
 			const outcome = decideProposal(current, personId, input.conversationId, input.messageId, state, at, errors);
 			return { document: outcome.ok ? outcome.document : null, result: outcome.ok };
 		});
+	// A note of Lyriks in the conversation, handed to the AI as a click: what it carries on from.
+	const tellTheAi = async (text: string) => {
+		const noteId = crypto.randomUUID();
+		const noted = await services.aiConversations.change(projectId, origin, (current) => {
+			const outcome = lyriksNote(current, personId, input.conversationId, text, noteId, at);
+			return { document: outcome.ok ? outcome.document : null, result: outcome };
+		});
+		if (noted?.ok) await sendClickOnProject(services, projectId, personId, clickInput(noted.conversation, noteId, text), canEdit);
+	};
 	if (input.decision === 'reject') {
 		await settle('rejected');
+		await tellTheAi(decidedNote(proposal, 'rejected'));
 		return { ok: true, state: 'rejected' };
 	}
 	let errors = await proposalErrors(services, projectId, proposal);
@@ -259,16 +277,11 @@ export async function decideChatProposal(
 	if (errors.length === 0) {
 		await settle('applied');
 		void services.scheduleBackSync(projectId).catch(() => {});
+		await tellTheAi(decidedNote(proposal, 'applied'));
 		return { ok: true, state: 'applied' };
 	}
 	await settle('no_longer_lands', errors);
-	const noteId = crypto.randomUUID();
-	const text = noLongerLandsNote(proposal, errors);
-	const noted = await services.aiConversations.change(projectId, origin, (current) => {
-		const outcome = lyriksNote(current, personId, input.conversationId, text, noteId, at);
-		return { document: outcome.ok ? outcome.document : null, result: outcome };
-	});
-	if (noted?.ok) await sendClickOnProject(services, projectId, personId, clickInput(noted.conversation, noteId, text), canEdit);
+	await tellTheAi(noLongerLandsNote(proposal, errors));
 	return { ok: true, state: 'no_longer_lands', errors };
 }
 

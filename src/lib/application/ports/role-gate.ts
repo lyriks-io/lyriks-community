@@ -30,4 +30,8 @@ export interface RoleGatePort {
 	): Promise<RoleVerdict>;
 }
 
-export type RoleVerdict = 'allowed' | 'denied' | 'unreachable';
+/**
+ * `outside` is a refusal too, for an account that belongs to no workspace at all:
+ * what it misses is an invitation, not a role, and it is told so (rule 2bc8ec30).
+ */
+export type RoleVerdict = 'allowed' | 'denied' | 'outside' | 'unreachable';

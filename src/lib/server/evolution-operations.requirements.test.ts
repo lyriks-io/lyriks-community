@@ -24,28 +24,39 @@ function saved(): EvolutionRequest {
  const draft = save.mock.calls.at(-1)!.flat().find((a) => Array.isArray((a as { requests?: unknown })?.requests)) as { requests: EvolutionRequest[] };
  return draft.requests[0];
 }
+const TWO_RULES = [{ fieldPath: path, value: 'Keep active tab.\nNo duplicate tabs.' }];
+/** A request holding an earlier AI message that offered two rules, as stored before comments became text only. */
 async function offered() {
  view(createEvolutionRequest({ id: 'r', title: 'Tabs' }));
- expect((await run(client, [{ op: 'post_on_field', requestId: 'r', fieldPath: path, body: 'Two rules', writes: [{ fieldPath: path, value: 'Keep active tab.\nNo duplicate tabs.' }] }])).ok).toBe(true);
- const request = saved(); save.mockClear(); view(request);
+ expect((await run(client, [{ op: 'post_on_field', requestId: 'r', fieldPath: path, body: 'Two rules' }])).ok).toBe(true);
+ const posted = saved();
+ const request = { ...posted, fieldThreads: posted.fieldThreads.map((t) => ({ ...t, messages: t.messages.map((m) => ({ ...m, suggests: TWO_RULES })) })) };
+ save.mockClear(); view(request);
  return { request, messageId: request.fieldThreads[0].messages[0].id };
 }
 describe('the public Evolution operations preserve independent requirement decisions', () => {
  beforeEach(() => save.mockClear());
+ it('a comment that offers texts is refused and nothing is saved [rule:5f9257fe]', async () => {
+  view(createEvolutionRequest({ id: 'r', title: 'Tabs' }));
+  const result = await run(client, [{ op: 'post_on_field', requestId: 'r', fieldPath: path, body: 'Two rules', writes: TWO_RULES }]);
+  expect(result.ok).toBe(false);
+  expect(JSON.stringify(result)).toContain('A comment is text only: write the text of a step at its place');
+  expect(save).not.toHaveBeenCalled();
+ });
  it('two individual accepts in a batch append both selected lines and create no approval', async () => {
   const { messageId } = await offered();
   expect((await run(person, ['Keep active tab.', 'No duplicate tabs.'].map((line) => ({ op: 'decide_thread_suggestion', requestId: 'r', messageId, fieldPath: path, line, decision: 'accept' })))).ok).toBe(true);
   expect(saved().stepAnswers.functional_spec.refusals).toBe('Keep active tab.\nNo duplicate tabs.');
   expect(saved().fieldValidations).toEqual([]);
  });
- it('reject then identical AI retry keeps the rejection and one message after persisted reload', async () => {
+ it('reject then an AI retry offering the same texts is refused and keeps the rejection', async () => {
   const { messageId } = await offered();
   expect((await run(person, [{ op: 'decide_thread_suggestion', requestId: 'r', messageId, fieldPath: path, line: 'Keep active tab.', decision: 'refuse' }])).ok).toBe(true);
   const refused = saved(); view(refused); save.mockClear();
-  expect((await run(client, [{ op: 'post_on_field', requestId: 'r', fieldPath: path, body: 'Repeated reply', replyTo: messageId, writes: [{ fieldPath: path, value: 'Keep active tab.\nNo duplicate tabs.' }] }])).ok).toBe(true);
-  const next = saved();
-  expect(next.fieldThreads[0].messages).toHaveLength(1);
-  expect(requirementCandidates(next.fieldThreads[0].messages)[0].state).toBe('refused');
+  expect((await run(client, [{ op: 'post_on_field', requestId: 'r', fieldPath: path, body: 'Repeated reply', replyTo: messageId, writes: TWO_RULES }])).ok).toBe(false);
+  expect(save).not.toHaveBeenCalled();
+  expect(refused.fieldThreads[0].messages).toHaveLength(1);
+  expect(requirementCandidates(refused.fieldThreads[0].messages)[0].state).toBe('refused');
  });
  it('a refused later line rolls the batch back without writing a preceding valid acceptance', async () => {
   const { messageId } = await offered();

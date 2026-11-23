@@ -21,18 +21,19 @@
 <script lang="ts">
 	import { untrack, type Snippet } from 'svelte';
 	import { pushToast } from '$ui/design-system';
-	import { isOwedBeforeImpact, personKey, placeElementId, pointsOf, textOfPoints, type StepReading } from '$domain/evolution';
+	import { isOwedBeforeImpact, personKey, placeElementId, pointsOf, requirementChanges, textOfPoints, type AnswerVersion, type StepReading } from '$domain/evolution';
 	import SectionCard, { type SectionStep } from './SectionCard.svelte';
 	import EditedField from './EditedField.svelte';
 	import RequirementSuggestions from './RequirementSuggestions.svelte';
 	import MentionText from './MentionText.svelte';
+	import CiteInput from './CiteInput.svelte';
 	import StepValidateAll from './StepValidateAll.svelte';
 	import { useEvolutionWrites } from './evolution-writes.svelte';
 	import { patchKey, type Patch } from './dossier-overlay';
 	import type { PageChanges } from './page-edit';
 	import { mergeActs, sectionStanding, sectionValidation } from './section-validation';
 	import { sectionAnswersWithDrawing } from './section-drawing';
-	import { ADD_ROW, FOOT_BAR, ROW, ROW_DELETE, ROW_INPUT, primary48 } from './evo-look';
+	import { ADD_ROW, FOOT_BAR, LLM_BADGE, ROW, ROW_DELETE, ROW_INPUT, primary48 } from './evo-look';
 	import { STEP_FOOT_ID, bringNextToValidate } from './evo-scroll';
 	import { requirementKindOf, requirementLanguage } from './requirement-kinds';
 	import { firstOwingSection, optionalUnwritten } from './solution-owed';
@@ -49,10 +50,8 @@
 	 * at once (ac-evo-form-edit-optimistic); a section whose save fails opens
 	 * again on the lines that were typed.
 	 */
-	interface Version {
+	interface Version extends AnswerVersion {
 		readonly id: string;
-		readonly value: string;
-		readonly by: string;
 		readonly at: string;
 	}
 	interface Props {
@@ -134,6 +133,14 @@
 
 	/** The lines of a section, numbered across its questions. */
 	const linesOf = (s: Section) => s.questions.flatMap((q, qi) => pointsOf(q.field.value).map((text) => ({ qi, text })));
+	/** Each line against its answer's last validated version, and the lines it dropped since (criterion 6936f86a). */
+	const markedLinesOf = (s: Section) => {
+		const each = s.questions.map((q) => requirementChanges(q.field.value, versionsOf(q.field.path)));
+		return {
+			lines: each.flatMap((c, qi) => c.lines.map((l) => ({ qi, ...l }))),
+			removed: each.flatMap((c, qi) => c.removed.map((text) => ({ qi, text })))
+		};
+	};
 	const stepsOf = (s: Section): SectionStep[] => {
 		const r = stepOf(s.step);
 		return r.skip || !r.validation ? [] : [{ step: s.step, validatedBy: r.validation.given, validated: r.validation.validated }];
@@ -269,15 +276,15 @@
 </script>
 
 {#snippet sectionRead(s: Section)}
-	{@const lines = linesOf(s)}
+	{@const { lines, removed } = markedLinesOf(s)}
 	<!-- What the tab offers and nobody wrote reads Optional, never owed (EVO-013, criterion 0a4d6036). -->
 	{@const offered = optionalUnwritten(
 		[...s.questions.map((q) => ({ step: q.step, key: q.key, filled: q.field.filled })), ...(drawings[s.step] ? [{ step: s.step, key: 'diagram', filled: drawings[s.step]?.filled ?? false }] : [])],
 		requirementKindOf(requirementLanguage(lang), 'solution', 'examples') ?? 'Example'
 	)}
-	{#if lines.length === 0 && s.questions.some((q) => isOwedBeforeImpact(q.field.path))}
+	{#if lines.length === 0 && removed.length === 0 && s.questions.some((q) => isOwedBeforeImpact(q.field.path))}
 		<p class="text-[0.8125rem] italic text-ink-3">{canEdit ? 'Nothing written yet: edit the section to write it.' : 'Not answered'}</p>
-	{:else if lines.length > 0}
+	{:else if lines.length > 0 || removed.length > 0}
 		<div class="flex flex-col gap-1.5">
 			{#each lines as line, at (at)}
 				<!-- The first line of an answer is where a link opens on it (ac-evo-live-guide). -->
@@ -286,6 +293,22 @@
 					<span class="w-11 font-evo-mono text-xs text-evo-muted">{s.code}-{at + 1}</span>
 					<span class="flex flex-[0_0_120px]"><span class="whitespace-nowrap bg-toner-2 px-2.5 py-[3px] font-evo-mono text-xs font-bold tracking-[0.06em] text-ink-2 uppercase">{chipOf(s.questions[line.qi])}</span></span>
 					<span class="min-w-0 flex-[1_1_360px]"><MentionText text={line.text} links={mentionLinks} /></span>
+					{#if line.added !== false}
+						<!-- Not in the last validated version: marked until the answer is validated (criterion 6936f86a). -->
+						<span class="inline-flex items-center gap-1.5 font-evo-mono text-[0.6875rem] font-bold tracking-[0.06em] text-violet-ink uppercase" data-change="new">
+							New
+							{#if line.added?.byKind === 'ai_client'}<span class={LLM_BADGE}>AI</span>{:else if line.added}<span class="font-sans font-normal tracking-normal normal-case text-evo-muted">{nameOf(line.added.by)}</span>{/if}
+						</span>
+					{/if}
+				</div>
+			{/each}
+			{#each removed as gone (`${gone.qi}:${gone.text}`)}
+				<!-- Held by the last validated version, gone since: it stays in view, struck through and unnumbered (criterion 6936f86a). -->
+				<div class="flex flex-wrap items-center gap-3 rounded-lg px-2.5 py-2 text-evo-muted" data-change="removed">
+					<span class="w-11" aria-hidden="true"></span>
+					<span class="flex flex-[0_0_120px]"><span class="whitespace-nowrap bg-toner-2 px-2.5 py-[3px] font-evo-mono text-xs font-bold tracking-[0.06em] text-ink-2 uppercase">{chipOf(s.questions[gone.qi])}</span></span>
+					<span class="min-w-0 flex-[1_1_360px] line-through">{gone.text}</span>
+					<span class="font-evo-mono text-[0.6875rem] font-bold tracking-[0.06em] uppercase">Removed</span>
 				</div>
 			{/each}
 		</div>
@@ -314,7 +337,11 @@
 						<select class="{ROW_INPUT} flex-[0_1_160px] px-3 text-[0.8125rem] font-semibold text-evo-ink-3" aria-label="Question" bind:value={requirement.qi}>
 							{#each s.questions as option, oi (`${option.step}.${option.key}`)}<option value={oi}>{chipOf(option)}</option>{/each}
 						</select>
-						<input class="{ROW_INPUT} flex-[1_1_320px]" aria-label={s.title} placeholder={s.placeholder} bind:value={requirement.text} />
+						{#if s.step === 'functional_spec'}
+							<CiteInput {projectId} class={ROW_INPUT} label={s.title} placeholder={s.placeholder} bind:value={requirement.text} />
+						{:else}
+							<input class="{ROW_INPUT} flex-[1_1_320px]" aria-label={s.title} placeholder={s.placeholder} bind:value={requirement.text} />
+						{/if}
 						{@render history()}
 						<button type="button" class={ROW_DELETE} aria-label="Delete" onclick={() => { if (editor) editor.rows = editor.rows.filter((r) => r.id !== requirement.id); }}>×</button>
 					</div>

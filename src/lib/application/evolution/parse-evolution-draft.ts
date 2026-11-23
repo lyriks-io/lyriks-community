@@ -1435,8 +1435,17 @@ export function parseEvolutionDraft(input: unknown, projectId: string): ProjectE
 		requests: rows(src.requests).map(parseRequest),
 		...parseAiDelegations(src.aiDelegations),
 		...(str(src.deploymentBranch).trim() ? { deploymentBranch: str(src.deploymentBranch).trim() } : {}),
+		...parseBranchSuggestion(src.suggestedDeploymentBranch),
 		...parseProjectSessions(src)
 	};
+}
+
+/** The branch an AI suggested from git (action db883b80): kept only whole, a part of it suggests nothing. */
+function parseBranchSuggestion(v: unknown): Pick<ProjectEvolutionDraft, 'suggestedDeploymentBranch'> {
+	if (!v || typeof v !== 'object') return {};
+	const r = v as Record<string, unknown>;
+	const [branch, why, by, at] = [str(r.branch).trim(), str(r.why).trim(), str(r.by).trim(), str(r.at).trim()];
+	return branch && why && by && at ? { suggestedDeploymentBranch: { branch, why, by, at } } : {};
 }
 
 /** The sessions of each person's AI on the project and the clicks made outside a request (feat-ai-session). */

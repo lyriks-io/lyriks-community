@@ -43,6 +43,21 @@ export function gitState(dir = process.cwd(), { deploymentBranch = null } = {}) 
 }
 
 /**
+ * The branch git names as the repository's default: origin/HEAD, else main or
+ * master when the checkout holds one, with what says so. What the AI suggests as
+ * the deployment branch while the project names none (action db883b80); null
+ * when git names none.
+ */
+export function defaultBranchOf(top) {
+	const remote = git(top, ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD']);
+	if (remote) return { branch: remote.replace(/^origin\//, ''), why: 'the default branch of origin' };
+	for (const name of ['main', 'master']) {
+		if (git(top, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`])) return { branch: name, why: `the ${name} branch of the checkout` };
+	}
+	return null;
+}
+
+/**
  * A remote's address without the user or token written in it: Lyriks never
  * receives a credential (ac-evo-branch-repository). An scp-like address
  * (git@host:owner/name) keeps its user, which is no secret.

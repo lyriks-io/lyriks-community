@@ -74,7 +74,8 @@ describe('kernel cache identity', () => {
 			const path = join(root, 'p1', 'f1.feature.json');
 			writeFileSync(path, featureSnapshot('f1', 'First'));
 			utimesSync(path, 1, 1);
-			const repository = new LocalFsBehaviorRepository(root);
+			// No reuse window: this reads the folder's identity itself, not how long it is kept.
+			const repository = new LocalFsBehaviorRepository(root, { signatureReuseMs: 0 });
 			const before = repository.kernelSignature('p1');
 			await repository.loadFeature('p1', 'f1');
 			const replacement = join(root, 'p1', 'replacement.tmp');
@@ -83,6 +84,51 @@ describe('kernel cache identity', () => {
 			renameSync(replacement, path);
 			expect(repository.kernelSignature('p1')).not.toBe(before);
 			expect((await repository.loadFeature('p1', 'f1'))?.feature).toMatchObject({ name: 'Other' });
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	it('lists the folder once per moment, and sees its own writes at once and the engine\'s after the moment', async () => {
+		const root = mkdtempSync(join(tmpdir(), 'lyriks-behavior-'));
+		try {
+			mkdirSync(join(root, 'p1'));
+			writeFileSync(join(root, 'p1', 'f1.feature.json'), featureSnapshot('f1', 'First'));
+			let now = 0;
+			const repository = new LocalFsBehaviorRepository(root, { signatureReuseMs: 100, now: () => now });
+			const first = repository.kernelSignature('p1');
+
+			// The engine writes a file beside this process: unseen within the moment, seen after it.
+			writeFileSync(join(root, 'p1', 'f2.feature.json'), featureSnapshot('f2', 'Second'));
+			now = 50;
+			expect(repository.kernelSignature('p1')).toBe(first);
+			now = 150;
+			const afterEngine = repository.kernelSignature('p1');
+			expect(afterEngine).not.toBe(first);
+
+			// A write of this process is seen at once.
+			now = 160;
+			await repository.saveFeature('p1', JSON.parse(featureSnapshot('f3', 'Third')));
+			expect(repository.kernelSignature('p1')).not.toBe(afterEngine);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	it("leaves the behaviour's identity alone when only the engine's code sidecars move, never the folder's", () => {
+		const root = mkdtempSync(join(tmpdir(), 'lyriks-behavior-'));
+		try {
+			mkdirSync(join(root, 'p1'));
+			writeFileSync(join(root, 'p1', 'f1.feature.json'), featureSnapshot('f1', 'First'));
+			writeFileSync(join(root, 'p1', 'f1.implementation-status.json'), '{"status":[]}');
+			const repository = new LocalFsBehaviorRepository(root, { signatureReuseMs: 0 });
+			const [kernel, behaviour] = [repository.kernelSignature('p1'), repository.behaviourSignature('p1')];
+
+			// An index sync rewrites the code status and adds a provenance record.
+			writeFileSync(join(root, 'p1', 'f1.implementation-status.json'), '{"status":[{"action":"a1"}]}');
+			writeFileSync(join(root, 'p1', 'f1.provenance.json'), '{}');
+			expect(repository.behaviourSignature('p1')).toBe(behaviour);
+			expect(repository.kernelSignature('p1')).not.toBe(kernel);
+
+			// A feature written moves both.
+			writeFileSync(join(root, 'p1', 'f1.feature.json'), featureSnapshot('f1', 'Renamed and longer'));
+			expect(repository.behaviourSignature('p1')).not.toBe(behaviour);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 

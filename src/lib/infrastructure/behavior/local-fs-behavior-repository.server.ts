@@ -57,6 +57,14 @@ interface ParsedFile {
 const PARSED_CACHE_BYTES = 64 * 1024 * 1024;
 
 /**
+ * Provisional constant kernelSignatureReuseMs: how long a project folder's
+ * identity is reused before the folder is listed again. Short enough that a
+ * batch the engine writes is seen by the next page; long enough that one
+ * request lists the folder once instead of once per cached reading.
+ */
+const SIGNATURE_REUSE_MS = 100;
+
+/**
  * Freeze a parsed document all the way down. Every reader of the same file gets
  * the same object back, so one caller editing it in place would hand its edit to
  * every other request in the process, and eventually to disk. A frozen tree turns
@@ -106,9 +114,15 @@ export class LocalFsBehaviorRepository implements BehaviorRepositoryPort {
 	readonly #folders = new Map<string, FolderIndex>();
 	readonly #parsed = new Map<string, ParsedFile>();
 	#parsedBytes = 0;
+	/** Each project folder's identity, with when it was taken (see `kernelSignature`). */
+	readonly #signatures = new Map<string, { readonly at: number; readonly value: string }>();
+	readonly #signatureReuseMs: number;
+	readonly #now: () => number;
 
-	constructor(root = 'data/unspa') {
+	constructor(root = 'data/unspa', options: { signatureReuseMs?: number; now?: () => number } = {}) {
 		this.#root = resolve(root);
+		this.#signatureReuseMs = options.signatureReuseMs ?? SIGNATURE_REUSE_MS;
+		this.#now = options.now ?? (() => performance.now());
 	}
 
 	workspaceRoot(): string {
@@ -126,6 +140,35 @@ export class LocalFsBehaviorRepository implements BehaviorRepositoryPort {
 	 * serving a verdict from before the author's last batch.
 	 */
 	kernelSignature(projectId: string): string {
+		return this.#signature(projectId, 'kernel', () => true);
+	}
+
+	/**
+	 * The identity of what the behaviour itself is read from: the features and the
+	 * project record, not the engine's sidecars beside them (each feature's code
+	 * status and provenance, rewritten by every index sync). A reading of the
+	 * behaviour alone (the fold, the coherence check, the advisories, the
+	 * completion evidence) keys on it, so an AI syncing its index no longer
+	 * throws them away; what reads the code status keys on `kernelSignature`.
+	 */
+	behaviourSignature(projectId: string): string {
+		return this.#signature(projectId, 'behaviour', (name) => name.endsWith(FEATURE_SUFFIX) || name.endsWith(PROJECT_SUFFIX));
+	}
+
+	#signature(projectId: string, kind: string, include: (name: string) => boolean): string {
+		// One request asks several times (every cached reading keys on it), and the folder is listed
+		// and each file stat'ed on the server's thread: the answer is reused for a moment. A write of
+		// this process drops it at once; only the engine's own write can go unseen that long.
+		const now = this.#now();
+		const key = `${projectId}\u0000${kind}`;
+		const kept = this.#signatures.get(key);
+		if (kept && now - kept.at < this.#signatureReuseMs) return kept.value;
+		const value = this.#scanSignature(projectId, include);
+		if (this.#signatureReuseMs > 0) this.#signatures.set(key, { at: now, value });
+		return value;
+	}
+
+	#scanSignature(projectId: string, include: (name: string) => boolean): string {
 		let dir: string;
 		try {
 			dir = this.#projectDir(projectId);
@@ -135,6 +178,7 @@ export class LocalFsBehaviorRepository implements BehaviorRepositoryPort {
 		if (!existsSync(dir)) return 'absent';
 		const entries: string[] = [];
 		for (const name of readdirSync(dir).sort()) {
+			if (!include(name)) continue;
 			try {
 				const stats = statSync(join(dir, name));
 				entries.push(`${name}:${stats.ino}:${stats.size}:${stats.mtimeMs}`);
@@ -430,6 +474,7 @@ export class LocalFsBehaviorRepository implements BehaviorRepositoryPort {
 
 	#forgetFolder(dir: string): void {
 		this.#folders.delete(dir);
+		this.#signatures.clear();
 		for (const path of [...this.#parsed.keys()]) {
 			if (path.startsWith(dir + sep)) this.#forgetFile(path);
 		}
@@ -465,5 +510,6 @@ export class LocalFsBehaviorRepository implements BehaviorRepositoryPort {
 		// a read that races the write from ever pairing old bytes with a new stamp.
 		this.#forgetFile(path);
 		this.#folders.delete(dir);
+		this.#signatures.clear();
 	}
 }

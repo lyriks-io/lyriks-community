@@ -444,14 +444,10 @@ export async function contextOf(services: AppServices, projectId: string, stored
 	/** How the AI talks with the person in comments (ac-evo-live-conversation-writes). */
 	const CONVERSATION_RULES =
 		'Read `known` and the thread first and never ask what they hold; one question per message, its answers as choices when there are few; answer in the thread of the question it concerns.';
-	// In a workspace of several members the AI writes no version on a step: its texts are one suggestion the person accepts (ac-evo-live-shared-writes).
-
+	// In any workspace the AI writes a text of a step at its one place, as a version a person validates; a comment is text only (rule 5f9257fe).
 	const PLACES = suggestionPlaces().map((p) => `${p.fieldPath} (${p.label})`).join('; ');
-	/** One message carrying every text of a step the click fills, each at its place, for the person to accept in one click. */
-	const suggestOp = (paths: readonly string[]) =>
-		`{ op: "post_on_field", requestId: "${request.id}", fieldPath: "${paths[0]}", body: <one sentence: what you suggest>, writes: [${paths.map((p) => `{ fieldPath: "${p}", value }`).join(', ')}] }`;
-	const SUGGEST_RULE =
-		'Each value contains only the new requirement candidates for its exact fieldPath/category, one statement per line. Keep existing answers intact. The person accepts or rejects each requirement independently in Solution; accepting never validates it. The message body is one short explanation, never the requirement bundle again. Read existing candidates and decisions first: never repeat an identical pending, accepted or rejected requirement in a new message or reply. Preserve stable IDs and every human rejection; model only actual changes, keep unchanged actions as context, and never recreate or validate rejected actions to bypass Restore.';
+	const WRITE_RULE =
+		'Write each text at its exact place, one statement per line, as the whole text that place holds: keep every line already there, a person\'s above all, and add yours; never repeat a line a person refused. A comment is text only: never put a text in a comment for the person to accept. Preserve stable IDs and every human rejection; model only actual changes, keep unchanged actions as context, and never recreate or validate rejected actions to bypass Restore.';
 	const whole =
 		section.length > 1
 			? ` The click covers every question of \`section\`: in the same batch, fill each one still empty that what the page holds lets you fill (${section
@@ -471,7 +467,7 @@ export async function contextOf(services: AppServices, projectId: string, stored
 	const otherFields = section.map((q) => q.fieldPath).filter((p) => p !== click.fieldPath && suggestionPlaceOf(p) === null);
 	const answerWith =
 		click.kind === 'prefill' && stepTexts.length > 0
-			? `apply_evolution_batch [${[suggestOp(stepTexts), ...otherFields.map(fillOp)].join(', ')}]: offer requirement candidates at their exact fieldPath, one statement per line; each appears in its category in Solution for its own Accept or Reject. Write no answer yourself. ${SUGGEST_RULE} Do not redraw the diagram: it follows the texts once they are accepted.${NEVER_SILENT}${walked}`
+			? `apply_evolution_batch [${[...stepTexts, ...otherFields].map(fillOp).join(', ')}]: each text is a version the person validates or refuses on the page. ${WRITE_RULE}${redrawn}${NEVER_SILENT}${walked}`
 			: click.kind === 'prefill' && answer
 			? `apply_evolution_batch [{ op: "register_source", note: <the person's answer, verbatim> }, ${fillOp(click.fieldPath)}]: the person answered the question of your suggestion; your new suggestion folds the answer in and replaces the old one in place.${whole} Ask a next question only if one fact is still missing, one question, with at most 3 choices.`
 			: click.kind === 'prefill' && click.fieldPath.startsWith('step.')
@@ -479,7 +475,7 @@ export async function contextOf(services: AppServices, projectId: string, stored
 				: click.kind === 'prefill'
 					? `apply_evolution_batch [${fillOp(click.fieldPath)}]: the person signs the proposal on the page.${whole} ${ONE_QUESTION}${NEVER_SILENT}${walked}`
 					: click.kind === 'ask'
-						? `apply_evolution_batch [{ op: "post_on_field", ${JSON.stringify(at).slice(1, -1)}, replyTo: "${click.messageId}", body, asks?, choices?, multiple?, writes? }]: your reply, in that thread, under your name, between the person and you until it is published; add asks: true when it asks them something, with its answers as choices when it is one of a few (yes or no among them), and multiple: true when several may be picked. A subject that belongs to another question goes there with private: true, and your reply here says where. ${CONVERSATION_RULES} When the exchange settled what a text of the request needs, offer it in this reply: writes [{ fieldPath, value }], each requirement in its exact category, and ask the person to decide the individual candidates in Solution. ${SUGGEST_RULE} The places: ${PLACES}. A field of a block takes a proposal instead (op propose).`
+						? `apply_evolution_batch [{ op: "post_on_field", ${JSON.stringify(at).slice(1, -1)}, replyTo: "${click.messageId}", body, asks?, choices?, multiple? }]: your reply, in that thread, under your name, between the person and you until it is published; add asks: true when it asks them something, with its answers as choices when it is one of a few (yes or no among them), and multiple: true when several may be picked. A subject that belongs to another question goes there with private: true, and your reply here says where. ${CONVERSATION_RULES} When the exchange settled what a text of the request needs, write it at its place in the same batch ({ op: "update_step_description", requestId: "${request.id}", step, description } or { op: "answer_step", requestId: "${request.id}", step, question, answer }) and say in your reply, in plain words, what you wrote. ${WRITE_RULE} The places: ${PLACES}. A field of a block takes a proposal instead (op propose).`
 						: textsBehind.length > 0
 							? `apply_evolution_batch [${textsBehind.map((q) => `{ op: "write_text_from_diagram", requestId: "${request.id}", step: "${click.step}", question: "${q}", answer }`).join(', ')}]: the diagram moved past ${textsBehind.length === 1 ? 'this text' : 'these texts'} of \`section\`; rewrite ${textsBehind.length === 1 ? 'it' : 'each'} from the diagram, in prose, keeping the person's words wherever the diagram still says them.${click.follow ? ' Sent by the page: a write left the texts and the diagram apart.' : ''}`
 							: `apply_evolution_batch [{ op: "redraw_diagram", requestId: "${request.id}", step: "${click.step}", diagram }]: the diagram drawn from the step's texts as they stand, in \`section\`.${click.follow ? ' Sent by the page: a write left the texts and the diagram apart.' : ''}`;

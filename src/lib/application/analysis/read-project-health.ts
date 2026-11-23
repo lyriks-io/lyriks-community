@@ -9,6 +9,7 @@ import {
 import { leafFeatures, type ProjectFeaturesDraft } from '$domain/features';
 import type { ProjectFoundationDraft } from '$domain/foundation';
 import type { CoherenceView } from './load-coherence-draft';
+import { codeIsLinked } from './load-implementation-coverage';
 
 interface Loader<T> {
 	execute(projectId: string): Promise<T>;
@@ -87,7 +88,7 @@ export class ReadProjectHealthUseCase {
 		const health = projectHealth({
 			gaps: coherence.analysis.gaps,
 			audit: audit.issues,
-			codeLinked: rows.some((row) => row.found > 0),
+			codeLinked: codeIsLinked(coverage),
 			features: rows.map((row) => featureCodeOf(row, names.get(row.featureId) ?? row.featureId)),
 			openAnalyses
 		});

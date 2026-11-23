@@ -91,7 +91,7 @@ describe('every field keeps its versions (ac-evo-hist-field-versions)', () => {
 		expect(versionsOf(accepted, '00-need.objectives')[0]).toMatchObject({ source: 'proposal', proposalId: proposed.proposals[0].id, by: 'ana' });
 	});
 
-	it('accepting validates nothing, not even in the name of who accepted it, nor does a rewording [criterion:ac-leaf-ac-evo-hist-accept-awaits-validation]', () => {
+	it('accepting validates nothing, not even in the name of who accepted it [criterion:ac-leaf-ac-evo-hist-accept-awaits-validation]', () => {
 		const proposed = ok(
 			proposeAct(
 				ctxFor(client),
@@ -113,8 +113,6 @@ describe('every field keeps its versions (ac-evo-hist-field-versions)', () => {
 		expect(accepted.need.situation).toBe('Two bags a week are never picked up.');
 		expect(fieldValidationOf(accepted, '00-need.situation').status).not.toBe('validated');
 		expect(fieldValidationOf(accepted, '00-need.situation').validations).toEqual([]);
-		const reworded = ok(decideProposalAct(ctxFor(ana), proposed, id, { decision: 'reword', value: 'Three bags a week.' }, () => ALLOW));
-		expect(fieldValidationOf(reworded, '00-need.situation').status).not.toBe('validated');
 	});
 });
 

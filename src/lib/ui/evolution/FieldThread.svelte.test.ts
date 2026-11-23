@@ -145,7 +145,7 @@ describe("the AI's question offers its answers as buttons [criterion:ac-leaf-ac-
 	});
 });
 
-describe("the AI's suggestion, shaped like its place [criterion:ac-evo-live-comment-suggests]", () => {
+describe('a comment reads its words only; the changes read in the requirements [criterion:2bc3648b]', () => {
 	const offer = {
 		id: 'ai1',
 		author: 'ana',
@@ -158,29 +158,14 @@ describe("the AI's suggestion, shaped like its place [criterion:ac-evo-live-comm
 		]
 	};
 
-	it('reads each line with its kind under the section it would write, with a link to individual review in Solution', () => {
-		const { body } = render(FieldThread, { props: { ...base, messages: [offer], ondecide: async () => true } });
-		expect(body).toContain('2.1 Functional requirements');
-		expect(body).toContain('2.2 Technical requirements');
-		expect(body).toContain('>Journey<');
-		expect(body).toContain('>Constraint<');
-		expect(body).toContain('Chacun pilote sa pièce.');
-		expect(body).toContain('Review each proposed requirement in its category in Solution.');
+	it('an earlier AI message that offered requirements shows its words, without the requirements again', () => {
+		const { body } = render(FieldThread, { props: { ...base, messages: [offer] } });
+		expect(body).toContain('Voici la course au score, telle que décidée.');
+		expect(body).not.toContain('2.1 Functional requirements');
+		expect(body).not.toContain('Chacun pilote sa pièce.');
+		expect(body).not.toContain('Tout reste dans le navigateur.');
+		expect(body).not.toContain('Suggestion of Lyriks');
 		expect(body).not.toContain('> Accept');
-		expect(body).not.toContain('> Refuse');
-	});
-
-	it('offers no decision to who may not write', () => {
-		const { body } = render(FieldThread, { props: { ...base, messages: [offer], ondecide: null } });
-		expect(body).toContain('Tout reste dans le navigateur.');
-		expect(body).not.toContain('> Accept');
-	});
-
-	it('reads who decided it once decided', () => {
-		const accepted = { ...offer, suggestion: { state: 'accepted' as const, by: 'ana', at: '2026-10-30T09:05:00.000Z' } };
-		const { body } = render(FieldThread, { props: { ...base, messages: [accepted], ondecide: async () => true } });
-		expect(body).toContain('Review each proposed requirement in its category in Solution.');
-		expect(body).not.toContain('Writes nothing');
 	});
 });
 

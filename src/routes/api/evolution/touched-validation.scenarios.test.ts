@@ -194,11 +194,18 @@ function partsOf(world: World): Record<string, unknown> {
 
 const servicesOf = (world: World) => servicesWith(partsOf(world) as never);
 
+/**
+ * Each world stores its Knowledge document under a revision never used before, a thousand above the last
+ * (past what its own writes reach), as a real store does: the read paths keep a document per revision
+ * (read-on-revision), so a revision reused for another document served the previous test's.
+ */
+let knowledgeRevision = 0;
+
 /** Store the world: the dossier, Knowledge and the elements the specification holds. */
 function seed(world: World) {
 	dossier = { draft: { projectId: PROJECT, requests: [world.request] } as ProjectEvolutionDraft, revision: 1 };
 	scene.view = viewOf();
-	documents.set(`${PROJECT}/${RETROSPEC_SECTION}`, { doc: world.doc, revision: 1 });
+	documents.set(`${PROJECT}/${RETROSPEC_SECTION}`, { doc: world.doc, revision: (knowledgeRevision += 1000) });
 	scene.elements = [...world.elements];
 }
 

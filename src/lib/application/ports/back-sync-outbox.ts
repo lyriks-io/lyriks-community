@@ -50,4 +50,6 @@ export interface BackSyncOutboxPort {
 	failed(projectId: string, error: string): Promise<void>;
 	/** Pending gap summary for the readiness surface. */
 	pending(): Promise<BackSyncPending>;
+	/** Whether this project's copy still waits to reach Back (a row exists, due or backing off). */
+	isQueued(projectId: string): Promise<boolean>;
 }

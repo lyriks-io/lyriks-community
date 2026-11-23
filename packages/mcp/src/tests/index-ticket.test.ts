@@ -9,7 +9,7 @@ const session = vi.hoisted(() => ({ verify: vi.fn(async () => 'user-1') }))
 vi.mock('../session.js', async (original) => ({ ...await original<typeof import('../session.js')>(), verifyPlatformSession: session.verify }))
 
 const { authenticate } = await import('../auth.js')
-const { issueAccessToken, resolveAccessToken } = await import('../access-tokens.js')
+const { issueAccessToken, issueTicket, resolveAccessToken, revokeAccessToken } = await import('../access-tokens.js')
 const { INDEX_TICKET_TTL_SECONDS, indexScopeGuard, issueIndexTicket } = await import('../index-ticket.js')
 const { issueSessionTicket, sessionScopeGuard } = await import('../session-ticket.js')
 const { skillsScopeGuard } = await import('../skills-ticket.js')
@@ -99,5 +99,50 @@ describe('the index ticket [criterion:2452b3d7]', () => {
     const { token } = issueIndexTicket('platform-session', 'user-1', 'p-shop')!
     session.verify.mockResolvedValueOnce(null as never)
     expect((await call(token, tool('get_implementation_status', { project_id: 'p-shop', keys: ['rule:r1'] }))).status).toBe(401)
+  })
+})
+
+describe('the index ticket across a restart of the gateway [criterion:6b918030]', () => {
+  beforeAll(() => { process.env.MCP_AUTH_REQUIRED = '1' })
+  afterAll(() => { delete process.env.MCP_AUTH_REQUIRED })
+
+  it('still signs in after a restart, as narrow as before', async () => {
+    const { token } = issueIndexTicket('platform-session', 'user-1', 'p-shop')!
+    vi.resetModules()
+    const restarted = await import('../access-tokens.js')
+    expect(restarted.resolveAccessToken(token)).toMatchObject({ session: 'platform-session', subject: 'user-1', scope: 'index-sync', projectId: 'p-shop' })
+    // Its one project and its own calls only, and still cut by the sign-in behind it.
+    expect((await call(token, tool('sync_implementation_index', { project_id: 'p-shop', index: {} }))).status).toBe(200)
+    expect((await call(token, tool('sync_implementation_index', { project_id: 'p-other', index: {} }))).status).toBe(403)
+    expect((await call(token, tool('get_section', { project_id: 'p-shop' }))).status).toBe(403)
+    session.verify.mockResolvedValueOnce(null as never)
+    expect((await call(token, tool('sync_implementation_index', { project_id: 'p-shop', index: {} }))).status).toBe(401)
+  })
+
+  it('refuses a ticket that was changed, signed under another secret, past its time, or revoked', () => {
+    const { token } = issueIndexTicket('platform-session', 'user-1', 'p-shop')!
+    const body = token.slice('lyriks_mcp_ticket_'.length)
+    const flipped = body.slice(0, 40) + (body[40] === 'A' ? 'B' : 'A') + body.slice(41)
+    expect(resolveAccessToken(`lyriks_mcp_ticket_${flipped}`)).toBeNull()
+
+    const secret = process.env.JWT_SECRET
+    process.env.JWT_SECRET = 'another-secret'
+    const foreign = issueTicket('platform-session', 'user-1', 'x', { scope: 'index-sync', projectId: 'p-shop' }, 3600)
+    if (secret === undefined) delete process.env.JWT_SECRET
+    else process.env.JWT_SECRET = secret
+    expect(resolveAccessToken(foreign)).toBeNull()
+
+    expect(resolveAccessToken(issueTicket('platform-session', 'user-1', 'x', { scope: 'index-sync', projectId: 'p-shop' }, 0))).toBeNull()
+
+    revokeAccessToken(token)
+    expect(resolveAccessToken(token)).toBeNull()
+  })
+
+  it('never opens without the one project it is bound to', () => {
+    expect(resolveAccessToken(issueTicket('platform-session', 'user-1', 'x', { scope: 'index-sync', projectId: '' }, 3600))).toBeNull()
+    // A waiting ticket stays a waiting ticket: its scope travels in the authenticated part.
+    const waiting = issueTicket('platform-session', 'user-1', 'x', { scope: 'session-wait', sessionId: 'live-1' }, 3600)
+    expect(resolveAccessToken(waiting)).toMatchObject({ scope: 'session-wait', sessionId: 'live-1' })
+    expect(resolveAccessToken(waiting)?.projectId).toBeUndefined()
   })
 })

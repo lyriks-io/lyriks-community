@@ -17,6 +17,9 @@ import {
 	unspaTarget
 } from '$lib/server/unspa-proxy.server';
 import { slowRequestLine } from '$lib/server/slow-requests.server';
+import { startStallWatch, trackRequest } from '$lib/server/event-loop-stalls.server';
+import { WARM_UP_DELAY_MS, warmUp, warmUpEnabled } from '$lib/server/startup-warm-up.server';
+import { building, dev } from '$app/environment';
 import { rememberRequestIdentity } from '$lib/server/request-identity.server';
 import { inactiveProjectResponse } from '$lib/server/active-project.server';
 import {
@@ -45,17 +48,39 @@ import {
 // Public paths bypass the auth wall — login flow + the orchestrator health probes.
 const PUBLIC_PATHS = new Set(['/login', '/logout', '/healthz', '/readyz', '/api/first-run']);
 
+/**
+ * Pages a signed-out visitor must reach besides PUBLIC_PATHS: the page a password
+ * reset link opens is for someone who cannot sign in (their password was taken
+ * away); the token in its address is the secret, checked by the account service.
+ * An installation without that page answers 404 there, like any unknown address.
+ */
+function isSessionlessPath(path: string): boolean {
+	return PUBLIC_PATHS.has(path) || path.startsWith('/reset-password/');
+}
+
 // Start migrations during process bootstrap instead of making the first user
 // request pay the upgrade cost. A failure is logged; `ready()` resets its
-// rejected promise so readiness or a later request can retry.
-void getServices()
+// rejected promise so readiness or a later request can retry. Once the store
+// answers, the projects worked on last are read ahead (see startup-warm-up),
+// so the first pages after a deploy do not compute everything at once.
+const datastoreReady = getServices()
 	.pingDatastore()
-	.catch((error) =>
+	.then(() => true)
+	.catch((error) => {
 		console.error(
 			'[lyriks][datastore] startup migration/readiness failed:',
 			error instanceof Error ? error.message : error
-		)
-	);
+		);
+		return false;
+	});
+if (!building && !dev && warmUpEnabled(env.LYRIKS_WARM_UP)) {
+	void datastoreReady.then((ready) => {
+		if (!ready) return;
+		setTimeout(() => {
+			void warmUp(getServices(), { log: (line) => console.log(line) }).catch(() => {});
+		}, WARM_UP_DELAY_MS).unref?.();
+	});
+}
 
 // Re-deliver the activated licence to the Back's seat gate at boot, so an
 // existing licensed install (including one just updated) refreshes the Back's
@@ -222,17 +247,25 @@ function withSecurityHeaders(event: Parameters<Handle>[0]['event'], res: Respons
 	return res;
 }
 
+// A computation that holds the one thread holds every request: each stall is logged with the requests it fell in.
+startStallWatch();
+
 // The MCP's calls on a project are announced as the AI's activity there (retrospec-ai.server.ts); a slow request is logged.
 export const handle: Handle = async (input) => {
 	// The one place a request receives the composition root: routes read it from here.
 	input.event.locals.services = getServices();
 	const started = performance.now();
-	const res = await followAiProjectCalls(input, handleRequest);
 	// A page's data fetched on navigation is told apart from a whole page served.
 	const path = input.event.isDataRequest ? `${input.event.url.pathname} (data)` : input.event.url.pathname;
-	const slow = slowRequestLine(input.event.request.method, path, performance.now() - started);
-	if (slow) console.warn(slow);
-	return res;
+	const ended = trackRequest(`${input.event.request.method} ${path}`);
+	try {
+		const res = await followAiProjectCalls(input, handleRequest);
+		const slow = slowRequestLine(input.event.request.method, path, performance.now() - started);
+		if (slow) console.warn(slow);
+		return res;
+	} finally {
+		ended();
+	}
 };
 
 const handleRequest: Handle = async ({ event, resolve }) => {
@@ -310,7 +343,7 @@ const handleRequest: Handle = async ({ event, resolve }) => {
 
 	event.locals.session = session;
 
-	if (!session.isAuthenticated && !PUBLIC_PATHS.has(event.url.pathname)) {
+	if (!session.isAuthenticated && !isSessionlessPath(event.url.pathname)) {
 		// The dashboard's own data plane gets the same JSON 401 as ours: its
 		// in-frame fetches must surface auth expiry, not follow a redirect into
 		// login HTML they cannot render.

@@ -16,7 +16,7 @@ import type {
 	UsersDraftRepositoryPort
 } from '../ports';
 import type { ProjectDocumentsDraft } from '$domain/documents';
-import type { ProjectBaselinesDraft } from '$domain/baselines';
+import { baselinesWithoutDocuments, type ProjectBaselinesDraft } from '$domain/baselines';
 import type { ProjectApprovalsDraft } from '$domain/approvals';
 import type { ProjectScopeDraft } from '$domain/scope';
 
@@ -223,7 +223,8 @@ export class PushEnvelopeToBackUseCase {
 		if (coherence) envelope.coherence = coherence;
 		if (glossary) envelope.glossary = glossary;
 		if (documents) envelope.documents = documents;
-		if (baselines) envelope.baselines = baselines;
+		// Each baseline without its requirements document, which stays here (criterion 9a845c19).
+		if (baselines) envelope.baselines = baselinesWithoutDocuments(baselines);
 		if (approvals) envelope.approvals = approvals;
 
 		const result = await this.client.pushEnvelope(
