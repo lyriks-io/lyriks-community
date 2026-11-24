@@ -10,7 +10,7 @@
 
 **From your code to a living spec.**
 
-Free, open source, and it runs on your machine.
+Open source and running on your machine.
 
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![ci](https://github.com/lyriks-io/lyriks-community/actions/workflows/ci.yml/badge.svg)](https://github.com/lyriks-io/lyriks-community/actions/workflows/ci.yml)
@@ -21,7 +21,7 @@ Free, open source, and it runs on your machine.
 [First steps](https://lyriks.io/first-steps?utm_source=github&utm_medium=readme&utm_campaign=lce-launch) ·
 [Discord](https://discord.gg/s2v5yNR5aD)
 
-<img src="docs/media/lyriks-ce.webp" alt="Animation: nobody understands what your code really does; Lyriks recovers the spec (journeys, features, rules, screens, data, architecture); every element linked across code, docs and spec, every conflict flagged; a living memory for all your tools and AI agents over MCP (Jira, Confluence, Notion, Claude Code, Cursor, any MCP client). From your code to a living spec: free, open source, runs on your machine." width="900">
+<img src="docs/media/lyriks-ce.webp" alt="Animation: nobody understands what your code really does; Lyriks recovers the spec (journeys, features, rules, screens, data, architecture); every element linked across code, docs and spec, every conflict flagged; a living memory for all your tools and AI agents over MCP (Jira, Confluence, Notion, Claude Code, Cursor, any MCP client). From your code to a living spec, open source and running on your machine." width="900">
 
 </div>
 
@@ -88,7 +88,7 @@ Your client reads the whole repository and writes the spec; on a large codebase 
 
 ## Community Edition and paid plans
 
-The Community Edition is free and open source: one user and one project, for as long as you like. A second project opens with Solo Builder; projects kept from a paid plan stay listed, read-only. Start with one codebase, prove it, then grow.
+The Community Edition is open source: one user and one project, for as long as you like. A second project opens with Solo Builder; projects kept from a paid plan stay listed, read-only. Start with one codebase, prove it, then grow.
 
 | | Community Edition | Solo Builder | Team | Enterprise |
 |---|:---:|:---:|:---:|:---:|
