@@ -30,6 +30,26 @@ describe('the behavior check budget', () => {
 		expect(second).toEqual([]);
 	});
 
+	it('counts a feature the engine did not finish as not checked yet, never as clean, and checks it again [criterion:29279fff]', async () => {
+		const { useCase, advisor } = harness(3);
+		// The engine ran out of its time on feat-1 once.
+		advisor.verify.mockImplementation((async (fid: string) => (fid === 'feat-1' && advisor.verify.mock.calls.length <= 3 ? null : verdict)) as never);
+		const first = await useCase.execute('p');
+		expect(first).toEqual([
+			expect.objectContaining({
+				code: 'capped',
+				unchecked: 1,
+				title: '1 feature has not been checked yet',
+				detail: "1 could not be checked within the engine's time and will be checked again; the behavior engine checks 40 features per pass."
+			})
+		]);
+		// Nothing was remembered for it: the next pass asks the engine about it alone, and it reads clean once checked.
+		const second = await useCase.execute('p');
+		expect(advisor.verify).toHaveBeenCalledTimes(4);
+		expect(advisor.verify).toHaveBeenLastCalledWith('feat-1', { modelCheck: true });
+		expect(second).toEqual([]);
+	});
+
 	it('says nothing when everything fits in one pass', async () => {
 		const { useCase, advisor } = harness(12);
 		expect(await useCase.execute('p')).toEqual([]);

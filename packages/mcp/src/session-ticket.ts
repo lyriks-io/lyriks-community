@@ -5,23 +5,25 @@
 // sign-in is enforced it carries this ticket: backed by the same platform
 // session as the client that opened the session (signing out cuts it), it
 // lives twelve hours at most, and it can only call await_evolution_event in
-// that one session. Nobody copies or sets a token.
+// that one session. Nobody copies or sets a token. It outlives a restart of
+// the gateway, since it holds its own grant (criterion d3916c06).
 
 import type { Context, Next } from 'hono'
-import { issueAccessToken } from './access-tokens.js'
+import { issueSessionWaitTicket } from './access-tokens.js'
 import type { HonoVariables } from './types.js'
 
 /** Longer than any working day in session; the session itself ends sooner when idle. */
 export const SESSION_TICKET_TTL_SECONDS = 12 * 3600
 
-/** A ticket for the waiting command, with when it stops working; null when no grant can be issued now. */
+/**
+ * A ticket for the waiting command, with when it stops working. It holds its
+ * own grant (access-tokens.ts), so a restart of the gateway, every deploy, no
+ * longer cuts the wait (criterion d3916c06). The null of the older in-memory
+ * grant, when too many were held, is kept in the type for the callers.
+ */
 export function issueSessionTicket(session: string, subject: string, sessionId: string): { token: string; expiresAt: string } | null {
-  const token = issueAccessToken(session, subject, 'lyriks-session-waiter', {
-    scope: 'session-wait',
-    sessionId,
-    ttlSeconds: SESSION_TICKET_TTL_SECONDS,
-  })
-  return token ? { token, expiresAt: new Date(Date.now() + SESSION_TICKET_TTL_SECONDS * 1000).toISOString() } : null
+  const token = issueSessionWaitTicket(session, subject, 'lyriks-session-waiter', sessionId, SESSION_TICKET_TTL_SECONDS)
+  return { token, expiresAt: new Date(Date.now() + SESSION_TICKET_TTL_SECONDS * 1000).toISOString() }
 }
 
 /**

@@ -22,7 +22,11 @@ const fake = {
 	mode: 'json' as 'json' | 'sse',
 	sessionId: null as string | null,
 	requireToken: null as string | null,
-	tools: {} as Record<string, ToolHandler>
+	/** Statuses answered, one per request, before the fake answers normally (a restart of Lyriks). */
+	failures: [] as number[],
+	tools: {} as Record<string, ToolHandler>,
+	/** Held calls whose stream ends without their answer, as when the platform restarts under a held wait. */
+	cutCalls: 0
 };
 
 function reset() {
@@ -30,7 +34,9 @@ function reset() {
 	fake.mode = 'json';
 	fake.sessionId = null;
 	fake.requireToken = null;
+	fake.failures = [];
 	fake.tools = {};
+	fake.cutCalls = 0;
 }
 
 function answer(response: ServerResponse, message: Rpc, result: unknown) {
@@ -58,6 +64,11 @@ function handle(request: IncomingMessage, response: ServerResponse) {
 			response.writeHead(406).end('Not Acceptable: Client must accept both application/json and text/event-stream');
 			return;
 		}
+		const failure = fake.failures.shift();
+		if (failure !== undefined) {
+			response.writeHead(failure).end('{"errors":[{"code":"TEMPORARILY_UNAVAILABLE"}]}');
+			return;
+		}
 		if (fake.requireToken && request.headers.authorization !== `Bearer ${fake.requireToken}`) {
 			response.writeHead(401).end('unauthorized');
 			return;
@@ -69,6 +80,12 @@ function handle(request: IncomingMessage, response: ServerResponse) {
 		}
 		if (message.id === undefined) {
 			response.writeHead(202).end();
+			return;
+		}
+		if (message.method === 'tools/call' && fake.cutCalls > 0) {
+			fake.cutCalls -= 1;
+			response.writeHead(200, { 'Content-Type': 'text/event-stream' });
+			response.end(': keep-alive\n\n');
 			return;
 		}
 		const tool = fake.tools[message.params?.name ?? ''];
@@ -244,6 +261,62 @@ describe('await-event.mjs [criterion:ac-leaf-ac-evo-live-chat-free]', () => {
 		fake.tools.await_evolution_event = () => ({ json: { kind: 'ended', sessionId: 's1', reason: 'ended_by_person' } });
 		const ended = await run('await-event.mjs', ['p1', 'r1', 's1'], { env: { LYRIKS_MCP_URL: url } });
 		expect(JSON.parse(ended.stdout)).toMatchObject({ kind: 'ended', reason: 'ended_by_person' });
+	});
+
+	it('waits on through a restart of Lyriks, in a new connection, and still exits on the event [criterion:d3916c06]', async () => {
+		let calls = 0;
+		fake.tools.await_evolution_event = () => {
+			calls += 1;
+			// The gateway restarts after the first wait: its next two answers are 503.
+			if (calls === 1) {
+				fake.failures.push(503, 503);
+				return { json: { kind: 'nothing', sessionId: 's1', waitedSeconds: 45 } };
+			}
+			// The gateway is back but the platform behind it is not yet.
+			if (calls === 2) return { isError: true, text: 'lyriks 502 on POST /api/evolution/live: Bad Gateway' };
+			return { json: { kind: 'click', sessionId: 's1', click: { id: 'c1' } } };
+		};
+		const out = await run('await-event.mjs', ['p1', 'r1', 's1'], { env: { LYRIKS_MCP_URL: url, LYRIKS_AWAIT_RETRY_MS: '20' } });
+		expect(out.status).toBe(0);
+		expect(fake.failures).toEqual([]);
+		expect(JSON.parse(out.stdout)).toMatchObject({ kind: 'click', click: { id: 'c1' } });
+		expect(calls).toBe(3);
+		// Each try after a failure opens its connection again: the first, then after the 503s and after the 502.
+		expect(fake.seen.filter((entry) => entry.message.method === 'initialize')).toHaveLength(3);
+	});
+
+	it('waits again when the held call is cut without its answer, as when the platform restarts under it [criterion:d3916c06]', async () => {
+		fake.cutCalls = 1;
+		fake.tools.await_evolution_event = () => ({ json: { kind: 'click', sessionId: 's1', click: { id: 'c2' } } });
+		const out = await run('await-event.mjs', ['p1', 'r1', 's1'], { env: { LYRIKS_MCP_URL: url, LYRIKS_AWAIT_RETRY_MS: '20' } });
+		expect(out.status).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({ kind: 'click', click: { id: 'c2' } });
+		expect(fake.cutCalls).toBe(0);
+	});
+
+	it('still ends at once on a refused sign-in, and gives up past the time Lyriks may stay away [criterion:d3916c06]', async () => {
+		fake.requireToken = 'ticket';
+		const refused = await run('await-event.mjs', ['p1', 'r1', 's1', '--token', 'other'], { env: { LYRIKS_MCP_URL: url, LYRIKS_AWAIT_RETRY_MS: '20' } });
+		expect(refused.status).toBe(1);
+		expect(refused.stderr).toContain('(401)');
+		expect(toolCalls()).toHaveLength(0);
+
+		fake.requireToken = null;
+		fake.failures = Array.from({ length: 1000 }, () => 503);
+		// 2 ms first pause: the 300 pauses' worth Lyriks may stay away is 0.6 s.
+		const away = await run('await-event.mjs', ['p1', 'r1', 's1'], { env: { LYRIKS_MCP_URL: url, LYRIKS_AWAIT_RETRY_MS: '2' } });
+		expect(away.status).toBe(1);
+		expect(away.stderr).toContain('Lyriks did not come back within');
+		expect(away.stderr).toContain('503');
+
+		// Nothing listening at all, as while the gateway's container restarts.
+		const closed = createServer();
+		await new Promise<void>((resolve) => closed.listen(0, '127.0.0.1', resolve));
+		const port = (closed.address() as AddressInfo).port;
+		await new Promise<void>((resolve) => closed.close(() => resolve()));
+		const down = await run('await-event.mjs', ['p1', 'r1', 's1'], { env: { LYRIKS_MCP_URL: `http://127.0.0.1:${port}/mcp`, LYRIKS_AWAIT_RETRY_MS: '2' } });
+		expect(down.status).toBe(1);
+		expect(down.stderr).toContain('Lyriks did not come back within');
 	});
 
 	it('refuses a call that cannot mean anything before touching the network', async () => {
@@ -750,6 +823,33 @@ describe('the code of a request, reported from git [criterion:ac-leaf-ac-evo-bra
 		});
 		const older = await run('sync-index.mjs', ['--url', url], { cwd: dir });
 		expect(older.stderr).toContain('warning: code state refused: Unknown operation "report_code_state".');
+	});
+
+	it('while the project names no deployment branch, says which branch git reads for the AI to suggest [criterion:396e62e3]', async () => {
+		const { dir } = branchRepo(PROVEN);
+		fake.tools.sync_implementation_index = () => ({ json: SYNC_ANSWER });
+		// An open request whose card holds no code: the project names no branch yet.
+		fake.tools.get_evolution = () => ({ json: { requests: [{ id: 'req-1', status: 'open', code: null }] } });
+		const result = await run('sync-index.mjs', ['--url', url], { cwd: dir });
+		expect(result.status).toBe(0);
+		// The sign-in of the command only reports: it sends no suggestion, it says the operation for the AI to send.
+		expect(toolCalls().map((c) => c.message.params?.name)).toEqual(['sync_implementation_index', 'get_evolution']);
+		const answer = JSON.parse(result.stdout).codeState.answer as string;
+		expect(answer).toContain('the project names no deployment branch. git reads main (the main branch of the checkout)');
+		expect(answer).toContain('{"op":"suggest_deployment_branch","branch":"main","why":"the main branch of the checkout"}');
+	});
+
+	it('outside a git repository, says that no commit can carry the change [criterion:f6d786d2]', async () => {
+		const dir = repoWithIndex({ 'action:boost': entry(10) });
+		fake.tools.sync_implementation_index = () => ({ json: SYNC_ANSWER });
+		const result = await run('sync-index.mjs', ['--url', url], { cwd: dir });
+		expect(result.status).toBe(0);
+		expect(result.stderr).toBe('');
+		expect(JSON.parse(result.stdout).codeState).toEqual({
+			reported: false,
+			noGit: true,
+			answer: 'No git repository here: this change cannot go through a commit. Create one (git init, then a first commit) and name the deployment branch.'
+		});
 	});
 
 	it('reports nothing from the deployment branch, nor with --no-git', async () => {

@@ -151,6 +151,13 @@ describe('the sign-in wall', () => {
 		expect(served).toEqual(['/login', '/logout', '/healthz', '/readyz', '/api/first-run']);
 	});
 
+	it('opens the page a password reset link leads to without a session, and nothing beside it [surface:8c2835c3]', async () => {
+		const { response } = await visit('/reset-password/a-token', { cookie: null });
+		expect(response?.status).toBe(200);
+		const { redirect } = await visit('/reset-passwords', { cookie: null });
+		expect(redirect).toBe(`/login?redirect=${encodeURIComponent('/reset-passwords')}`);
+	});
+
 	it('serves static assets without asking who is calling or whether the product is licensed', async () => {
 		root.services = installation({ account: null, licence: UNLICENSED });
 		const { response } = await visit('/_app/immutable/entry/start.js', { cookie: null });

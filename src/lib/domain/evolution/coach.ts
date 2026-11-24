@@ -147,7 +147,7 @@ export function coachOf(request: EvolutionRequest, facts: CoachFacts): Coaching 
 				missing.length > 0
 					? 'The request starts with the need: why it exists, before what it changes.'
 					: proposed.size > 0
-						? 'The answers of the need are proposed: sign them, reword them, or refuse them.'
+						? 'The answers of the need are proposed: sign them or refuse them.'
 						: 'The need is written. Read it back to the person before asking them to validate it.';
 			break;
 		}
@@ -256,7 +256,7 @@ export function coachOf(request: EvolutionRequest, facts: CoachFacts): Coaching 
 	}
 
 	if (facts.pendingProposals > 0)
-		decides.unshift(`Sign the ${facts.pendingProposals} value${facts.pendingProposals === 1 ? '' : 's'} waiting (decide_proposal accept | reword | refuse).`);
+		decides.unshift(`Sign the ${facts.pendingProposals} value${facts.pendingProposals === 1 ? '' : 's'} waiting (decide_proposal accept | refuse).`);
 	decides.push(...validationAsk(current, facts.solo, facts.inputs, request.validationsPerAnswer));
 	// Every spec step validated and the gate met: the next move is the crossing.
 	const crossing = step === 'impact_analysis' || step === 'build' || step === 'approval';

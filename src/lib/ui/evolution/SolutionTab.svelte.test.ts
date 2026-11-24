@@ -56,6 +56,14 @@ describe('page editing holds the two Solution sections independently [criterion:
 	});
 });
 
+describe('@ cites the product in a text of the Functional spec [criterion:dd17c1d3]', () => {
+	it('offers the citing line on the functional requirements and not on the technical ones', () => {
+		const body = page([], 'all');
+		expect(body).toMatch(/<input[^>]*aria-label="Functional requirements"[^>]*role="combobox"[^>]*aria-autocomplete="list"/);
+		expect(body).not.toMatch(/<input[^>]*aria-label="Technical requirements"[^>]*role="combobox"/);
+	});
+});
+
 describe('each section offers its drawing among its own controls [criterion:ac-leaf-ac-evo-sol-diagram-alone]', () => {
 	it('has no List or Diagram bar and no section numbered for a drawing', () => {
 		const body = page();
@@ -251,5 +259,56 @@ describe('the Solution\'s examples, the Functional spec and the Technical spec r
 		expect(firstOwingSection(sections('Only the Need and the Solution are owed'))).toBeNull();
 		// The description empty: 2.1 opens, for it.
 		expect(firstOwingSection(sections(''))?.id).toBe('sol-functional');
+	});
+});
+
+describe('the requirements mark what changed since their last validation [criterion:6936f86a]', () => {
+	const version = (value: string, by: string, byKind: 'person' | 'ai_client', validatedBy: string[]) => ({ id: `${by}-${value.length}`, value, by, byKind, at: '2026-11-23T10:00:00.000Z', validatedBy });
+	const marked = (versions: Record<string, ReturnType<typeof version>[]>) =>
+		render(SolutionTab, {
+			props: {
+				projectId: 'p',
+				requestId: 'req-1',
+				functional: [question('functional_spec', 'Kept.\nFrom the AI.')],
+				technical: [question('technical_spec', CONSTRAINT)],
+				stepOf: () => ({ skip: null, validation: null }),
+				members: [],
+				actorId: 'me',
+				canEdit: true,
+				canValidate: true,
+				canComment: true,
+				lang: 'en',
+				mentionLinks: {},
+				versionsOf: (path: string) => versions[path] ?? [],
+				nameOf: (id: string) => `Name of ${id}`,
+				editing: null,
+				onEdit: () => {},
+				openOwed: false,
+				diagramShown: () => false,
+				onDiagram: () => {},
+				useCaseDiagram: createRawSnippet(() => ({ render: () => '<svg></svg>' })),
+				technicalDiagram: createRawSnippet(() => ({ render: () => '<svg></svg>' })),
+				onGoSpecification: () => {}
+			} as never
+		}).body;
+
+	it('marks the line the AI added and keeps the dropped line struck through; a validated answer reads unmarked', () => {
+		const body = marked({
+			'functional_spec.description': [version('Kept.\nFrom the AI.', 'ai@team.test', 'ai_client', []), version('Kept.\nDropped.', 'me', 'person', ['me'])],
+			'technical_spec.description': [version(CONSTRAINT, 'me', 'person', ['me'])]
+		});
+		expect(body.match(/data-change="new"/g)?.length).toBe(1);
+		expect(body).toMatch(/From the AI\.[\s\S]*?data-change="new"[\s\S]*?>AI</);
+		expect(body.match(/data-change="removed"/g)?.length).toBe(1);
+		expect(body).toMatch(/line-through">Dropped\.<\/span>[\s\S]*?Removed/);
+	});
+
+	it('names the person who added a line', () => {
+		const body = marked({
+			'functional_spec.description': [version('Kept.\nFrom the AI.', 'ana@team.test', 'person', []), version('Kept.', 'me', 'person', ['me'])],
+			'technical_spec.description': [version(CONSTRAINT, 'me', 'person', ['me'])]
+		});
+		expect(body).toContain('Name of ana@team.test');
+		expect(body).not.toContain('data-change="removed"');
 	});
 });

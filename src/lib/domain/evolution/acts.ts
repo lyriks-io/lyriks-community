@@ -30,7 +30,7 @@ import {
 	type Proposal
 } from './draft';
 import { ALLOW, firstRefusal, guard, refuse, type Guarded, type Refused } from './guard';
-import { withoutValidatedCommit } from './code-branch';
+import { freezeBranchRefusal, withoutValidatedCommit, type FreezeBranchHold } from './code-branch';
 import { actionsUnreadGate, specificationGate, type SpecificationHold } from './specification-hold';
 import { correctionHoldsApproval, draftsOpen, textsOpen } from './correction';
 import { concurrentGate, concurrentHoldOf, orderAtFreeze, type ConcurrentHold } from './landing-order';
@@ -96,7 +96,7 @@ import {
 	validationOf,
 	type ValidatedStep
 } from './path';
-import { createObservation, findingHoldsGate, isDescribedStep, isMarkableStep, isSkippableStep, skippedQuestionOf, STEP_QUESTIONS, stepQuestionOf, type FieldThreadMessage, type ProposalLineDecision, type SkippableStep, type SuggestedWrite } from './draft';
+import { createObservation, findingHoldsGate, isDescribedStep, isMarkableStep, isSkippableStep, skippedQuestionOf, STEP_QUESTIONS, stepQuestionOf, type FieldThreadMessage, type ProposalLineDecision, type SkippableStep } from './draft';
 import { fieldValidationOf, isActionReviewKey, latestVersion, stepAnswerKey, stepDescriptionKey, withFieldVersion } from './field-versions';
 import { linesOf, listDelta } from './list-delta';
 import { personKey, stepOfTarget, withNamed } from './named-validators';
@@ -140,12 +140,11 @@ import {
 	canAnswerOpenQuestion,
 	canMarkOpenQuestion,
 	canRefuseProposal,
-	canRewordProposal,
 	pendingProposals
 } from './proposals';
 import { canPostOnField, latestThread, openThread, post, setTopicRuling, topicOpener } from './field-thread';
 import { publishExchange, readableBy, topicOf } from './live-exchange';
-import { canDecideSuggestion, requirementCandidates, requirementKey, suggestionAllowed, suggestionPlaceOf } from './thread-suggestion';
+import { canDecideSuggestion, requirementCandidates, requirementKey, suggestionPlaceOf } from './thread-suggestion';
 import { productToChange } from './product-to-change';
 import { askAllowed, askOf, choicesAllowed, cleanChoices, dialogueAfter, replaceableBy, threadQuestionAllowed } from './suggestion-ask';
 import { canFoldBack, canInvalidate, canLogObservation, canRule } from './acceptance';
@@ -372,17 +371,6 @@ const personOnly = (actor: Actor, what: string): Guarded =>
  */
 const carriesForward = (ctx: ActContext, what: string): Guarded =>
 	ctx.soloWorkspace ? ALLOW : personOnly(ctx.actor, what);
-/**
- * A text of a step written as a version (ac-evo-live-shared-writes): a person
- * writes it anywhere, an AI client only in a workspace of one. In a workspace
- * of several members the AI suggests it in its message, which a person accepts.
- */
-const writesStepText = (ctx: ActContext): Guarded =>
-	guard(
-		!ctx.soloWorkspace && ctx.actor.kind === 'ai_client',
-		'In a workspace of several members your text on a step is a suggestion the person accepts: post it with post_on_field and writes [{ fieldPath, value }].',
-		'The person accepts it in one click and it is written at its place, waiting for its validation like any write.'
-	);
 /** A validation an AI client gives under the person's delegation is theirs to give; any other decision is not (ac-evo-llm-delegation-powers). */
 const validates = (ctx: ActContext, what: string): Guarded => (ctx.aiDelegated ? ALLOW : carriesForward(ctx, what));
 /** Whether this act is the person's AI acting under their delegation, stamped on what it validates (ac-evo-llm-delegation-marks). */
@@ -1167,7 +1155,7 @@ export function proposeAct(
 		// The AI's own suggestion whose question the person answered is the one this one replaces (ac-evo-live-card-ask).
 		guard(
 			waiting.some((p) => !replaceableBy(p, ctx.actor.id)),
-			'A proposal is already waiting on this field. The person decides it first (accept, refuse or reword).',
+			'A proposal is already waiting on this field. The person decides it first (accept or refuse).',
 			'One proposal per empty field, so the reader judges rather than compares.'
 		)
 	);
@@ -1227,66 +1215,13 @@ export type ProposalDecisionInput =
 	 * beside the value (a3960bf7).
 	 */
 	| { readonly decision: 'accept'; readonly sense?: string }
-	| { readonly decision: 'refuse'; readonly comment: string }
-	| { readonly decision: 'reword'; readonly value: string };
+	| { readonly decision: 'refuse'; readonly comment: string };
 
 /** Whether every tagged reviewer stands behind the proposal. */
 const withVerdict = (proposal: Proposal, verdict: Proposal['verdicts'][number]): Proposal => ({
 	...proposal,
 	verdicts: [...proposal.verdicts.filter((v) => v.by !== verdict.by), verdict]
 });
-
-/**
- * Hand a proposal to named reviewers (ac-evo-llm-11). Only where a roster of
- * more than one member exists: the Community operator is alone, and one
- * acceptance writes the value there.
- */
-export function tagReviewersAct(
-	ctx: ActContext,
-	request: EvolutionRequest,
-	proposalId: string,
-	reviewerIds: readonly string[],
-	roster: ReadonlySet<string> | null
-): ActOutcome {
-	const proposal = request.proposals.find((p) => p.id === proposalId);
-	if (!proposal)
-		return refuse('This proposal does not exist on the request.', 'get_evolution lists the pending proposals with their ids.');
-	const unique = [...new Set(reviewerIds.map((id) => id.trim()).filter((id) => id !== ''))];
-	const unknown = roster ? unique.filter((id) => !roster.has(id)) : [];
-	const allowed = firstRefusal(
-		notFinished(request),
-		personOnly(ctx.actor, 'tag reviewers'),
-		guard(
-			roster === null,
-			'Reviewers can be tagged only where the workspace holds more than one member.',
-			'With one member, that member is the reviewer: one acceptance writes the value.'
-		),
-		guard(
-			proposal.decision !== 'pending' && proposal.decision !== 'reworded',
-			'This proposal has already been decided.',
-			'Reviewers are tagged on a proposal still waiting for a decision.'
-		),
-		guard(
-			unknown.length > 0,
-			`Not ${unknown.length === 1 ? 'a member' : 'members'} of the workspace: ${unknown.join(', ')}.`,
-			'A reviewer is picked from the roster of the workspace.'
-		)
-	);
-	if (!allowed.ok) return allowed;
-	return done(
-		{
-			...request,
-			proposals: request.proposals.map((p) =>
-				p.id === proposalId
-					? { ...p, reviewerIds: unique, verdicts: p.verdicts.filter((v) => unique.includes(v.by)) }
-					: p
-			)
-		},
-		unique.length === 0
-			? `Nobody is asked to look at the proposed ${proposal.targetField} any more`
-			: `Asked ${unique.join(', ')} to look at the proposed ${proposal.targetField}; anyone with access decides it`
-	);
-}
 
 /**
  * Decide a proposal (ac-evo-llm-4..6). Accepting writes the value through to
@@ -1376,50 +1311,30 @@ export function decideProposalAct(
 		);
 	}
 
-	if (input.decision === 'refuse') {
-		const allowed = firstRefusal(
-			canRefuseProposal(ctx.actor, { soloWorkspace: ctx.soloWorkspace }),
-			guard(
-				proposal.decision !== 'pending' && proposal.decision !== 'reworded',
-				'This proposal has already been decided.',
-				'A decided proposal is a signed decision.'
-			),
-			notAViewer
-		);
-		if (!allowed.ok) return allowed;
-		const refusedProposal: Proposal = {
-			...(reviewed
-				? withVerdict(proposal, { by: ctx.actor.id, verdict: 'invalidated', comment: input.comment.trim(), at: ctx.at })
-				: proposal),
-			decision: 'refused',
-			comment: input.comment.trim()
-		};
-		const next = { ...request, proposals: request.proposals.map((p) => (p.id === proposalId ? refusedProposal : p)) };
-		return done(
-			reviewed
-				? stamp(ctx, next, 'proposal_verdict', said(ctx).invalidated(proposal.targetField), { proposalId })
-				: next,
-			`Refused the proposed ${proposal.targetField}`
-		);
-	}
-
+	// Refused: a suggestion is accepted or refused, nothing else (criterion 6d20bc82).
 	const allowed = firstRefusal(
-		carriesForward(ctx, 'reword a proposal'),
-		canRewordProposal(proposal),
-		guard(input.value.trim() === '', 'A rewording needs a value.', 'An empty rewording offers nothing to sign.')
+		canRefuseProposal(ctx.actor, { soloWorkspace: ctx.soloWorkspace }),
+		guard(
+			proposal.decision !== 'pending' && proposal.decision !== 'reworded',
+			'This proposal has already been decided.',
+			'A decided proposal is a signed decision.'
+		),
+		notAViewer
 	);
 	if (!allowed.ok) return allowed;
+	const refusedProposal: Proposal = {
+		...(reviewed
+			? withVerdict(proposal, { by: ctx.actor.id, verdict: 'invalidated', comment: input.comment.trim(), at: ctx.at })
+			: proposal),
+		decision: 'refused',
+		comment: input.comment.trim()
+	};
+	const next = { ...request, proposals: request.proposals.map((p) => (p.id === proposalId ? refusedProposal : p)) };
 	return done(
-		{
-			...request,
-			// A new wording is a new thing to stand behind: the verdicts given so far go.
-			proposals: request.proposals.map((p) =>
-				p.id === proposalId
-					? { ...p, value: input.value.trim(), decision: 'reworded', bannedSynonymDetected: false, flaggedWords: [], verdicts: [] }
-					: p
-			)
-		},
-		`Reworded the proposed ${proposal.targetField}`
+		reviewed
+			? stamp(ctx, next, 'proposal_verdict', said(ctx).invalidated(proposal.targetField), { proposalId })
+			: next,
+		`Refused the proposed ${proposal.targetField}`
 	);
 }
 
@@ -1704,12 +1619,11 @@ export function postOnFieldAct(
 		readonly asks?: boolean;
 		readonly choices?: readonly string[];
 		readonly multiple?: boolean;
-		/** The texts the AI offers in its message, each at its place (ac-evo-live-comment-suggests). */
-		readonly writes?: readonly SuggestedWrite[];
+		/** Whether the message carries texts offered for the places of a step, which a comment refuses. */
+		readonly offersTexts?: boolean;
 	} = {}
 ): ActOutcome {
 	const key = fieldKey(fieldPath, leafId);
-	const writes = exchange.writes ?? [];
 	const current = latestThread(request, key);
 	const startsNew = current === undefined || current.state === 'turned_into_change';
 	// A reply answers a message the thread holds; a message of its own answers none (ac-evo-fthread-reply).
@@ -1734,21 +1648,14 @@ export function postOnFieldAct(
 		guard(body.trim() === '', 'A message needs a body.', 'An empty message says nothing.'),
 		guard(!!replyTo && !answers, 'The message you answer is not in this thread.', 'replyTo names a message of the thread on this field; leave it out for a message of its own.'),
 		canPostOnField(ctx.actor, { canComment: true, thread: startsNew ? undefined : current }),
-		exchange.writes === undefined
-			? ALLOW
-			: firstRefusal(
-					guard(ctx.actor.kind !== 'ai_client', 'Only an AI offers its text as a suggestion: write it at its place.', 'A person writes the step itself, from its editor.'),
-					suggestionAllowed(writes)
-				)
+		// A comment is a conversation, never a way to write: a text of a step goes to its one place (rule 5f9257fe).
+		guard(
+			!!exchange.offersTexts,
+			'A comment is text only: write the text of a step at its place (update_step_description, answer_step), or say what you suggest in plain words.',
+			'The text is written as a new version a person validates; a comment carries no text to accept.'
+		)
 	);
 	if (!allowed.ok) return allowed;
-	const known = new Set(requirementCandidates(request.fieldThreads.flatMap((t) => t.messages).filter((m) => readableBy(m, ctx.actor.id))).map((c) => c.key));
-	const freshWrites = writes.flatMap((w) => {
-		const fresh = pointsOf(w.value).filter((line) => !known.has(requirementKey(w.fieldPath, line)));
-		return fresh.length ? [{ fieldPath: w.fieldPath, value: textOfPoints(fresh) }] : [];
-	});
-	if (writes.length > 0 && freshWrites.length === 0 && !asksPerson)
-		return done(request, 'These requirements are already offered or decided; no duplicate message was added.');
 
 	const message = {
 		id: ctx.newId(),
@@ -1763,9 +1670,7 @@ export function postOnFieldAct(
 		// The answers its question offers as buttons, one to click or several to tick (ac-evo-live-choices).
 		...(asksPerson && cleanChoices(exchange.choices ?? []).length > 0
 			? { choices: cleanChoices(exchange.choices ?? []), ...(exchange.multiple ? { multiple: true as const } : {}) }
-			: {}),
-		// What it offers to write, decided by a person with Accept or Refuse (ac-evo-live-comment-suggests).
-		...(freshWrites.length > 0 ? { suggests: freshWrites } : {})
+			: {})
 	};
 	return done(
 		{
@@ -1774,9 +1679,7 @@ export function postOnFieldAct(
 				? [...request.fieldThreads, openThread({ id: ctx.newId(), key, message })]
 				: request.fieldThreads.map((t) => (t.id === current.id ? post(t, message) : t))
 		},
-		`Posted on ${fieldPath}${leafId ? ` for ${leafId}` : ''}${
-			writes.length > 0 ? `, suggesting ${writes.length === 1 ? 'one text' : `${writes.length} texts`} the person accepts or refuses there` : ''
-		}`
+		`Posted on ${fieldPath}${leafId ? ` for ${leafId}` : ''}`
 	);
 }
 
@@ -2018,7 +1921,8 @@ export function gateFor(
 	target: RequestStage,
 	criticalEmptyCount: number,
 	specification?: SpecificationHold,
-	concurrent?: ConcurrentHold
+	concurrent?: ConcurrentHold,
+	branch?: FreezeBranchHold
 ): Guarded {
 	switch (target) {
 		case 'coherence':
@@ -2030,7 +1934,9 @@ export function gateFor(
 				canLeaveCoherence(request),
 				specificationGate(specification),
 				// A conflict with a request under way waits for a person, whatever else the request has to arbitrate (EVO-005).
-				concurrentGate(concurrent)
+				concurrentGate(concurrent),
+				// Once the project's code is linked, the change goes through a commit on a branch of its own (rule 148c6e2a).
+				freezeBranchRefusal(request, branch)
 			);
 		case 'acceptance':
 			// Never into Approval while version N+1 waits in correction, on its own or by hand (EVO-012).
@@ -2068,6 +1974,8 @@ export function crossStageAct(
 		readonly leftToLanding?: readonly Pick<TouchedLine, 'id' | 'title'>[];
 		/** Every request of the project, this one included: the freeze reads the conflicts and sets the order against them (EVO-005). */
 		readonly requests?: readonly EvolutionRequest[];
+		/** Whether the project's code is linked and the branch it deploys from: the freeze waits for that branch once code is linked. */
+		readonly branch?: FreezeBranchHold;
 	}
 ): ActOutcome {
 	const target = nextStage(request.stage);
@@ -2081,12 +1989,14 @@ export function crossStageAct(
 		target ? canAdvance(request, target) : ALLOW,
 		// Before any waiver: no one stands behind actions the engine could not read.
 		target === 'implementation' ? actionsUnreadGate(input.specification) : ALLOW,
+		// A waiver never stands in for the deployment branch: it crosses a judgment, not a missing setting (rule 7aa5cb55).
+		target === 'implementation' ? freezeBranchRefusal(request, input.branch, input.waiverReason !== undefined) : ALLOW,
 		// Nor does a waiver carry drafts nobody validated into Approval (EVO-012).
 		target === 'acceptance' ? correctionHoldsApproval(request) : ALLOW
 	);
 	if (!allowed.ok || !target) return allowed as Refused;
 	const concurrent = target === 'implementation' && input.requests ? concurrentHoldOf(request, input.requests) : undefined;
-	const gate = gateFor(request, target, input.criticalEmptyCount, input.specification, concurrent);
+	const gate = gateFor(request, target, input.criticalEmptyCount, input.specification, concurrent, input.branch);
 	let crossed: EvolutionRequest;
 	if (input.waiverReason !== undefined) {
 		const waivable = canWaive(ctx.actor, input.waiverReason, gate.ok);
@@ -2385,10 +2295,11 @@ export function gateReading(
 	request: EvolutionRequest,
 	criticalEmptyCount: number,
 	specification?: SpecificationHold,
-	concurrent?: ConcurrentHold
+	concurrent?: ConcurrentHold,
+	branch?: FreezeBranchHold
 ): { readonly next: RequestStage | null; readonly verdict: Guarded } {
 	const next = nextStage(request.stage);
-	return { next, verdict: next ? firstRefusal(canAdvance(request, next), gateFor(request, next, criticalEmptyCount, specification, concurrent)) : ALLOW };
+	return { next, verdict: next ? firstRefusal(canAdvance(request, next), gateFor(request, next, criticalEmptyCount, specification, concurrent, branch)) : ALLOW };
 }
 
 export const stageIndex = (stage: RequestStage): number => STAGE_ORDER.indexOf(stage);
@@ -2784,7 +2695,6 @@ export function updateStepDescriptionAct(
 	const step = input.step;
 	const allowed = firstRefusal(
 		notFinished(request),
-		writesStepText(ctx),
 		guard(!canEdit(ctx.actor), 'A viewer reads and comments, but does not write.', 'A description is a write on the request.'),
 		guard(
 			!isDescribedStep(step),
@@ -2898,7 +2808,6 @@ export function answerStepAct(
 	const asked = stepQuestionOf(input.step, input.question);
 	const allowed = firstRefusal(
 		notFinished(request),
-		writesStepText(ctx),
 		guard(!canEdit(ctx.actor), 'A viewer reads and comments, but does not write.', 'An answer is a write on the request.'),
 		guard(
 			!asked,

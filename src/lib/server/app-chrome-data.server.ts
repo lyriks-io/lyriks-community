@@ -17,6 +17,7 @@ import { EMPTY_APP_CHROME, type AppChrome, type BellKind, type BellNotification,
 import { currentPersonId } from './evolution-actor.server';
 import { loadReads, projectDiscussions, projectEvolution, projectRetrospecActivity, projectTeamActivity, visibleProjects, workspaceRoster, type ProjectEvolution, type VisibleProject } from './project-activity.server';
 import { readRetrospecStatus } from './retrospec-status.server';
+import { pickActiveWorkspace, pinnedWorkspace } from './caller-workspace.server';
 import { aiLastSeenOf } from './retrospec-ai.server';
 import { pausedRetrospecLabel } from '$domain/retrospec';
 import { readProjectTabs } from './project-tabs.server';
@@ -116,20 +117,24 @@ export interface ReaderActivity {
 /** Every visible project's activity and the reader's read marks on it. */
 export async function readerActivity(services: AppServices, event: Pick<RequestEvent, 'locals' | 'cookies'>): Promise<ReaderActivity> {
 	const me = currentPersonId(services);
-	const activeWs = event.cookies.get('lyriks_active_ws');
-	const [projects, myName] = await Promise.all([
-		visibleProjects(services, event),
-		services.resolveActiveMemberName.execute(activeWs ?? null).catch(() => '')
+	const [projects, workspaces] = await Promise.all([visibleProjects(services, event), services.workspaces.listForCaller().catch(() => [])]);
+	// The workspace the switcher shows: on a browser that never pinned one, the reader's first, so their
+	// name is the one their team knows them by and never one read off their email (criterion a975fd4c).
+	const active = pickActiveWorkspace(workspaces, pinnedWorkspace(event))?.id ?? null;
+	const [myName, roster] = await Promise.all([
+		services.resolveActiveMemberName.execute(active).catch(() => ''),
+		// The people of each visible project's own workspace, not of the one the switcher shows.
+		workspaceRoster(services, projects, workspaces, active)
 	]);
-	// The people of each visible project's own workspace, not of the one the switcher shows.
-	const roster = await workspaceRoster(services, projects, activeWs);
+	const started = performance.now();
 	const perProject = await mapLimit(projects, 6, async (project) => {
+		// Each read timed apart: the bar reads them for every visible project on every page.
 		const [evolution, discussions, retrospec, team, reads] = await Promise.all([
-			projectEvolution(services, project.id, roster),
-			projectDiscussions(services, project.id),
-			projectRetrospecActivity(services, project.id),
-			projectTeamActivity(services, project),
-			loadReads(services, project.id, me)
+			timedPart('activity:evolution', projectEvolution(services, project.id, roster)),
+			timedPart('activity:discussions', projectDiscussions(services, project.id)),
+			timedPart('activity:retrospec', projectRetrospecActivity(services, project.id)),
+			timedPart('activity:team', projectTeamActivity(services, project)),
+			timedPart('activity:reads', loadReads(services, project.id, me))
 		]);
 		return {
 			project,
@@ -140,6 +145,8 @@ export async function readerActivity(services: AppServices, event: Pick<RequestE
 			openDiscussions: discussions.openCount
 		};
 	});
+	const ms = performance.now() - started;
+	if (ms >= 500) console.warn(`[slow-part] activity:projects ${Math.round(ms)}ms (${projects.length} projects)`);
 	return { me, myName, roster, projects: perProject };
 }
 

@@ -1161,6 +1161,20 @@ export interface Deployment {
 	declaredAt: string;
 }
 
+/**
+ * A branch an AI read from git as the one the project deploys from, waiting
+ * for a person to save it on the card Code on its branch (action db883b80):
+ * it pre-fills the field and names nothing.
+ */
+export interface DeploymentBranchSuggestion {
+	readonly branch: string;
+	/** What in git says so, as the card shows it: the default branch of origin, the branch the CI deploys from. */
+	readonly why: string;
+	/** Who suggested it, the AI's actor id. */
+	readonly by: string;
+	readonly at: string;
+}
+
 export interface ProjectEvolutionDraft {
 	projectId: string;
 	requests: EvolutionRequest[];
@@ -1170,6 +1184,8 @@ export interface ProjectEvolutionDraft {
 	 * while none is named, and requests are then built and declared live as before.
 	 */
 	deploymentBranch?: string;
+	/** The branch an AI read from git, while the project names none (action db883b80). */
+	suggestedDeploymentBranch?: DeploymentBranchSuggestion;
 	/** The admins who delegated validation to their own AI on every evolution of the project (ac-evo-llm-delegation). */
 	aiDelegations?: AiDelegation[];
 	/** The sessions of each person's AI on the whole project (ac-ai-session-project). */

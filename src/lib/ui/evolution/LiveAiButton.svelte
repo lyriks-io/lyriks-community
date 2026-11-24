@@ -49,7 +49,7 @@
 					: click?.state === 'cancelled'
 						? 'Cancelled, what Lyriks wrote is undone: click to prefill again.'
 						: null;
-		return [`${label}: Lyriks suggests an answer to every question of this section, and you accept or reject each one.`, stands, refusal].filter(Boolean).join(' ');
+		return [`${label}: your AI writes every empty answer of this section at its place, and you validate it.`, stands, refusal].filter(Boolean).join(' ');
 	});
 	/** The click waits for the AI at once; what must happen first runs before it goes (ac-evo-form-edit-optimistic). */
 	function send() {

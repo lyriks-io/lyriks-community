@@ -62,12 +62,29 @@ describe('Create your Lyriks account is read by the browser password manager [cr
 		expect(attribute(input(html, 'confirm'), 'autocomplete')).toBe('new-password');
 	});
 
-	it('leaves signing in as it was: no confirmation, the current password [criterion:ac-leaf-8da2717b-4eba-4aec-862d-edb52354cd81]', () => {
+});
+
+describe('the sign-in form is read by password managers [criterion:eba45448]', () => {
+	it('marks the address as the username and the password as the current one, with no confirmation [criterion:eba45448]', () => {
 		const html = page({});
 		expect(html).toContain('Sign in to Lyriks');
-		expect(attribute(input(html, 'email'), 'autocomplete')).toBe('email');
+		expect(attribute(input(html, 'email'), 'autocomplete')).toBe('username');
 		expect(attribute(input(html, 'password'), 'autocomplete')).toBe('current-password');
 		expect(input(html, 'confirm')).toBeNull();
+	});
+});
+
+describe('the claim saves the administrator password under the address [criterion:708c38a5]', () => {
+	it('carries the address as a hidden username a password manager reads, both passwords new [criterion:708c38a5]', () => {
+		const html = page({ firstRun: true }, { step: 'password', email: 'owner@example.test', key: 'lyk_key', customer: 'Acme' });
+		const email = input(html, 'email');
+		// A type="hidden" field is invisible to password managers; a hidden email field is read.
+		expect(attribute(email, 'type')).toBe('email');
+		expect(attribute(email, 'autocomplete')).toBe('username');
+		expect(attribute(email, 'value')).toBe('owner@example.test');
+		expect(flag(email, 'hidden')).toBe(true);
+		expect(attribute(input(html, 'password'), 'autocomplete')).toBe('new-password');
+		expect(attribute(input(html, 'confirm'), 'autocomplete')).toBe('new-password');
 	});
 });
 

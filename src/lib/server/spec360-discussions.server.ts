@@ -70,12 +70,27 @@ async function readDiscussionRoster(services: AppServices, projectId: string, co
 		});
 	};
 
-	const team = await services.loadTeam.execute(projectId).catch(() => ({ collaborators: [] }));
+	// The project's team and the workspace's members are read side by side: both live in the Back,
+	// and in a row their round trips added up on every page of Knowledge. The team still comes first.
+	const [team, workspace] = await Promise.all([
+		services.loadTeam.execute(projectId).catch(() => ({ collaborators: [] })),
+		readWorkspaceMembers(services, projectId, cookies)
+	]);
 	for (const c of team.collaborators) {
 		const discipline = disciplineLabel(c);
 		add(c.email, { name: shortName(c), job: discipline === 'Member' ? '' : discipline });
 	}
+	for (const m of workspace.members) {
+		add(m.email, {
+			name: shortName({ name: m.name ?? '', email: m.email }),
+			job: workspace.jobs.get(lower(m.email))?.names.join(', ') ?? ''
+		});
+	}
+	return [...people.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
 
+/** The members of the workspace that owns the project, with their jobs on it; none when the roster is unavailable. */
+async function readWorkspaceMembers(services: AppServices, projectId: string, cookies: Cookies) {
 	try {
 		// The people of the workspace that owns the project, never the one the
 		// switcher shows; a project that belongs to no workspace reads the active one.
@@ -87,15 +102,10 @@ async function readDiscussionRoster(services: AppServices, projectId: string, co
 				services.workspaces.listMembers(active.id),
 				services.teamJobs.forProject(active.id, projectId).catch(() => new Map<string, PersonJobs>())
 			]);
-			for (const m of members) {
-				add(m.email, {
-					name: shortName({ name: m.name ?? '', email: m.email }),
-					job: jobs.get(lower(m.email))?.names.join(', ') ?? ''
-				});
-			}
+			return { members, jobs };
 		}
 	} catch (err) {
 		console.warn('[spec360] workspace roster unavailable:', err);
 	}
-	return [...people.values()].sort((a, b) => a.name.localeCompare(b.name));
+	return { members: [] as Awaited<ReturnType<AppServices['workspaces']['listMembers']>>, jobs: new Map<string, PersonJobs>() };
 }

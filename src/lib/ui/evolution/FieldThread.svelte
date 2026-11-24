@@ -2,16 +2,22 @@
 	import { scrollMotion } from '$ui/shell/scroll-motion';
 	import { untrack } from 'svelte';
 	import { Icon, pushToast } from '$ui/design-system';
-	import { pointsOf, suggestionPlaceOf, threadBoxOf, topicOf, waitingQuestionOf, type FieldThreadMessage } from '$domain/evolution';
+	import {
+		insertMemberName,
+		memberMentionsIn,
+		memberQueryAt,
+		membersToName,
+		threadBoxOf,
+		topicOf,
+		waitingQuestionOf,
+		type FieldThreadMessage
+	} from '$domain/evolution';
 	import { personName } from './people';
 	import { conversationsOf } from './thread-conversations';
 	import { relativeWhen } from './relative-when';
 	import LiveClickProgress from './LiveClickProgress.svelte';
 	import type { ThreadAsk } from './live-session.svelte';
 	import { OptimisticActs } from './optimistic-acts.svelte';
-	import { requirementKindOf, requirementSectionOf } from './requirement-kinds';
-	import { useRequestLanguage } from './request-language.svelte';
-	import { LLM_BADGE, SUGGESTED } from './evo-look';
 
 	/**
 	 * The conversations about one answer, read as topics (ac-evo-fthread-look):
@@ -31,12 +37,17 @@
 	 * under it. Once the thread holds a topic, the box to start another stays
 	 * behind Add a comment (criterion 6ef1230e).
 	 *
-	 * A message of the AI may carry a suggestion (ac-evo-live-comment-suggests):
-	 * its texts shown as the Solution tab shows them, each line with its kind,
-	 * under the section it would write, with Accept, which writes them, and
-	 * Refuse. A resolved topic offers no box to reply (ac-evo-fthread-resolved-closed);
+	 * A message reads its words only (criterion 2bc3648b): what the AI wrote, or
+	 * offered in an earlier message, reads in the requirements of the Solution,
+	 * never again in the comment. A resolved topic offers no box to reply (ac-evo-fthread-resolved-closed);
 	 * Reply opens the box under the topic's last reply and brings it into view
 	 * (ac-evo-fthread-reply-in-view).
+	 *
+	 * Typing @ in a box lists the members of the project to name, the writer
+	 * aside, six at most: ArrowUp and ArrowDown move, Enter or Tab picks, Escape
+	 * closes the list, and the pick writes @ and their name. Once sent, the
+	 * members a message names are told they were mentioned, and their names read
+	 * marked in it (criterion b5833eb5).
 	 *
 	 * Every act reads at once (ac-evo-form-edit-optimistic): a message sent shows
 	 * in the thread and its box empties, a ruling and a message made a comment
@@ -64,9 +75,6 @@
 		readonly multiple?: true;
 		/** Sent to the reader's AI from this page and not read back yet. */
 		readonly asking?: true;
-		/** The texts the AI offers, each at its place, and how a person decided them (ac-evo-live-comment-suggests). */
-		readonly suggests?: readonly { readonly fieldPath: string; readonly value: string }[];
-		readonly suggestion?: { readonly state: 'accepted' | 'refused'; readonly by: string; readonly at: string };
 	}
 	type Ruling = 'validated' | 'resolved' | 'open';
 	interface Props {
@@ -91,10 +99,8 @@
 		ask?: ThreadAsk | null;
 		/** Make it a comment: publishes the reader's exchange with their AI (ac-evo-live-ask). */
 		onpublish?: ((messageId: string) => Promise<boolean>) | null;
-		/** Accepts or refuses the suggestion of a message; absent for who may not write (ac-evo-live-comment-suggests). */
-		ondecide?: ((messageId: string, decision: 'accept' | 'refuse') => Promise<boolean>) | null;
 	}
-	let { label, messages: saved, members, actorId, canComment, focusOnOpen = false, onpost, onrule, ask = null, onpublish = null, ondecide = null }: Props = $props();
+	let { label, messages: saved, members, actorId, canComment, focusOnOpen = false, onpost, onrule, ask = null, onpublish = null }: Props = $props();
 
 	/** Messages sent, rulings given and exchanges made comments, read before the server has answered. */
 	const posting = new OptimisticActs<Message>();
@@ -272,29 +278,80 @@
 			pushToast({ level: 'success', message: 'Comment resolved' });
 	}
 
-	/** The places of a suggestion as the Solution tab shows them: per section, each line with its kind (ac-evo-live-comment-suggests). */
-	const language = useRequestLanguage();
-	function suggestionSections(writes: NonNullable<Message['suggests']>) {
-		const sections: { title: string; lines: { kind: string; text: string }[] }[] = [];
-		for (const write of writes) {
-			const place = suggestionPlaceOf(write.fieldPath);
-			if (!place) continue;
-			const section = requirementSectionOf(place.step);
-			const title = `${section.number} ${section.title}`;
-			const kind = requirementKindOf(language(), place.step, place.kind === 'description' ? 'description' : place.key) ?? '';
-			let group = sections.find((g) => g.title === title);
-			if (!group) sections.push((group = { title, lines: [] }));
-			group.lines.push(...pointsOf(write.value).map((text) => ({ kind, text })));
-		}
-		return sections;
-	}
-	const suggestionOf = (message: Message) => message.suggestion?.state ?? 'waiting';
 
 	/** Enter sends, Shift+Enter starts a new line (ac-evo-fthread-enter). */
 	function sendOnEnter(e: KeyboardEvent, action: () => void) {
 		if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
 		e.preventDefault();
 		action();
+	}
+
+	/**
+	 * The list of members to name after @, under the box it was typed in
+	 * (action 60847e98): where the name being typed starts, the caret, and the
+	 * member the keyboard is on. Nobody else on the project, no list (rule 960f7161).
+	 */
+	type Box = 'topic' | 'reply';
+	let picker = $state<{ box: Box; start: number; caret: number; query: string; index: number } | null>(null);
+	let replyBox: HTMLTextAreaElement | undefined = $state();
+	const named = $derived(picker ? membersToName(members, picker.query, actorId) : []);
+	const uid = $props.id();
+	const listId = `members-to-name-${uid}`;
+	const boxElement = (box: Box) => (box === 'topic' ? topicBox : replyBox);
+	/** Reads the box again: a name typed after @ opens the list, anything else closes it. */
+	function readPicker(box: Box) {
+		const el = boxElement(box);
+		if (!el) return;
+		const caret = el.selectionStart ?? el.value.length;
+		const typed = memberQueryAt(el.value, caret);
+		if (!typed || membersToName(members, typed.query, actorId).length === 0) {
+			picker = null;
+			return;
+		}
+		const same = picker?.box === box && picker.start === typed.start && picker.query === typed.query;
+		picker = { box, start: typed.start, caret, query: typed.query, index: same && picker ? picker.index : 0 };
+	}
+	/** Writes @ and the member's name where the name was being typed, the caret after it. */
+	function pickMember(member: { id: string; name: string }) {
+		const at = picker;
+		if (!at) return;
+		const el = boxElement(at.box);
+		const now = at.box === 'topic' ? topic : reply;
+		const written = insertMemberName(now, at.start, at.caret, member);
+		if (at.box === 'topic') topic = written.text;
+		else reply = written.text;
+		picker = null;
+		queueMicrotask(() => {
+			el?.focus();
+			el?.setSelectionRange(written.caret, written.caret);
+		});
+	}
+	/** The keys of the open list: ArrowUp and ArrowDown move, Enter or Tab picks, Escape closes it. True when the key was the list's. */
+	function pickerKeys(e: KeyboardEvent, box: Box): boolean {
+		if (picker?.box !== box || named.length === 0 || e.isComposing) return false;
+		if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+			const step = e.key === 'ArrowDown' ? 1 : -1;
+			picker = { ...picker, index: (picker.index + step + named.length) % named.length };
+		} else if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
+			pickMember(named[Math.min(picker.index, named.length - 1)]);
+		} else if (e.key === 'Escape') {
+			picker = null;
+		} else return false;
+		e.preventDefault();
+		e.stopPropagation();
+		return true;
+	}
+	/** A message read with the members it names marked (criterion b5833eb5). */
+	function bodyPieces(message: Message): { text: string; named: boolean }[] {
+		const pieces: { text: string; named: boolean }[] = [];
+		let at = 0;
+		for (const m of memberMentionsIn(message.body, members, message.author)) {
+			if (m.start > at) pieces.push({ text: message.body.slice(at, m.start), named: false });
+			pieces.push({ text: message.body.slice(m.start, m.end), named: true });
+			at = m.end;
+		}
+		if (at < message.body.length) pieces.push({ text: message.body.slice(at), named: false });
+		return pieces;
 	}
 
 	// The design's buttons, small: unfilled (.ly-btn), filled (.ly-btn--fill); the field (.ly-input).
@@ -345,18 +402,29 @@
 				<div class="animate-lk-in-fast flex basis-full flex-wrap items-start gap-2">
 					<textarea
 						{@attach replyIntoView}
+						bind:this={replyBox}
 						rows="1"
 						aria-label="Reply"
+						aria-controls={picker?.box === 'reply' && named.length ? listId : undefined}
+						aria-activedescendant={picker?.box === 'reply' && named.length ? `${listId}-${picker.index}` : undefined}
 						value={reply}
-						placeholder={enterToAi(t.opener.id) ? 'Your answer to your AI… (Enter to send it to your AI)' : 'Your reply… (Enter to send)'}
+						placeholder={enterToAi(t.opener.id) ? 'Your answer to your AI… (Enter to send it to your AI)' : 'Your reply… (Enter to send, @ to name someone)'}
 						class="{BOX} flex-[1_1_280px]"
-						oninput={(e) => (reply = e.currentTarget.value)}
+						oninput={(e) => {
+							reply = e.currentTarget.value;
+							readPicker('reply');
+						}}
+						onclick={() => readPicker('reply')}
+						onkeyup={(e) => (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') && readPicker('reply')}
+						onblur={() => picker?.box === 'reply' && (picker = null)}
 						onkeydown={(e) => {
+							if (pickerKeys(e, 'reply')) return;
 							if (e.key === 'Escape') replyingTo = null;
 							else sendOnEnter(e, () => void sendReply(t.opener.id, enterToAi(t.opener.id)));
 						}}
 					></textarea>
 					{@render sendButtons(t.opener.id)}
+					{#if picker?.box === 'reply' && named.length}{@render memberList()}{/if}
 				</div>
 			{/if}
 		</div>
@@ -375,16 +443,29 @@
 				bind:this={topicBox}
 				rows="1"
 				aria-label="Open a new topic"
+				aria-controls={picker?.box === 'topic' && named.length ? listId : undefined}
+				aria-activedescendant={picker?.box === 'topic' && named.length ? `${listId}-${picker.index}` : undefined}
 				value={topic}
-				placeholder={ask ? 'Write a comment, or ask your AI… (Enter to comment, Shift+Enter for a new line)' : 'Open a new topic… (Enter to send, Shift+Enter for a new line)'}
+				placeholder={ask ? 'Write a comment, or ask your AI… (Enter to comment, @ to name someone)' : 'Open a new topic… (Enter to send, @ to name someone)'}
 				class="{BOX} flex-[1_1_320px]"
-				oninput={(e) => (topic = e.currentTarget.value)}
-				onkeydown={(e) => (e.key === 'Escape' && composing ? cancelComment() : sendOnEnter(e, () => void openTopic(false)))}
+				oninput={(e) => {
+					topic = e.currentTarget.value;
+					readPicker('topic');
+				}}
+				onclick={() => readPicker('topic')}
+				onkeyup={(e) => (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') && readPicker('topic')}
+				onblur={() => picker?.box === 'topic' && (picker = null)}
+				onkeydown={(e) => {
+					if (pickerKeys(e, 'topic')) return;
+					if (e.key === 'Escape' && composing) cancelComment();
+					else sendOnEnter(e, () => void openTopic(false));
+				}}
 			></textarea>
 			{@render sendButtons(null)}
 			{#if composing}
 				<button type="button" class="min-h-9 px-1 text-xs font-semibold text-evo-muted underline-offset-4 hover:underline" onclick={cancelComment}>Cancel</button>
 			{/if}
+			{#if picker?.box === 'topic' && named.length}{@render memberList()}{/if}
 		</div>
 		{#if waiting && topic.trim() !== ''}
 			<!-- A new topic while the AI's question waits: offer to answer it where it was asked (ac-evo-live-scope). -->
@@ -411,10 +492,10 @@
 		<!-- Every reply says whom it answers, the reader's as the AI's (ac-evo-fthread-reply). -->
 		<span class="font-evo-mono text-[0.6875rem] text-evo-muted">↳ to {isAi(answered) ? 'the AI assistant' : nameOf(answered.author)}</span>
 	{/if}
-		<span class="whitespace-pre-line break-words {ruling === 'resolved' ? 'text-evo-muted' : 'text-evo-ink'}">{message.body}</span>
-	{#if message.suggests?.length}
-		{@render suggestionCard(message, message.suggests)}
-	{/if}
+		<!-- The members the message names read marked, as they were told (criterion b5833eb5). -->
+		<span class="whitespace-pre-line break-words {ruling === 'resolved' ? 'text-evo-muted' : 'text-evo-ink'}"
+			>{#each bodyPieces(message) as piece, at (at)}{#if piece.named}<b class="font-semibold text-blue-ink">{piece.text}</b>{:else}{piece.text}{/if}{/each}</span
+		>
 	{#if message.privateTo || waiting?.id === message.id}
 		<span class="flex flex-wrap items-center gap-2 text-[0.6875rem]">
 			{#if message.privateTo}
@@ -466,24 +547,27 @@
 	{/if}
 {/snippet}
 
-{#snippet suggestionCard(message: Message, writes: NonNullable<Message['suggests']>)}
-	{@const state = suggestionOf(message)}
-	<!-- The texts the AI offers, as the place shows them, with Accept and Refuse (ac-evo-live-comment-suggests). -->
-	<div class="mt-1.5 flex flex-col gap-2 rounded-lg px-2.5 py-2 {SUGGESTED} {state === 'refused' ? 'opacity-60' : ''}" role="group" aria-label="Suggestion of Lyriks">
-		{#each suggestionSections(writes) as section (section.title)}
-			<div class="flex flex-col gap-1">
-				<span class="flex items-center gap-1.5 text-xs font-bold text-evo-ink"><span class={LLM_BADGE}>AI</span>{section.title}</span>
-				{#each section.lines as line, at (at)}
-					<span class="flex flex-wrap items-baseline gap-2">
-						<!-- The kind in a column of its own, as the lines of 2.1 read. -->
-						{#if line.kind}<span class="flex flex-[0_0_96px]"><span class="whitespace-nowrap bg-toner-2 px-2 py-px font-evo-mono text-[0.6875rem] font-bold tracking-[0.06em] text-ink-2 uppercase">{line.kind}</span></span>{/if}
-						<span class="min-w-0 flex-[1_1_240px] text-evo-ink {state === 'refused' ? 'line-through' : ''}">{line.text}</span>
-					</span>
-				{/each}
-			</div>
+{#snippet memberList()}
+	<!-- The members to name after @, under the box (action 60847e98): a click or Enter writes the name, Escape closes it. -->
+	<ul id={listId} role="listbox" aria-label="Members to name" class="animate-lk-in-fast m-0 flex basis-full list-none flex-col gap-px rounded-lg border-[1.5px] border-evo-control bg-paper p-1">
+		{#each named as member, at (member.id)}
+			{@const role = roleOf(member.id)}
+			<li
+				id="{listId}-{at}"
+				role="option"
+				aria-selected={picker?.index === at}
+				class="flex min-h-8 cursor-pointer items-baseline gap-2 rounded-md px-2 py-1 text-[0.8125rem] {picker?.index === at ? 'bg-blue-tint' : 'hover:bg-evo-sunken'}"
+				onmousedown={(e) => {
+					// The box keeps the caret: the pick writes where the name was typed.
+					e.preventDefault();
+					pickMember(member);
+				}}
+			>
+				<b class="font-semibold text-evo-ink">{member.name}</b>
+				{#if role}<span class="font-evo-mono text-xs text-evo-muted">{role}</span>{/if}
+			</li>
 		{/each}
-		<p class="text-xs text-evo-muted">Review each proposed requirement in its category in Solution.</p>
-	</div>
+	</ul>
 {/snippet}
 
 {#snippet sendButtons(openerId: string | null)}

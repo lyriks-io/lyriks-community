@@ -7,7 +7,7 @@
 // (`noRequest`), and nothing is sent at all when the board shows no open
 // request; a refusal for a request that exists stays a refusal. Never throws.
 // No dependencies, Node 18+, no network except the endpoint.
-import { branchHistory, gitState, proofsAgainst, repositoryOf } from './git-state.mjs';
+import { branchHistory, defaultBranchOf, gitState, proofsAgainst, repositoryOf } from './git-state.mjs';
 import { callToolJson } from './mcp-client.mjs';
 
 /** The Evolution board's cards, and whether the list is whole; null when the board cannot be read. */
@@ -39,6 +39,16 @@ function noOpenRequest(board) {
 
 const NO_REQUEST = 'no open Evolution request: code state not attached';
 
+/** Outside a git repository no commit can carry the change: the AI offers the person to create one, and creates it only on their yes (criterion f6d786d2). */
+const NO_GIT = 'No git repository here: this change cannot go through a commit. Create one (git init, then a first commit) and name the deployment branch.';
+
+/** What the AI is told while the project names no deployment branch: the branch git reads, and the operation that pre-fills the card with it. */
+function branchToSuggest(guess) {
+	if (!guess) return 'not reported: the project names no deployment branch, and git names no default branch to suggest: ask the person which branch the project deploys from';
+	const op = JSON.stringify({ op: 'suggest_deployment_branch', branch: guess.branch, why: guess.why });
+	return `not reported: the project names no deployment branch. git reads ${guess.branch} (${guess.why}): suggest it with apply_evolution_batch [${op}], then a person names it with Save on the card Code on its branch, or tells you to`;
+}
+
 /**
  * True when the platform found no request to attach the report to: it names
  * the request of every refusal it resolved, so a refusal of this report with
@@ -62,11 +72,12 @@ function verdictOf(answer) {
 
 /**
  * Reports the checkout's git state to the request built on this branch, and
- * what the platform answered. Null outside a git repository; never throws, so
+ * what the platform answered; outside a git repository, that none holds the
+ * change (noGit). Never throws, so
  * a refusal or a gateway without the operation leaves the sync standing.
  */
 export async function reportCodeState(session, projectId, dir, slice, { baseBranch = null } = {}) {
-	if (!gitState(dir)) return null;
+	if (!gitState(dir)) return { reported: false, noGit: true, answer: NO_GIT };
 	const board = await boardOf(session, projectId);
 	const deploymentBranch = baseBranch || deploymentBranchOf(board);
 	const git = gitState(dir, { deploymentBranch });
@@ -88,6 +99,8 @@ export async function reportCodeState(session, projectId, dir, slice, { baseBran
 	const { op: _name, history, ...rest } = op; // the commits travel to Lyriks, the summary only counts them
 	const facts = { ...rest, commitCount: history?.count ?? null };
 	if (noOpenRequest(board)) return { reported: false, noRequest: true, ...facts, answer: NO_REQUEST };
+	// No branch is named yet: the sign-in of this command only reports, so it says what git reads for the AI to suggest (action db883b80).
+	if (board && !deploymentBranch) return { reported: false, ...facts, answer: branchToSuggest(defaultBranchOf(git.top)) };
 	try {
 		const answer = await callToolJson(session, 'apply_evolution_batch', { project_id: projectId, operations: [op] });
 		const { ok, said } = verdictOf(answer);

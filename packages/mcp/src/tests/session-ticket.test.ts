@@ -1,6 +1,7 @@
 // The waiting command's sign-in (criterion 26c95cc1): backed by the session of
 // the client that opened the live session, twelve hours at most, and refused
-// by every tool but a wait in that one session.
+// by every tool but a wait in that one session; a restart of the gateway leaves
+// it working (criterion d3916c06).
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { Hono } from 'hono'
 
@@ -8,7 +9,7 @@ const session = vi.hoisted(() => ({ verify: vi.fn(async () => 'user-1') }))
 vi.mock('../session.js', async (original) => ({ ...await original<typeof import('../session.js')>(), verifyPlatformSession: session.verify }))
 
 const { authenticate } = await import('../auth.js')
-const { issueAccessToken, resolveAccessToken } = await import('../access-tokens.js')
+const { issueAccessToken, issueSessionWaitTicket, resolveAccessToken, revokeAccessToken } = await import('../access-tokens.js')
 const { SESSION_TICKET_TTL_SECONDS, issueSessionTicket, sessionScopeGuard } = await import('../session-ticket.js')
 const { skillsScopeGuard } = await import('../skills-ticket.js')
 import type { HonoVariables } from '../types.js'
@@ -61,5 +62,41 @@ describe('the session ticket', () => {
     const { token } = issueSessionTicket('platform-session', 'user-1', 'live-1')!
     session.verify.mockResolvedValueOnce(null as never)
     expect((await call(token, tool('await_evolution_event', { session_id: 'live-1' }))).status).toBe(401)
+  })
+
+  it('outlives a restart of the gateway, as narrow as before', async () => {
+    const { token } = issueSessionTicket('platform-session', 'user-1', 'live-1')!
+    vi.resetModules()
+    const restarted = await import('../access-tokens.js')
+    expect(restarted.resolveAccessToken(token)).toMatchObject({ session: 'platform-session', subject: 'user-1', scope: 'session-wait', sessionId: 'live-1' })
+    // Still only a wait in its one session, and still cut by the sign-in behind it.
+    expect((await call(token, tool('get_section'))).status).toBe(403)
+    session.verify.mockResolvedValueOnce(null as never)
+    expect((await call(token, tool('await_evolution_event', { session_id: 'live-1' }))).status).toBe(401)
+  })
+
+  it('refuses a ticket that was changed, signed under another secret, past its time, or revoked', () => {
+    const { token } = issueSessionTicket('platform-session', 'user-1', 'live-1')!
+    const body = token.slice('lyriks_mcp_ticket_'.length)
+    const flipped = body.slice(0, 40) + (body[40] === 'A' ? 'B' : 'A') + body.slice(41)
+    expect(resolveAccessToken(`lyriks_mcp_ticket_${flipped}`)).toBeNull()
+
+    const secret = process.env.JWT_SECRET
+    process.env.JWT_SECRET = 'another-secret'
+    const foreign = issueSessionWaitTicket('platform-session', 'user-1', 'x', 'live-1', 3600)
+    if (secret === undefined) delete process.env.JWT_SECRET
+    else process.env.JWT_SECRET = secret
+    expect(resolveAccessToken(foreign)).toBeNull()
+
+    expect(resolveAccessToken(issueSessionWaitTicket('platform-session', 'user-1', 'x', 'live-1', 0))).toBeNull()
+
+    revokeAccessToken(token)
+    expect(resolveAccessToken(token)).toBeNull()
+  })
+
+  it('is never read as a sign-in for every tool: a ticket always waits in one session', () => {
+    const { token } = issueSessionTicket('platform-session', 'user-1', 'live-1')!
+    expect(token.startsWith('lyriks_mcp_ticket_')).toBe(true)
+    expect(resolveAccessToken(token)?.scope).toBe('session-wait')
   })
 })

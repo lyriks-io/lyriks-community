@@ -249,6 +249,19 @@ describe('links Lyriks makes by itself', () => {
 		expect(automaticLinks(d, states, new Map())).toEqual([{ fieldId: status.id, statePath: 'order.status' }]);
 	});
 
+	it('finds the same link among thousands of states, words in any order, a state already carrying a field left out', () => {
+		const d = shop();
+		const status = fieldOf(d, 'status');
+		const noise = Array.from({ length: 5000 }, (_, i) => ({ path: `area${i}.record${i}.value${i}`, type: 'string', defaultValue: '' }) as BehaviourState);
+		// Whatever the order of the states, the one named like the field under its table is found.
+		expect(automaticLinks(d, [...noise, enumState('order.status'), ...noise], new Map())).toEqual([{ fieldId: status.id, statePath: 'order.status' }]);
+		// A state another field already carries holds no second one.
+		const other = byName(d, 'Order');
+		const carrier = createField(other.id, { name: 'Note', type: 'string' });
+		d.fields.push(carrier);
+		expect(automaticLinks(d, [enumState('order.status')], new Map([[carrier.id, 'order.status']]))).toEqual([]);
+	});
+
 	it('leaves alone a linked field, a field a person unlinked, two candidates, or two fields for one state', () => {
 		const d = shop();
 		const status = fieldOf(d, 'status');

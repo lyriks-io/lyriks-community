@@ -6,6 +6,76 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.51] - 2026-11-23
+
+Pages answer sooner and the first pages after an update no longer wait, an
+AI writes a change request's text where the person reads it, and the
+commands an AI runs stay signed in through a restart.
+
+### Added
+
+- Once a project's code is linked, a change request goes through a commit:
+  the freeze into the Build waits for the deployment branch, by hand, on the
+  last validation and under a waiver alike. An AI pre-fills the card Code on
+  its branch with the branch it read from git, a person saves it or tells
+  their AI to, and the card shows on Implementation before the freeze.
+- A comment of a change request names a member with @: a list under the box
+  offers the project's members, the writer aside, a click or Enter writes the
+  name, and the member named is notified and reads it marked.
+- The requirements of a change request mark what changed since their last
+  validation: a line the validated version did not hold reads New with its
+  author, a line dropped reads struck through as Removed, until the next
+  validation.
+- After a start, Lyriks reads ahead the first pages of the projects written
+  last, the coherence analysis every project page reads, and what the app bar
+  reads of every project, one reading at a time, and names in its log those
+  that took long (`LYRIKS_WARM_UP=0` turns it off). The database pool keeps
+  four connections open (`LYRIKS_PG_POOL_MIN`).
+
+### Changed
+
+- An AI writes the text of a step at its place, as a version the person
+  validates or refuses, alone or in a team; a comment is plain words and never
+  carries a text to accept.
+- Rewording a suggestion and asking members to look at it (tag_reviewers) are
+  retired: name the member with @ in a comment instead.
+- Changing a password asks for the new one twice, and the sign-in and
+  settings forms carry the fields browsers' password managers read.
+- A click in a change request no longer rebuilds the whole-project evidence
+  behind Project health: the evidence follows only the sections it is read
+  from.
+- The pages of the Specification 360° read the latest baseline once per
+  change of the baselines instead of the whole document on every page, copy
+  what they read from storage faster, and list a project's behaviour folder
+  once per moment.
+- The team reads (the people a discussion can notify, the validation team,
+  the project's roles) ask the account service their independent questions
+  together.
+- `assess_behavior_feature` lists a feature's implementation gaps from the
+  last report or index sync; on a server it always listed none.
+- A write to the behaviour of a large project no longer holds the server for
+  a second or more while Lyriks links the data model's fields by itself.
+
+### Fixed
+
+- The waiting command of a live session waits through a restart of Lyriks:
+  it opens its connection again and waits on for up to ten minutes, and its
+  ticket still signs in after a restart of the MCP gateway. A refused
+  sign-in still ends it at once.
+- The sync command of an index keeps its sign-in through a restart of the
+  MCP gateway, as narrow as before.
+- A statement that found no database connection in time, in the burst of
+  the first pages after a start, is tried once more instead of failing the
+  page.
+- In the Build, Reject shows only on a feature the request drafts.
+- A change whose draft removes a state lands whole.
+- Typing @ and a few letters in a functional requirement of a change request
+  offers the product's features, screens, rules and glossary terms to cite
+  again; the one picked reads as a link.
+- A feature the behaviour engine could not finish checking in its time now
+  counts among the features not checked yet and is checked again on the next
+  pass, instead of reading as clean until it changed.
+
 ## [0.9.50] - 2026-11-22
 
 Several AIs work on one project at once, the next Reverse-Specification runs

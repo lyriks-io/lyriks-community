@@ -567,7 +567,6 @@
 				ask={live?.asker(() => elementTarget(leaf, spec.action)) ?? null}
 				onpublish={publishExchange}
 				onpost={(body, replyTo) => send([{ op: 'post_on_field', ...elementTarget(leaf, spec.action), body, ...(replyTo ? { replyTo } : {}) }], replyTo ? 'your reply' : 'your comment')}
-				ondecide={canEdit ? (messageId, decision) => send([{ op: 'decide_thread_suggestion', ...elementTarget(leaf, spec.action), messageId, decision }], decision === 'accept' ? 'the suggestion accepted' : 'the suggestion refused') : null}
 				onrule={(messageId, ruling) =>
 					send(
 						[{ op: ruling === 'validated' ? 'validate_topic' : ruling === 'resolved' ? 'resolve_topic' : 'reopen_topic', ...elementTarget(leaf, spec.action), messageId }],
@@ -621,7 +620,8 @@
 						}}
 					>
 						{#snippet between()}
-							{#if canEdit}
+							<!-- Once frozen, only a drafted feature is taken out (version N+1 in correction): what a frozen version touches stays (criterion e67a372d). -->
+							{#if canEdit && (!dossier.frozen || leaf.draftId)}
 								<button type="button" class="quiet h-8 rounded-lg px-2.5 text-red-ink" title="Not wanted: take it out of the request" onclick={() => void onDropSubject(leaf)}>Reject</button>
 							{/if}
 						{/snippet}
@@ -666,7 +666,6 @@
 									const owner = (replyTo && fields.find((f) => f.thread?.messages.some((m) => m.id === replyTo))) || fields[0];
 									return send([{ op: 'post_on_field', ...target(owner), body, ...(replyTo ? { replyTo } : {}) }], replyTo ? 'your reply' : 'your comment');
 								}}
-								ondecide={canEdit ? (messageId, decision) => send([{ op: 'decide_thread_suggestion', ...target(fields[0]), messageId, decision }], decision === 'accept' ? 'the suggestion accepted' : 'the suggestion refused') : null}
 								onrule={(messageId, ruling) =>
 									send([
 										{
@@ -892,7 +891,6 @@
 			ask={live?.asker(() => dataTarget) ?? null}
 			onpublish={publishExchange}
 			onpost={(body, replyTo) => send([{ op: 'post_on_field', ...dataTarget, body, ...(replyTo ? { replyTo } : {}) }], replyTo ? 'your reply' : 'your comment')}
-			ondecide={canEdit ? (messageId, decision) => send([{ op: 'decide_thread_suggestion', ...dataTarget, messageId, decision }], decision === 'accept' ? 'the suggestion accepted' : 'the suggestion refused') : null}
 			onrule={(messageId, ruling) =>
 				send(
 					[{ op: ruling === 'validated' ? 'validate_topic' : ruling === 'resolved' ? 'resolve_topic' : 'reopen_topic', ...dataTarget, messageId }],

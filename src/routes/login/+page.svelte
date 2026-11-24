@@ -146,7 +146,10 @@
 						</p>
 					</div>
 					<form method="POST" action={`?/firstRunCreate${redirectSuffix}`} class="space-y-3">
-						<input type="hidden" name="email" value={firstRunEmail} />
+						<!-- The address travels as the account's username, hidden but read by a
+						     password manager (a type="hidden" field is not), so the password
+						     chosen here is saved under it (criterion 708c38a5). -->
+						<input type="email" name="email" autocomplete="username" value={firstRunEmail} readonly hidden />
 						<input type="hidden" name="key" value={firstRunKey} />
 						<label class="block">
 							<span class="mb-1 block font-evo-mono text-xs font-bold tracking-[0.08em] text-ink-3 uppercase">Password</span>
@@ -214,13 +217,14 @@
 				     it, so while registering via invite the field is locked: editing it
 				     could only produce a confusing refusal three fields later. Signing in
 				     instead (an invitee who already has an account) unlocks it.
-				     While registering, the address is the account's username: a browser
-				     that generates passwords saves the new one under it, readonly or not. -->
+				     The address is the account's username, signing in as registering: a
+				     browser fills what it keeps for it and saves a new password under it,
+				     readonly or not (criteria ac-leaf-8da2717b, eba45448). -->
 				<input
 					name="email"
 					type="email"
 					required
-					autocomplete={isRegister ? 'username' : 'email'}
+					autocomplete="username"
 					readonly={isRegister && data.viaInvite}
 					value={form?.email ?? data.inviteEmail ?? ''}
 					class="w-full border-[1.5px] border-ink-3 bg-surface-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-blue read-only:cursor-not-allowed read-only:bg-toner-2 read-only:text-ink-3"

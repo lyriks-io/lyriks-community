@@ -12,6 +12,7 @@ import {
 	declareByHandRefusal,
 	bringsCode,
 	deploymentBranchAllowed,
+	deploymentBranchSuggestionAllowed,
 	reportCodeStateAct,
 	requestKeyOf,
 	verificationCodeRefusal,
@@ -135,7 +136,6 @@ import {
 	overlayGraph,
 	postOnFieldAct,
 	decideThreadSuggestionAct,
-	cleanWrites,
 	propagateImpact,
 	usedFeatures,
 	proposeAct,
@@ -150,7 +150,6 @@ import {
 	runImpactAct,
 	setLeavesAct,
 	STAGE_ORDER,
-	tagReviewersAct,
 	nameValidatorsAct,
 	isWholeValidatedStep,
 	stepTarget,
@@ -256,6 +255,7 @@ import {
 } from '$domain/evolution';
 import { parseBranchHistory, parseCodeRepository } from '$application/evolution/parse-evolution-draft';
 import { readHeldField, readTouchedField, saveDossierField } from '$application/evolution/save-dossier-field';
+import { landDraftBehaviour } from '$application/evolution/land-draft-behaviour';
 import { resolveWalkTarget } from '$application/analysis/simulate-behavior';
 import { toDraftProofImpact } from '$application/analysis/what-if';
 import type { ProjectFeaturesDraft } from '$domain/features';
@@ -269,7 +269,7 @@ import {
 	type ProjectDocumentsDraft
 } from '$domain/documents';
 import { mapLimit } from '$lib/shared/map-limit';
-import { inputValidation, loadEvolutionView, maturityOf, requestCard, specificationHoldOf, type EvolutionView } from './evolution-view.server';
+import { freezeBranchHoldOf, inputValidation, loadEvolutionView, maturityOf, requestCard, specificationHoldOf, type EvolutionView } from './evolution-view.server';
 import { elementFingerprint, specificationActionTrails } from './evolution-spec-actions.server';
 import { draftsVersionOf, loadLocalGraph, readDraftFeature, readStoredFeature, type LocalGraphReading } from './evolution-graph.server';
 import { captureClosingBaselines } from './evolution-closing-baseline.server';
@@ -501,6 +501,22 @@ function sectionDraftInput(op: Record<string, unknown>): SectionDraftInput {
 	};
 }
 
+/**
+ * Acts taken out of the product on the owner's word (2026-11-23, criterion
+ * 6d20bc82 of feat-lyriks-copy-a52881-23): a call to one is refused with what
+ * does it now, so an AI client that still knows it is told where to go.
+ */
+export const RETIRED_ACTS = {
+	reword: {
+		reason: 'Rewording a suggestion is no longer offered.',
+		detail: 'Refuse it (decide_proposal with decision refuse), then write your own answer.'
+	},
+	tag_reviewers: {
+		reason: 'Asking members to look at a suggestion is no longer offered.',
+		detail: 'Name them with @ and their name in a comment on the answer (post_on_field): each member named is notified.'
+	}
+} as const;
+
 export const EVOLUTION_OPERATIONS = [
 	'open_request',
 	'register_source',
@@ -527,7 +543,6 @@ export const EVOLUTION_OPERATIONS = [
 	'decide_proposal_line',
 	'delegate_to_ai',
 	'withdraw_proposal',
-	'tag_reviewers',
 	'mark_open_question',
 	'answer_open_question',
 	'post_on_field',
@@ -575,6 +590,7 @@ export const EVOLUTION_OPERATIONS = [
 	'set_landing_order',
 	'accept_conflict_risk',
 	'set_deployment_branch',
+	'suggest_deployment_branch',
 	'report_code_state',
 	'report_merge',
 	'start_session',
@@ -1160,6 +1176,8 @@ export async function applyEvolutionOperations(
 	 */
 	/** The project's deployment branch; empty while none is named (ac-evo-branch-setting). */
 	const deploymentBranch = (): string => working.evolution.deploymentBranch ?? '';
+	/** The branch as this batch leaves it, beside whether the project's code is linked: the freeze waits for it once code is (rule 148c6e2a). */
+	const freezeBranch = () => freezeBranchHoldOf({ coverage: view.coverage, draft: working.evolution });
 	/** The open request bound to a branch, or the one at Build Lyriks named that branch for. */
 	const requestOfBranch = (branch: string): ReturnType<typeof lookupRequest> | null => {
 		if (!branch) return null;
@@ -1187,7 +1205,8 @@ export async function applyEvolutionOperations(
 			specification,
 			leftToLanding: touched?.lines.filter((line) => line.choice === 'none') ?? [],
 			// The conflicts with the requests under way hold the freeze, and the order is set against them (EVO-005).
-			requests: working.evolution.requests
+			requests: working.evolution.requests,
+			branch: freezeBranch()
 		});
 		if (!outcome.ok) return outcome;
 		if (touched && !touched.readable && outcome.request.stage === 'implementation')
@@ -1215,7 +1234,7 @@ export async function applyEvolutionOperations(
 		deploymentBranch,
 		specificationOf: async (r) => specificationHoldOf(view, r, await specificationActionTrails(services, view, r)),
 		freezeGate: (r, specification) =>
-			gateFor(r, 'implementation', maturityOf(view, working.features, r).criticalEmptyCount, specification, concurrentHoldOf(r, working.evolution.requests)),
+			gateFor(r, 'implementation', maturityOf(view, working.features, r).criticalEmptyCount, specification, concurrentHoldOf(r, working.evolution.requests), freezeBranch()),
 		crossOnce: (r) => crossOnce(r),
 		resolve: (ref) => {
 			const found = lookupRequest(ref);
@@ -1606,6 +1625,10 @@ export async function applyEvolutionOperations(
 			return false;
 		};
 
+		if (name === 'tag_reviewers') {
+			record(refuse(RETIRED_ACTS.tag_reviewers.reason, RETIRED_ACTS.tag_reviewers.detail));
+			break;
+		}
 		if (!(EVOLUTION_OPERATIONS as readonly string[]).includes(name)) {
 			record(refuse(`Unknown operation "${name}".`, `The operations are: ${EVOLUTION_OPERATIONS.join(', ')}.`));
 			break;
@@ -1727,8 +1750,24 @@ export async function applyEvolutionOperations(
 				record(allowed, null);
 				break;
 			}
-			working.evolution = { ...working.evolution, deploymentBranch: branch };
+			// The suggestion is settled: the branch the person saved, the suggested one or another, is the one named.
+			const { suggestedDeploymentBranch: _settled, ...rest } = working.evolution;
+			working.evolution = { ...rest, deploymentBranch: branch };
 			record({ ok: true, summary: `The project deploys from ${branch}: each request's code is written on a branch derived from it and merged back into it` }, null);
+			continue;
+		}
+
+		// An AI pre-fills the card with the branch it read from git; only a person's Save names it (action db883b80).
+		if (name === 'suggest_deployment_branch') {
+			const branch = str(op.branch).trim();
+			const why = str(op.why).trim();
+			const allowed = deploymentBranchSuggestionAllowed(ctx, deploymentBranch(), branch, why);
+			if (!allowed.ok) {
+				record(allowed, null);
+				break;
+			}
+			working.evolution = { ...working.evolution, suggestedDeploymentBranch: { branch, why, by: ctx.actor.id, at: ctx.at } };
+			record({ ok: true, summary: `${branch} pre-fills the card Code on its branch (${why}): nothing is named until a person saves it` }, null);
 			continue;
 		}
 
@@ -1955,16 +1994,19 @@ export async function applyEvolutionOperations(
 				break;
 			case 'decide_proposal': {
 				const decision = str(op.decision);
+				// Rewording a suggestion was taken out of the product (criterion 6d20bc82): the refusal says what does it now.
+				if (decision === 'reword') {
+					outcome = refuse(RETIRED_ACTS.reword.reason, RETIRED_ACTS.reword.detail);
+					break;
+				}
 				const decisionInput =
 					decision === 'accept'
 						? ({ decision: 'accept', sense: op.sense === undefined ? undefined : str(op.sense) } as const)
 						: decision === 'refuse'
 							? ({ decision: 'refuse', comment: str(op.comment) } as const)
-							: decision === 'reword'
-								? ({ decision: 'reword', value: text(op.value) } as const)
-								: null;
+							: null;
 				if (!decisionInput) {
-					outcome = refuse('decision must be accept, refuse or reword.', 'Four decisions exist on a proposal; a comment goes through post_on_field.');
+					outcome = refuse('decision must be accept or refuse.', 'A suggestion is accepted or refused; a comment goes through post_on_field.');
 					break;
 				}
 				const target = request.proposals.find((p) => p.id === str(op.proposalId));
@@ -2011,9 +2053,6 @@ export async function applyEvolutionOperations(
 				outcome = rereadAnswers(outcome, request, true);
 				break;
 			}
-			case 'tag_reviewers':
-				outcome = tagReviewersAct(ctx, request, str(op.proposalId), strList(op.reviewerIds), roster);
-				break;
 			case 'mark_open_question':
 				outcome = markOpenQuestionAct(ctx, request, str(op.fieldPath), str(op.leafId) || null);
 				break;
@@ -2038,8 +2077,8 @@ export async function applyEvolutionOperations(
 					multiple: op.multiple === true,
 					// The AI carrying a private exchange onto the question it concerns keeps it between the person and itself (ac-evo-live-scope).
 					...(op.private === true && ctx.actor.kind === 'ai_client' ? { privateTo: ctx.actor.id } : {}),
-					// The texts it offers, each at its place, for the person to accept (ac-evo-live-comment-suggests).
-					...(op.writes !== undefined ? { writes: cleanWrites(Array.isArray(op.writes) ? op.writes.filter((w): w is Record<string, unknown> => !!w && typeof w === 'object') : []) } : {})
+					// Texts offered for a step's places are refused: a comment is text only (rule 5f9257fe).
+					offersTexts: op.writes !== undefined
 				});
 				break;
 			case 'decide_thread_suggestion':
@@ -2940,27 +2979,27 @@ export async function applyEvolutionOperations(
 		if (!(await recordChatAnswer(services, input.projectId, reply.click, reply.answer, input.origin))) console.warn('[evolution] could not record the AI answer in its conversation');
 	}
 	// The features now exist; their behaviour lands through the ordinary write
-	// path, with the ids the draft's model was authored and simulated with.
+	// path, with the ids the draft's model was authored and simulated with, a
+	// state deletion on its own after the rest (landDraftBehaviour).
 	for (const landing of landings) {
-		const landed = await services.authorBehavior.execute({
+		const landed = await landDraftBehaviour(services.authorBehavior, {
 			projectId: input.projectId,
 			featureId: landing.featureId,
 			operations: landing.operations,
 			mintedIds: landing.mintedIds
 		});
-		const ok = landed.batch?.ok === true;
 		results.push({
 			index: results.length,
 			op: 'land_draft_behaviour',
 			requestId: landing.requestId,
-			ok,
-			summary: ok
+			ok: landed.ok,
+			summary: landed.ok
 				? `Behaviour model of "${landing.draftName}" written into feature ${landing.featureId} (${landing.operations.length} operations)`
-				: `The behaviour model of "${landing.draftName}" could not be written into feature ${landing.featureId}: ${
-						landed.batch?.errors?.slice(0, 3).join(' | ') ?? 'the engine did not answer'
-					}. The feature exists without it; apply the draft's operations with apply_behavior_batch.`
+				: `The behaviour model of "${landing.draftName}" could not be written into feature ${landing.featureId}: ${landed.errors.join(
+						' | '
+					)}. The feature exists without it; apply the draft's operations with apply_behavior_batch.`
 		});
-		if (ok) void services.scheduleBackSync(input.projectId).catch(() => {});
+		if (landed.ok) void services.scheduleBackSync(input.projectId).catch(() => {});
 	}
 	// The rules the whole product keeps, written as the project batch writes them, after the
 	// behaviour of the request's features: a rule may read a state only that behaviour declares (ac-evo-draft-rules).

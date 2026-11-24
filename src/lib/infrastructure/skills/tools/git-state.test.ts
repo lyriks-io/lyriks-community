@@ -60,3 +60,23 @@ describe('git-state lists the commits of the branch [criterion:ac-leaf-ac-evo-br
 		expect(call(dir, 'g.branchHistory(process.cwd(), null)')).toBeNull();
 	});
 });
+
+describe('git-state reads the branch to suggest as the deployment branch [criterion:396e62e3]', () => {
+	it('the default branch of origin first', () => {
+		const dir = repo();
+		const remote = mkdtempSync(join(tmpdir(), 'lyriks-git-remote-'));
+		dirs.push(remote);
+		git(remote, ['init', '-q', '--bare', '-b', 'trunk']);
+		git(dir, ['branch', '-m', 'trunk']);
+		git(dir, ['remote', 'add', 'origin', remote]);
+		git(dir, ['push', '-q', 'origin', 'trunk']);
+		git(dir, ['remote', 'set-head', 'origin', 'trunk']);
+		expect(call(dir, 'g.defaultBranchOf(process.cwd())')).toEqual({ branch: 'trunk', why: 'the default branch of origin' });
+	});
+	it('the main branch of a checkout with no remote, and nothing where git names none', () => {
+		const dir = repo();
+		expect(call(dir, 'g.defaultBranchOf(process.cwd())')).toEqual({ branch: 'main', why: 'the main branch of the checkout' });
+		git(dir, ['branch', '-m', 'work']);
+		expect(call(dir, 'g.defaultBranchOf(process.cwd())')).toBeNull();
+	});
+});

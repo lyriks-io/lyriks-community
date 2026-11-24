@@ -60,6 +60,17 @@ describe('changing one own password', () => {
 		expect(await outcome).toMatchObject({ status: 422, body: { message: 'Choose a password of at least 12 characters.' } });
 	});
 
+	it('refuses a confirmation that differs, changing nothing [rule:8f7bbfea]', async () => {
+		const { outcome, identity, token } = change({
+			currentPassword: 'old-password-1',
+			newPassword: 'new-password-12',
+			confirmPassword: 'new-pasword-12'
+		});
+		expect(await outcome).toMatchObject({ status: 400, body: { message: 'The two passwords do not match.' } });
+		expect(await identity.verify(token)).toMatchObject({ email: ADA });
+		expect(await identity.login(ADA, 'old-password-1')).toHaveProperty('token');
+	});
+
 	it('asks for both passwords before asking the identity source', async () => {
 		const { outcome, identity, token } = change({ newPassword: 'new-password-12' });
 		expect((await outcome).status).toBe(422);

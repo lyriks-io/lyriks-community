@@ -71,12 +71,6 @@ interface ScoreResult {
 	[k: string]: unknown;
 }
 
-interface GapsResult {
-	missing?: Array<{ type?: string; name?: string; reason?: string; [k: string]: unknown }>;
-	entries?: Array<{ type?: string; name?: string; reason?: string; [k: string]: unknown }>;
-	[k: string]: unknown;
-}
-
 interface DigestResult {
 	hasContent?: boolean;
 	markdown?: string;
@@ -196,25 +190,41 @@ export class McpUnspaghettitAdvisor implements UnspaghettitAdvisorPort {
 			: null;
 	}
 
+	/**
+	 * What the spec declares that the last report or index sync located no code
+	 * for, read from the implementation-status sidecar like the coverage.
+	 *
+	 * It used to ask `get_implementation_gaps`, which cross-references an index
+	 * the engine has to find on disk: a server holds none, so every call failed
+	 * ("No .unspa.json found") and the assessment told an AI that nothing was
+	 * missing. A feature nobody reported has no gaps to list, like its coverage.
+	 */
 	async findFeatureGaps(featureId: string): Promise<FeatureGap[]> {
 		try {
-			const res = await this.#engine.callTool('get_implementation_gaps', { featureId });
-			const text = extractText(res);
-			if (!text) return [];
-			const parsed = safeJson(text);
-			if (parsed === null) {
-				console.warn(
-					`[unspa-advisor] findFeatureGaps non-JSON for ${featureId}: ${text.slice(0, 240)}`
-				);
-				return [];
+			const parsed = await this.#callJson('get_implementation_status', { featureId });
+			if (!parsed || typeof parsed !== 'object') return [];
+			const r = parsed as { actions?: unknown; surfaces?: unknown };
+			const gaps = new Map<string, FeatureGap>();
+			for (const row of [...arrayOf(r.actions), ...arrayOf(r.surfaces)]) {
+				const scope = (row ?? {}) as { expectedEntities?: unknown; foundEntities?: unknown };
+				const found = new Set(arrayOf(scope.foundEntities).map(entityKey));
+				for (const entity of arrayOf(scope.expectedEntities)) {
+					const key = entityKey(entity);
+					if (found.has(key) || gaps.has(key)) continue;
+					const e = (entity ?? {}) as { entityType?: unknown; entityName?: unknown; entityId?: unknown };
+					gaps.set(key, {
+						type: typeof e.entityType === 'string' ? e.entityType : 'unknown',
+						name:
+							typeof e.entityName === 'string'
+								? e.entityName
+								: typeof e.entityId === 'string'
+									? e.entityId
+									: '<unnamed>',
+						reason: 'no code located for it by the last report or index sync'
+					});
+				}
 			}
-			const r = parsed as GapsResult;
-			const rows = r.missing ?? r.entries ?? [];
-			return rows.map((g) => ({
-				type: typeof g.type === 'string' ? g.type : 'unknown',
-				name: typeof g.name === 'string' ? g.name : '<unnamed>',
-				reason: typeof g.reason === 'string' ? g.reason : ''
-			}));
+			return [...gaps.values()];
 		} catch (e) {
 			console.warn('[unspa-advisor] findFeatureGaps failed:', this.#msg(e));
 			return [];
@@ -1371,4 +1381,11 @@ function mapQueueItem(raw: unknown): QueueItemView {
 /** The array at a loosely-typed field, or none. */
 function arrayOf(value: unknown): unknown[] {
 	return Array.isArray(value) ? value : [];
+}
+
+/** One spec entity of an implementation-status row, by kind and id (a bare id from an older engine is its own key). */
+function entityKey(entity: unknown): string {
+	if (entity === null || typeof entity !== 'object') return String(entity);
+	const e = entity as { entityType?: unknown; entityId?: unknown };
+	return `${String(e.entityType)}:${String(e.entityId)}`;
 }

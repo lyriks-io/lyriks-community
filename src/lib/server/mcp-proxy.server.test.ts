@@ -12,7 +12,13 @@ vi.mock('$composition/container.server', () => ({
 		roleGate: {
 			allows: async (token: string) => token === 'jwt-designer',
 			verdict: async (token: string) =>
-				token === 'jwt-designer' ? 'allowed' : token === 'jwt-back-down' ? 'unreachable' : 'denied'
+				token === 'jwt-designer'
+					? 'allowed'
+					: token === 'jwt-back-down'
+						? 'unreachable'
+						: token === 'jwt-outside'
+							? 'outside'
+							: 'denied'
 		}
 	})
 }));
@@ -202,6 +208,21 @@ describe('proxyToMcp refuses a reader', () => {
 		);
 		expect(res.status).toBe(403);
 		expect(await res.text()).toContain('designers and above');
+	});
+
+	it('tells someone in no workspace to accept an invitation, not that they are a viewer [rule:2bc8ec30]', async () => {
+		const fetchImpl = world('none');
+		const res = await proxyToMcp(
+			event('/mcp/oauth/authorize?state=abc', { headers: { cookie: 'lyriks_session=jwt-outside' } }),
+			'http://mcp:3055',
+			fetchImpl
+		);
+		expect(res.status).toBe(403);
+		const text = await res.text();
+		expect(text).toBe(
+			'Your account belongs to no workspace on this installation yet. Ask an owner or admin for an invitation, open its link and press Accept & join, then connect your AI client again.'
+		);
+		expect(text).not.toContain('viewer');
 	});
 
 	it('asks to reload, not to be a designer, when the role source cannot answer', async () => {

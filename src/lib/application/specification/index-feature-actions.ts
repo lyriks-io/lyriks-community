@@ -132,7 +132,9 @@ export type FeatureScenarioIndex = Record<string, Record<string, FeatureScenario
  */
 export function indexFeatureScenarios(
 	featureSnapshots: ReadonlyArray<{ featureId: string; snapshot: UnspaFeatureSnapshot | null }>,
-	lang: SpecLanguage = 'en'
+	lang: SpecLanguage = 'en',
+	/** Every requirement sentence of one feature: the caller may keep them per unchanged snapshot. */
+	statementsOf: (feature: Record<string, unknown>, lang: SpecLanguage) => Readonly<Record<string, string>> = featureStatements
 ): FeatureScenarioIndex {
 	const index: FeatureScenarioIndex = {};
 	const borrowed = borrowedSurfaceIds(featureSnapshots);
@@ -141,7 +143,7 @@ export function indexFeatureScenarios(
 		const feature = (snapshot?.feature ?? {}) as Record<string, unknown>;
 		const featureOff = disabledMarkerOf(feature);
 		const versions = (feature.elementVersions ?? {}) as Record<string, unknown>;
-		let statements: Record<string, string> | null = null;
+		let statements: Readonly<Record<string, string>> | null = null;
 		for (const surfaceRaw of arr(feature.surfaces)) {
 			const surface = (surfaceRaw ?? {}) as Record<string, unknown>;
 			if (borrowed.has(str(surface.id))) continue;
@@ -150,7 +152,7 @@ export function indexFeatureScenarios(
 				const actionId = str(action.id);
 				const scenarios = arr(action.scenarios);
 				if (!actionId || scenarios.length === 0) continue;
-				statements ??= featureStatements(feature, lang);
+				statements ??= statementsOf(feature, lang);
 				const held = disabledMarkerOf(action) ?? featureOff;
 				(index[featureId] ??= {})[actionId] = scenarios.map((raw) => {
 					const scenario = (raw ?? {}) as Record<string, unknown>;

@@ -142,7 +142,6 @@ const NOT_TOOLS = new Set([
   'report_ticket_post',
   'skip_question',
   'unskip_question',
-  'tag_reviewers',
   'update_step_description',
   'validate_field',
   'validate_step',

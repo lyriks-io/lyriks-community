@@ -4,14 +4,14 @@ import { answerStepAct, decideThreadSuggestionAct, postOnFieldAct, updateStepDes
 import { createEvolutionRequest, type Actor, type EvolutionRequest, type FieldThreadMessage } from './draft';
 import { latestThread } from './field-thread';
 import { latestVersion } from './field-versions';
-import { canDecideSuggestion, suggestionAllowed, suggestionPlaceOf, suggestionPlaces, suggestionStateOf, requirementCandidates } from './thread-suggestion';
+import { canDecideSuggestion, suggestionPlaceOf, suggestionPlaces, suggestionStateOf, requirementCandidates } from './thread-suggestion';
 import { waitingQuestionOf } from './live-exchange';
 
 /**
- * The AI offers its texts in a message, shaped like the place it would write,
- * and a person accepts them in one click (ac-evo-live-comment-suggests); in a
- * workspace of several members it writes no version of a step itself
- * (ac-evo-live-shared-writes). Owner feedback of 2026-10-30.
+ * A comment is text only (rule 5f9257fe): the AI writes a text of a step at
+ * its place in any workspace, as a version a person validates. The texts an
+ * earlier AI message offered (ac-evo-live-comment-suggests) are still decided
+ * line by line. Owner feedback of 2026-11-23, replacing that of 2026-10-30.
  */
 
 const dylan: Actor = { id: 'dylan@team.test', kind: 'person', role: 'admin', channel: 'page' };
@@ -36,16 +36,16 @@ const reasonOf = (outcome: ActOutcome) => (outcome.ok ? null : outcome.reason);
 const JOURNEY = 'Sur l\'accueil, les joueurs choisissent « 2 joueurs ».\nChacun pilote sa pièce avec ses touches.';
 const RULES = 'Une touche d\'un joueur ne fait jamais bouger la pièce de l\'autre.';
 
-/** The AI's reply in the thread of 2.1, offering the journey and the rules of the Functional spec. */
+const OFFERED = [
+	{ fieldPath: 'step.functional_spec.description', value: JOURNEY },
+	{ fieldPath: 'step.functional_spec.refusals', value: RULES }
+];
+const TEXT_ONLY = 'A comment is text only: write the text of a step at its place (update_step_description, answer_step), or say what you suggest in plain words.';
+
+/** An earlier AI reply in the thread of 2.1, stored with the journey and the rules of the Functional spec it offered. */
 function suggested(): { request: EvolutionRequest; message: FieldThreadMessage } {
-	const request = ok(
-		postOnFieldAct(ctxFor(ai), createEvolutionRequest(), 'step.functional_spec.description', null, 'Voici la course au score, telle que décidée.', null, {
-			writes: [
-				{ fieldPath: 'step.functional_spec.description', value: JOURNEY },
-				{ fieldPath: 'step.functional_spec.refusals', value: RULES }
-			]
-		})
-	);
+	const posted = ok(postOnFieldAct(ctxFor(ai), createEvolutionRequest(), 'step.functional_spec.description', null, 'Voici la course au score, telle que décidée.'));
+	const request = { ...posted, fieldThreads: posted.fieldThreads.map((t) => ({ ...t, messages: t.messages.map((m) => ({ ...m, suggests: OFFERED })) })) };
 	const message = latestThread(request, 'step.functional_spec.description')!.messages.at(-1)!;
 	return { request, message };
 }
@@ -60,31 +60,26 @@ describe('the places a suggestion writes', () => {
 		expect(suggestionPlaces().some((p) => p.fieldPath.endsWith('.diagram'))).toBe(false);
 	});
 
-	it('are refused with the sentence the spec chose', () => {
-		expect(suggestionAllowed([])).toMatchObject({ ok: false, reason: 'Name each place your text goes: writes [{ fieldPath, value }].' });
-		expect(suggestionAllowed([{ fieldPath: '00-need.description', value: 'x' }])).toMatchObject({
-			ok: false,
-			reason: "The Need's verbatim stays the requester's words and a diagram is drawn: suggest a text of a step."
-		});
-		expect(suggestionAllowed([{ fieldPath: 'step.functional_spec.diagram', value: 'use case X' }]).ok).toBe(false);
-		expect(suggestionAllowed([{ fieldPath: '01-origin.objective', value: 'x' }])).toMatchObject({ ok: false, reason: 'A field of a block takes a proposal: propose it there.' });
-		expect(suggestionAllowed([{ fieldPath: 'step.solution.description', value: '' }])).toMatchObject({ ok: false, reason: 'Each place of a suggestion needs its value.' });
-		expect(suggestionAllowed([{ fieldPath: 'step.solution.description', value: 'a' }, { fieldPath: 'step.solution.description', value: 'b' }]).ok).toBe(false);
+});
+
+describe('a comment is text only [rule:5f9257fe]', () => {
+	it('a comment that offers texts to accept is refused, from the AI or a person, alone or in a team [unspa:4cf8fde8:1f059d7f:cf6bcd13]', () => {
+		const request = createEvolutionRequest();
+		for (const ctx of [ctxFor(ai), ctxFor(ai, true), ctxFor(dylan)])
+			expect(reasonOf(postOnFieldAct(ctx, request, 'step.solution.description', null, 'Voici le texte', null, { offersTexts: true }))).toBe(TEXT_ONLY);
+	});
+
+	it('a comment in plain words is posted', () => {
+		const posted = ok(postOnFieldAct(ctxFor(ai), createEvolutionRequest(), 'step.solution.description', null, 'Je propose de limiter les projets actifs.'));
+		expect(latestThread(posted, 'step.solution.description')!.messages.at(-1)!.suggests).toBeUndefined();
 	});
 });
 
-describe('the AI suggests in its message (ac-evo-live-comment-suggests)', () => {
-	it('carries its texts, each at its place, waiting for a person', () => {
+describe('the texts an earlier AI message offered (ac-evo-live-comment-suggests)', () => {
+	it('carry its texts, each at its place, waiting for a person', () => {
 		const { message } = suggested();
 		expect(message.suggests).toHaveLength(2);
 		expect(suggestionStateOf(message)).toBe('waiting');
-	});
-
-	it('only the AI offers a suggestion; a person writes the step itself', () => {
-		const outcome = postOnFieldAct(ctxFor(dylan), createEvolutionRequest(), 'step.solution.description', null, 'Ma version', null, {
-			writes: [{ fieldPath: 'step.solution.description', value: 'x' }]
-		});
-		expect(reasonOf(outcome)).toBe('Only an AI offers its text as a suggestion: write it at its place.');
 	});
 
 	it('survives a save and a read', () => {
@@ -120,8 +115,7 @@ describe('requirements are decided individually [criterion:757c9f25]', () => {
   const refused = ok(choose(request, message, 'refuse'));
   const read = parseEvolutionDraft({ requests: [refused] }, 'p').requests[0];
   expect(candidates(read)[0].state).toBe('refused');
-  const replay = ok(postOnFieldAct(ctxFor(ai), read, 'step.functional_spec.description', null, 'Again', null, { writes: message.suggests }));
-  expect(replay).toBe(read);
+  expect(reasonOf(postOnFieldAct(ctxFor(ai), read, 'step.functional_spec.description', null, 'Again', null, { offersTexts: true }))).toBe(TEXT_ONLY);
   const legacyReplay = { ...read, fieldThreads: read.fieldThreads.map((t) => ({ ...t, messages: [...t.messages, { ...message, id: 'replay', replyTo: message.id }] })) };
   expect(candidates(legacyReplay)[0].state).toBe('refused');
   expect(reasonOf(decideThreadSuggestionAct(ctxFor(dylan), legacyReplay, { messageId: 'replay', fieldPath: 'step.functional_spec.description', line: JOURNEY.split('\n')[0], decision: 'accept' }))).toBe('This requirement is already decided.');
@@ -171,27 +165,6 @@ describe('requirements are decided individually [criterion:757c9f25]', () => {
   expect(next.stepDescriptions.functional_spec).toBe(JOURNEY.split('\n')[0]);
   expect(choose(next, message, 'accept').ok).toBe(false);
  });
- it('an identical AI replay leaves its decided discussion and message count untouched [unspa:4cf8fde8:1f059d7f:ac34a8b1]', () => {
-  const { request, message } = suggested();
-  const closed = { ...request, fieldThreads: request.fieldThreads.map((t) => ({ ...t, state: 'turned_into_change' as const, messages: [
-   { ...message, ruling: { state: 'validated' as const, by: dylan.id, at: 'now' } },
-   { id: 'reply', author: dylan.id, authorKind: 'person' as const, body: 'Already discussed.', postedAt: 'now', replyTo: message.id }
-  ] })) };
-  const replay = ok(postOnFieldAct(ctxFor(ai), closed, 'step.functional_spec.description', null, 'Retry', null, { writes: message.suggests }));
-  expect(replay).toBe(closed);
-  expect(replay.fieldThreads[0].messages).toHaveLength(2);
-  expect(replay.fieldThreads[0].messages[0].ruling?.state).toBe('validated');
-  expect(replay.fieldThreads[0].state).toBe('turned_into_change');
- });
-
- it('another persons private requirement never suppresses a public candidate', () => {
-  const { request, message } = suggested();
-  const hidden = { ...request, fieldThreads: request.fieldThreads.map((t) => ({ ...t, messages: t.messages.map((m) => ({ ...m, privateTo: 'other@team.test' })) })) };
-  const posted = ok(postOnFieldAct(ctxFor(ai), hidden, 'step.functional_spec.description', null, 'Public candidate', null, { writes: message.suggests }));
-  expect(posted.fieldThreads[0].messages).toHaveLength(2);
-  expect(posted.fieldThreads[0].messages[1].suggests).toEqual(message.suggests);
- });
-
  it('a normal human reply is never deduplicated as a requirement', () => {
   const { request, message } = suggested();
   const replied = ok(postOnFieldAct(ctxFor(dylan), request, 'step.functional_spec.description', null, 'Again', message.id));
@@ -199,13 +172,11 @@ describe('requirements are decided individually [criterion:757c9f25]', () => {
  });
 });
 
-describe('in a workspace of several members the AI suggests a step (ac-evo-live-shared-writes)', () => {
-	const SUGGEST = 'In a workspace of several members your text on a step is a suggestion the person accepts: post it with post_on_field and writes [{ fieldPath, value }].';
-
-	it('its direct write on a step is refused with the sentence saying to suggest it', () => {
+describe('in any workspace the AI writes a step at its place', () => {
+	it('in a team it writes the version a person validates [unspa:280520a6:d1003cef:3f1452a8]', () => {
 		const request = createEvolutionRequest();
-		expect(reasonOf(updateStepDescriptionAct(ctxFor(ai), request, { step: 'technical_spec', description: 'Tout dans le navigateur.' }))).toBe(SUGGEST);
-		expect(reasonOf(answerStepAct(ctxFor(ai), request, { step: 'functional_spec', question: 'refusals', answer: RULES }))).toBe(SUGGEST);
+		expect(ok(updateStepDescriptionAct(ctxFor(ai), request, { step: 'technical_spec', description: 'Tout dans le navigateur.' })).stepDescriptions.technical_spec).toBe('Tout dans le navigateur.');
+		expect(ok(answerStepAct(ctxFor(ai), request, { step: 'functional_spec', question: 'refusals', answer: RULES })).stepAnswers.functional_spec.refusals).toBe(RULES);
 	});
 
 	it('alone, it writes the version the person validates', () => {

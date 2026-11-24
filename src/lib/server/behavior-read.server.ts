@@ -7,6 +7,7 @@ import {
 import { indexDisabledFeatures, indexFeatureActions, indexFeatureScenarios, type FeatureActionIndex } from '$application/specification/index-feature-actions';
 import { indexFeatureRules, type KernelRulesReadModel } from '$application/specification/index-feature-rules';
 import type { BehaviorFold, BehaviorReading } from '$application/specification/behavior-reading';
+import { keptFeatureStatements, keptRulesOfFeature } from './kept-feature-readings.server';
 
 /*
  * Shared by the Features page (the tree, its stats and rules) and every page
@@ -65,11 +66,12 @@ async function foldBehavior(services: AppServices, projectId: string): Promise<B
 		reading: {
 			overview: summarizeBehavior(project, featureSnapshots, services.maturityScorer),
 			actions: indexFeatureActions(featureSnapshots),
-			// Every rule reads in the language the spec is written in.
-			kernelRules: indexFeatureRules(project, featureSnapshots, specLanguage),
+			// Every rule reads in the language the spec is written in. A feature whose file did not change
+			// since the last fold keeps the sentences it was read in (kept-feature-readings).
+			kernelRules: indexFeatureRules(project, featureSnapshots, specLanguage, keptRulesOfFeature),
 			writtenAt: writtenAtOf(featureSnapshots),
 			disabledFeatures: indexDisabledFeatures(featureSnapshots),
-			scenarios: indexFeatureScenarios(featureSnapshots, specLanguage)
+			scenarios: indexFeatureScenarios(featureSnapshots, specLanguage, keptFeatureStatements)
 		},
 		whole
 	};

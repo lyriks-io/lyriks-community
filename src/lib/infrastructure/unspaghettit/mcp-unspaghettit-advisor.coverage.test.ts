@@ -138,3 +138,56 @@ describe('McpUnspaghettitAdvisor implementation coverage', () => {
 		expect(await advisor(engine).getImplementationCoverage('feat-1')).toBeNull();
 	});
 });
+
+describe('McpUnspaghettitAdvisor implementation gaps', () => {
+	const entity = (entityType: string, entityId: string, entityName: string) => ({ entityType, entityId, entityName });
+
+	it('lists what the spec declares and the last sync located no code for, from the status sidecar', async () => {
+		const { engine, calls } = fakeEngine({
+			get_implementation_status: {
+				actions: [
+					{
+						expectedEntities: [entity('action', 'a1', 'Add an approval'), entity('rule', 'r1', 'A title is required')],
+						foundEntities: [entity('action', 'a1', 'Add an approval')]
+					}
+				],
+				surfaces: [
+					{
+						expectedEntities: [entity('state', 's1', 'approvals.count'), entity('state', 's2', 'approvals.filter')],
+						foundEntities: [entity('state', 's1', 'approvals.count')]
+					}
+				]
+			}
+		});
+
+		const gaps = await advisor(engine).findFeatureGaps('feat-1');
+
+		expect(gaps).toEqual([
+			{ type: 'rule', name: 'A title is required', reason: 'no code located for it by the last report or index sync' },
+			{ type: 'state', name: 'approvals.filter', reason: 'no code located for it by the last report or index sync' }
+		]);
+		// Never the gaps tool: it needs an index on the server's disk, and a server holds none.
+		expect(calls).toEqual(['get_implementation_status']);
+	});
+
+	it('names an entity expected under several actions once', async () => {
+		const shared = entity('state', 's1', 'session.workspaceRole');
+		const { engine } = fakeEngine({
+			get_implementation_status: {
+				actions: [
+					{ expectedEntities: [shared], foundEntities: [] },
+					{ expectedEntities: [shared], foundEntities: [] }
+				],
+				surfaces: []
+			}
+		});
+
+		expect(await advisor(engine).findFeatureGaps('feat-1')).toHaveLength(1);
+	});
+
+	it('lists nothing for a feature nobody reported, like its coverage', async () => {
+		const { engine } = fakeEngine({ get_implementation_status: { actions: [], surfaces: [] } });
+
+		expect(await advisor(engine).findFeatureGaps('feat-1')).toEqual([]);
+	});
+});

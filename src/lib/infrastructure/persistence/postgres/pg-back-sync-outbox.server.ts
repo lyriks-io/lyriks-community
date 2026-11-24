@@ -45,6 +45,14 @@ export class PgBackSyncOutbox implements BackSyncOutboxPort {
 		return rows.map((row) => row.project_id);
 	}
 
+	async isQueued(projectId: string): Promise<boolean> {
+		const { rows } = await pgQuery<{ queued: boolean }>(
+			'SELECT EXISTS (SELECT 1 FROM back_sync_outbox WHERE project_id = $1) AS queued',
+			[projectId]
+		);
+		return rows[0]?.queued === true;
+	}
+
 	async succeeded(projectId: string): Promise<void> {
 		await pgQuery('DELETE FROM back_sync_outbox WHERE project_id = $1', [projectId]);
 	}

@@ -180,7 +180,7 @@ if (isMainModule(import.meta.url)) {
 				if (codeState) {
 					summary.codeState = codeState;
 					// No request on this branch is information, already in the summary: not a warning.
-					if (!codeState.reported && !codeState.noRequest) process.stderr.write(`warning: code state ${codeState.answer}\n`);
+					if (!codeState.reported && !codeState.noRequest && !codeState.noGit) process.stderr.write(`warning: code state ${codeState.answer}\n`);
 				}
 			}
 			console.log(JSON.stringify(summary, null, 2));

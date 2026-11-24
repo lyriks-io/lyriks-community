@@ -506,6 +506,11 @@ export interface AppServices {
 	 * mirror is not configured (standalone MAP — the outbox stays empty).
 	 */
 	scheduleBackSync(projectId: string): Promise<void>;
+	/**
+	 * Send a project's copy that still waits to reach Back, under the person whose
+	 * request asks (criterion b7048daa): detached, and nothing when it is up to date.
+	 */
+	catchUpBackSync(projectId: string): void;
 	/** Whether the Lyriks-back mirror is configured (LYRIKS_BACK_URL set). */
 	backSyncConfigured(): boolean;
 	/** Durable back-sync outbox — pending-gap surfacing on /readyz. */
@@ -1170,7 +1175,17 @@ export function getServices(): AppServices {
 		persistence.sectionDocuments,
 		persistence.draftLock
 	);
+	// The whole-project evidence reads neither a change request's acts nor the scope (keyed on its content):
+	// keyed without them, a click in Evolution no longer rebuilds it (8 to 15 s of the thread on lab).
+	const evidenceModelRevision = new ProjectModelRevisionReader(
+		SECTIONS.filter((section) => section !== 'scope' && section !== 'evolution'),
+		persistence.sectionDocuments,
+		persistence.draftLock
+	);
 	const kernelSignature = (projectId: string) => localBehavior.kernelSignature(projectId);
+	// What reads the behaviour alone keys on the features and the project record, never on the engine's
+	// code-status and provenance sidecars beside them: every index sync of an AI rewrites those.
+	const behaviourSignature = (projectId: string) => localBehavior.behaviourSignature(projectId);
 	// The behaviour fold reads the kernel and the spec's language, never a change request's acts nor the background
 	// coherence analysis: keyed without them, a click in Evolution no longer throws the fold away (seconds on a large project).
 	const behaviorModelRevision = new ProjectModelRevisionReader(
@@ -1190,7 +1205,7 @@ export function getServices(): AppServices {
 		// The coherence check reads the operative model: a disabled element counts in no reading.
 		operativeBehavior(behavior),
 		maturityScorer
-	), projectModelRevision, kernelSignature);
+	), projectModelRevision, behaviourSignature);
 	// Behavior (unspa) advisory tier — cached read served instantly on every load,
 	// the heavy verify runs in the background and pushes over live-sync. Independent
 	// of the DPO, so it enriches the checker whether or not the back is wired.
@@ -1198,7 +1213,7 @@ export function getServices(): AppServices {
 		new ComputeBehaviorAdvisoriesUseCase(laneAdvisor, operativeBehavior(behavior), loadSpecLanguage, {
 			ids: async (projectId) => new Set(Object.keys((await dataDrafts.load(projectId))?.rules?.generated ?? {}))
 		}),
-		{ store: new ResidueSnapshotStore(projectResidue, 'features-advisories'), signature: kernelSignature }
+		{ store: new ResidueSnapshotStore(projectResidue, 'features-advisories'), signature: behaviourSignature }
 	);
 	// Per-leaf maturity scoring, cached the same way: the Features tree reads a
 	// snapshot instantly and the heavy per-leaf engine scoring runs in the
@@ -1340,8 +1355,10 @@ export function getServices(): AppServices {
 			(projectId) => readDataLinksInBackground.unlinkedCheckable(projectId),
 			(projectId) => listExtractedElements.execute(projectId)
 		),
-		projectModelRevision,
-		kernelSignature
+		evidenceModelRevision,
+		behaviourSignature,
+		Date.now,
+		projectModelRevision
 	);
 	const assessProjectCompleteness = new AssessProjectCompletenessUseCase(
 		loadScopeDraft,
@@ -1393,7 +1410,8 @@ export function getServices(): AppServices {
 	// back mirror is configured — standalone MAP never enqueues and never ticks.
 	const drainBackSyncOutbox = new DrainBackSyncOutboxUseCase(
 		persistence.backSyncOutbox,
-		pushEnvelopeToBack
+		pushEnvelopeToBack,
+		() => projectMirror.canPushNow()
 	);
 	if (projectMirror.enabled) {
 		startBackSyncDrain(drainBackSyncOutbox, persistence.ping);
@@ -1474,7 +1492,7 @@ export function getServices(): AppServices {
 		loadConformance,
 		readProjectHealth,
 		projectHealthView,
-		behaviorReadings: new ProjectStateCache<BehaviorFold>(behaviorModelRevision, kernelSignature, HEAVY_READINGS_HELD),
+		behaviorReadings: new ProjectStateCache<BehaviorFold>(behaviorModelRevision, behaviourSignature, HEAVY_READINGS_HELD),
 		behaviorSignature: kernelSignature,
 		sweepImplementationGaps,
 		findIndexKeyOwners,
@@ -1723,7 +1741,10 @@ export function getServices(): AppServices {
 		scheduleBackSync: async (projectId: string) => {
 			if (!projectMirror.enabled) return;
 			await persistence.backSyncOutbox.enqueue(projectId);
-			void drainBackSyncOutbox.execute();
+			void drainBackSyncOutbox.executeFor(projectId);
+		},
+		catchUpBackSync: (projectId: string) => {
+			if (projectMirror.enabled) void drainBackSyncOutbox.executeFor(projectId);
 		},
 		backSyncConfigured: () => projectMirror.enabled,
 		backSyncOutbox: persistence.backSyncOutbox,

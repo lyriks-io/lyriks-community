@@ -35,9 +35,12 @@ const FRENCH_REASONS: Readonly<Record<string, string>> = {
 /** The words of the cards this use case writes itself, in the language the project declares. */
 const CARD_WORDS = {
 	en: {
-		capped: (skipped: number) => ({
+		capped: (skipped: number, unfinished: number) => ({
 			title: `${skipped} feature${skipped === 1 ? ' has' : 's have'} not been checked yet`,
-			detail: `The behavior engine checks ${MAX_ENGINE_CALLS} features per pass and goes on with the rest at once, pass after pass.`
+			detail:
+				unfinished > 0
+					? `${unfinished} could not be checked within the engine's time and will be checked again; the behavior engine checks ${MAX_ENGINE_CALLS} features per pass.`
+					: `The behavior engine checks ${MAX_ENGINE_CALLS} features per pass and goes on with the rest at once, pass after pass.`
 		}),
 		cappedKind: 'Not checked yet',
 		cappedMeaning: `The behavior engine checks ${MAX_ENGINE_CALLS} features per pass and goes on with the rest at once: nothing is said yet about the ones still waiting.`,
@@ -58,9 +61,12 @@ const CARD_WORDS = {
 			`${name} has ${n} critical spec gap${n === 1 ? '' : 's'} to close`
 	},
 	fr: {
-		capped: (skipped: number) => ({
+		capped: (skipped: number, unfinished: number) => ({
 			title: `${skipped} ${plural(skipped, "fonctionnalité n'a", "fonctionnalités n'ont")} pas encore été ${plural(skipped, 'vérifiée', 'vérifiées')}`,
-			detail: `Le moteur de comportement vérifie ${MAX_ENGINE_CALLS} fonctionnalités par passage et enchaîne aussitôt sur les autres, passage après passage.`
+			detail:
+				unfinished > 0
+					? `${unfinished} n'${plural(unfinished, 'a', 'ont')} pas pu être ${plural(unfinished, 'vérifiée', 'vérifiées')} dans le temps imparti au moteur${NBSP}: ${plural(unfinished, 'elle sera vérifiée', 'elles seront vérifiées')} de nouveau au prochain passage.`
+					: `Le moteur de comportement vérifie ${MAX_ENGINE_CALLS} fonctionnalités par passage et enchaîne aussitôt sur les autres, passage après passage.`
 		}),
 		cappedKind: 'Pas encore vérifié',
 		cappedMeaning: `Le moteur de comportement vérifie ${MAX_ENGINE_CALLS} fonctionnalités par passage et enchaîne aussitôt sur les autres${NBSP}: rien n'est encore dit de celles qui attendent.`,
@@ -150,15 +156,17 @@ export class ComputeBehaviorAdvisoriesUseCase {
 		const scoped = pending.slice(0, MAX_ENGINE_CALLS);
 		const verified = await mapLimit(scoped, ENGINE_WIDTH, async ({ fid, version }) => {
 			const advisories = await this.assess(projectId, fid, lang, generated);
-			if (version) this.#memo.set(memoKey(fid), version, advisories);
+			// A check the engine did not finish is not remembered: the next pass checks the feature again (criterion 29279fff).
+			if (advisories && version) this.#memo.set(memoKey(fid), version, advisories);
 			return advisories;
 		});
-		const out = [...remembered, ...verified.flat()];
+		const out = [...remembered, ...verified.flatMap((advisories) => advisories ?? [])];
 
-		const skipped = pending.length - scoped.length;
+		const unfinished = verified.filter((advisories) => advisories === null).length;
+		const skipped = pending.length - scoped.length + unfinished;
 		if (skipped > 0) {
 			const words = CARD_WORDS[lang];
-			out.push({ severity: 'low', code: 'capped', kindLabel: words.cappedKind, kindMeaning: words.cappedMeaning, unchecked: skipped, ...words.capped(skipped) });
+			out.push({ severity: 'low', code: 'capped', kindLabel: words.cappedKind, kindMeaning: words.cappedMeaning, unchecked: skipped, ...words.capped(skipped, unfinished) });
 		}
 		return out;
 	}
@@ -169,31 +177,34 @@ export class ComputeBehaviorAdvisoriesUseCase {
 	 * statement broken from the start or never satisfiable, a warning
 	 * otherwise), plus one for what the solver does not cover: failing
 	 * scenarios and the critical modeling gaps it did not prove. Code not yet
-	 * mapped and scenarios still to write are not coherence problems.
+	 * mapped and scenarios still to write are not coherence problems. Null when
+	 * the engine did not finish the check (out of its time, or no answer): the
+	 * feature is then not checked, never checked clean.
 	 */
 	private async assess(
 		projectId: string,
 		featureId: string,
 		lang: SpecLanguage = 'en',
 		generated: ReadonlySet<string> = new Set()
-	): Promise<BehaviorAdvisory[]> {
+	): Promise<BehaviorAdvisory[] | null> {
 		// The two engine calls run one after the other (see ENGINE_WIDTH); the local read alongside.
 		const modelRead = this.behavior.loadFeature(projectId, featureId).catch(() => null);
 		const verdict = await this.advisor.verify(featureId, { modelCheck: true });
+		if (!verdict) return null;
 		const spec = await (this.advisor.getSpecGapsAndProof
 			? this.advisor.getSpecGapsAndProof(featureId, undefined, lang)
 			: this.advisor.getSpecGaps(featureId).then((gaps) => ({ gaps, proof: null }))
 		).catch(() => ({ gaps: [], proof: null }));
 		const model = await modelRead;
-		const name = verdict?.features[0]?.featureName || String(model?.feature.name ?? '') || featureId;
+		const name = verdict.features[0]?.featureName || String(model?.feature.name ?? '') || featureId;
 		const where = { featureId, featureName: name };
 		const proof = spec.proof;
 		const words = CARD_WORDS[lang];
 		const findings = provenFindings(model?.feature ?? null, proof, lang);
 		// A rule the model breaks is one cause wherever it breaks; once one breaks on this feature,
 		// its failing scenarios follow from it and are not counted again.
-		const failingCount = verdict?.scenariosFailed ?? 0;
-		const known = findings.some((f) => f.kind === 'reachable-violation') || (verdict?.features[0]?.brokenStatements?.length ?? 0) > 0;
+		const failingCount = verdict.scenariosFailed ?? 0;
+		const known = findings.some((f) => f.kind === 'reachable-violation') || (verdict.features[0]?.brokenStatements?.length ?? 0) > 0;
 		// Scenarios that fail on a broken rule meet that rule here too: asked of the engine only when nothing else said so.
 		const metInScenarios =
 			!known && failingCount > 0
@@ -231,8 +242,8 @@ export class ComputeBehaviorAdvisoriesUseCase {
 
 		// What the solver does not cover: failing scenarios, broken statements
 		// when it did not run, and the critical modeling gaps it did not prove.
-		const failing = verdict?.scenariosFailed ?? 0;
-		const unprovenBreaks = proof?.solver === 'ran' ? 0 : (verdict?.invariantViolations ?? 0);
+		const failing = verdict.scenariosFailed ?? 0;
+		const unprovenBreaks = proof?.solver === 'ran' ? 0 : (verdict.invariantViolations ?? 0);
 		const critical = splitGaps(spec.gaps, proof).modeling.filter((g) => g.severity === 'critical');
 		if (failing === 0 && unprovenBreaks === 0 && critical.length === 0) return out;
 		const bits = [

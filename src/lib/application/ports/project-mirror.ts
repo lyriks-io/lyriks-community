@@ -48,4 +48,12 @@ export interface ProjectMirrorPort {
 	 * Must run BEFORE the local link mapping is removed.
 	 */
 	deleteProject(localProjectId: string): Promise<void>;
+
+	/**
+	 * Whether a push could be accepted now: always where the mirror signs in on
+	 * its own; only inside a signed-in person's request where it forwards that
+	 * person's sign-in, since the mirror then answers nobody else (criterion
+	 * b7048daa). False when the mirror is not configured.
+	 */
+	canPushNow(): boolean;
 }

@@ -48,6 +48,10 @@ interface Entry {
  * the answer cannot differ, and every later reader gets the first one's work.
  * Any real edit changes one of them and the next read recomputes: this trades no
  * freshness for the saving, which is why it can sit under the completion gate.
+ * The section revisions are those the evidence is read from: a change request's
+ * document is not one of them, and every click in Evolution writes it, so keyed
+ * on it the evidence was rebuilt (8 to 15 s of the server's thread on lab) after
+ * each click although nothing it reads had moved.
  *
  * Lives at the server edge, next to the other cached tiers, because the cache is
  * a deployment concern: the use-cases underneath stay pure and un-memoized.
@@ -59,24 +63,39 @@ export class CachedCompletionEvidence implements CompletionEvidenceReader {
 
 	constructor(
 		private readonly build: CompletionEvidenceReader,
+		/** Revisions of the sections the evidence is read from: what keys the reading. */
 		private readonly modelRevision: ProjectModelRevisionPort,
 		/** Identity of the project's kernel folder; see `kernelSignature`. */
 		private readonly kernelSignature: (projectId: string) => string,
-		private readonly now: () => number = Date.now
+		private readonly now: () => number = Date.now,
+		/**
+		 * The whole model's fingerprint, the one the evidence reports and an audit
+		 * is compared with, when the key reads fewer sections than it: a change
+		 * request's click moves the model without moving the evidence, so the
+		 * reading is kept and only its stamp is taken again.
+		 */
+		private readonly reportedModel?: ProjectModelRevisionPort
 	) {}
 
 	async execute(projectId: string, scope: ProjectScopeDraft): Promise<CompletionEvidence> {
-		const key = await this.#key(projectId, scope);
+		const [key, reported] = await Promise.all([
+			this.#key(projectId, scope),
+			this.reportedModel?.fingerprint(projectId) ?? Promise.resolve(null)
+		]);
+		const stamped = (evidence: CompletionEvidence): CompletionEvidence =>
+			reported === null || evidence.currentModelFingerprint === reported
+				? evidence
+				: { ...evidence, currentModelFingerprint: reported };
 		const cached = this.#entries.get(projectId);
 		if (cached && cached.key === key && !this.#expired(cached)) {
 			// Refresh recency so an active project is not the one we evict.
 			this.#entries.delete(projectId);
 			this.#entries.set(projectId, cached);
-			return cached.evidence;
+			return stamped(cached.evidence);
 		}
 
 		const pending = this.#inFlight.get(key);
-		if (pending) return pending;
+		if (pending) return pending.then(stamped);
 
 		const startedAt = this.now();
 		const run = this.build

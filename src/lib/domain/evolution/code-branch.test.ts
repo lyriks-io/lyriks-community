@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createEvolutionRequest, type EvolutionRequest } from './draft';
 import { bringsCode, branchNameFor, codeReadingOf, codeReportRefusal, declareByHandRefusal, mergeRefusal, validationRefusal, withCodeReport, withoutCredentials, type CodeReport } from './code-branch';
 import { verificationCodeRefusal } from './code-branch-acts';
-import { declareByMergeAct, reportCodeStateAct, withValidation } from './code-branch-acts';
+import { declareByMergeAct, deploymentBranchSuggestionAllowed, reportCodeStateAct, withValidation } from './code-branch-acts';
 import { parseBranchHistory, parseCodeRepository, parseEvolutionDraft } from '$lib/application/evolution/parse-evolution-draft';
 import type { ActContext } from './acts';
 
@@ -201,5 +201,35 @@ describe('a request that only settles findings brings no code [criterion:ac-leaf
 		expect(declareByHandRefusal(undefined, 'main', true).ok).toBe(false);
 		expect(codeReadingOf(settlesOnly, 'EVO-002', 'main')).toBeNull();
 		expect(codeReadingOf(atBuild(), 'EVO-002', 'main')).not.toBeNull();
+	});
+});
+
+describe('an AI suggests the deployment branch, a person names it [criterion:396e62e3]', () => {
+	const suggest = (named: string, branch: string, why = 'the default branch of origin', role = 'editor') =>
+		deploymentBranchSuggestionAllowed({ ...ctx, actor: { ...ctx.actor, role } as never }, named, branch, why);
+
+	it('pre-fills the card with the branch git reads [unspa:55da6501:57e05d1c:ad272a00]', () => {
+		expect(suggest('', 'main').ok).toBe(true);
+	});
+
+	it('never over a branch a person named [unspa:55da6501:57e05d1c:7933c07f]', () => {
+		const refused = suggest('release/2026', 'main');
+		expect(refused.ok ? '' : refused.reason).toBe('The project already names its deployment branch: a person changes it on the card.');
+	});
+
+	it('refuses a name git does not take, and a suggestion that says not why [unspa:55da6501:57e05d1c:2b8686db]', () => {
+		const refused = suggest('', 'release..2026');
+		expect(refused.ok ? '' : refused.reason).toBe('Name the deployment branch as git names it.');
+		expect(suggest('', 'main', ' ').ok).toBe(false);
+	});
+
+	it('an AI acting for a reader suggests nothing [unspa:55da6501:57e05d1c:13dab5a8]', () => {
+		expect(suggest('', 'main', 'the default branch of origin', 'viewer').ok).toBe(false);
+	});
+
+	it('the suggestion survives a save whole, and a part of one is dropped', () => {
+		const suggestion = { branch: 'main', why: 'the default branch of origin', by: 'ana', at: '2026-11-23T08:00:00.000Z' };
+		expect(parseEvolutionDraft({ projectId: 'p', requests: [], suggestedDeploymentBranch: suggestion }, 'p').suggestedDeploymentBranch).toEqual(suggestion);
+		expect(parseEvolutionDraft({ projectId: 'p', requests: [], suggestedDeploymentBranch: { branch: 'main' } }, 'p').suggestedDeploymentBranch).toBeUndefined();
 	});
 });

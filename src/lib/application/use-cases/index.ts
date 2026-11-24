@@ -75,6 +75,7 @@ export { LoadFeatureMaturityReportUseCase } from '../analysis/load-feature-matur
 export { DetectFeatureIdCollisionUseCase } from '../specification/detect-feature-id-collision';
 export {
 	LoadImplementationCoverageUseCase,
+	codeIsLinked,
 	type ActionImplementationCoverage,
 	type CriteriaTally,
 	type FeatureImplementationCoverage

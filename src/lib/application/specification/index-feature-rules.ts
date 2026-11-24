@@ -232,12 +232,19 @@ function marked(row: KernelRule, raw: unknown, held: DisabledMarker | null): Ker
 }
 
 /** Every rule + invariant a single feature snapshot holds, own surfaces only. */
-function rulesOfFeature(
+/**
+ * Reads one feature's rules in words: the costliest part of the behaviour fold
+ * (every rule written as its EARS sentence). A pure function of its arguments,
+ * so a caller holding unchanged snapshots may keep what it returned.
+ */
+export type FeatureRulesReader = (
 	featureId: string,
 	snap: UnspaFeatureSnapshot | null,
-	borrowed: Set<string>,
+	borrowed: ReadonlySet<string>,
 	lang: SpecLanguage
-): KernelRule[] {
+) => KernelRule[];
+
+export const rulesOfFeature: FeatureRulesReader = (featureId, snap, borrowed, lang) => {
 	const feature = node(snap?.feature);
 	const featureName = str(feature.name) || featureId;
 	const aux = isAuxFeatureId(featureId);
@@ -296,7 +303,7 @@ function rulesOfFeature(
 		rows.push(marked(projectInvariant(iv, fOrigin, `${featureId}:feature`, constants, lang), iv, featureOff));
 	}
 	return rows;
-}
+};
 
 /**
  * Build the read-only kernel-rules model for the Rules tab: one group per feature
@@ -310,7 +317,9 @@ export function indexFeatureRules(
 		snapshot: UnspaFeatureSnapshot | null;
 	}>,
 	/** The spec's language: every statement is written in it. */
-	lang: SpecLanguage = 'en'
+	lang: SpecLanguage = 'en',
+	/** How one feature's rules are read: the caller may keep them per unchanged snapshot. */
+	readRules: FeatureRulesReader = rulesOfFeature
 ): KernelRulesReadModel {
 	const borrowed = borrowedSurfaceIds(featureSnapshots);
 	const order = project?.project.featureIds ?? featureSnapshots.map((f) => f.featureId);
@@ -322,7 +331,7 @@ export function indexFeatureRules(
 	for (const featureId of ordered) {
 		if (!bySnap.has(featureId)) continue;
 		const snap = bySnap.get(featureId) ?? null;
-		const rules = rulesOfFeature(featureId, snap, borrowed, lang);
+		const rules = readRules(featureId, snap, borrowed, lang);
 		if (rules.length === 0) continue;
 		const label = str(node(snap?.feature).name) || featureId;
 		groups.push({ featureId, label, rules });

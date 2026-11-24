@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { HelpTip, Icon, pushToast } from '$ui/design-system';
 	import type { DossierReading } from '$lib/server/evolution-view.server';
 	import { shortSha } from '$domain/evolution';
@@ -38,7 +39,16 @@
 	// The history of the branch's commits, opened in place by its link (ac-evo-branch-history).
 	let historyOpen = $state(false);
 	const sameCommit = (a: string | null, b: string) => !!a && (a.startsWith(b) || b.startsWith(a));
-	let branchInput = $state('');
+	// The branch an AI read from git fills the field once, until the person types another (action db883b80):
+	// at once when the page opens with it, and when it arrives while the page is open.
+	const suggestion = $derived(dossier.deploymentBranchSuggestion ?? null);
+	let branchInput = $state(untrack(() => dossier.deploymentBranchSuggestion?.branch ?? ''));
+	let prefilled = untrack(() => !!dossier.deploymentBranchSuggestion);
+	$effect(() => {
+		if (prefilled || !suggestion || branchInput) return;
+		branchInput = suggestion.branch;
+		prefilled = true;
+	});
 	let saving = $state(false);
 	async function saveBranch() {
 		const branch = branchInput.trim();
@@ -87,6 +97,10 @@
 				<button type="submit" class={SECONDARY_44} disabled={saving || !branchInput.trim()}>Save</button>
 				{#if editing}<button type="button" class="quiet text-ink" onclick={() => (editing = false)}>Cancel</button>{/if}
 			</form>
+			{#if !code && suggestion}
+				<!-- Nothing is named until a person saves: the AI only pre-filled the field (criterion of action db883b80). -->
+				<p class="m-0 text-xs leading-normal text-ink-3">Suggested by {suggestion.by} from git: {suggestion.why}</p>
+			{/if}
 			{#if editing}
 				<p class="m-0 text-xs leading-normal text-ink-3">{CHANGE_TIP}</p>
 			{/if}
