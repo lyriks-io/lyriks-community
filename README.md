@@ -66,6 +66,8 @@ irm https://get.lyriks.io/windows | iex
 
 The installer checks your machine, offers to install Docker if it is missing, runs everything in containers and verifies itself. Open the address it prints, usually <http://localhost:3000>, and activate with your key. Something off? See [When it goes wrong](https://lyriks.io/docs?utm_source=github&utm_medium=readme&utm_campaign=lce-launch#trouble).
 
+**Why a key?** Lyriks also exists as a paid product, which runs on licence keys. To keep a single mechanism, we built a page where you generate your own free key for the Community Edition: [lyriks.io/get-started](https://lyriks.io/get-started?utm_source=github&utm_medium=readme&utm_campaign=lce-launch).
+
 Lyriks images are built for x86-64. On a Mac with Apple Silicon they run through Rosetta, a little slower; Linux on ARM is not supported.
 
 **2. Connect your AI client.** Point it at your install followed by `/mcp`. With Claude Code:
