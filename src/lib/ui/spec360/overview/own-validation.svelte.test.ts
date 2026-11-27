@@ -21,7 +21,7 @@ const ana = { id: 'ana@example.test', name: 'Ana Diaz' };
 const bob = { id: 'bob@example.test', name: 'Bob Li' };
 const cleo = { id: 'cleo@example.test', name: 'Cleo Roy' };
 const anchors = ['product', 'problem', 'target', 'core:billing', 'role:customer'];
-const elements: SpecElement[] = anchors.map((id) => ({ id, title: id, owner: 'product' }));
+const elements: SpecElement[] = anchors.map((id) => ({ id, title: id }));
 const mode = { active: false, available: true };
 const edits = {
 	editing: null as string | null,
@@ -43,7 +43,7 @@ const approve = (doc: RetrospecDocument, id: string, actor = ana) => apply(doc, 
 const started = () => approve(emptyRetrospecDocument(), 'outside');
 function reset(overrides: Partial<ValidationSource> = {}) {
 	source = { projectId: 'p', me: bob, canWrite: true, doc: started(), elements,
-		team: [{ person: ana, jobIds: ['product'] }, { person: bob, jobIds: ['product', 'design'] }], baselines: [], ...overrides };
+		team: [{ person: ana, jobIds: ['product'] }, { person: bob, jobIds: ['product', 'business', 'design'] }], baselines: [], ...overrides };
 	validation = new SpecValidation(() => source);
 }
 const clean = (html: string) => html.replace(/<!--.*?-->/g, '');
@@ -67,7 +67,7 @@ describe('Overview blocks validate one by one beside their frames [criterion:e20
 		expect(html).not.toContain('data-validate-all');
 		expect(html.match(/data-evo-validate/g)).toHaveLength(5);
 		// The standard review control on every block: the reviewer picker names each one.
-		for (const name of ['Problems', 'Objectives', 'Billing', 'Customer']) expect(html).toContain(`aria-label="Request validation: ${name}"`);
+		for (const name of ['Problems', 'Objectives', 'Billing', 'Customer']) expect(html).toContain(`aria-label="Ask a colleague to validate: ${name}"`);
 		expect(html).toContain('You validated this element · click to withdraw');
 		for (const link of html.match(/<a\b[^>]*>[\s\S]*?<\/a>/g) ?? []) expect(link).not.toContain('data-evo-validate');
 	});
@@ -153,7 +153,7 @@ it('puts the reader first among the people of an element, never in +N [criterion
 
 it('names the separate action-journey review and keeps its own target [criterion:3f89290d]', async () => {
 	const flow = 'flow:refunds';
-	reset({ elements: [{ id: flow, title: 'Actions · Refunds', owner: 'design' }, { id: 'action:refunds:refund', title: 'Refund', owner: 'product' }] });
+	reset({ elements: [{ id: flow, title: 'Actions · Refunds' }, { id: 'action:refunds:refund', title: 'Refund' }] });
 	const html = clean(render(FeaturePage, { props: { data: {
 		projectId: 'p', page: { kind: 'feature', feature: { id: 'refunds', coreId: 'billing', coreName: 'Billing', name: 'Refunds', description: '',
 			actions: [{ id: 'refund', name: 'Refund', description: '', who: [], rulesCount: '0 rules', refusalLead: null, rules: [] }] } },

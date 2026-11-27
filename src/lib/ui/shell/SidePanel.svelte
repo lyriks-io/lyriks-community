@@ -82,10 +82,10 @@
 			flex-direction: column;
 			box-sizing: border-box;
 			width: min(520px, calc(100% - var(--side-w)));
-			border-right: 2px solid var(--color-ink);
+			border-right: 1.5px solid var(--color-ink);
 			background: var(--color-paper);
 			color: var(--color-ink);
-			box-shadow: 6px 0 0 var(--color-blue);
+			box-shadow: 4px 0 0 var(--color-toner-2);
 			font-family: var(--font-evo);
 			font-size: 0.8125rem;
 			animation: lk-palin 0.16s ease both;

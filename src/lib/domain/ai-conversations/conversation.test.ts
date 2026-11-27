@@ -7,8 +7,11 @@ import {
 	decideProposal,
 	emptyAiConversations,
 	markPublished,
+	markSeen,
+	needsYou,
 	parseAiConversations,
 	publishPlaces,
+	startAiConversation,
 	startConversation,
 	titleOf,
 	writeInConversation,
@@ -40,6 +43,10 @@ describe('a question opens a private conversation [criterion:cc5f46cb]', () => {
 
 	it('cuts a long first line at a word', () => {
 		expect(titleOf(`${'word '.repeat(30)}\nsecond line`).endsWith('…')).toBe(true);
+	});
+
+	it("titles a message citing a page by the page's name, without the link syntax [criterion:7f4690b0]", () => {
+		expect(titleOf('Fixed: [EVO-016](/projects/p/evolution?request=r) moved on')).toBe('Fixed: EVO-016 moved on');
 	});
 });
 
@@ -166,5 +173,64 @@ describe('a conversation can be deleted, unless it changed the specification [cr
 		const refused = deleteConversation(applied.document, 'ana@x.io', 'c1');
 		expect(refused.ok).toBe(false);
 		if (!refused.ok) expect(refused.reason).toContain('changed the specification');
+	});
+});
+
+describe('what my AI asks or tells me on its own waits for me [criterion:31488628]', () => {
+	const told = (about: 'question' | 'stopped', text = 'Which billing flow runs in production?') => {
+		const outcome = startAiConversation(emptyAiConversations(), 'ana@x.io', { text, about, context: null }, { conversationId: 'c9', messageId: 'c9-m1' }, AT);
+		if (!outcome.ok) throw new Error(outcome.reason);
+		return outcome;
+	};
+
+	it('opens a conversation of the person, signed by the AI, its question waiting for an answer', () => {
+		const { conversation } = told('question');
+		expect(conversation.openedBy).toBe('ai');
+		expect(conversation.messages).toEqual([{ id: 'c9-m1', role: 'ai', text: 'Which billing flow runs in production?', at: AT, asks: true }]);
+		expect(chatTurn(conversation, () => null)).toBe('asked_back');
+		expect(needsYou(conversation)).toBe(true);
+	});
+
+	it('keeps why the AI stopped until the person opened it', () => {
+		const { conversation, document } = told('stopped', 'I stop here: my usage limit is reached.');
+		expect(conversation.messages[0]).toMatchObject({ role: 'ai', stopped: true });
+		expect(conversation.messages[0].asks).toBeUndefined();
+		expect(chatTurn(conversation, () => null)).toBe('answered');
+		expect(needsYou(conversation)).toBe(true);
+		const seen = markSeen(document, 'ana@x.io', 'c9', LATER);
+		if (!seen.ok) throw new Error(seen.reason);
+		expect(needsYou(seen.conversation)).toBe(false);
+	});
+
+	it('leaves the question waiting when the person only opened it', () => {
+		const seen = markSeen(told('question').document, 'ana@x.io', 'c9', LATER);
+		if (!seen.ok) throw new Error(seen.reason);
+		expect(needsYou(seen.conversation)).toBe(true);
+	});
+
+	it('settles once the person wrote back', () => {
+		const written = writeInConversation(told('question').document, 'ana@x.io', 'c9', 'The new one.', 'c9-m2', LATER, false);
+		if (!written.ok) throw new Error(written.reason);
+		expect(needsYou(written.conversation)).toBe(false);
+	});
+
+	it('refuses a question with no words and keeps a long one whole up to its limit', () => {
+		const empty = startAiConversation(emptyAiConversations(), 'ana@x.io', { text: '  ', about: 'question', context: null }, { conversationId: 'c', messageId: 'm' }, AT);
+		expect(empty.ok).toBe(false);
+		expect(told('stopped', 'x'.repeat(2500)).conversation.messages[0].text).toHaveLength(2000);
+	});
+
+	it('reads back who opened it and when it was seen', () => {
+		const { document } = told('stopped');
+		const seen = markSeen(document, 'ana@x.io', 'c9', LATER);
+		if (!seen.ok) throw new Error(seen.reason);
+		const read = conversationOf(parseAiConversations(JSON.parse(JSON.stringify(seen.document))), 'ana@x.io', 'c9')!;
+		expect(read.openedBy).toBe('ai');
+		expect(read.seenAt).toBe(LATER);
+		expect(read.messages[0].stopped).toBe(true);
+	});
+
+	it('is nobody else\'s to mark seen', () => {
+		expect(markSeen(told('stopped').document, 'bob@x.io', 'c9', LATER).ok).toBe(false);
 	});
 });

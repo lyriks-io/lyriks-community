@@ -5,7 +5,8 @@ import { createEmptyFeaturesDraft } from '$domain/features';
 import { createEmptyGlossaryDraft } from '$domain/glossary';
 import { createEmptyArchitectureDraft } from '$domain/architecture';
 import { createEmptyExperienceDraft } from '$domain/experience';
-import { specElements, ownerOfElement, type SpecElementsInput } from './elements';
+import { reviewJobsOf } from '$domain/retrospec';
+import { specElements, type SpecElementsInput } from './elements';
 import { addCore, addUser, coreDeletionRefusal, deleteUser, editArchitecture, editDefinition, editFeatures, editGlossary, editIdentity, editShapeOf, editUsers } from './edits';
 import { usedByOf } from './feature-extras';
 import { experienceView } from './experience';
@@ -79,11 +80,11 @@ describe('the elements a team validates', () => {
 		expect(ids).not.toContain('flow:f1');
 	});
 
-	it('gives each element the job that owns its part', () => {
-		expect(ownerOfElement('rule:f1:r-12')).toBe('product');
-		expect(ownerOfElement('flow:f1')).toBe('design');
-		expect(ownerOfElement('component:x')).toBe('design');
-		expect(ownerOfElement('health:implementation')).toBe('tech');
+	it('reads the jobs an element waits on from its anchor alone', () => {
+		expect(reviewJobsOf('rule:f1:r-12')).toEqual(['product', 'development', 'qa']);
+		expect(reviewJobsOf('flow:f1')).toEqual(['design', 'development']);
+		expect(reviewJobsOf('component:x')).toEqual(['design']);
+		expect(reviewJobsOf('health:implementation')).toEqual(['tech', 'qa']);
 	});
 });
 
@@ -154,7 +155,7 @@ describe('the rules the whole product keeps are validated like the other element
 	it('head the Features page: after the core features of At a glance, before the first feature', () => {
 		const ids = specElements(input({ productRules: [{ id: 'inv-1', text: 'An expired link never redirects' }] })).map((e) => e.id);
 		expect(ids.slice(2, 7)).toEqual(['role:r1', 'core:c1', 'core:c2', 'rule:project:inv-1', 'feature:f1']);
-		expect(ownerOfElement('rule:project:inv-1')).toBe('product');
+		expect(reviewJobsOf('rule:project:inv-1')).toContain('product');
 	});
 
 	it('add nothing when the project holds none', () => {

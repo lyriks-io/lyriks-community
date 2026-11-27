@@ -142,11 +142,11 @@ describe('a run that holds its changes says nothing is written yet [criterion:50
 	const delta = runReach({ fromCommit: 'abc1234', scope: 'delta' });
 
 	it('ends the Scope line with it', () => {
-		expect(scopeLine('repo', delta, true)).toBe('What changed in the code since commit abc1234. The rest of the specification is not read again. Nothing is written before you validate it on Mismatch and click Write the validated changes: your AI then writes it.');
+		expect(scopeLine('repo', delta, true)).toBe('What changed in the code since commit abc1234. The rest of the specification is not read again. Nothing is written before you validate it on Mismatch and click Write the validated changes: Lyriks then writes it.');
 	});
 
 	it('celebrates the reading, never a specification brought up to date', () => {
-		expect(celebrationLine('Kutt', 'repo', delta, 40, true)).toBe('Lyriks has read what changed in the code of Kutt. Nothing is written yet: validate what it found on Mismatch, then Write the validated changes has your AI write it.');
+		expect(celebrationLine('Kutt', 'repo', delta, 40, true)).toBe('Lyriks has read what changed in the code of Kutt. Nothing is written yet: validate what it found on Mismatch, then Write the validated changes has Lyriks write it.');
 	});
 });
 

@@ -27,6 +27,9 @@ export const HISTORY_ACTIONS = [
 	'change_withdrawn',
 	'writing_opened',
 	'change_written',
+	'writing_stopped',
+	'writing_resumed',
+	'change_left_out',
 	'report_closed',
 	'run_cancelled',
 	'run_validated',
@@ -102,8 +105,17 @@ function factsOf(before: RetrospecDocument, after: RetrospecDocument, act: Retro
 			return openChanges(report, act.ids).map((c) => ({ action: 'change_validated' as const, subject: c.title }));
 		case 'open_writing':
 			return run?.writingOpenedAt ? [] : [{ action: 'writing_opened', count: Object.values(report).filter((c) => c.decision?.verdict === 'validated').length }];
-		case 'record_written':
-			return act.written.map((w) => ({ action: 'change_written' as const, subject: report[w.change]?.title ?? w.change }));
+		case 'write_remaining':
+			return [{ action: 'writing_resumed' }];
+		case 'leave_out_change':
+			return [{ action: 'change_left_out', subject: report[act.id]?.title ?? act.id }];
+		case 'record_writes': {
+			const change = report[act.change];
+			const whole = !!change && act.done >= Math.max(1, change.writes.length) && (run?.written?.[change.id] ?? 0) < act.done;
+			return whole ? [{ action: 'change_written', subject: change.title }] : [];
+		}
+		case 'record_write_stop':
+			return [{ action: 'writing_stopped', subject: report[act.change]?.title ?? act.change, note: act.reason }];
 		case 'cancel':
 			return [{ action: run?.holds && run.readingDoneAt ? 'report_closed' : 'run_cancelled' }];
 		case 'publish':
@@ -147,7 +159,9 @@ export interface HistoryLine {
 	readonly note: string | null;
 }
 
-const ACTED_BY_THE_AI: ReadonlySet<HistoryAction> = new Set(['prompt_received', 'commit_recorded', 'changes_reported', 'reading_ended', 'change_reworked', 'change_withdrawn', 'change_written', 'hand_edits_checked']);
+const ACTED_BY_THE_AI: ReadonlySet<HistoryAction> = new Set(['prompt_received', 'commit_recorded', 'changes_reported', 'reading_ended', 'change_reworked', 'change_withdrawn', 'hand_edits_checked']);
+/** What Lyriks does itself, for nobody's AI: it writes what a person validated (point 214). */
+const ACTED_BY_LYRIKS: ReadonlySet<HistoryAction> = new Set(['change_written', 'writing_stopped']);
 
 const VERDICT_READ: Readonly<Record<string, string>> = { validated: 'Validated', reverted: 'Revert requested', rejected: 'Rejected' };
 const many = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
@@ -189,9 +203,15 @@ function whatOf({ action, subject, count, note }: HistoryEntry): string {
 		case 'change_withdrawn':
 			return `withdrew ${named}: it was not a change`;
 		case 'writing_opened':
-			return `opened the writing of ${many(count, 'validated change')}`;
+			return `had the ${many(count, 'validated change')} written`;
 		case 'change_written':
 			return `wrote ${named} into the specification`;
+		case 'writing_stopped':
+			return `stopped writing at ${named}`;
+		case 'writing_resumed':
+			return 'started the writing again';
+		case 'change_left_out':
+			return `left ${named} out of the writing: the next Reverse-Specification reports it again`;
 		case 'report_closed':
 			return 'closed the report: nothing was written';
 		case 'run_cancelled':
@@ -217,7 +237,7 @@ function whatOf({ action, subject, count, note }: HistoryEntry): string {
 
 function noteOf({ action, note }: HistoryEntry): string | null {
 	if (action === 'decision_taken_back') return `It read ${VERDICT_READ[note] ?? note}.`;
-	if (action === 'change_rejected' || action === 'change_reworked') return note || null;
+	if (action === 'change_rejected' || action === 'change_reworked' || action === 'writing_stopped') return note || null;
 	return null;
 }
 
@@ -225,7 +245,8 @@ function noteOf({ action, note }: HistoryEntry): string | null {
 export function historyLines(doc: RetrospecDocument): HistoryLine[] {
 	return (doc.history ?? []).toReversed().map((entry) => {
 		const ai = ACTED_BY_THE_AI.has(entry.action);
-		return { at: entry.at, who: ai ? 'Lyriks' : entry.by.name, through: ai ? entry.by.name : null, what: whatOf(entry), note: noteOf(entry) };
+		const who = ai || ACTED_BY_LYRIKS.has(entry.action) ? 'Lyriks' : entry.by.name;
+		return { at: entry.at, who, through: ai ? entry.by.name : null, what: whatOf(entry), note: noteOf(entry) };
 	});
 }
 

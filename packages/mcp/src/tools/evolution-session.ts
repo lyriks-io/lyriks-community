@@ -53,14 +53,49 @@ export interface StartSessionArgs {
 export interface SessionWaiter {
   mcpUrl: string
   ticket: (sessionId: string) => { token: string | null; expiresAt?: string } | null
+  /** The waker's own sign-in on one project (criterion ab716003); absent where none is offered. */
+  wakeTicket?: (projectId: string) => { token: string | null; expiresAt?: string } | null
 }
+
+const quote = (value: string) => (/^[\w./:@=,+-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`)
 
 /** The exact command that waits in the background, ready to run as given. */
 export function waitCommand(o: { mcpUrl: string; projectId: string; sessionId: string; token: string | null }): string {
-  const quote = (value: string) => (/^[\w./:@=,+-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`)
   const parts = ['node', '.lyriks/tools/await-event.mjs', quote(o.projectId), '-', quote(o.sessionId), '--url', quote(o.mcpUrl)]
   if (o.token) parts.push('--token', quote(o.token))
   return parts.join(' ')
+}
+
+/** The command lines the waker can start without a window, one per AI client it knows (criterion of feat-ai-session "The waker starts the AI I work with"). */
+export const WAKER_CLIS = ['claude', 'codex', 'gemini'] as const
+export type WakerCli = (typeof WAKER_CLIS)[number]
+const WAKER_CLI_NAMES: Readonly<Record<WakerCli, string>> = { claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini CLI' }
+
+/** The CLI the waker starts for an AI, read from the name it opened its session with; null for one the waker cannot start. */
+export function wakerCliOf(client: string | undefined): WakerCli | null {
+  const name = (client ?? '').toLowerCase()
+  return WAKER_CLIS.find((cli) => name.includes(cli)) ?? null
+}
+
+/**
+ * The exact command that starts the person's waker on the project, apart from
+ * the AI's conversation so it outlives it (criterion ab716003): run from the
+ * repository bound to the project, it starts the same CLI as the AI that opened
+ * the session, and replaces a waker already running there.
+ */
+export function wakeCommand(o: { mcpUrl: string; projectId: string; token: string | null; cli: WakerCli }): string {
+  const parts = ['node', '.lyriks/tools/wake-ai.mjs', quote(o.projectId), '--detach', '--ai', o.cli, '--url', quote(o.mcpUrl)]
+  if (o.token) parts.push('--token', quote(o.token))
+  return parts.join(' ')
+}
+
+/** What the AI is told of the waker once its session is open: offered once, started on the person's word (criteria 7cfc6440, 2c01fb5f). */
+function wakerNote(waker: unknown, command: string | null, cli: WakerCli | null): string {
+  if (!command || !cli) return ''
+  const status = (waker as { status?: unknown } | undefined)?.status
+  if (status === 'listening') return ''
+  const name = WAKER_CLI_NAMES[cli]
+  return ` The person has no waker listening on this project. Offer it to them once, in one sentence: run \`wake.command\` from the repository bound to the project and their next click on any page starts ${name} without a window, on the plan they signed in to ${name} with, whenever none of their AIs is in session; it keeps running after this conversation, and \`node .lyriks/tools/wake-ai.mjs --stop\` stops it. Run it only on their word, never on your own, and never offer it again in this conversation.`
 }
 
 /** What the AI does once the session is open, wherever it starts (ac-ai-session-band, ac-evo-live-chat-free). */
@@ -95,8 +130,15 @@ export async function startEvolutionSessionHandler(args: StartSessionArgs, lyrik
   const wait = waiter && signIn && typeof sessionId === 'string'
     ? { command: waitCommand({ mcpUrl: waiter.mcpUrl, projectId: args.project_id, sessionId, token: signIn.token }), ...(signIn.expiresAt ? { expiresAt: signIn.expiresAt } : {}) }
     : null
-  const withWait = wait ? { ...answer, wait } : answer
-  const LISTEN = `${listen(wait?.command ?? null)}${othersNote(answer.others)}`
+  // The waker's command, signed in by itself for this project alone (criterion ab716003).
+  // Only for an AI whose CLI the waker can start: it wakes the same CLI that opened the session.
+  const cli = wakerCliOf(args.client)
+  const wakeSignIn = cli && waiter?.wakeTicket ? waiter.wakeTicket(args.project_id) : null
+  const wake = cli && waiter && wakeSignIn
+    ? { command: wakeCommand({ mcpUrl: waiter.mcpUrl, projectId: args.project_id, token: wakeSignIn.token, cli }), ...(wakeSignIn.expiresAt ? { expiresAt: wakeSignIn.expiresAt } : {}) }
+    : null
+  const withWait = { ...answer, ...(wait ? { wait } : {}), ...(wake ? { wake } : {}) }
+  const LISTEN = `${listen(wait?.command ?? null)}${othersNote(answer.others)}${wakerNote(answer.waker, wake?.command ?? null, cli)}`
   if (!args.request_id) return { ...withWait, next: LISTEN }
   // Started on a request: the same session of the project, its place named so the AI begins there.
   return withPageLinks({
@@ -264,13 +306,42 @@ export interface UpdateSessionArgs {
   request_id?: string
   session_id: string
   say?: string
+  /** One question the AI waits on, asked on the person's pages (action cf381e92). */
+  ask?: string
+  /** Why the AI stops, said on the person's pages (action cf381e92). */
+  stopped?: string
+  /** The page of the application the question or the stop bears on. */
+  href?: string
+  title?: string
   end?: boolean
 }
 
-/** Say what the AI does, or end the session on the person's word (ac-evo-live-state, -end). */
+/** What the AI is told once its question or its stop is on the person's pages (criterion b940571a). */
+const TOLD_NEXT =
+  'It waits for the person in Ask my AI, under Needs you, on every page of the project, as a conversation of theirs opened by you. ' +
+  'Say in the chat in one line where they will find it (the href). Keep waiting in the background (run the wait command again if it is not running): ' +
+  'their answer comes as a click of kind chat in that conversation, with your question in it.'
+
+/** Say what the AI does, ask the person or say why it stops, or end the session on the person's word (ac-evo-live-state, -end; action cf381e92). */
 export async function updateEvolutionSessionHandler(args: UpdateSessionArgs, lyriks: LyriksClient): Promise<unknown> {
   const base = { projectId: args.project_id, ...onRequest(args.request_id), sessionId: args.session_id }
+  const ask = args.ask?.trim()
+  const stopped = args.stopped?.trim()
+  // One thing waits on the person at a time: a question, or why the AI stops (rule 81cd9e7f).
+  if (ask && stopped) return { ok: false, message: 'Pass ask or stopped, not both: the one question you wait on, or why you stop.' }
   const done: string[] = []
+  let told: { conversationId?: string; href?: string } | null = null
+  if (ask || stopped) {
+    told = await lyriks.post<{ conversationId?: string; href?: string }>(LIVE, {
+      projectId: args.project_id,
+      sessionId: args.session_id,
+      act: 'tell',
+      about: ask ? 'question' : 'stopped',
+      text: ask ?? stopped,
+      ...(args.href ? { href: args.href, title: args.title ?? '' } : {}),
+    })
+    done.push(ask ? 'asked the person on their pages' : 'told the person why you stop')
+  }
   if (args.say) {
     await lyriks.post(LIVE, { ...base, act: 'say', text: args.say })
     done.push('said on the page')
@@ -279,8 +350,9 @@ export async function updateEvolutionSessionHandler(args: UpdateSessionArgs, lyr
     await lyriks.post(LIVE, { ...base, act: 'end' })
     done.push('session ended')
   }
-  if (done.length === 0) return { ok: false, message: 'Nothing to do: pass say or end.' }
-  return { ok: true, done }
+  if (done.length === 0) return { ok: false, message: 'Nothing to do: pass say, ask, stopped or end.' }
+  if (!told) return { ok: true, done }
+  return withPageLinks({ ok: true, done, conversationId: told.conversationId, href: told.href, next: TOLD_NEXT })
 }
 
 export interface ReadSessionsArgs {
@@ -342,6 +414,57 @@ export async function askEvolutionSessionHandler(args: AskSessionArgs, lyriks: L
     if (answer.kind === 'answer')
       return { ...answer, next: `${answer.from.name} answered. Carry on with what you were doing; nothing of this exchange is shown to the person.` }
     return { ...answer, next: `${answer.message}: carry on without it, or ask again later; ask the person only when you cannot do without it.` }
+  } finally {
+    if (beat) clearInterval(beat)
+  }
+}
+
+export interface AwaitWakeArgs {
+  project_id: string
+  max_wait_seconds?: number
+}
+
+type PlatformWake =
+  | { ok: true; kind: 'wake'; clicks: number; wokenAt: string }
+  | { ok: true; kind: 'nothing'; waitedSeconds: number }
+  | { ok: false; message: string }
+
+/**
+ * The person's waker waits for a wake ("Keep my waker listening", action
+ * 77cdb263): one call held open while the platform waits in turns of
+ * platformWaitSeconds, kept alive like a session's wait. It answers kind
+ * "wake" ("Wake my AI", action ccca0911) when a click of the person waits and
+ * none of their AIs is in session, kind "nothing" when the hold ran out.
+ */
+export async function awaitAiWakeHandler(args: AwaitWakeArgs, lyriks: LyriksClient, extra: ToolExtra = {}): Promise<unknown> {
+  const token = extra._meta?.progressToken
+  const ceiling = token === undefined ? SESSION_LIMITS.withoutProgressSeconds : SESSION_LIMITS.maxHoldSeconds
+  const budget = Math.max(1, Math.min(args.max_wait_seconds ?? ceiling, SESSION_LIMITS.maxHoldSeconds))
+  const started = Date.now()
+  let beats = 0
+  const beat =
+    token === undefined || !extra.sendNotification
+      ? null
+      : setInterval(() => {
+          beats++
+          void extra.sendNotification!({
+            method: 'notifications/progress',
+            params: { progressToken: token, progress: beats, message: 'Listening for your clicks' },
+          }).catch(() => {})
+        }, SESSION_LIMITS.progressIntervalSeconds * 1000)
+  try {
+    for (;;) {
+      const left = budget - (Date.now() - started) / 1000
+      if (left <= 0) return { kind: 'nothing', waitedSeconds: Math.round((Date.now() - started) / 1000) }
+      const answer = await lyriks.post<PlatformWake>(
+        LIVE,
+        { projectId: args.project_id, act: 'wake_wait', waitSeconds: Math.ceil(Math.min(left, SESSION_LIMITS.platformWaitSeconds)) },
+        { signal: extra.signal },
+      )
+      if (!answer.ok) throw new Error(answer.message)
+      if (answer.kind === 'wake') return { kind: 'wake', clicks: answer.clicks, wokenAt: answer.wokenAt }
+      // The platform's turn ran out with nothing to wake for: wait again inside the same call.
+    }
   } finally {
     if (beat) clearInterval(beat)
   }

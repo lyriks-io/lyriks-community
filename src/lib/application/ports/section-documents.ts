@@ -51,6 +51,12 @@ export interface SectionDocumentStorePort {
 	/** Current revision for a section (0 if never saved). */
 	currentRevision(projectId: string, section: string): Promise<number>;
 	/**
+	 * Remove a stored section, publishing nothing: only a document kept apart
+	 * from the section that lists it (a baseline's requirements document) is
+	 * ever removed. Optional: an adapter without it keeps the document.
+	 */
+	remove?(projectId: string, section: string): Promise<void>;
+	/**
 	 * Every stored section's revision for a project in one read (sections never
 	 * saved are absent). Optional: an adapter that cannot batch omits it and the
 	 * revision reader falls back to one `currentRevision` per section.

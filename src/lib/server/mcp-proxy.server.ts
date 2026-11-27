@@ -149,6 +149,10 @@ async function refuseReader(event: RequestEvent): Promise<Response | null> {
 		if (!token) return null;
 		const verdict = await tokenRoleVerdict(event.locals.services, token, 'mcp', null);
 		if (verdict === 'allowed') return null;
+		// A session that has ended is no session: the gateway sends the browser to
+		// sign in and back here, as it does with no cookie (rule adfc7ef2). Read as a
+		// refusal, it told an owner signed out elsewhere that they were a viewer.
+		if (verdict === 'signed-out') return null;
 		// A role source that did not answer is not a refusal: the page asks to reload
 		// rather than telling a designer they are a viewer.
 		if (verdict === 'unreachable') {

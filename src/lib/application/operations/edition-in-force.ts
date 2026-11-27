@@ -1,4 +1,4 @@
-import { openedEdition, type LicenseEdition, type LicenseView } from '$domain/licensing';
+import { keyProjects, openedEdition, projectsInForce, type LicenseEdition, type LicenseView } from '$domain/licensing';
 
 /**
  * The edition this installation opens right now, kept in step with its licence.
@@ -13,6 +13,7 @@ import { openedEdition, type LicenseEdition, type LicenseView } from '$domain/li
  */
 export class EditionInForce {
 	private keyEdition: LicenseEdition | null = null;
+	private keyProjectCount: number | null = null;
 	private listener: (() => void) | null = null;
 
 	constructor(private readonly declaredEdition: string | undefined) {}
@@ -20,9 +21,10 @@ export class EditionInForce {
 	/** Remember the edition of the key a licence read found. */
 	record(view: LicenseView): void {
 		const edition = view.entitlements?.edition;
-		if (!edition) return;
+		if (!edition || !view.entitlements) return;
 		const before = this.current();
 		this.keyEdition = edition;
+		this.keyProjectCount = keyProjects(view.entitlements);
 		if (this.current() !== before) this.listener?.();
 	}
 
@@ -37,6 +39,15 @@ export class EditionInForce {
 	/** The edition the installation opens, never more than its images. */
 	current(): string | undefined {
 		return openedEdition(this.declaredEdition, this.keyEdition);
+	}
+
+	/**
+	 * The number of active projects the installation holds (EVO-016): 1 on
+	 * Community, the number the key in force states on Enterprise, null (every
+	 * project) when it states none.
+	 */
+	projects(): number | null {
+		return projectsInForce(this.current(), this.keyProjectCount);
 	}
 
 	/** The edition of the images this installation runs, whatever key it holds. */

@@ -341,6 +341,8 @@ export const BINDING_MARKERS = {
 export const BINDING_HOOK_PATH = '.claude/hooks/lyriks-bound-prompt.mjs';
 /** Where the Claude Code hook that allows the Lyriks tools is written (ac-mcp-binding-allows-tools). */
 export const BINDING_TOOLS_HOOK_PATH = '.claude/hooks/lyriks-allow-tools.mjs';
+/** Where the Claude Code end-of-turn hook is written (action 900dbea1). */
+export const BINDING_STOP_HOOK_PATH = '.claude/hooks/lyriks-stop.mjs';
 /** The tools Claude Code runs that hook for: every MCP tool, the script telling the Lyriks ones apart. */
 export const BINDING_TOOLS_HOOK_MATCHER = '^mcp__.*';
 /** Claude Code's project settings, where the hook is wired. */
@@ -367,6 +369,8 @@ export function buildBindingBlock(projectId?: string | null): string {
 		'- A question about how the product behaves, whether something is right, what is missing or what broke is a spec READ first (`get_behavior_feature`, `get_section`, `get_implementation_status` / `get_implementation_gaps` / `get_implementation_drift`, `simulate_behavior`). Never answer it from the code alone or from memory.',
 		'- Lyriks answers what the product must do, why, and where the code implements it; your own code tools (your search, a code search service, a code graph, your editor) answer how the code is written. After the spec read, follow the places it gives (`code` on a `get_behavior_feature` read of an action or a surface: file, line, code line) into those tools and check the code against the spec; where they differ, tell the person instead of resolving it either way. A question about the code alone (how to call an API, an internal mechanism, a library, code the project does not specify) goes to your code tools directly, without a Lyriks call.',
 		'- Only work with no user-visible effect (a refactor, a build or dependency fix, formatting) skips the spec; say so in one line. A request that contradicts the spec is surfaced, not coded around: say what the spec says and let the user decide.',
+		'- Name every feature, action, screen or request you talk about by its name, as the spec writes it ("Sync the index and read what is implemented, missing or stale", "EVO-019 Mismatch : ..."): an id or a number may follow in parentheses, never stand alone, since the person knows the product by its names. When you only hold an id, read the name first.',
+		'- When the person follows your work on their pages (a Reverse-Specification, an Evolution request, a live session of yours), they cannot see this chat from there: before ending a turn on a question, or stopping for any other reason (the work is done, you are blocked, an error, a limit), say it on their pages with `update_evolution_session` (`ask` for the one question you wait on, `stopped` for why you stop), opening your session with `start_evolution_session` given the project alone when none is open, then wait in the background so their answer reaches you.',
 		`- The scripts in \`${BINDING_TOOLS_DIR}/\` do what a tool call cannot: \`sync-skills.mjs\` installs or updates the playbooks, this block, the hooks and the scripts from the server without passing them through the conversation (run the \`selfInstall.command\` that \`sync_skills\` returns), \`index-file.mjs upsert\` (or \`remove\`) edits \`.unspa.json\` without reformatting it, \`check-index.mjs --fix\` checks it against the code by signature text, \`ingest-results.mjs\` records test results (scenario proofs and criterion \`lastResult\`), \`sync-index.mjs\` and \`apply-batch.mjs\` send an index or a batch too large to type, \`attach-source.mjs\` attaches code files from the disk or a commit instead of retyping them, \`await-event.mjs\`, run in the background, waits for the request page in a live Evolution session without taking the chat away; each carries its version on a \`// contentHash:\` line near its top, which the next \`sync_skills\` call reports as \`installed_tools\` so unchanged scripts are not sent again.`,
 		'- If the Lyriks MCP is not connected, say so and do not guess specified behavior from the code.',
 		BINDING_MARKERS.close
@@ -412,6 +416,22 @@ export function buildToolsHook(script: string, installed: readonly InstalledTool
 		settingsMatcher: BINDING_TOOLS_HOOK_MATCHER,
 		settingsEntry: entry,
 		settingsContent: JSON.stringify({ hooks: { PreToolUse: [{ matcher: BINDING_TOOLS_HOOK_MATCHER, hooks: [entry] }] } }, null, 2) + '\n'
+	};
+}
+
+/**
+ * The Claude Code end-of-turn hook (action 900dbea1): it holds once a turn of
+ * work the person follows on their pages that ends on a question in the chat,
+ * or stops without a word, so the AI says it on their pages first.
+ */
+export function buildStopHook(script: string, installed: readonly InstalledToolRef[] = []): BindingHookInstall {
+	const entry = { type: 'command' as const, command: `node ${BINDING_STOP_HOOK_PATH}`, timeout: 10, statusMessage: 'Lyriks end of turn' };
+	return {
+		...installOrSkip(BINDING_STOP_HOOK_PATH, script, installedByPath(installed)),
+		settingsPath: BINDING_SETTINGS_PATH,
+		settingsEvent: 'Stop',
+		settingsEntry: entry,
+		settingsContent: JSON.stringify({ hooks: { Stop: [{ hooks: [entry] }] } }, null, 2) + '\n'
 	};
 }
 
@@ -475,6 +495,19 @@ export const BINDING_TOOLS: ReadonlyArray<{ file: string; purpose: string }> = [
 		file: 'await-event.mjs',
 		purpose:
 			'`node .lyriks/tools/await-event.mjs <project_id> <request_id | -> <session_id> --url <MCP> [--token <ticket>]`, run as the `wait.command` start_evolution_session answers (it carries its own sign-in, nothing to set): waits in a live Evolution session for the person\'s next event on the request page (a click, their own progress, the end of the session) and exits printing it as JSON. Run it in the background (Claude Code: Bash with run_in_background) so the person\'s chat messages still reach you while you wait; you are woken when it ends: answer the event, then start it again.'
+	},
+	{
+		file: 'wake-ai.mjs',
+		purpose:
+			'`node .lyriks/tools/wake-ai.mjs <project_id> --detach --ai <claude|codex|gemini|copilot> --url <MCP> [--token <ticket>]`, run once as the `wake.command` start_evolution_session answers and only on the person\'s word: the person\'s waker, which keeps running apart from the conversation and, whenever a click of theirs waits and none of their AIs is in session, starts the CLI --ai names without a window in this repository (claude -p, codex exec, gemini -p, copilot -p), on the plan they signed in to it with (API keys are removed from its environment unless --allow-api-key), with the Lyriks MCP and read-only access to the code. `--status` says whether it runs, `--stop` stops it; it logs to .lyriks/waker.log. A woken AI never runs it.'
+	},
+	{
+		file: 'woken-ai.mjs',
+		purpose: 'Not run directly: how wake-ai.mjs starts the person\'s AI without a window (the prompt, the environment without API keys, the sign-in it runs on).'
+	},
+	{
+		file: 'woken-clis.mjs',
+		purpose: 'Not run directly: the AI CLIs wake-ai.mjs can start (Claude Code, Codex, Gemini CLI, GitHub Copilot CLI): how each runs read-only with the Lyriks MCP allowed, the variables that would bill an API key, its sign-in, and where its configuration names the Lyriks MCP.'
 	},
 	{
 		file: 'mcp-client.mjs',
@@ -554,7 +587,7 @@ export function buildBindingTools(
  * Claude Code alone, the helper scripts for everyone (plain Node, no runtime
  * involved). Claude Code discovers skills natively but still reads CLAUDE.md,
  * which is where its block goes; it also gets the hook that allows the Lyriks
- * tools, when that script is given. A script or hook the client reported with
+ * tools and the end-of-turn hook, when their scripts are given. A script or hook the client reported with
  * the published hash (`installedTools`) comes back `unchanged`, without content.
  */
 export function buildBinding(
@@ -563,11 +596,13 @@ export function buildBinding(
 	projectId?: string | null,
 	toolFiles: Readonly<Record<string, string>> = {},
 	installedTools: readonly InstalledToolRef[] = [],
-	toolsHookScript?: string
+	toolsHookScript?: string,
+	stopHookScript?: string
 ): SkillBinding {
 	const block = buildBindingBlock(projectId);
 	const hook = buildBindingHook(hookScript, installedTools);
 	const toolsHook = toolsHookScript ? buildToolsHook(toolsHookScript, installedTools) : null;
+	const stopHook = stopHookScript ? buildStopHook(stopHookScript, installedTools) : null;
 	const targets: BindingInstallTarget[] = CLIENT_LAYOUTS.map((layout) => {
 		const target: BindingInstallTarget = {
 			client: layout.client,
@@ -578,6 +613,7 @@ export function buildBinding(
 		if (layout.client === 'claude') {
 			target.hook = hook;
 			if (toolsHook) target.toolsHook = toolsHook;
+			if (stopHook) target.stopHook = stopHook;
 		}
 		return target;
 	});

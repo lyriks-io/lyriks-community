@@ -61,8 +61,8 @@ export function validationView(control: ValidateControl): ValidationView {
 	const awaited = control.stamps.filter((s) => !s.ok);
 	const awaitedNames = awaited.map(stampName);
 	const state = stateOf(control, awaitedNames.length);
-	// A check that asks first is taken back on a click (EVO-007); a pill arms once pointed at a moment (withdraw-arm).
-	const withdraw = control.withdraws && control.run ? (control.withdrawConfirm ? '. Click to withdraw yours' : '. Point a moment to withdraw yours') : '';
+	// The reader's own green box takes it back after a confirmation (EVO-007).
+	const withdraw = control.withdraws && control.run ? '. Click your box to withdraw yours' : '';
 	// Validate already says the reader's own validation is awaited: the tooltip then names the others only.
 	const others = awaited.filter((s) => !s.me).map(stampName);
 	const label = state === 'saving' ? 'Saving…' : state === 'validate' ? 'Validate' : state === 'waiting' ? (awaitedNames.length > 0 ? `Waiting for ${awaitedNames.length}` : 'Waiting') : 'Validated';

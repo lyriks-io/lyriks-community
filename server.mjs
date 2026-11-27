@@ -1,18 +1,17 @@
 /**
  * Production entry. The stock adapter-node `build/index.js` serves HTTP but has
- * no hook for WebSocket `upgrade` events, and two of the surfaces this app
- * fronts are WebSockets:
+ * no hook for WebSocket `upgrade` events, and one surface this app fronts is
+ * a WebSocket:
  *
- *   /behavior/sync/*  → the behavior dashboard's realtime co-editing socket
- *                       (LYRIKS_UNSPA_URL), guarded by the same platform
- *                       session as the /behavior HTTP proxy in hooks.server.ts
  *   /yjs*             → the realtime relay (LYRIKS_YJS_INTERNAL_URL), which
  *                       otherwise needs its own reverse-proxy rule at every
  *                       install
  *
  * This file wraps the exported `handler` in one http.Server and adds a raw
- * TCP splice for those upgrades. Each route only exists when its env var is
- * set, so a standalone platform behaves exactly like `node build` did.
+ * TCP splice for that upgrade. The route only exists when its env var is set,
+ * so a standalone platform behaves exactly like `node build` did. The behaviour
+ * engine's own editor is not served here: it is launched on the host with
+ * `./lyriks editor` (feat-154, criterion ea8894f2).
  */
 import { createServer } from 'node:http';
 import { connect } from 'node:net';
@@ -27,8 +26,6 @@ const trim = (value) => (value ?? '').trim().replace(/\/$/, '');
 /** Upgrade routes: first matching prefix wins. `auth` = platform session required. */
 const upgradeRoutes = [];
 {
-	const unspa = trim(process.env.LYRIKS_UNSPA_URL);
-	if (unspa) upgradeRoutes.push({ prefix: '/behavior/sync/', target: new URL(unspa), auth: true });
 	const yjs = trim(process.env.LYRIKS_YJS_INTERNAL_URL);
 	if (yjs) {
 		// HTTP authorization binds each relay room to a writable project.

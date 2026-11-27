@@ -76,7 +76,6 @@ function createUseCase(
 		'glossary',
 		'documents',
 		'baselines',
-		'approvals',
 	] as const;
 	const repositories = names.map((name) => mutableRepository(seeds[name] ?? { marker: name }));
 	const client = {
@@ -131,25 +130,16 @@ describe('PushEnvelopeToBackUseCase', () => {
 			'glossary',
 			'documents',
 			'baselines',
-			'approvals',
 		]);
 	});
 
-	it('carries each baseline without its requirements document, which stays in Lyriks [criterion:9a845c19]', async () => {
+	it('carries each baseline as it is kept: its id, its name and its moment [criterion:9a845c19]', async () => {
 		const pushEnvelope = vi.fn<ProjectMirrorPort['pushEnvelope']>(async () => 'synced');
-		const baseline = {
-			id: 'b1', name: 'EVO-015 closed', note: 'the specification as the change left it', createdAt: '2026-11-22T19:17:48.979Z',
-			readiness: 3, coherence: 82, featureCount: 110, content: '# Requirements\n' + 'x'.repeat(700_000)
-		};
-		const stored = { projectId: 'project-1', baselines: [baseline], lastSavedAt: null };
+		const stored = { projectId: 'project-1', baselines: [{ id: 'b1', name: 'EVO-015 closed', createdAt: '2026-11-22T19:17:48.979Z' }], lastSavedAt: null };
 		const { useCase } = createUseCase(pushEnvelope, undefined, undefined, undefined, { baselines: stored });
 
 		expect(await useCase.execute('project-1')).toBe(true);
-		const sent = pushEnvelope.mock.calls[0][1].baselines as typeof stored;
-		const { content: _document, ...marker } = baseline;
-		expect(sent).toEqual({ projectId: 'project-1', baselines: [marker], lastSavedAt: null });
-		// The stored baseline keeps its document: only the copy leaves it out.
-		expect(stored.baselines[0].content.length).toBeGreaterThan(700_000);
+		expect(pushEnvelope.mock.calls[0][1].baselines).toEqual(stored);
 	});
 
 	it('serializes concurrent pushes and sends the latest state last', async () => {

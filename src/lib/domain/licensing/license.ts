@@ -84,10 +84,34 @@ export interface LicenseEntitlements {
 	readonly edition: LicenseEdition;
 	/** Paid seats. Advisory in the single-tenant MAP; enforced upstream by the back. */
 	readonly seats: number;
+	/**
+	 * The number of active projects the key grants (EVO-016): a whole number of
+	 * at least 1. Optional because keys signed before it existed must keep
+	 * activating: an Enterprise key without it grants every project, a Community
+	 * key always grants one (see `keyProjects`).
+	 */
+	readonly projects?: number;
 	/** ISO timestamp the licence was issued. */
 	readonly issuedAt: string;
 	/** ISO expiry, or null for a perpetual licence. */
 	readonly expiresAt: string | null;
+}
+
+/**
+ * The number of active projects a key grants (EVO-016): 1 for a Community key,
+ * whatever it carries, the number an Enterprise key states, and null (every
+ * project) for an Enterprise key that states none, which is every key signed
+ * before keys carried a number.
+ */
+export function keyProjects(entitlements: Pick<LicenseEntitlements, 'edition' | 'projects'>): number | null {
+	if (entitlements.edition === 'community') return 1;
+	const n = entitlements.projects;
+	return typeof n === 'number' && Number.isInteger(n) && n >= 1 ? n : null;
+}
+
+/** What Projects reads on the licence card and in Settings, Account: the number, or Unlimited. */
+export function keyProjectsLabel(entitlements: Pick<LicenseEntitlements, 'edition' | 'projects'>): string {
+	return String(keyProjects(entitlements) ?? 'Unlimited');
 }
 
 /** Resolved activation state for the whole product (single-tenant, per install). */
@@ -315,6 +339,7 @@ export function isLicenseEntitlements(value: unknown): value is LicenseEntitleme
 		typeof v.seats === 'number' &&
 		Number.isFinite(v.seats) &&
 		v.seats >= 1 &&
+		(v.projects === undefined || (typeof v.projects === 'number' && Number.isInteger(v.projects) && v.projects >= 1)) &&
 		typeof v.issuedAt === 'string' &&
 		(v.expiresAt === null || typeof v.expiresAt === 'string')
 	);

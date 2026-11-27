@@ -27,3 +27,13 @@ describe('a change requested reads as a rejection of one element [criterion:a4ef
 		expect(parseSpecValidationActs({ acts: [{ op: 'reject' }] })).toEqual({ ok: false, reason: 'itemId is required.' });
 	});
 });
+
+describe('choosing who leads the validation reads the person it names [action:34e2b66f]', () => {
+	it('reads the person by their address', () => {
+		expect(parseSpecValidationActs({ acts: [{ op: 'set_lead', to: ' sam@example.com ' }] })).toEqual({ ok: true, acts: [{ op: 'set_lead', to: 'sam@example.com' }] });
+	});
+
+	it('refuses a choice that names nobody', () => {
+		expect(parseSpecValidationActs({ acts: [{ op: 'set_lead' }] })).toEqual({ ok: false, reason: 'to is required.' });
+	});
+});

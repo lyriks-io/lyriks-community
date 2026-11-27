@@ -14,7 +14,9 @@ function localsOf(edition: string | undefined, state: ActiveProjectState | null)
 	return { locals, reads: () => reads };
 }
 
-const MOVED_DOWN: ActiveProjectState = { activeProjectId: 'b', projectCount: 3 };
+const MOVED_DOWN: ActiveProjectState = { activeProjectIds: ['b'], projectCount: 3, granted: 1 };
+/** An Enterprise key that grants 2 projects on an installation holding 3 (EVO-016). */
+const TWO_OF_THREE: ActiveProjectState = { activeProjectIds: ['b', 'c'], projectCount: 3, granted: 2 };
 
 describe('requireActiveProject (EVO-001, feat 128)', () => {
 	it('refuses an inactive project with a 403 the error page offers to lift', async () => {
@@ -31,7 +33,15 @@ describe('requireActiveProject (EVO-001, feat 128)', () => {
 		expect(reads()).toBe(1);
 	});
 
-	it('opens every project on another edition', async () => {
+	it('holds shut the projects beyond the N a key grants, naming N for the error page [criterion:ac-leaf-e00f8726-ec61-4b51-b8f6-a32794c70c36]', async () => {
+		const { locals } = localsOf('enterprise', TWO_OF_THREE);
+		const refusal = await requireActiveProject({ locals }, 'a').catch((e: unknown) => e);
+		expect(isHttpError(refusal, 403)).toBe(true);
+		expect(isHttpError(refusal) && refusal.body).toMatchObject({ inactiveProjectId: 'a', activeProjectsGranted: 2 });
+		await expect(requireActiveProject({ locals }, 'c')).resolves.toBeUndefined();
+	});
+
+	it('opens every project where the key grants every project', async () => {
 		const { locals } = localsOf('enterprise', null);
 		await expect(requireActiveProject({ locals }, 'a')).resolves.toBeUndefined();
 	});

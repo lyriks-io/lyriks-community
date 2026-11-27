@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { applyRetrospecActs, type ActContext, type RetrospecAct } from './acts';
 import { emptyRetrospecDocument, type RetrospecDocument } from './document';
 import { canReviewElement, specValidationBoard, waitingOn, type SpecElement } from './spec-validation';
-import { requiredValidators, type TeamMember } from './spec-validators';
+import { eligibleValidators, reviewSeats, type TeamMember } from './spec-validators';
 
 const ana = { id: 'ana@acme.io', name: 'Ana P.' };
 const bob = { id: 'bob@acme.io', name: 'Bob R.' };
@@ -18,9 +18,9 @@ function act(doc: RetrospecDocument, acts: RetrospecAct[], c = ctx()): Retrospec
 const validate = (itemId: string): RetrospecAct => ({ op: 'validate', itemId, title: itemId, tab: 'spec360' });
 
 const elements: SpecElement[] = [
-	{ id: 'problem', title: 'Current situation', owner: 'product' },
-	{ id: 'branding', title: 'Branding', owner: 'design' },
-	{ id: 'datamap', title: 'Datamap', owner: 'tech' }
+	{ id: 'problem', title: 'Current situation' },
+	{ id: 'branding', title: 'Branding' },
+	{ id: 'datamap', title: 'Datamap' }
 ];
 const team: TeamMember[] = [
 	{ person: ana, jobIds: ['product'] },
@@ -29,14 +29,14 @@ const team: TeamMember[] = [
 ];
 
 describe('who must validate an element', () => {
-	it('is the lead and the people holding the job that owns it, each once', () => {
-		expect(requiredValidators('design', ana, team)).toEqual([ana, bob]);
-		expect(requiredValidators('product', ana, team)).toEqual([ana]);
+	it('is the lead and the people holding a job its kind waits on, each once', () => {
+		expect(eligibleValidators(reviewSeats(ana, team, [], 'branding'))).toEqual([ana, bob]);
+		expect(eligibleValidators(reviewSeats(ana, team, [], 'problem'))).toEqual([ana]);
 	});
 
 	it('is the lead alone when nobody holds the job, or on an install without jobs', () => {
-		expect(requiredValidators('tech', cleo, team)).toEqual([cleo]);
-		expect(requiredValidators('design', cleo, [])).toEqual([cleo]);
+		expect(eligibleValidators(reviewSeats(cleo, team, [], 'datamap'))).toEqual([cleo]);
+		expect(eligibleValidators(reviewSeats(cleo, [], [], 'branding'))).toEqual([cleo]);
 	});
 });
 
@@ -56,8 +56,8 @@ describe('the validation of the Specification 360°', () => {
 		expect(board.lead).toEqual(ana);
 		expect(board.summary).toMatchObject({ validated: 1, waiting: 1, toReview: 1 });
 		expect(board.standings.branding).toMatchObject({ state: 'waiting', missing: [bob] });
-		// problem 1/1, branding 1/2, datamap 0/1 (Ana alone: nobody holds tech).
-		expect(board.pct).toBe(50);
+		// Seats: problem 2/2 (Ana leads and holds Product), branding 1/2, datamap 0/1 (Ana alone: nobody holds Tech).
+		expect(board.pct).toBe(60);
 	});
 
 	it('is complete once every required validator validated', () => {
@@ -76,16 +76,16 @@ describe('the validation of the Specification 360°', () => {
 
 describe('what waits on one person', () => {
 	it('is every element missing their validation, rejected ones aside, whatever its number', () => {
-		const many: SpecElement[] = Array.from({ length: 900 }, (_, i) => ({ id: `e${i}`, title: `E${i}`, owner: 'design' as const }));
-		let doc = act(emptyRetrospecDocument(), [validate('e0')]);
-		doc = act(doc, [{ op: 'reject', itemId: 'e1', title: 'E1', tab: 'spec360' }]);
+		const many: SpecElement[] = Array.from({ length: 900 }, (_, i) => ({ id: `component:e${i}`, title: `E${i}` }));
+		let doc = act(emptyRetrospecDocument(), [validate('component:e0')]);
+		doc = act(doc, [{ op: 'reject', itemId: 'component:e1', title: 'E1', tab: 'spec360' }]);
 		const board = specValidationBoard({ doc, elements: many, team, viewer: ana, baselines: [] });
 		const ana$ = waitingOn(board, ana);
 		expect(ana$).toHaveLength(898);
-		expect(ana$).not.toContain('e0');
-		expect(ana$).not.toContain('e1');
-		// Bob owns design: he is still awaited on the one Ana validated.
-		expect(waitingOn(board, bob)).toContain('e0');
+		expect(ana$).not.toContain('component:e0');
+		expect(ana$).not.toContain('component:e1');
+		// Bob holds Design: he is still awaited on the one Ana validated.
+		expect(waitingOn(board, bob)).toContain('component:e0');
 		expect(waitingOn(board, cleo)).toEqual([]);
 	});
 });

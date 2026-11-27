@@ -5,7 +5,7 @@
 	import { pushToast, clickedWithin, confirmDialog, floatInView } from '$ui/design-system';
 	import { useProjectAiSession } from '$ui/ai-session/project-ai-session.svelte';
 	import { aiSessionSlot } from '$ui/ai-session/ai-session-slot.svelte';
-	import { aiStanding } from '$ui/ai-session/ai-standing';
+	import { aiStanding, withWaiting } from '$ui/ai-session/ai-standing';
 	import { QUIET_WHY } from '$ui/ai-session/approvals';
 	import { intoSideAsk, intoSideAskElse } from '$ui/shell/side-ask';
 	import { askHref, startChat, pageTitle } from '$ui/ask/ask-client';
@@ -40,8 +40,11 @@
 	const onAskPage = $derived(page.url.pathname.endsWith('/ask'));
 	const reading = $derived(onPage ? (onAskPage ? 'the product' : 'this page') : (subject ?? title));
 
-	const standing = $derived(aiStanding(ai, aiSessionSlot.run));
-	const inSession = $derived(standing.tone === 'connecting' || standing.tone === 'listening' || standing.tone === 'working');
+	const base = $derived(aiStanding(ai, aiSessionSlot.run));
+	// The AI's own question, or why it stopped, waits on the reader: the word says Needs you, on every page (criterion 31488628).
+	const waiting = $derived(ai?.needsYou ?? null);
+	const standing = $derived(withWaiting(base, waiting?.latest ?? null));
+	const inSession = $derived(base.tone === 'connecting' || base.tone === 'listening' || base.tone === 'working');
 
 	// The times are the reader's own, which only the browser knows.
 	let mounted = $state(false);
@@ -57,7 +60,9 @@
 	);
 	const lastCall = $derived(clock(aiSessionSlot.run?.seenAt));
 	const quietSince = $derived(lastCall ? `No call from your AI since ${lastCall}.` : 'No call from your AI for a minute.');
-	const tip = $derived(inSession ? `Your AI is in session${since ? ` since ${since}` : ''}, ${standing.doing}` : standing.word);
+	const tip = $derived(
+		standing.tone === 'needs' ? `Your AI ${standing.doing}` : inSession ? `Your AI is in session${since ? ` since ${since}` : ''}, ${standing.doing}` : standing.word
+	);
 
 	// In session, the project's own box reads the server again each minute: a session its AI left ends there (criterion 39e1abc1).
 	const RECHECK_MS = 60_000;
@@ -158,6 +163,22 @@
 				aria-label="Ask your AI about {reading}"
 				class="flex w-[360px] max-w-[calc(100vw-32px)] animate-lk-in-fast flex-col gap-2.5 {POP} p-3.5 text-left"
 			>
+				<!-- What the reader's AI asked them on its own, or why it stopped: one press away (actions 385983f9, 559ba487). -->
+				{#if waiting?.latest}
+					<a
+						class="flex flex-col gap-1 border-b border-line pb-2.5 text-[0.8125rem] no-underline"
+						href={askHref(ai.projectId, waiting.latest.conversationId)}
+						data-needs-you={waiting.latest.conversationId}
+						onclick={() => (open = false)}
+						><span class="flex items-center gap-2 font-bold text-orange-ink"
+							><span class="size-2 flex-none bg-orange" aria-hidden="true"></span>{waiting.latest.about === 'question' ? 'Your AI asks you' : 'Your AI stopped'}{waiting.count > 1
+								? ` · ${waiting.count} wait on you`
+								: ''}</span
+						><span class="line-clamp-3 leading-normal text-ink-2">{waiting.latest.text}</span><span class="text-xs text-ink-3 underline"
+							>{waiting.latest.about === 'question' ? 'Answer it' : 'Read it'}</span
+						></a
+					>
+				{/if}
 				<!-- Where the reader's AI stands (action dd8370af, criteria 39e1abc1, bc0f0767). -->
 				{#if inSession && ais.length > 0}
 					<div class="border-b border-line pb-2.5 text-[0.8125rem]" role="status" aria-live="polite">
@@ -178,17 +199,17 @@
 				{:else if inSession}
 					<div class="flex flex-col gap-1 border-b border-line pb-2.5 text-[0.8125rem]" role="status" aria-live="polite">
 						<span class="flex items-center gap-2 font-bold text-green-ink"
-							><span class="ai-mark" data-alive={standing.tone === 'working' || undefined} aria-hidden="true"></span>Your AI is in session{since ? ` since ${since}` : ''}</span
+							><span class="ai-mark" data-alive={base.tone === 'working' || undefined} aria-hidden="true"></span>Your AI is in session{since ? ` since ${since}` : ''}</span
 						>
-						<span class="leading-normal text-ink-2">Now: {standing.doing}.</span>
+						<span class="leading-normal text-ink-2">Now: {base.doing}.</span>
 						<button type="button" class="quiet self-start text-xs text-red-ink" onclick={() => endSession()}>End the session</button>
 					</div>
-				{:else if standing.tone === 'quiet'}
+				{:else if base.tone === 'quiet'}
 					<div class="flex flex-col gap-1 border-b border-line pb-2.5 text-[0.8125rem]" role="status">
 						<span class="flex items-center gap-2 font-bold"><span class="size-2 flex-none bg-orange" aria-hidden="true"></span>Check your AI</span>
 						<span class="leading-normal text-ink-2">{quietSince} {QUIET_WHY}</span>
 					</div>
-				{:else if standing.tone === 'run'}
+				{:else if base.tone === 'run'}
 					<span class="border-b border-line pb-2.5 text-[0.8125rem] text-green-ink" role="status">Your AI is working on the Reverse-Specification.</span>
 				{/if}
 				<label class="flex flex-col gap-1.5">
@@ -243,8 +264,12 @@
 		background: var(--color-green);
 		animation: lk-pulse 0.9s ease-in-out infinite;
 	}
-	.ai-st[data-tone='quiet'] {
+	.ai-st:is([data-tone='quiet'], [data-tone='needs']) {
 		color: var(--color-orange);
+	}
+	.ai-st[data-tone='needs'] .ai-dot {
+		background: var(--color-orange);
+		animation: lk-pulse 1.4s ease-in-out infinite;
 	}
 	.ai-st[data-tone='quiet'] .ai-dot {
 		border-radius: 0;

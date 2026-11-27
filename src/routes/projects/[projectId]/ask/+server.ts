@@ -2,7 +2,7 @@ import { error, json } from '@sveltejs/kit';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { resolveEvolutionActor } from '$lib/server/evolution-actor.server';
 import { discussionAuthor } from '$lib/server/spec360-discussions.server';
-import { decideChatProposal, deleteChat, publishChat, readMyConversations, startChat, withdrawChat, writeChat, type ChatOutcome } from '$lib/server/ai-conversations.server';
+import { decideChatProposal, deleteChat, publishChat, readMyConversations, seeChat, startChat, withdrawChat, writeChat, type ChatOutcome } from '$lib/server/ai-conversations.server';
 import { isAnchor } from '$domain/discussions';
 import type { AiChatContext } from '$domain/ai-conversations';
 import type { RequestHandler } from './$types';
@@ -17,6 +17,7 @@ import type { RequestHandler } from './$types';
  *        { act: publish, conversationId, messageId, anchor, title, text } → { threadId }
  *        { act: validate | reject, conversationId, messageId }           → { state, errors? }
  *        { act: delete, conversationId }
+ *        { act: seen, conversationId }   (opened: why the AI stopped reads as read)
  *
  * Reading the project is enough to talk with one's AI; validating a change
  * needs the right to edit it. Who writes is resolved from the session, never
@@ -71,12 +72,14 @@ export const POST: RequestHandler = async (event) => {
 		}
 		case 'delete':
 			return answer(await deleteChat(services, projectId, actor.id, conversationId, origin));
+		case 'seen':
+			return answer(await seeChat(services, projectId, actor.id, conversationId, origin));
 		case 'validate':
 			if (!canEdit) return json({ ok: false, reason: 'Only who may edit the project validates a change.' }, { status: 403 });
 			return answer(await decideChatProposal(services, projectId, actor.id, { conversationId, messageId, decision: 'validate' }, canEdit, origin));
 		case 'reject':
 			return answer(await decideChatProposal(services, projectId, actor.id, { conversationId, messageId, decision: 'reject' }, canEdit, origin));
 		default:
-			error(400, 'act must be start, write, withdraw, publish, validate, reject or delete');
+			error(400, 'act must be start, write, withdraw, publish, validate, reject, delete or seen');
 	}
 };

@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   SESSION_LIMITS,
+  awaitAiWakeHandler,
   awaitEvolutionEventHandler,
   startEvolutionSessionHandler,
   updateEvolutionSessionHandler,
@@ -61,6 +62,96 @@ describe('the waiting command signs in by itself (criterion 26c95cc1)', () => {
     const answer = await answerOf(() => null)
     expect(answer.wait).toBeUndefined()
     expect(String(answer.next)).toContain('await_evolution_event')
+  })
+})
+
+describe('the waking command is handed once and signs in by itself (criterion ab716003)', () => {
+  const ticket = () => ({ token: 'lyriks_mcp_W', expiresAt: '2026-11-16T22:00:00.000Z' })
+  const answerOf = async (opened: Record<string, unknown>, wakeTicket?: (projectId: string) => { token: string | null; expiresAt?: string } | null, client = 'Claude Code') =>
+    (await startEvolutionSessionHandler({ project_id: 'p1', client }, platform([{ ok: true, session: { id: 's1' }, ...opened }], []), {
+      mcpUrl: 'https://lab.example/mcp',
+      ticket: () => ({ token: 'lyriks_mcp_T' }),
+      ...(wakeTicket ? { wakeTicket } : {}),
+    })) as Record<string, unknown>
+
+  it('hands the exact command that starts the waker apart from the conversation, with a ticket for the project alone', async () => {
+    const asked: string[] = []
+    const answer = await answerOf({ waker: { status: 'none' } }, (projectId) => { asked.push(projectId); return ticket() })
+    expect(asked).toEqual(['p1'])
+    expect(answer.wake).toEqual({
+      command: 'node .lyriks/tools/wake-ai.mjs p1 --detach --ai claude --url https://lab.example/mcp --token lyriks_mcp_W',
+      expiresAt: '2026-11-16T22:00:00.000Z',
+    })
+    // Offered once, started on the person's word only, and never with its token in the words.
+    const next = String(answer.next)
+    expect(next).toContain('wake.command')
+    expect(next).toContain('only on their word')
+    expect(next).not.toContain('lyriks_mcp_W')
+  })
+
+  it('offers nothing when the person\'s waker already listens: a woken AI is never asked to start another', async () => {
+    const answer = await answerOf({ waker: { status: 'listening' } }, ticket)
+    expect(answer.wake).toBeDefined()
+    expect(String(answer.next)).not.toContain('wake.command')
+  })
+
+  it('starts the same CLI as the AI that opened the session, and offers none to an AI it cannot start', async () => {
+    const codex = await answerOf({ waker: { status: 'none' } }, ticket, 'Codex')
+    expect((codex.wake as { command: string }).command).toContain('--ai codex')
+    expect(String(codex.next)).toContain('starts Codex without a window')
+    const gemini = await answerOf({ waker: { status: 'none' } }, ticket, 'Gemini CLI')
+    expect((gemini.wake as { command: string }).command).toContain('--ai gemini')
+    const cursor = await answerOf({ waker: { status: 'none' } }, ticket, 'Cursor')
+    expect(cursor.wake).toBeUndefined()
+    expect(String(cursor.next)).not.toContain('wake.command')
+  })
+
+  it('offers no waker where the server issues no waking sign-in', async () => {
+    const answer = await answerOf({ waker: { status: 'none' } })
+    expect(answer.wake).toBeUndefined()
+    expect(String(answer.next)).not.toContain('wake.command')
+  })
+})
+
+describe('await_ai_wake (actions 77cdb263, ccca0911)', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('waits again inside the same call while nothing wakes, then answers the wake', async () => {
+    const calls: Call[] = []
+    const lyriks = platform(
+      [
+        { ok: true, kind: 'nothing', waitedSeconds: 240 },
+        { ok: true, kind: 'wake', clicks: 1, wokenAt: '2026-11-25T23:00:00.000Z' },
+      ],
+      calls,
+    )
+    const answer = (await awaitAiWakeHandler({ project_id: 'p1' }, lyriks, { _meta: { progressToken: 3 }, sendNotification: async () => {} })) as Record<string, unknown>
+    expect(calls).toHaveLength(2)
+    expect(calls[0]).toMatchObject({ path: '/api/evolution/live', body: { projectId: 'p1', act: 'wake_wait' } })
+    expect(Number(calls[0].body.waitSeconds)).toBeLessThanOrEqual(SESSION_LIMITS.platformWaitSeconds)
+    expect(answer).toEqual({ kind: 'wake', clicks: 1, wokenAt: '2026-11-25T23:00:00.000Z' })
+  })
+
+  it('holds a caller without a progress token at most withoutProgressSeconds, then answers nothing', async () => {
+    const calls: Call[] = []
+    // Each platform turn takes the time it was asked to wait.
+    const lyriks = {
+      post: async (path: string, body: Record<string, unknown>) => {
+        calls.push({ path, body })
+        vi.setSystemTime(Date.now() + Number(body.waitSeconds) * 1000)
+        return { ok: true, kind: 'nothing', waitedSeconds: Number(body.waitSeconds) }
+      },
+    } as unknown as LyriksClient
+    const answer = (await awaitAiWakeHandler({ project_id: 'p1' }, lyriks)) as Record<string, unknown>
+    expect(calls).toHaveLength(1)
+    expect(Number(calls[0].body.waitSeconds)).toBe(SESSION_LIMITS.withoutProgressSeconds)
+    expect(answer.kind).toBe('nothing')
+  })
+
+  it('passes a refusal of the platform on as an error', async () => {
+    const lyriks = platform([{ ok: false, message: 'Only the waking command of the person\'s AI listens for wakes.' }], [])
+    await expect(awaitAiWakeHandler({ project_id: 'p1', max_wait_seconds: 5 }, lyriks)).rejects.toThrow('Only the waking command')
   })
 })
 
@@ -193,6 +284,32 @@ describe('update_evolution_session', () => {
     await updateEvolutionSessionHandler({ ...args, say: 'Reading the Need', end: true }, lyriks)
     expect(calls.map((c) => c.body.act)).toEqual(['say', 'end'])
     expect(((await updateEvolutionSessionHandler(args, lyriks)) as Record<string, unknown>).ok).toBe(false)
+  })
+})
+
+describe('the AI says on the person\'s pages the question it waits on or why it stops (criterion b940571a)', () => {
+  it('asks through the session of the project and hands back where the person reads it', async () => {
+    const calls: Call[] = []
+    const answer = (await updateEvolutionSessionHandler(
+      { ...args, ask: 'Which billing flow runs in production?', href: '/projects/p1/reverse', title: 'Reverse' },
+      platform([{ ok: true, conversationId: 'c9', href: '/projects/p1/ask?c=c9' }], calls),
+    )) as Record<string, unknown>
+    expect(calls[0]).toMatchObject({ path: '/api/evolution/live', body: { projectId: 'p1', sessionId: 's1', act: 'tell', about: 'question', text: 'Which billing flow runs in production?', href: '/projects/p1/reverse', title: 'Reverse' } })
+    expect(calls[0].body.requestId).toBeUndefined()
+    expect(answer).toMatchObject({ ok: true, conversationId: 'c9', done: ['asked the person on their pages'] })
+    expect(String(answer.href)).toMatch(/^https?:\/\/.+\/projects\/p1\/ask\?c=c9$/)
+    expect(String(answer.next)).toContain('Keep waiting in the background')
+  })
+
+  it('says why it stops, and never both at once', async () => {
+    const calls: Call[] = []
+    const lyriks = platform([{ ok: true, conversationId: 'c1', href: '/projects/p1/ask?c=c1' }], calls)
+    await updateEvolutionSessionHandler({ ...args, stopped: 'My usage limit is reached.' }, lyriks)
+    expect(calls[0].body).toMatchObject({ act: 'tell', about: 'stopped', text: 'My usage limit is reached.' })
+    expect(calls[0].body.href).toBeUndefined()
+    const both = (await updateEvolutionSessionHandler({ ...args, ask: 'Which?', stopped: 'Done.' }, lyriks)) as Record<string, unknown>
+    expect(both).toMatchObject({ ok: false })
+    expect(calls).toHaveLength(1)
   })
 })
 

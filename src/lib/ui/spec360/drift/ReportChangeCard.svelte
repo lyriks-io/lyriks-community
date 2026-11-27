@@ -1,15 +1,20 @@
 <script lang="ts">
 	import { COMMENT_MAX_LENGTH, specElementHref, type ChangeVerdict, type ReportCard } from '$domain/retrospec';
 	import { timeAgo } from '$ui/shell/notification-view';
-	import { BTN, BTN_MAIN, LABEL, LINK } from '../page/look';
+	import BlockControls from '$ui/evolution/BlockControls.svelte';
+	import RejectCross from '$ui/evolution/RejectCross.svelte';
+	import { BTN, LABEL, LINK } from '../page/look';
+	import { decidedBox, ownDecisionBox } from './decision-box';
 
 	/**
 	 * One change a later run found (criterion 42311513), docked on the
 	 * specification as it reads today: what it says now on the left, what the run
-	 * found on the right. Validate puts it in the specification when what is
-	 * validated is written, Revert leaves the specification and asks the code to
-	 * go back, Reject says what must change before it goes into the specification
-	 * (criterion eb132bbd).
+	 * found on the right. It ends on Revert, the cross and the reader's box, as an
+	 * element of Knowledge (criterion f56c25b5): the box validates it (it goes into
+	 * the specification when what is validated is written), Revert leaves the
+	 * specification and asks the code to go back, the cross says what must change
+	 * before it goes into the specification (criterion eb132bbd). Decided, the
+	 * green box of who validated or the filled cross takes it back (criterion 67bde8ab).
 	 */
 	interface Props {
 		projectId: string;
@@ -18,8 +23,10 @@
 		canDecide: boolean;
 		busy: boolean;
 		onDecide: (verdict: ChangeVerdict | null, note?: string) => void;
+		/** The reader's name, for the green box of a decision that was theirs (YOU). */
+		readerName?: string | null;
 	}
-	let { projectId, card, canDecide, busy, onDecide }: Props = $props();
+	let { projectId, card, canDecide, busy, onDecide, readerName = null }: Props = $props();
 
 	const KIND = { new: 'New', changed: 'Changed', removed: 'Removed' } as const;
 	const KIND_TONE = { new: 'border-blue-ink text-blue-ink', changed: 'border-orange text-orange-ink', removed: 'border-red-ink text-red-ink' } as const;
@@ -86,11 +93,32 @@
 	{/if}
 
 	{#if card.decision}
-		<div class="mt-3 flex flex-wrap items-center gap-x-2 text-sm text-ink-2">
-			<span>{card.decision.by.name}, {timeAgo(card.decision.at)}</span>
-			{#if canDecide}<button type="button" class={LINK} disabled={busy} onclick={() => onDecide(null)}>Take it back</button>{/if}
+		{@const decision = card.decision}
+		<div class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm text-ink-2">
+			<span>{decision.by.name}, {timeAgo(decision.at)}</span>
+			{#if decision.verdict === 'reverted' && canDecide}<button type="button" class={LINK} disabled={busy} onclick={() => onDecide(null)}>Take it back</button>{/if}
+			<!-- Decided, the act that took it is what takes it back (criterion 67bde8ab). -->
+			{#if decision.verdict === 'validated'}
+				<span class="ml-auto"><BlockControls icons small disabled={busy} validate={decidedBox(decision.by.name, readerName, canDecide ? () => onDecide(null) : null, { question: 'Take this decision back?', act: 'Take it back' })} /></span>
+			{:else if decision.verdict === 'rejected'}
+				<span class="ml-auto inline-flex"><RejectCross name={card.title} rejected title="Rejected" restoreWord="Take back the rejection of" restoreTitle={canDecide ? 'Take it back: the change reads to decide again' : undefined} disabled={busy} onclick={canDecide ? () => onDecide(null) : null} /></span>
+			{/if}
 		</div>
-	{:else if canDecide && rejecting}
+	{/if}
+	{#if canDecide && !card.decision}
+		<!-- Revert, then the cross and the reader's box, as every element of Knowledge ends (criterion f56c25b5). -->
+		<div class="mt-3.5 flex flex-wrap items-center justify-end gap-1.5">
+			<BlockControls icons small disabled={busy} validate={ownDecisionBox(() => onDecide('validated'), { question: 'Validate this change? It goes into the specification once you click Write the validated changes.', act: 'Validate' })}>
+				{#snippet between()}
+					<button type="button" class="{BTN} min-h-7! py-0! text-xs" disabled={busy} title="The code is what is wrong: the specification stays as it is and a brief for your AI is copied" onclick={() => onDecide('reverted')}>Revert</button>
+				{/snippet}
+				{#snippet reject()}
+					<RejectCross name={card.title} title="Say what must change before it goes into the specification" expanded={rejecting} disabled={busy} onclick={() => (rejecting = !rejecting)} />
+				{/snippet}
+			</BlockControls>
+		</div>
+	{/if}
+	{#if canDecide && rejecting && !card.decision}
 		<form class="mt-3.5 flex flex-col gap-2" onsubmit={sendRejection} data-reject-form>
 			<label class="text-sm font-semibold text-ink" for="reject-{card.id}">What must change before it goes into the specification?</label>
 			<!-- svelte-ignore a11y_autofocus -->
@@ -100,11 +128,5 @@
 				<button type="button" class={LINK} onclick={() => (rejecting = false)}>Cancel</button>
 			</div>
 		</form>
-	{:else if canDecide}
-		<div class="mt-3.5 flex flex-wrap items-center gap-1.5">
-			<button type="button" class="{BTN_MAIN} max-[700px]:min-h-11" disabled={busy} title="Records your decision only: it goes into the specification once you click Write the validated changes and your AI writes it" onclick={() => onDecide('validated')}>Validate</button>
-			<button type="button" class="{BTN} max-[700px]:min-h-11" disabled={busy} title="The code is what is wrong: the specification stays as it is and a brief for your AI is copied" onclick={() => onDecide('reverted')}>Revert</button>
-			<button type="button" class="{WARN} max-[700px]:min-h-11" disabled={busy} title="Say what must change before it goes into the specification" onclick={() => (rejecting = true)}>Reject</button>
-		</div>
 	{/if}
 </article>

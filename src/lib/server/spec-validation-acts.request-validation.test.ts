@@ -29,7 +29,7 @@ const NOW = '2026-11-20T10:00:00.000Z';
 const lead: PersonRef = { id: 'lead@company.test', name: 'Lead' };
 const viewer: PersonRef = { id: 'viewer@company.test', name: 'Viewer' };
 const writer: PersonRef = { id: 'writer@company.test', name: 'Writer' };
-const element = { id: 'stack:a', title: 'Stack', owner: 'tech' as const, fingerprint: 'f-1' };
+const element = { id: 'stack:a', title: 'Stack', fingerprint: 'f-1' };
 const team: TeamMember[] = [{ person: lead, jobIds: [] }, { person: viewer, jobIds: [] }, { person: writer, jobIds: [] }];
 
 let documents: Map<string, { doc: unknown; revision: number }>;

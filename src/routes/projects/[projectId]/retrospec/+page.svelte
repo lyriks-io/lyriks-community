@@ -20,6 +20,7 @@
 	import RetroSummary from '$ui/retrospec/RetroSummary.svelte';
 	import RetroDelta from '$ui/retrospec/RetroDelta.svelte';
 	import RetroHistory from '$ui/retrospec/RetroHistory.svelte';
+	import ScopeDrawer from '$ui/spec360/overview/ScopeDrawer.svelte';
 	import RetroCelebration from '$ui/retrospec/RetroCelebration.svelte';
 	import { sendRetrospecActs } from '$ui/retrospec/review.svelte';
 	import { retrospecLiveKey } from '$ui/retrospec/live-key';
@@ -304,6 +305,7 @@
 	const lead = $derived(reverseLead(data.productName, data.runs[0]?.mode ?? mode, reach));
 	// The run under way reads paused in the history while its LLM is silent (criterion 7a4a99e4).
 	const history = $derived(withSilence(data.runs, status === 'running' && !finished && runPaused(seenAt, now)));
+	let scopeOpen = $state(false);
 </script>
 
 <svelte:head>
@@ -324,7 +326,9 @@
 	{/if}
 
 	{#if view === 'start'}
-		<RetroStart canWrite={data.canWrite} onStart={start} />
+		<RetroStart canWrite={data.canWrite} onStart={start} fromScratch={data.fromScratch ? data.productName : null} />
+		<!-- No run yet: the History holds an approved scope alone (criterion bccbfdb5). -->
+		<RetroHistory runs={[]} scope={data.scope} onScope={() => (scopeOpen = true)} />
 	{:else if view === 'source'}
 		<RetroSource
 			projectId={data.projectId}
@@ -372,9 +376,14 @@
 				onRelaunch={relaunchOffered(data.canWrite, status) ? () => void relaunch() : null}
 			/>
 		{/if}
-		<RetroHistory runs={history} />
+		<RetroHistory runs={history} scope={data.scope} onScope={() => (scopeOpen = true)} />
 	{/if}
 </PageFrame>
+
+{#if data.scope}
+	<!-- An approved scope opens from its row of the History, as from the Overview (criterion bccbfdb5). -->
+	<ScopeDrawer open={scopeOpen} onClose={() => (scopeOpen = false)} view={data.scope} projectId={data.projectId} canApprove={data.canWrite} />
+{/if}
 
 {#if finding}
 	<ProblemSheet {finding} onClose={() => (finding = null)} />

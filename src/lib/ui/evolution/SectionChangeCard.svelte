@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { Icon } from '$ui/design-system';
 	import GlossaryText from '$ui/glossary/GlossaryText.svelte';
 	import BlockControls, { type ValidateControl } from './BlockControls.svelte';
@@ -8,8 +9,8 @@
 	 * One change to another page of the spec at the Specification
 	 * (ac-evo-draft-section-read): the page as the spec names it, what the change
 	 * does in the person's words, then each value it moves as it is and as it
-	 * would be, under the place the page shows it. It carries its own Validate;
-	 * the page decides what that does. A change to the rules the whole product
+	 * would be, under the place the page shows it. It carries the people's boxes,
+	 * and the page's cross before them (`between`); the page decides what they do. A change to the rules the whole product
 	 * keeps reads the same, each rule as one EARS sentence (ac-evo-draft-rules).
 	 */
 	interface ChangeReading {
@@ -25,8 +26,10 @@
 		change: ChangeReading;
 		validate: ValidateControl | null;
 		disabled?: boolean;
+		/** Before the people: the cross that refuses the change (criterion 7c214ba8). */
+		between?: Snippet;
 	}
-	let { domId, number, change, validate, disabled = false }: Props = $props();
+	let { domId, number, change, validate, disabled = false, between }: Props = $props();
 	const waitsOnReader = $derived(validate?.look === 'grey' && !!validate.run);
 </script>
 
@@ -38,7 +41,7 @@
 		{#if change.noLongerApplies}
 			<span class="inline-flex items-center gap-1 font-evo-mono text-xs font-bold text-red-ink uppercase" title={change.noLongerApplies}><Icon name="alert-triangle" size={13} />No longer applies</span>
 		{/if}
-		<BlockControls {validate} {disabled} />
+		<BlockControls {validate} {disabled} {between} />
 	</div>
 	<ul class="m-0 flex list-none flex-col gap-2 p-0">
 		{#each change.changes as value, i (i)}

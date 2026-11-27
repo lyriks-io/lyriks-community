@@ -164,14 +164,14 @@ describe('a complementary run reads the delta and sends back to validation only 
 		);
 		const run = currentRun(ok(older, [{ op: 'start', mode: 'repo', baseline: { features: 3 }, fingerprints: { 'feature:orders': 'f-now' } }]))!;
 		expect(run.carried).toEqual({ 'feature:orders': { fingerprint: 'f-now', validatedBy: expect.any(Array) } });
-		expect(elementStanding(run, { id: 'feature:orders', title: 'Orders', owner: 'product', fingerprint: 'f-now' }, ana, []).state).toBe('ok');
-		expect(elementStanding(run, { id: 'feature:orders', title: 'Orders', owner: 'product', fingerprint: 'f-rewritten' }, ana, []).state).toBe('todo');
+		expect(elementStanding(run, { id: 'feature:orders', title: 'Orders', fingerprint: 'f-now' }, ana, []).state).toBe('ok');
+		expect(elementStanding(run, { id: 'feature:orders', title: 'Orders', fingerprint: 'f-rewritten' }, ana, []).state).toBe('todo');
 	});
 
 	it('keeps a carried validation while the element reads as it did, and asks again once it changed', () => {
 		const run = currentRun(ok(validated(), [{ op: 'start', mode: 'repo', baseline: {} }]))!;
-		const same = elementStanding(run, { id: 'feature:orders', title: 'Orders', owner: 'product', fingerprint: 'f-orders' }, ana, []);
-		const changed = elementStanding(run, { id: 'action:orders:cancel', title: 'Cancel', owner: 'product', fingerprint: 'f-other' }, ana, []);
+		const same = elementStanding(run, { id: 'feature:orders', title: 'Orders', fingerprint: 'f-orders' }, ana, []);
+		const changed = elementStanding(run, { id: 'action:orders:cancel', title: 'Cancel', fingerprint: 'f-other' }, ana, []);
 		expect(same.state).toBe('ok');
 		expect(changed.state).toBe('todo');
 	});

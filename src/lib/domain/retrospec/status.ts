@@ -182,17 +182,17 @@ export function retrospecStatus(facts: RetrospecFacts): RetrospecStatus {
 	const published = { published: !!lastPublished, publishedAt: lastPublished?.publishedAt ?? null, complementary: !!run?.complementary };
 	const make = (status: RetrospecStatusKind, pct: number, label: string, review: RetrospecStatus['review'] = null): RetrospecStatus => ({ status, pct, label, ...published, review });
 
+	// A product never rebuilt from its code or its documents has no run to read on Reverse: the run its validations and hand
+	// edits are kept on reads neither a review nor a publication there (criteria 4d51ac1d, 9b3dbb64 of feat-147).
+	if (!everRebuilt(facts.doc, facts.rebuiltFrom)) return make('start', 0, 'Reverse-Specification not started');
 	if (run?.publishedAt) return make('done', 100, 'Specification published');
 	if (run?.reviewStartedAt) {
 		const counts = reviewCounts(run);
 		const pct = counts.total > 0 ? Math.round((100 * counts.handled) / counts.total) : 0;
 		return make('review', pct, counts.total > 0 ? `Reverse-Specification in validation · ${counts.handled} / ${counts.total} validated` : 'Reverse-Specification in validation', { handled: counts.handled, total: counts.total });
 	}
-	// A run nobody started, on a product never rebuilt, only keeps its hand edits and validations: no analysis runs (criterion 4d51ac1d).
-	if (!run || !everRebuilt(facts.doc, facts.rebuiltFrom)) {
-		// Rebuilt from the code or the documentation without a run started here: the analysis is there to read (criterion 029a8736).
-		if (!facts.rebuiltFrom || !aiAtWork(facts)) return make('start', 0, 'Reverse-Specification not started');
-	}
+	// Rebuilt from the code or the documentation without a run started here: the analysis is there to read (criterion 029a8736).
+	if (!run && !aiAtWork(facts)) return make('start', 0, 'Reverse-Specification not started');
 	const { progress, finished, checkedAt } = analysisOf(facts);
 	if (finished) {
 		// Complete once the AI ran its final check; partial when a person closed it before (criterion a0959413).

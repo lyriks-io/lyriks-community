@@ -3,7 +3,10 @@
 	import { timeAgo } from '$ui/shell/notification-view';
 	import { specElementHref } from '$domain/retrospec';
 	import type { DriftChangeView } from '$lib/shared/code-drift-page';
+	import BlockControls from '$ui/evolution/BlockControls.svelte';
+	import RejectCross from '$ui/evolution/RejectCross.svelte';
 	import { BTN, BTN_MAIN, LABEL, LINK } from '../page/look';
+	import { decidedBox, ownDecisionBox } from './decision-box';
 	import type { DriftReview } from './drift-review.svelte';
 	import DriftImpactPanel from './DriftImpactPanel.svelte';
 	import DriftRestorePanel from './DriftRestorePanel.svelte';
@@ -14,14 +17,18 @@
 	 * says beside what the code reads now, then the impact analysis, the
 	 * acceptance of the code as it is (the spec's words unchanged), the rejection with the brief that restores the
 	 * code, and once decided, the decision with its Undo. A rejected change stays
-	 * here, waiting for the code to follow the spec.
+	 * here, waiting for the code to follow the spec. It is decided as an element of
+	 * Knowledge (criteria c53c0474, 857f69d4): the reader's box accepts it, the cross
+	 * rejects it; decided, the green box or the filled cross undoes it.
 	 */
 	interface Props {
 		projectId: string;
 		change: DriftChangeView;
 		review: DriftReview;
+		/** The reader's name, for the green box of an acceptance that was theirs (YOU). */
+		readerName?: string | null;
 	}
-	let { projectId, change, review }: Props = $props();
+	let { projectId, change, review, readerName = null }: Props = $props();
 
 	const decision = $derived(review.decisionOf(change));
 	let open = $state<'impact' | 'restore' | null>(null);
@@ -33,9 +40,6 @@
 
 	// The design's tags (.ly-tag) in the status hues: a gap orange, a loss red ink, a move neutral.
 	const TYPE_TONE = { changed: 'border-orange text-orange-ink', gone: 'border-red-ink text-red-ink', moved: 'border-ink text-ink' } as const;
-	/** Rejecting is a warning action (.ly-btn--warn): red ink border and word; filled red ink while its brief is open. */
-	const WARN = BTN.replace('border-evo-ink', 'border-red-ink').replace('text-evo-ink', 'text-red-ink');
-	const WARN_ON = BTN_MAIN.replace('bg-evo-violet', 'bg-red-ink');
 
 	function toggleImpact() {
 		if (open === 'impact') return void (open = null);
@@ -115,13 +119,14 @@
 		<div class="mt-3.5 flex flex-wrap items-center gap-1.5">
 			<button type="button" class="{open === 'impact' ? BTN_MAIN : BTN} max-[700px]:min-h-11" aria-expanded={open === 'impact'} onclick={toggleImpact}>Impact analysis</button>
 			{#if review.canWrite}
-				<button type="button" class="{BTN} max-[700px]:min-h-11" disabled={busy} onclick={() => void accept()}>Accept the code change</button>
-				<button
-					type="button"
-					class="{open === 'restore' ? WARN_ON : WARN} max-[700px]:min-h-11"
-					aria-expanded={open === 'restore'}
-					onclick={() => (open = open === 'restore' ? null : 'restore')}>Reject and restore…</button
-				>
+				<!-- The cross opens the restore brief, the reader's box accepts it (criterion c53c0474). -->
+				<span class="ml-auto">
+					<BlockControls icons small disabled={busy} validate={ownDecisionBox(() => void accept(), { question: "Accept the code change as it is? The spec's words stay unchanged.", act: 'Accept' }, 'You · click to accept')}>
+						{#snippet reject()}
+							<RejectCross name={change.title} title="Reject it and restore the previous behaviour" expanded={open === 'restore'} disabled={busy} onclick={() => (open = open === 'restore' ? null : 'restore')} />
+						{/snippet}
+					</BlockControls>
+				</span>
 			{:else}
 				<button type="button" class="{LINK} max-[700px]:min-h-11" aria-expanded={open === 'restore'} onclick={() => (open = open === 'restore' ? null : 'restore')}>Show the brief</button>
 				<span class="text-[0.8125rem] text-ink-3">A project editor accepts or rejects it.</span>
@@ -138,19 +143,18 @@
 				<span class="whitespace-nowrap">· {decision.by}, {timeAgo(decision.at)}</span>
 			</p>
 			<div class="mt-1 -ml-1 flex flex-wrap items-center gap-x-2">
-				{#if review.canWrite}
-					<button
-						type="button"
-						class="{LINK} max-[700px]:min-h-11"
-						disabled={busy}
-						title={decision.decision === 'kept' ? 'The change reads to review again; the version this acceptance captured stays in the history' : 'The change reads to review again'}
-						onclick={undo}>Undo</button
-					>
-				{/if}
 				{#if decision.decision === 'sent_back'}
 					<button type="button" class="{LINK} max-[700px]:min-h-11" aria-expanded={open === 'restore'} onclick={() => (open = open === 'restore' ? null : 'restore')}>Show the brief</button>
 				{/if}
 				<button type="button" class="{LINK} max-[700px]:min-h-11" aria-expanded={open === 'impact'} onclick={toggleImpact}>Impact analysis</button>
+				<!-- Decided, the act that took it undoes it (criterion 857f69d4). -->
+				<span class="ml-auto inline-flex">
+					{#if decision.decision === 'kept'}
+						<BlockControls icons small disabled={busy} validate={decidedBox(decision.by, readerName, review.canWrite ? undo : null, { question: 'Undo the acceptance? The version it captured stays in the history.', act: 'Undo' }, 'accepted')} />
+					{:else}
+						<RejectCross name={change.title} rejected title="Rejected" restoreWord="Undo the rejection of" restoreTitle={review.canWrite ? 'Undo: the change reads to review again' : undefined} disabled={busy} onclick={review.canWrite ? undo : null} />
+					{/if}
+				</span>
 			</div>
 		</div>
 	{/if}

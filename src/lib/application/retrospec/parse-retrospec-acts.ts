@@ -25,7 +25,8 @@ export type IncomingRetrospecAct =
 			| { op: 'report_changes' }
 			| { op: 'withdraw_changes' }
 			| { op: 'end_reading' }
-			| { op: 'record_written' }
+			| { op: 'record_writes' }
+			| { op: 'record_write_stop' }
 			| { op: 'report_phase' }
 			| { op: 'report_read' }
 	  >
@@ -76,7 +77,12 @@ function one(raw: unknown): IncomingRetrospecAct | string {
 		case 'cancel_notify':
 			return { op: o.op };
 		case 'open_writing':
-			return { op: 'open_writing' };
+		case 'write_remaining':
+			return { op: o.op };
+		case 'leave_out_change': {
+			const id = text(o.id, 200);
+			return id ? { op: 'leave_out_change', id } : 'id names the change of the report.';
+		}
 		case 'decide_change': {
 			const id = text(o.id, 200);
 			if (!id) return 'id names the change of the report.';

@@ -5,9 +5,9 @@ import { requestKeyOf, requestsClosedBetween, withClosingBaselines, type Project
 const ATTEMPTS = 4;
 
 /**
- * Capture a baseline of the specification for every request a batch of
- * operations closed, once what the close lands is saved, and keep its id on
- * the request: the Specification 360° moves one version per evolution closed.
+ * Record a baseline for every request a batch of operations closed, once what
+ * the close lands is saved, and keep its id on the request: the specification
+ * moves one version per evolution closed, the step its closing report names.
  */
 export async function captureClosingBaselines(
 	services: AppServices,
@@ -17,15 +17,8 @@ export async function captureClosingBaselines(
 	if (closed.length === 0) return;
 	const captured: Record<string, string> = {};
 	for (const id of closed) {
-		const request = input.after.requests.find((r) => r.id === id);
 		const key = requestKeyOf(input.after.requests, id) ?? 'Evolution';
-		const title = request?.title.trim() || 'Untitled request';
-		const baseline = await services.captureBaseline.execute(
-			input.projectId,
-			`${key} closed`,
-			`${key} · ${title} closed in Lyriks: the specification as the change left it.`,
-			{ expectedRevision: null, origin: input.origin }
-		);
+		const baseline = await services.captureBaseline.execute(input.projectId, `${key} closed`, { expectedRevision: null, origin: input.origin });
 		const baselineId = baseline?.draft.baselines[0]?.id;
 		if (baselineId) captured[id] = baselineId;
 	}

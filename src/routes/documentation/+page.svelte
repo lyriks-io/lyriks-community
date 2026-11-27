@@ -4,6 +4,7 @@
 	import { mcpEndpointFor, mcpRegistrationCommands } from '$domain/foundation';
 	import { DOC_GROUPS, DOC_TOPICS, START_PATHS, helpEntries, stepOpenedBy, topicInView, topicsMatching, type HelpEntry } from '$ui/docs/doc-topics';
 	import { PRICING_URL } from '$domain/licensing';
+	import { BUILT_IN_JOBS, whatJobsValidate } from '$domain/retrospec';
 	import { PLANS } from '$domain/tier';
 	import DocSection from '$ui/docs/DocSection.svelte';
 	import FirstStepsDialog from '$ui/shell/FirstStepsDialog.svelte';
@@ -204,7 +205,7 @@
 						{/each}
 					</ul>
 					<p>
-						The key is checked on the machine itself: activation never calls home. A licence key grants one of two editions, Community or Enterprise. On an installation that runs
+						The key is checked on the machine itself: activation never calls home. A licence key grants one of two editions, Community or Enterprise, and the number of active projects: one on Community, the number an Enterprise key states, every project for an Enterprise key that states none. On an installation that runs
 						the Enterprise images, the key in force decides what it opens: an Enterprise key opens Enterprise, a Community key opens Community, and entering a key on the activation
 						page is all a switch takes. A Community installation opens a paid plan once whoever runs it installs the Enterprise images; an Enterprise key there opens Community.
 						The edition this installation runs reads in <a href="/settings#account">Settings, Account</a>, the Plans entry of the account menu lists the offers, and the prices are on the plans page,
@@ -372,19 +373,34 @@
 			{/if}
 
 			{#if shown.has('team')}
-				<DocSection id="team" title="Team, roles and jobs" lead="Enterprise: who may do what in the workspace.">
+				<DocSection id="team" title="Team, roles and jobs" lead="Enterprise: who may do what in the workspace, and who validates what.">
 					<p>
-						<a href="/settings#members">Settings, Members</a> invites people. Lyriks sends no email: you copy the accept link and share it. Each member holds a role:
+						<a href="/settings#members">Settings, Members</a> invites people. Lyriks sends no email: you copy the accept link and share it. Each member holds an
+						<strong>access</strong> and a <strong>job</strong>. Their access says what they can do:
 					</p>
 					<ul class="rows">
 						<li><span>Owner</span><span>Founded the workspace; cannot be demoted or removed.</span></li>
 						<li><span>Admin</span><span>Manages the members and every project.</span></li>
-						<li><span>Designer</span><span>Edits the projects granted: all of them, or a selection changed at any time.</span></li>
-						<li><span>Viewer</span><span>Reads the projects granted.</span></li>
+						<li><span>Editor</span><span>Edits the projects granted: all of them, or a selection changed at any time.</span></li>
+						<li><span>Viewer</span><span>Reads the projects granted, and validates what waits on them.</span></li>
 					</ul>
 					<p>
-						A <strong>job</strong> (product, design, development, QA, security... the list is the workspace's own) says what each person does; an admin sets it in Settings, Members. A
-						job grants nothing: it helps name who validates what.
+						A job grants no access: it says what a person validates in every project they can open; a project's own jobs, set in its Settings, Team, replace it
+						there. One validation from any holder of a job gives what that job owes, as a code owner team does on GitHub. Each starting job validates by default:
+					</p>
+					<ul class="rows">
+						{#each BUILT_IN_JOBS as job (job.id)}
+							<li><span>{job.name}</span><span>Validates {whatJobsValidate([job.id])}.</span></li>
+						{/each}
+					</ul>
+					<p>
+						An owner or admin chooses what each job validates, as a team writes its code owners on GitHub: in Settings, Members, Jobs, a click on what a job
+						validates opens the topics of a specification to tick, and Reset to default gives a starting job its defaults back. A job the workspace adds
+						validates nothing until its topics are ticked; meanwhile, ask its holders by name on a question.
+					</p>
+					<p>
+						Each project also names who <strong>leads</strong> its validation, in its Settings, Team: every element waits on the lead too, and the lead changes
+						whenever the team needs, validations already given staying.
 					</p>
 				</DocSection>
 			{/if}
@@ -407,7 +423,7 @@
 					<ul class="rows">
 						<li><span>Platform</span><span>This application, on PostgreSQL, with its realtime relay.</span></li>
 						<li><span>MCP gateway</span><span>The entry of AI clients, served on the application's address at /mcp.</span></li>
-						<li><span>Behavior engine</span><span>The engine that runs the rules and scenarios, and its editor at /behavior.</span></li>
+						<li><span>Behavior engine</span><span>The engine that runs the rules and scenarios, beside the platform and never reachable from the network. Its own editor is not part of the application: an administrator starts it on the host with <code>./lyriks editor</code>.</span></li>
 						<li><span>Enterprise services</span><span>The companion API (workspaces, members, invitations) and the formal engine; the platform runs on its own without them.</span></li>
 					</ul>
 					<p>

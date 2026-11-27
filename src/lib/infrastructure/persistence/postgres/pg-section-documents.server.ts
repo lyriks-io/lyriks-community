@@ -27,6 +27,10 @@ export class PgSectionDocumentStore implements SectionDocumentStorePort {
 		return rows.length === 0 ? null : rows[0].document;
 	}
 
+	async remove(projectId: string, section: string): Promise<void> {
+		await pgQuery('DELETE FROM project_section_documents WHERE project_id = $1 AND section = $2', [projectId, section]);
+	}
+
 	async currentRevision(projectId: string, section: string): Promise<number> {
 		const { rows } = await pgQuery<{ revision: number }>(
 			'SELECT revision FROM project_section_documents WHERE project_id = $1 AND section = $2',

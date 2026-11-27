@@ -1,4 +1,5 @@
 import {
+	createEmptyScopeBoundary,
 	createEmptyScopeDraft,
 	isCapabilityDisposition,
 	isCompletionVerdict,
@@ -9,7 +10,9 @@ import {
 	SCOPE_AUDIT_LOG_LIMIT,
 	type ProjectCompletionStatus,
 	type ProjectScopeDraft,
+	type ScopeApproval,
 	type ScopeAuditEntry,
+	type ScopeBoundary,
 	type ScopeCapability,
 	type ScopeSectionAssessment
 } from '$domain/scope';
@@ -59,10 +62,48 @@ function mergeAssessment(
 					? 'derived'
 					: 'not_applicable',
 		status,
-		rationale: rationales.join(' · '),
-		approvalId:
-			current.approvalId === incoming.approvalId ? current.approvalId : null
+		rationale: rationales.join(' · ')
 	};
+}
+
+/**
+ * Where the specification stops (criterion 3a1f96bc). A group summary without
+ * a name names nothing and is dropped; the first summary of a name wins.
+ */
+function parseBoundary(input: unknown): ScopeBoundary {
+	if (!input || typeof input !== 'object') return createEmptyScopeBoundary();
+	const src = input as Record<string, unknown>;
+	const groups: ScopeBoundary['groups'] = [];
+	const named = new Set<string>();
+	for (const item of Array.isArray(src.groups) ? src.groups : []) {
+		if (!item || typeof item !== 'object') continue;
+		const value = item as Record<string, unknown>;
+		const name = str(value.name).trim();
+		if (!name || named.has(name)) continue;
+		named.add(name);
+		groups.push({ name, summary: str(value.summary).trim() });
+	}
+	return {
+		covers: str(src.covers).trim(),
+		decision: str(src.decision).trim(),
+		decidedAt: nullableStr(src.decidedAt),
+		groups,
+		approval: parseApproval(src.approval)
+	};
+}
+
+/**
+ * The approval as stored. Read here so a stored one loads; a save never takes
+ * it from what it is sent (SaveScopeDraftUseCase keeps the stored one), since
+ * only a person gives it, through its own door (criterion d16b352d).
+ */
+function parseApproval(input: unknown): ScopeApproval | null {
+	if (!input || typeof input !== 'object') return null;
+	const src = input as Record<string, unknown>;
+	const by = str(src.by).trim();
+	const at = str(src.at).trim();
+	const leftOut = str(src.leftOut).trim();
+	return by && at && leftOut ? { by, at, leftOut } : null;
 }
 
 /** Anti-corruption parser for the product-level scope and completion ledger. */
@@ -90,7 +131,8 @@ export function parseScopeDraft(input: unknown, projectId: string): ProjectScope
 					? value.disposition
 					: 'unresolved',
 				rationale: str(value.rationale),
-				approvalId: nullableStr(value.approvalId)
+				// No approval is kept (criterion 3a1f96bc): one sent with a capability is dropped here.
+				group: str(value.group).trim()
 			});
 		}
 	}
@@ -108,8 +150,7 @@ export function parseScopeDraft(input: unknown, projectId: string): ProjectScope
 					? value.applicability
 					: 'required',
 				status: isSectionAssessmentStatus(value.status) ? value.status : 'unassessed',
-				rationale: str(value.rationale),
-				approvalId: nullableStr(value.approvalId)
+				rationale: str(value.rationale)
 			};
 			const current = sectionAssessments.get(section);
 			sectionAssessments.set(
@@ -165,6 +206,7 @@ export function parseScopeDraft(input: unknown, projectId: string): ProjectScope
 		...base,
 		projectId,
 		mode: isScopeMode(src.mode) ? src.mode : 'unclassified',
+		boundary: parseBoundary(src.boundary),
 		capabilities,
 		sectionAssessments: [...sectionAssessments.values()],
 		audit,
@@ -190,8 +232,7 @@ function withCanonicalSections(draft: ProjectScopeDraft): ProjectScopeDraft {
 					section,
 					applicability: isAgentAuthorable(section) ? 'required' : 'derived',
 					status: 'unassessed',
-					rationale: '',
-					approvalId: null
+					rationale: ''
 				};
 				const stored = bySection.get(section);
 				if (!stored) return seeded;

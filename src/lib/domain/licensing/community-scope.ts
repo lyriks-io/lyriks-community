@@ -9,7 +9,13 @@
 /** A scope check: allowed, or refused with the sentence to show and the plan that opens it. */
 export type ScopeCheck =
 	| { readonly ok: true }
-	| { readonly ok: false; readonly reason: string; readonly detail: string; readonly plan: UpgradePlan };
+	| {
+			readonly ok: false;
+			readonly reason: string;
+			readonly detail: string;
+			/** The plan that opens it; null when a key with more projects does, not a plan (EVO-016). */
+			readonly plan: UpgradePlan | null;
+	  };
 
 const ALLOWED: ScopeCheck = { ok: true };
 
@@ -77,11 +83,34 @@ export function locked(lock: CommunityLock): ScopeCheck {
 }
 
 /**
- * A project may be created unless the installation is Community and already
- * holds one (whatever the way: the page, an AI client, an import, a copy).
+ * The number of active projects this installation holds (EVO-016): 1 on
+ * Community, the number the key in force states on Enterprise, null (every
+ * project) for an Enterprise key that states none or an installation that
+ * declares no edition.
  */
-export function projectCreation(edition: string | null | undefined, projectCount: number): ScopeCheck {
-	return isCommunity(edition) && projectCount >= 1 ? locked('secondProject') : ALLOWED;
+export function projectsInForce(edition: string | null | undefined, keyProjects: number | null): number | null {
+	if (isCommunity(edition)) return 1;
+	return typeof keyProjects === 'number' && Number.isInteger(keyProjects) && keyProjects >= 1 ? keyProjects : null;
+}
+
+const activeProjects = (n: number): string => `${n} active project${n === 1 ? '' : 's'}`;
+
+/** What an Enterprise installation says when its key holds no more projects (EVO-016, criterion ff8aad5f). */
+export function projectLimitSentence(granted: number): string {
+	return `This installation's licence holds ${activeProjects(granted)}. Ask for a key with more projects to keep building.`;
+}
+
+/**
+ * A project may be created unless the installation already holds as many as
+ * its key grants (whatever the way: the page, an AI client, an import, a copy):
+ * Community holds one and offers Solo Builder; an Enterprise key that states N
+ * holds N and asks for a key with more projects (EVO-016).
+ */
+export function projectCreation(edition: string | null | undefined, projectCount: number, keyProjects: number | null = null): ScopeCheck {
+	if (isCommunity(edition)) return projectCount >= 1 ? locked('secondProject') : ALLOWED;
+	const granted = projectsInForce(edition, keyProjects);
+	if (granted === null || projectCount < granted) return ALLOWED;
+	return { ok: false, reason: projectLimitSentence(granted), detail: '', plan: null };
 }
 
 /** Every Evolution operation is refused on Community. */
@@ -90,30 +119,76 @@ export function evolutionAccess(edition: string | null | undefined): ScopeCheck 
 }
 
 /**
- * The project a Community installation reads and writes: the one active. Only
- * an installation moved down from a paid plan holds several, all listed; the
- * others are neither read nor written until one is made active.
+ * The projects an installation reads and writes: the ones active. An
+ * installation holds more projects than its key grants only once a key with
+ * fewer arrived (a move down from a paid plan, or a smaller Enterprise key):
+ * all stay listed, and the others are neither read nor written until one is
+ * made active. Community holds one; an Enterprise key that states N, N (EVO-016).
  */
 export function activeProjectAccess(
 	edition: string | null | undefined,
-	input: { readonly projectId: string; readonly activeProjectId: string | null; readonly projectCount: number }
+	input: {
+		readonly projectId: string;
+		readonly activeProjectIds: readonly string[];
+		readonly projectCount: number;
+		readonly granted: number | null;
+	}
 ): ScopeCheck {
-	const held = isCommunity(edition) && input.projectCount > 1 && input.activeProjectId !== null && input.projectId !== input.activeProjectId;
-	return held
-		? {
-				ok: false,
-				reason: 'This project is inactive: Community works on one project at a time. Make it the active project to open it.',
-				detail: `${UPGRADE_PLAN_NAMES.solo_builder}, ${UPGRADE_PLAN_NAMES.team} or ${UPGRADE_PLAN_NAMES.enterprise} open every project again.`,
-				plan: 'solo_builder'
-			}
-		: ALLOWED;
+	const { granted } = input;
+	const held =
+		granted !== null && input.projectCount > granted && input.activeProjectIds.length > 0 && !input.activeProjectIds.includes(input.projectId);
+	if (!held) return ALLOWED;
+	if (isCommunity(edition))
+		return {
+			ok: false,
+			reason: 'This project is inactive: Community works on one project at a time. Make it the active project to open it.',
+			detail: `${UPGRADE_PLAN_NAMES.solo_builder}, ${UPGRADE_PLAN_NAMES.team} or ${UPGRADE_PLAN_NAMES.enterprise} open every project again.`,
+			plan: 'solo_builder'
+		};
+	return {
+		ok: false,
+		reason:
+			granted === 1
+				? `This project is inactive: this installation's licence holds ${activeProjects(granted)}. Make it the active project to open it.`
+				: `This project is inactive: this installation's licence holds ${activeProjects(granted)}. Make it an active project to open it.`,
+		detail: 'A key with more projects opens it beside the others.',
+		plan: null
+	};
 }
 
 /**
- * The project a Community installation holds active when none was chosen yet:
- * the one saved last, so a move down keeps working on what was open.
+ * The projects an installation holds active when nobody chose them: the N
+ * saved last, so a move down keeps working on what was open (EVO-016,
+ * criterion abf6f54e).
  */
+export function defaultActiveProjects(
+	projects: readonly { readonly id: string; readonly lastSavedAt: string | null }[],
+	granted: number
+): string[] {
+	return [...projects]
+		.sort((a, b) => (b.lastSavedAt ?? '').localeCompare(a.lastSavedAt ?? ''))
+		.slice(0, Math.max(0, granted))
+		.map((p) => p.id);
+}
+
+/** The one project a Community installation holds active when none was chosen yet: the one saved last. */
 export function defaultActiveProject(projects: readonly { readonly id: string; readonly lastSavedAt: string | null }[]): string | null {
-	if (projects.length === 0) return null;
-	return [...projects].sort((a, b) => (b.lastSavedAt ?? '').localeCompare(a.lastSavedAt ?? ''))[0].id;
+	return defaultActiveProjects(projects, 1)[0] ?? null;
+}
+
+/**
+ * The projects active now: the ones chosen that still exist, most recently
+ * chosen first and never more than the key grants, completed by the ones
+ * saved last when fewer were chosen.
+ */
+export function resolveActiveProjects(
+	projects: readonly { readonly id: string; readonly lastSavedAt: string | null }[],
+	chosen: readonly string[],
+	granted: number
+): string[] {
+	const exists = new Set(projects.map((p) => p.id));
+	const kept = [...new Set(chosen)].filter((id) => exists.has(id)).slice(0, granted);
+	if (kept.length >= granted) return kept;
+	const rest = projects.filter((p) => !kept.includes(p.id));
+	return [...kept, ...defaultActiveProjects(rest, granted - kept.length)];
 }

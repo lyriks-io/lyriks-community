@@ -7,7 +7,8 @@ vi.mock('$env/dynamic/private', () => ({ env: {} }));
 
 import { subscribeAiActivity, type ProjectAiActivity } from './sync-bus.server';
 import { activityLog } from '$domain/retrospec';
-import { aiCallsOf, foldAiCall, followAiProjectCalls, type AiCall, writesTheSpecification } from './retrospec-ai.server';
+import { aiCallsOf, foldAiCall, followAiProjectCalls, frozenOnceValidated, type AiCall, writesTheSpecification, WRITES_HELD } from './retrospec-ai.server';
+import { RETROSPEC_SECTION } from '$domain/retrospec';
 import { aiWorkedAt } from './ai-work.server';
 
 function call(url: string, init: { method?: string; ai?: boolean; body?: unknown } = {}) {
@@ -119,5 +120,84 @@ describe('what a later run that holds its changes may not write [criterion:50b00
 
 	it('leaves open the sources, the index and the report', () => {
 		for (const path of ['/api/draft/documents', '/api/behavior/sources', '/api/behavior/implementation/index', '/api/projects/p/retrospec/reading']) expect(writes(path), path).toBe(false);
+	});
+});
+
+// Criterion 3b0446d2 (rules aa96a75b, 1e614a44, 331b7c1f): a validated specification
+// refuses what an AI client writes in it, as the page refuses the same change in place.
+describe('what an AI client may not write in a validated specification [criterion:3b0446d2]', () => {
+	const by = { id: 'ana@example.test', name: 'Ana' };
+	const published = { id: 'r1', startedAt: '2026-11-20T10:00:00.000Z', startedBy: by, verdicts: {}, publishedAt: '2026-11-21T10:00:00.000Z', baselineId: null };
+	const later = (extra: Record<string, unknown>) => ({ id: 'r2', startedAt: '2026-11-22T10:00:00.000Z', startedBy: by, verdicts: {}, publishedAt: null, baselineId: null, ...extra });
+	// The retrospecification of each project, held in memory: only that section is read before a write.
+	const stored = new Map<string, unknown>();
+	const sectionDocuments = {
+		load: async (projectId: string, section: string) => (section === RETROSPEC_SECTION ? (stored.get(projectId) ?? null) : null),
+		currentRevision: async () => 1
+	};
+	const services = new Proxy(getServices(), { get: (target, key) => (key === 'sectionDocuments' ? sectionDocuments : Reflect.get(target, key)) });
+	let n = 0;
+	async function project(runs: unknown[]): Promise<string> {
+		const projectId = `p-validated-${++n}`;
+		stored.set(projectId, { version: 1, runs, comments: {} });
+		return projectId;
+	}
+	async function write(path: string, projectId: string, init: { method?: string; ai?: boolean; body?: Record<string, unknown> } = {}) {
+		let reached = false;
+		const handle: Handle = async () => {
+			reached = true;
+			return new Response('{}', { status: 200 });
+		};
+		const input = call(path, { method: init.method ?? 'PUT', ai: init.ai, body: { projectId, ...init.body } });
+		(input.event.locals as { services: unknown }).services = services;
+		const response = await followAiProjectCalls(input, handle);
+		return { status: response.status, reached, message: reached ? null : ((await response.json()) as { message: string }).message };
+	}
+	const REFUSED = 'The specification is validated: change it through an evolution.';
+
+	it('refuses every part that says what the product does, whole or by operations, and its behaviour', async () => {
+		const projectId = await project([published]);
+		for (const path of ['/api/draft/foundation', '/api/draft/foundation/identity', '/api/draft/foundation/definition', '/api/draft/users', '/api/draft/users/role', '/api/draft/users/capabilities', '/api/draft/features', '/api/draft/experience', '/api/draft/data', '/api/draft/data/links', '/api/draft/architecture', '/api/draft/glossary']) {
+			expect(await write(path, projectId), path).toEqual({ status: 409, reached: false, message: REFUSED });
+		}
+		expect(await write('/api/behavior/apply', projectId, { method: 'POST', body: { featureId: 'feat-1', operations: [] } })).toEqual({ status: 409, reached: false, message: REFUSED });
+		expect(await write('/api/behavior/project', projectId, { method: 'POST', body: { operations: [] } })).toEqual({ status: 409, reached: false, message: REFUSED });
+	});
+
+	it('leaves writable the register, the scope, the operations target, the sources, the approvals and the baselines', async () => {
+		const projectId = await project([published]);
+		for (const path of ['/api/draft/rules', '/api/draft/rules/engine-issues', '/api/draft/scope', '/api/draft/foundation/operations', '/api/draft/documents', '/api/draft/approvals', '/api/draft/baselines', '/api/draft/coherence']) {
+			expect((await write(path, projectId)).reached, path).toBe(true);
+		}
+	});
+
+	it('writes a draft an Evolution request carries, and a person goes through as before', async () => {
+		const projectId = await project([published]);
+		expect((await write('/api/behavior/apply', projectId, { method: 'POST', body: { featureId: 'draft:abc', operations: [] } })).reached).toBe(true);
+		expect((await write('/api/draft/data', projectId, { ai: false })).reached).toBe(true);
+	});
+
+	it('takes the writes of a draft specification', async () => {
+		expect((await write('/api/draft/data', await project([]))).reached).toBe(true);
+	});
+
+	it('refuses the AI while Lyriks writes the validated changes: nothing but them enters [criterion:c3f9ddbb]', async () => {
+		const answer = await write('/api/draft/features', await project([published, later({ holds: true, writingOpenedAt: '2026-11-23T10:00:00.000Z' })]));
+		expect(answer.status).toBe(409);
+		expect(answer.message).toBe(WRITES_HELD);
+	});
+
+	it('still holds every write of a later run until its changes are validated, with its own sentence', async () => {
+		const answer = await write('/api/draft/rules', await project([published, later({ holds: true })]));
+		expect(answer.status).toBe(409);
+		expect(answer.message).toMatch(/^This Reverse-Specification writes nothing until/);
+	});
+
+	it('names the frozen addresses and nothing else', () => {
+		const frozen = (path: string) => frozenOnceValidated(new URL(`http://x${path}`));
+		expect(frozen('/api/draft/data')).toBe(true);
+		expect(frozen('/api/draft/foundation/operations')).toBe(false);
+		expect(frozen('/api/draft/rules')).toBe(false);
+		expect(frozen('/api/behavior/implementation/index')).toBe(false);
 	});
 });

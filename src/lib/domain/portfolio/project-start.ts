@@ -75,10 +75,25 @@ export interface StartPromptInput {
 	readonly scratch?: { readonly source: ScratchSource; readonly pace: ScratchPace };
 	/** Where the person reads the result: asked for, the LLM tells them by email, through its own connector. */
 	readonly emailWhenReady?: { readonly url: string } | null;
+	/**
+	 * The MCP address of this installation: named in the prompt, an AI connected to another Lyriks server says so
+	 * instead of offering another project of the same name (criterion a55ccdf4).
+	 */
+	readonly mcpUrl?: string | null;
 }
+
+/** What an AI that cannot find the project on the named server does: one sentence, never a menu of other projects. */
+const NOT_THERE = 'If this project is not on that server, say so in one sentence and stop.';
 
 /** The prompt the person pastes into their LLM, connected to the Lyriks MCP. */
 export function startPrompt(input: StartPromptInput): string {
+	const body = startPromptBody(input);
+	const mcp = input.mcpUrl?.trim();
+	return mcp ? `${body.replace('With the Lyriks MCP,', `With the Lyriks MCP at ${mcp},`)} ${NOT_THERE}` : body;
+}
+
+/** The prompt's request, before the server it names. */
+function startPromptBody(input: StartPromptInput): string {
 	const name = input.name.trim() || 'My project';
 	const project = `the “${name}” project (id ${input.projectId})`;
 	const email = input.emailWhenReady
@@ -98,7 +113,7 @@ export function startPrompt(input: StartPromptInput): string {
 			const from =
 				source === 'document'
 					? 'Read the document I give you (requirements, brief, slides, mock-ups) and '
-					: 'I want to build a new product: ask me what problem it solves, for whom and what it must do, then ';
+					: 'I want to build a new product: ask me one short question at a time (what problem it solves, for whom, what it must do), each with an example answer I can pick or correct, then ';
 			const how =
 				pace === 'all'
 					? 'suggest a complete first specification in one go (features, actions, rules, users, data). Mark everything the source does not say as “to check”.'

@@ -62,7 +62,7 @@ export async function readSpecValidationPage(services: AppServices, projectId: s
 		// The server reads an element's name from its own list when an act arrives: only ids travel.
 		elements: read.elements.map((e) => ({ ...e, title: '' })),
 		team: read.team,
-		baselines: read.baselines.map((b) => ({ ...b, content: '' })),
+		baselines: read.baselines,
 		changes: changes.map((c) => ({ ...c, prompt: sendBackPrompt(c, { name: productName, id: projectId }) })),
 		lastSyncAt
 	};

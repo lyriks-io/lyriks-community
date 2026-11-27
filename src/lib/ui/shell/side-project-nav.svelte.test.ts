@@ -3,15 +3,16 @@ import { render } from 'svelte/server';
 
 /** The project's entries in the navigation, one row each under no heading (feat-feedback-docs). */
 
-const at = vi.hoisted(() => ({ path: '/projects/kutt/spec/features/c1' }));
+const at = vi.hoisted(() => ({ path: '/projects/kutt/spec/features/c1', administers: false }));
 vi.mock('$app/state', () => ({
 	get page() {
-		return { url: new URL(`http://lyriks.test${at.path}`), data: {}, params: {} };
+		return { url: new URL(`http://lyriks.test${at.path}`), data: { administers: at.administers }, params: {} };
 	},
 	navigating: { to: null }
 }));
 
 const SideProjectNav = (await import('./SideProjectNav.svelte')).default;
+const { navCapabilitiesFor } = await import('./capabilities');
 
 const tabs = (list: ('retro' | 'spec' | 'evolutions')[], reversed = true) => ({ tabs: list, specBadge: 'validated' as const, specProgress: null, reversed, laterRunOpen: false });
 const html = (props: Partial<{ tabs: ReturnType<typeof tabs>; openEvolutions: number; drift: { pending: number } | null }>) =>
@@ -58,5 +59,28 @@ describe('Reverse opens the run under way, else the Reverse-Specifications of th
 		expect(labels(html({ tabs: tabs(['retro'], true) }))).toEqual(ALL);
 		expect(labels(html({ tabs: tabs(['spec'], false) }))).toEqual(ALL);
 		expect(labels(html({ tabs: tabs([], false), drift: null }))).toEqual(ALL);
+	});
+});
+
+describe("the project's Settings follow its entries for whoever administers it [criterion:a3ada381] [criterion:7ebad53e]", () => {
+	// Registered by the Enterprise overlay: a Community build has no Settings entry.
+	const enterprise = navCapabilitiesFor(true).some((c) => c.foot && c.route);
+
+	it('shows Settings last to whoever administers the project, lit on its pages', () => {
+		at.administers = true;
+		at.path = '/projects/kutt/settings';
+		const body = html({});
+		at.administers = false;
+		at.path = '/projects/kutt/spec/features/c1';
+		if (!enterprise) {
+			expect(labels(body)).not.toContain('Settings');
+			return;
+		}
+		expect(labels(body)).toEqual(['Reverse', 'Knowledge', 'Changes', 'Mismatch', 'Health', 'Settings']);
+		expect(body).toMatch(/<a class="si on" href="\/projects\/kutt\/settings" aria-current="page" data-tip="Settings"/);
+	});
+
+	it('shows no Settings to anyone else', () => {
+		expect(labels(html({}))).not.toContain('Settings');
 	});
 });

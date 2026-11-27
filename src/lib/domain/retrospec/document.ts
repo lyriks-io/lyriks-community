@@ -1,5 +1,5 @@
 import { parseHistory, type HistoryEntry } from './action-history';
-import { parseReport, type RunReport } from './run-report';
+import { parseReport, type RunReport, type WriteStop } from './run-report';
 import { parseSpecEdits, type SpecEdit } from './spec-edits';
 import { parseRevalidations, type Revalidation } from './revalidations';
 import { parseDocsLocation, type DocsLocation } from './docs-location';
@@ -188,6 +188,24 @@ export interface ItemComment {
 }
 
 /** An additional review requested on one question; it survives later runs. */
+/** The person a project chose to lead its validation, by whom and when. */
+export interface ValidationLeadChoice {
+	readonly to: PersonRef;
+	readonly by: PersonRef;
+	readonly at: string;
+}
+
+/**
+ * The people a project names as the validators of its specification, by whom and when: only their jobs are waited on
+ * (criterion f09fe8ea of feat-135). Absent on a project created before validators were named: everyone who can open
+ * it then counts by their jobs.
+ */
+export interface ValidatorsChoice {
+	readonly people: readonly PersonRef[];
+	readonly by: PersonRef;
+	readonly at: string;
+}
+
 export interface ItemValidationRequest {
 	readonly to: PersonRef;
 	readonly by: PersonRef;
@@ -257,8 +275,12 @@ export interface RetrospecRun {
 	readonly report?: RunReport;
 	/** Its AI said it read what it had to read. */
 	readonly readingDoneAt?: string;
-	/** A person sent what was validated to their AI: the report no longer changes and the AI may write. */
+	/** A person had Lyriks write what was validated: the report no longer changes (the AI's writes stay refused). */
 	readonly writingOpenedAt?: string;
+	/** How many writes of each validated change Lyriks wrote, by change id: a change is written once all of them are. */
+	readonly written?: Readonly<Record<string, number>>;
+	/** Where the last writing stopped and why, until a person starts it again. */
+	readonly writeStop?: WriteStop | null;
 	/** Where the documentation it reads is, once the person said it (criterion b6ad9ca2); on this computer until then. */
 	readonly docsAt?: DocsLocation;
 	/** The phase of the order of work its AI last said it reads (EVO-014): what a run that writes nothing as it reads is followed by. */
@@ -284,6 +306,13 @@ export interface RetrospecDocument {
 	readonly comments: Readonly<Record<string, readonly ItemComment[]>>;
 	/** Additional reviewers per question; jobs and the validation lead remain defaults. */
 	readonly validationRequests?: Readonly<Record<string, readonly ItemValidationRequest[]>>;
+	/**
+	 * Who leads the validation, as the project chose them: changed at any time,
+	 * kept across runs; absent, whoever started the run leads (criterion of feat-135).
+	 */
+	readonly lead?: ValidationLeadChoice;
+	/** Who validates the project, as its Team or its creation named them; absent, everyone who can open it counts. */
+	readonly validators?: ValidatorsChoice;
 	/**
 	 * When the AI first wrote the behaviour (surfaces, actions, rules) of each
 	 * feature, by feature id: what tells a feature tree from features that do
@@ -458,11 +487,24 @@ function run(v: unknown): RetrospecRun | null {
 		...('report' in o ? { report: parseReport(o.report) } : {}),
 		...(strOrNull(o.readingDoneAt) ? { readingDoneAt: strOrNull(o.readingDoneAt) as string } : {}),
 		...(strOrNull(o.writingOpenedAt) ? { writingOpenedAt: strOrNull(o.writingOpenedAt) as string } : {}),
+		...('written' in o ? { written: writtenCounts(o.written) } : {}),
+		...('writeStop' in o ? { writeStop: writeStopOf(o.writeStop) } : {}),
 		...('docsAt' in o ? { docsAt: parseDocsLocation(o.docsAt) } : {}),
 		...(strOrNull(o.phaseReported) ? { phaseReported: strOrNull(o.phaseReported) as string } : {}),
 		...('featuresRead' in o ? { featuresRead: [...new Set(arr(o.featuresRead).map(str).filter(Boolean))] } : {}),
 		...('closedAt' in o ? { closedAt: strOrNull(o.closedAt), closedBy: person(o.closedBy) } : {})
 	};
+}
+
+function writtenCounts(v: unknown): Record<string, number> {
+	const out: Record<string, number> = {};
+	for (const [id, n] of Object.entries(obj(v))) if (typeof n === 'number' && Number.isInteger(n) && n > 0) out[id] = n;
+	return out;
+}
+
+function writeStopOf(v: unknown): WriteStop | null {
+	const o = obj(v);
+	return str(o.change) && str(o.at) ? { change: str(o.change), reason: str(o.reason), at: str(o.at) } : null;
 }
 
 function commitOf(v: unknown): { commit?: RunCommit } {
@@ -554,6 +596,16 @@ export function parseRetrospecDocument(raw: unknown): RetrospecDocument {
 		}
 		if (requests.length > 0) validationRequests[itemId] = requests;
 	}
+	const leadRaw = obj(o.lead);
+	const leadTo = person(leadRaw.to);
+	const leadBy = person(leadRaw.by);
+	const lead: ValidationLeadChoice | null = leadTo && leadBy && str(leadRaw.at) ? { to: leadTo, by: leadBy, at: str(leadRaw.at) } : null;
+	const validatorsRaw = obj(o.validators);
+	const validatorsBy = person(validatorsRaw.by);
+	const validators: ValidatorsChoice | null =
+		validatorsBy && str(validatorsRaw.at) && Array.isArray(validatorsRaw.people)
+			? { people: arr(validatorsRaw.people).flatMap((p) => { const x = person(p); return x ? [x] : []; }), by: validatorsBy, at: str(validatorsRaw.at) }
+			: null;
 	for (const [itemId, list] of Object.entries(obj(o.comments))) {
 		const parsed = arr(list).flatMap((c) => {
 			const x = comment(c);
@@ -569,6 +621,8 @@ export function parseRetrospecDocument(raw: unknown): RetrospecDocument {
 		}),
 		comments,
 		...(Object.keys(validationRequests).length > 0 ? { validationRequests } : {}),
+		...(lead ? { lead } : {}),
+		...(validators ? { validators } : {}),
 		...behaviorAuthoredOf(o.behaviorAuthored),
 		...specEditsOf(o.specEdits),
 		...revalidationsOf(o.revalidations),

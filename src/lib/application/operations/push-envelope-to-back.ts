@@ -16,8 +16,7 @@ import type {
 	UsersDraftRepositoryPort
 } from '../ports';
 import type { ProjectDocumentsDraft } from '$domain/documents';
-import { baselinesWithoutDocuments, type ProjectBaselinesDraft } from '$domain/baselines';
-import type { ProjectApprovalsDraft } from '$domain/approvals';
+import type { ProjectBaselinesDraft } from '$domain/baselines';
 import type { ProjectScopeDraft } from '$domain/scope';
 
 /**
@@ -53,7 +52,6 @@ export class PushEnvelopeToBackUseCase {
 	private readonly glossaryDrafts: GlossaryDraftRepositoryPort,
 	private readonly documentsDrafts: SectionDraftRepositoryPort<ProjectDocumentsDraft>,
 	private readonly baselinesDrafts: SectionDraftRepositoryPort<ProjectBaselinesDraft>,
-	private readonly approvalsDrafts: SectionDraftRepositoryPort<ProjectApprovalsDraft>,
 		private readonly client: ProjectMirrorPort,
 		private readonly backLinks: BackLinkRepositoryPort,
 		/**
@@ -185,7 +183,6 @@ export class PushEnvelopeToBackUseCase {
 			glossary,
 			documents,
 			baselines,
-			approvals,
 		] = await Promise.all([
 			this.identityDrafts.load(projectId),
 			this.scopeDrafts.load(projectId),
@@ -201,7 +198,6 @@ export class PushEnvelopeToBackUseCase {
 			this.glossaryDrafts.load(projectId),
 			this.documentsDrafts.load(projectId),
 			this.baselinesDrafts.load(projectId),
-			this.approvalsDrafts.load(projectId),
 		]);
 
 		const envelope: Record<string, unknown> = {};
@@ -223,9 +219,8 @@ export class PushEnvelopeToBackUseCase {
 		if (coherence) envelope.coherence = coherence;
 		if (glossary) envelope.glossary = glossary;
 		if (documents) envelope.documents = documents;
-		// Each baseline without its requirements document, which stays here (criterion 9a845c19).
-		if (baselines) envelope.baselines = baselinesWithoutDocuments(baselines);
-		if (approvals) envelope.approvals = approvals;
+		// Each baseline as it is kept: its id, its name and its moment (criterion 9a845c19).
+		if (baselines) envelope.baselines = baselines;
 
 		const result = await this.client.pushEnvelope(
 			backProjectId,

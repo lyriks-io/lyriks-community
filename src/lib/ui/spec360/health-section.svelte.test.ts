@@ -23,7 +23,7 @@ vi.mock('$ui/ai-session/project-ai-session.svelte', () => ({ useProjectAiSession
 const ana = { id: 'ana@example.test', name: 'Ana Diaz' };
 const started = applyRetrospecActs(emptyRetrospecDocument(), [{ op: 'validate', itemId: 'outside', title: 'outside', tab: 'spec360' }], { actor: ana, now: '2026-11-18T02:00:00.000Z' });
 if (!started.ok) throw new Error(started.reason);
-const validation = new SpecValidation(() => ({ projectId: 'p', me: ana, canWrite: true, doc: started.doc, elements: [{ id: 'product', title: 'Product', owner: 'product' }], team: [{ person: ana, jobIds: ['product'] }], baselines: [] }));
+const validation = new SpecValidation(() => ({ projectId: 'p', me: ana, canWrite: true, doc: started.doc, elements: [{ id: 'product', title: 'Product' }], team: [{ person: ana, jobIds: ['product'] }], baselines: [] }));
 const clean = (html: string) => html.replace(/<!--.*?-->/g, '').replace(/ class="svelte-[a-z0-9]+"/g, '').replace(/ svelte-[a-z0-9]+/g, '');
 const targets: OperationsTargets = {
 	auditLogs: null,
@@ -34,7 +34,8 @@ const targets: OperationsTargets = {
 describe('Health opens on the project score, then every point that weighs on it [criterion:4dadd4b8]', () => {
 	const health = () => clean(render(HealthPage, { props: { data: {
 		projectId: 'p', canWrite: true, spec: { productName: 'Ledger' }, health: { score: 72, verdict: 'watch', proofPending: false }, healthReading: false,
-		noticed: { waitsForFeature: false, total: 0, pending: 0, points: [], toConfirm: [], types: [] }
+		noticed: { waitsForFeature: false, total: 0, pending: 0, points: [], toConfirm: [], types: [] },
+		session: { isAuthenticated: true }
 	} } as never }).body);
 
 	it('titles the page Health and draws the score above the points', () => {
@@ -50,6 +51,12 @@ describe('Health opens on the project score, then every point that weighs on it 
 		expect(tile).toContain('72/100');
 		expect(tile).not.toContain('data-evo-validate');
 		expect(tile).not.toContain('Open the comments');
+	});
+
+	it('holds no Sign-offs any more: where the specification stops reads on the Overview (rule b995ffb1)', () => {
+		const html = health();
+		expect(html).not.toContain('id="sign-offs"');
+		expect(html).not.toContain('Sign-offs');
 	});
 });
 

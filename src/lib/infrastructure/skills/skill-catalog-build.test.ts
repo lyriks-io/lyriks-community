@@ -18,6 +18,7 @@ import {
 	pointerMarkers,
 	portableInstallPath,
 	BINDING_HOOK_PATH,
+	BINDING_STOP_HOOK_PATH,
 	BINDING_TOOLS_HOOK_PATH,
 	BINDING_MARKERS,
 	BINDING_TOOLS,
@@ -392,6 +393,14 @@ describe('buildBinding (the repository stays bound to its Lyriks project)', () =
 		expect(buildBindingBlock()).not.toContain('vector-rally');
 	});
 
+	it('asks the AI to name what it talks about by its name, never by an id alone [criterion:94d58173]', () => {
+		// "feature 100" tells the person nothing: they know the product by its names.
+		const line = buildBindingBlock('vector-rally').split('\n').find((l) => l.includes('by its name'));
+		expect(line).toBeDefined();
+		expect(line).toContain('as the spec writes it');
+		expect(line).toContain('never stand alone');
+	});
+
 	it('makes a change spec first, and leaves Evolution to the person who asks for it', () => {
 		// The MCP server instructions, this block and the per-prompt hook are loaded
 		// together by one client: they must state ONE rule, or the agent picks
@@ -468,6 +477,28 @@ describe('buildBinding (the repository stays bound to its Lyriks project)', () =
 		const held = buildBinding(script, 'claude', null, {}, [{ path: BINDING_TOOLS_HOOK_PATH, contentHash: fnv1aHash(tools) }], tools);
 		expect(held.targets[0].toolsHook).toMatchObject({ unchanged: true });
 		expect(held.targets[0].toolsHook!.content).toBeUndefined();
+	});
+
+	it('gives Claude Code, and only it, the end-of-turn hook, wired on Stop [criterion:7b37377d]', () => {
+		const stop = '#!/usr/bin/env node\n// the end-of-turn hook\n';
+		const target = (client: SkillClientId) => buildBinding(script, undefined, null, {}, [], undefined, stop).targets.find((t) => t.client === client)!;
+		const hook = target('claude').stopHook!;
+		expect(hook.path).toBe(BINDING_STOP_HOOK_PATH);
+		expect(hook.content).toBe(injectScriptHash(stop, fnv1aHash(stop)));
+		expect(hook.settingsPath).toBe('.claude/settings.json');
+		expect(hook.settingsEvent).toBe('Stop');
+		expect(hook.settingsEntry.command).toBe(`node ${BINDING_STOP_HOOK_PATH}`);
+		expect(JSON.parse(hook.settingsContent).hooks.Stop[0]).toEqual({ hooks: [hook.settingsEntry] });
+		for (const client of ['codex', 'gemini', 'copilot', 'generic'] as const) expect(target(client).stopHook).toBeUndefined();
+		const held = buildBinding(script, 'claude', null, {}, [{ path: BINDING_STOP_HOOK_PATH, contentHash: fnv1aHash(stop) }], undefined, stop);
+		expect(held.targets[0].stopHook).toMatchObject({ unchanged: true });
+	});
+
+	it('tells every runtime to say on the person\'s pages why it stops [criterion:7b37377d]', () => {
+		const block = buildBindingBlock('kutt-c76982');
+		expect(block).toContain('before ending a turn on a question, or stopping for any other reason');
+		expect(block).toContain('`update_evolution_session` (`ask` for the one question you wait on, `stopped` for why you stop)');
+		expect(block).toContain('`start_evolution_session` given the project alone');
 	});
 
 	it('narrows to the calling runtime, and falls back to every target for an unknown one', () => {

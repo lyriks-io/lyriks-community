@@ -158,7 +158,7 @@ describe('the ticket a request came from', () => {
 	});
 });
 
-const baseline = (id: string, createdAt: string): Baseline => ({ id, name: id, note: '', createdAt, readiness: 0, coherence: 0, featureCount: 0, content: '' });
+const baseline = (id: string, createdAt: string): Baseline => ({ id, name: id, createdAt });
 
 describe('the version a close moved the Specification 360° by', () => {
 	const baselines = [baseline('b-before', '2026-09-01'), baseline('b-valid', '2026-10-01'), baseline('b-evo1', '2026-10-05'), baseline('b-evo2', '2026-10-09')];

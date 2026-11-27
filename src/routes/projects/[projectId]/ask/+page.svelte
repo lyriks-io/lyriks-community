@@ -4,11 +4,15 @@
 	import { page } from '$app/state';
 	import { discussionHref } from '$domain/discussions';
 	import { confirmDialog } from '$ui/design-system';
-	import { publishPlaces, chatBusy, wroteSpec, type AiChatMessage, type ChatTurn, type MessageDelivery } from '$domain/ai-conversations';
+	import { publishPlaces, chatBusy, wroteSpec, messageWords, type AiChatMessage, type ChatTurn, type MessageDelivery } from '$domain/ai-conversations';
 	import { useProjectAiSession } from '$ui/ai-session/project-ai-session.svelte';
+	import { NOT_WOKEN } from '$ui/ai-session/ai-standing';
 	import { askAct, askHref, startChat } from '$ui/ask/ask-client';
+	import AiMessageText from '$ui/ask/AiMessageText.svelte';
 	import { groupConversations } from '$ui/ask/ask-groups';
 	import { relativeWhen } from '$ui/evolution/relative-when';
+	import BlockControls from '$ui/evolution/BlockControls.svelte';
+	import RejectCross from '$ui/evolution/RejectCross.svelte';
 	import { AI_CONVERSATIONS_SECTION, sectionSyncKey } from '$lib/shared/section-sync';
 	import { FIELD, H1, KICK, META, MORE, POP, PRESS_FILL, PRESS_LINE, TAG_ORANGE, TAG_VALID, TAG_LINE, WAIT, WAIT_MARK } from '$ui/spec360/page/look';
 	import type { PageData } from './$types';
@@ -47,6 +51,16 @@
 
 	const refresh = () => invalidate(sectionSyncKey(projectId, AI_CONVERSATIONS_SECTION) as `${string}:${string}`);
 
+	/** A conversation whose last word is why the AI stopped, which it opened on its own or not (action 559ba487). */
+	const endsStopped = (c: { readonly messages: readonly { readonly stopped?: true }[] }) => !!c.messages[c.messages.length - 1]?.stopped;
+
+	// Opening why the AI stopped reads it: it leaves Needs you (rule fc2ad132). A question stays until answered.
+	$effect(() => {
+		const shown = current;
+		if (!shown?.needsYou || !endsStopped(shown)) return;
+		void askAct(projectId, { act: 'seen', conversationId: shown.id }).then(refresh);
+	});
+
 	const LABEL: Record<ChatTurn, string> = {
 		none: '',
 		waiting: 'Waiting',
@@ -62,8 +76,8 @@
 		if (!text || sending || !ai) return;
 		if (busy) return;
 		sending = true;
-		// No AI listens: the prompt is copied at the press, while the browser allows it (rule 1e796d88).
-		const copying = ai.listening ? null : ai.copyChatPrompt();
+		// No AI listens: the prompt is copied at the press, while the browser allows it (rule 1e796d88), unless a waker starts the AI (action ccca0911).
+		const copying = ai.listening || ai.wakes ? null : ai.copyChatPrompt();
 		if (current) {
 			const done = await askAct(projectId, { act: 'write', conversationId: current.id, text });
 			if (done) draft = '';
@@ -92,7 +106,8 @@
 	function openPublish(m: AiChatMessage) {
 		if (!current) return;
 		const places = publishPlaces(current, m.id);
-		publishing = { messageId: m.id, text: m.text, anchor: places[0]?.anchor ?? 'overview:what' };
+		// A topic reads as plain text: the pages the AI cited read as their names there (criterion 7f4690b0).
+		publishing = { messageId: m.id, text: messageWords(m.text), anchor: places[0]?.anchor ?? 'overview:what' };
 	}
 	async function publish() {
 		if (!current || !publishing) return;
@@ -110,8 +125,13 @@
 
 	const status = $derived.by(() => {
 		if (!current) return null;
-		if (current.turn === 'waiting')
-			return ai?.listening ? { text: 'Waiting for your AI', cancel: true, prompt: false } : { text: 'Waiting for your AI: no AI listens on this project', cancel: true, prompt: true };
+		if (current.turn === 'waiting') {
+			if (ai?.listening) return { text: 'Waiting for your AI', cancel: true, prompt: false };
+			// A waker starts the reader's AI on the message; once it ran out, the prompt is offered again (criterion 7cfc6440).
+			if (ai?.notWoken) return { text: NOT_WOKEN, cancel: true, prompt: true };
+			if (ai?.wakes || ai?.waking) return { text: 'Waking your AI', cancel: true, prompt: false };
+			return { text: 'Waiting for your AI: no AI listens on this project', cancel: true, prompt: true };
+		}
 		if (current.turn === 'taken') return { text: ai?.saying ? `Your AI is on it · ${ai.saying}` : 'Your AI is reading', cancel: false, prompt: false };
 		if (current.turn === 'answered_nothing') return { text: 'Lyriks answered nothing: write again', cancel: false, prompt: false };
 		return null;
@@ -179,7 +199,8 @@
 				>
 					<span class="truncate text-[0.875rem] font-semibold text-ink">{c.title}</span>
 					<span class="truncate {META} text-xs">{c.context ? c.context.title : 'The product'} · {relativeWhen(c.updatedAt)}</span>
-					{#if LABEL[c.turn]}<span class="text-xs font-semibold {c.turn === 'asked_back' ? 'text-orange-ink' : 'text-ink-3'}">{LABEL[c.turn]}</span>{/if}
+					{#if endsStopped(c)}<span class="text-xs font-semibold {c.needsYou ? 'text-orange-ink' : 'text-ink-3'}">Your AI stopped</span>
+					{:else if LABEL[c.turn]}<span class="text-xs font-semibold {c.turn === 'asked_back' ? 'text-orange-ink' : 'text-ink-3'}">{LABEL[c.turn]}</span>{/if}
 				</a>
 				{/each}
 			{:else}
@@ -197,6 +218,8 @@
 					<h2 class="m-0 text-lg font-bold text-ink">{current ? current.title : 'New conversation about the product'}</h2>
 					{#if current?.context}
 						<span class={META}>Asked from <a class={MORE} href={current.context.href}>{current.context.title}</a></span>
+					{:else if current?.openedBy === 'ai'}
+						<span class={META}>Opened by your AI</span>
 					{:else if current}
 						<span class={META}>About the product as a whole</span>
 					{/if}
@@ -228,8 +251,11 @@
 					{:else}
 						<div class="flex flex-col items-start gap-1.5" data-message={m.id}>
 							<span class="text-xs"><b class="text-ink">Lyriks · for {reader}</b> <span class="text-ink-3">{relativeWhen(m.at)}</span></span>
-							{#if m.asks}<span class="{TAG_ORANGE}">Your AI asks you</span>{/if}
-							<div class="max-w-[85%] border-[1.5px] border-line bg-paper px-3.5 py-2.5 text-[0.875rem] whitespace-pre-line text-ink [overflow-wrap:anywhere]">{m.text}</div>
+							{#if m.asks}<span class="{TAG_ORANGE}">Your AI asks you</span>{:else if m.stopped}<span class="{TAG_ORANGE}">Your AI stopped</span>{/if}
+							<!-- A page the AI cites opens from its name; a link elsewhere reads as plain text (criterion 7f4690b0). -->
+							<div class="max-w-[85%] border-[1.5px] border-line bg-paper px-3.5 py-2.5 text-[0.875rem] whitespace-pre-line text-ink [overflow-wrap:anywhere]" data-ai-text
+								><AiMessageText text={m.text} origin={page.url.origin} /></div
+							>
 							{#if m.proposal}
 								{@const p = m.proposal}
 								<!-- A change of the AI: written only once validated, after a new dry run (criterion 8ec8310b). -->
@@ -239,11 +265,25 @@
 									<span class="{META} text-xs">{p.operations.length} operation(s) on {p.featureId}</span>
 									{#if p.errors?.length}<span class="text-xs text-red-ink">{p.errors.slice(0, 3).join(' · ')}</span>{/if}
 									{#if p.state === 'proposed'}
-										<span class="flex gap-2">
-											{#if data.canEdit}
-												<button type="button" class="{PRESS_FILL} min-h-8 px-3 text-xs" onclick={() => act({ act: 'validate', conversationId: current!.id, messageId: m.id })}>Validate</button>
-											{/if}
-											<button type="button" class="{PRESS_LINE} min-h-8 px-3 text-xs" onclick={() => act({ act: 'reject', conversationId: current!.id, messageId: m.id })}>Reject</button>
+										<!-- The cross rejects it, the reader's box validates it, as every element of Knowledge (criterion 8ec8310b). -->
+										<span class="self-end">
+											<BlockControls
+												icons
+												small
+												validate={data.canEdit
+													? {
+															look: 'grey',
+															title: 'Validate this change',
+															run: () => act({ act: 'validate', conversationId: current!.id, messageId: m.id }),
+															stamps: [{ id: 'own', initials: 'YOU', title: 'You', ok: false, me: true, name: 'You', confirm: { question: 'Validate this change? Lyriks writes it in the specification.', act: 'Validate' } }],
+															settled: false
+														}
+													: null}
+											>
+												{#snippet reject()}
+													<RejectCross name={p.summary} title="Reject it: the specification stays as it is" onclick={() => act({ act: 'reject', conversationId: current!.id, messageId: m.id })} />
+												{/snippet}
+											</BlockControls>
 										</span>
 									{/if}
 								</div>

@@ -10,7 +10,6 @@ import type { StoredDraftWalks } from '$application/analysis/draft-feature-memo'
 import { readBehaviorOverview } from '$application/specification/read-behavior-overview';
 import {
 	AnalyzeBriefUseCase,
-	GenerateSpecsUseCase,
 	LoadArchitectureDraftUseCase,
 	LoadDocumentRegisterUseCase,
 	LoadCoherenceDraftUseCase,
@@ -43,6 +42,7 @@ import {
 	BuildCompletionEvidenceUseCase,
 	FinishProjectUseCase,
 	SaveScopeDraftUseCase,
+	ApproveScopeLeftOutUseCase,
 	LoadRulesDraftUseCase,
 	LoadGlossaryDraftUseCase,
 	ListExtractedElementsUseCase,
@@ -225,9 +225,7 @@ import { computeArchitectureCoherence, type ProjectArchitectureDraft } from '$do
 import { parseDocumentsDraft } from '$application/specification/parse-documents-draft';
 import { createEmptyBaselinesDraft, type ProjectBaselinesDraft } from '$domain/baselines';
 import { parseBaselinesDraft } from '$application/specification/parse-baselines-draft';
-import { createEmptyApprovalsDraft, type ProjectApprovalsDraft } from '$domain/approvals';
 import { createEmptyEvolutionDraft, type ProjectEvolutionDraft } from '$domain/evolution';
-import { parseStoredApprovalsDraft } from '$application/specification/parse-approvals-draft';
 import { parseEvolutionDraft } from '$application/evolution/parse-evolution-draft';
 import { storedEvolutionDraft } from '$application/evolution/stored-evolution-draft';
 import type { ProjectScopeDraft } from '$domain/scope';
@@ -280,6 +278,7 @@ export interface AppServices {
 	readProjectElaboration: ReadProjectElaborationUseCase;
 	loadScopeDraft: LoadResidueDraftUseCase<ProjectScopeDraft>;
 	saveScopeDraft: SaveScopeDraftUseCase;
+	approveScopeLeftOut: ApproveScopeLeftOutUseCase;
 	assessProjectCompleteness: AssessProjectCompletenessUseCase;
 	auditProjectScope: AuditProjectScopeUseCase;
 	finishProject: FinishProjectUseCase;
@@ -334,12 +333,10 @@ export interface AppServices {
 	/** The evidence register every citing capability reads (legacy architecture docs folded in). */
 	loadDocumentRegister: LoadDocumentRegisterUseCase;
 	saveDocumentsDraft: SaveResidueDraftUseCase<ProjectDocumentsDraft>;
+	/** The baselines the version of the specification is counted from: an id, a name and a moment each. */
 	loadBaselinesDraft: LoadResidueDraftUseCase<ProjectBaselinesDraft>;
-	saveBaselinesDraft: SaveResidueDraftUseCase<ProjectBaselinesDraft>;
-	/** Capture an immutable spec baseline (server-side snapshot). */
+	/** Record the baseline of a milestone of the specification. */
 	captureBaseline: CaptureBaselineUseCase;
-	loadApprovalsDraft: LoadResidueDraftUseCase<ProjectApprovalsDraft>;
-	saveApprovalsDraft: SaveResidueDraftUseCase<ProjectApprovalsDraft>;
 	loadEvolutionDraft: LoadResidueDraftUseCase<ProjectEvolutionDraft>;
 	saveEvolutionDraft: SaveResidueDraftUseCase<ProjectEvolutionDraft>;
 	/** The workspace-shared requirement reuse library + its actions. */
@@ -364,7 +361,6 @@ export interface AppServices {
 	saveArchitectureDraft: SaveSimpleSectionDraftUseCase<ProjectArchitectureDraft>;
 	loadCoherenceDraft: LoadCoherenceDraftUseCase;
 	saveCoherenceDraft: SaveCoherenceDraftUseCase;
-	generateSpecs: GenerateSpecsUseCase;
 	/** The central knowledge graph (derived read model unifying every context). */
 	loadKnowledgeGraph: LoadKnowledgeGraphUseCase;
 	/** The REAL formal engine graph (DPO/MRS, read from Lyriks-back). */
@@ -731,9 +727,11 @@ export function getServices(): AppServices {
 	const declaredEdition = env.LYRIKS_EDITION;
 	const editionInForce = new EditionInForce(declaredEdition);
 	const installEdition = (): string | undefined => editionInForce.current();
-	// What a Community installation holds (EVO-001): one project, the active one.
-	const checkProjectCreation = new CheckProjectCreationUseCase(installEdition, projectCatalog);
-	const resolveActiveProject = new ResolveActiveProjectUseCase(installEdition, projectCatalog, activeProjectStore);
+	// The projects an installation holds (EVO-001, EVO-016): as many as its key
+	// grants, 1 on Community; beyond them the others wait, inactive.
+	const projectsGranted = (): number | null => editionInForce.projects();
+	const checkProjectCreation = new CheckProjectCreationUseCase(installEdition, projectsGranted, projectCatalog);
+	const resolveActiveProject = new ResolveActiveProjectUseCase(projectsGranted, projectCatalog, activeProjectStore);
 	// EVERY declared edition is gated, Community included: its key is free and
 	// perpetual, and it is how an air-gapped product knows who runs it. The flag
 	// may switch enforcement on for an install that declares nothing (the
@@ -837,16 +835,7 @@ export function getServices(): AppServices {
 		'documents',
 		parseDocumentsDraft
 	);
-	const baselinesDrafts = new SectionDocumentDraftRepository(
-		persistence.sectionDocuments,
-		'baselines',
-		parseBaselinesDraft
-	);
-	const approvalsDrafts = new SectionDocumentDraftRepository(
-		persistence.sectionDocuments,
-		'approvals',
-		parseStoredApprovalsDraft
-	);
+	const baselinesDrafts = new SectionDocumentDraftRepository(persistence.sectionDocuments, 'baselines', parseBaselinesDraft);
 	const evolutionDrafts = new SectionDocumentDraftRepository(
 		persistence.sectionDocuments,
 		'evolution',
@@ -1307,10 +1296,6 @@ export function getServices(): AppServices {
 		],
 		behaviorPort
 	);
-	const loadApprovalsDraft = new LoadResidueDraftUseCase(
-		approvalsDrafts,
-		createEmptyApprovalsDraft
-	);
 	const loadCoherenceDraft = new LoadCoherenceDraftUseCase(coherenceDrafts, globalChecker);
 	const engineReadBudgets = {
 		readMs: msEnv('LYRIKS_ENGINE_READ_BUDGET_MS', DEFAULT_ENGINE_READ_BUDGETS.readMs),
@@ -1345,7 +1330,6 @@ export function getServices(): AppServices {
 	const completionEvidence = new CachedCompletionEvidence(
 		new BuildCompletionEvidenceUseCase(
 			loadDocumentRegister,
-			loadApprovalsDraft,
 			loadCoherenceDraft,
 			loadFeatureMaturity,
 			loadDataDraft,
@@ -1397,7 +1381,6 @@ export function getServices(): AppServices {
 		glossaryDrafts,
 		documentsDrafts,
 		baselinesDrafts,
-		approvalsDrafts,
 		projectMirror,
 		backLinks,
 		behaviorPort,
@@ -1464,6 +1447,7 @@ export function getServices(): AppServices {
 		}),
 		loadScopeDraft,
 		saveScopeDraft: new SaveScopeDraftUseCase(scopeDrafts, clock),
+		approveScopeLeftOut: new ApproveScopeLeftOutUseCase(scopeDrafts, clock),
 		assessProjectCompleteness,
 		auditProjectScope: new AuditProjectScopeUseCase(
 			scopeDrafts,
@@ -1521,9 +1505,6 @@ export function getServices(): AppServices {
 		loadDocumentRegister,
 		saveDocumentsDraft: new SaveResidueDraftUseCase(documentsDrafts, clock),
 		loadBaselinesDraft: new LoadResidueDraftUseCase(baselinesDrafts, createEmptyBaselinesDraft),
-		saveBaselinesDraft: new SaveResidueDraftUseCase(baselinesDrafts, clock),
-		loadApprovalsDraft,
-		saveApprovalsDraft: new SaveResidueDraftUseCase(approvalsDrafts, clock),
 		loadEvolutionDraft,
 		saveEvolutionDraft: new SaveResidueDraftUseCase(evolutionDrafts, clock),
 		loadReuseLibrary: new LoadReuseLibraryUseCase(projectResidue),
@@ -1539,22 +1520,7 @@ export function getServices(): AppServices {
 			new SaveFeaturesDraftUseCase(featuresDrafts, clock, telemetry)
 		),
 		removeReuseTemplate: new RemoveReuseTemplateUseCase(projectResidue),
-		captureBaseline: new CaptureBaselineUseCase(
-			baselinesDrafts,
-			globalChecker,
-			clock,
-			loadFoundationDraft,
-			loadUsersDraft,
-			loadFeaturesDraft,
-			loadExperienceDraft,
-			loadRulesDraft,
-			loadDataDraft,
-			loadArchitectureDraft,
-			new LoadResidueDraftUseCase(documentsDrafts, createEmptyDocumentsDraft),
-			featureAcceptance,
-			implementationCoverage,
-			specLanguageOf
-		),
+		captureBaseline: new CaptureBaselineUseCase(baselinesDrafts, clock),
 		loadDataDraft,
 		saveDataDraft: new SaveDataDraftUseCase(dataDrafts, clock, telemetry, specLanguageOf, (projectId) => {
 			syncDataRules.execute(projectId).catch((err) => console.warn('[data rules] sync failed:', err));
@@ -1589,23 +1555,6 @@ export function getServices(): AppServices {
 			globalChecker,
 			clock,
 			telemetry
-		),
-		generateSpecs: new GenerateSpecsUseCase(
-			coherenceDrafts,
-			globalChecker,
-			clock,
-			telemetry,
-			loadFoundationDraft,
-			loadUsersDraft,
-			loadFeaturesDraft,
-			loadExperienceDraft,
-			loadRulesDraft,
-			loadDataDraft,
-			loadArchitectureDraft,
-			new LoadResidueDraftUseCase(documentsDrafts, createEmptyDocumentsDraft),
-			featureAcceptance,
-			implementationCoverage,
-			specLanguageOf
 		),
 		loadKnowledgeGraph: new LoadKnowledgeGraphUseCase(knowledgeGraph),
 		loadEngineKnowledgeGraph: new LoadKnowledgeGraphUseCase(engineKnowledgeGraph),

@@ -1,51 +1,36 @@
 import type { PersonRef } from './document';
+import { reviewJobsOf, type JobTopics } from './review-jobs';
 
 /**
- * Who must validate an element of the Specification 360°: the person who leads
- * the validation (the one who started the retrospecification, else the reader
- * about to start it), and the people whose job owns the element's part of the
- * specification. Product, Design and Tech retain their ownership; Development,
- * QA, Security and Business additionally review their declared topics. Match
- * stable job ids and anchors, never job labels. Nobody holding a matching job
- * (or an install with no jobs, Community) leaves the lead as sole validator.
+ * Who must validate an element of the Specification 360°, as seats to fill
+ * (criteria e3296696 and f02f078b of feat-164): the person who leads the
+ * validation (the one who started the retrospecification, else the reader
+ * about to start it), one seat per job the element's kind waits on that some
+ * reachable person holds, filled by any one holder like a code owner team, and
+ * one seat per person asked by name. Match stable job ids and anchors, never
+ * job labels; a job validates the topics its workspace chose, else its
+ * defaults. Nobody holding a matching job (or an install with no jobs,
+ * Community) leaves the lead as sole validator.
  */
-
-export type SpecOwner = 'product' | 'design' | 'tech';
-
-/** The id of the team job (Enterprise `TeamJobsPort`) that owns each part. */
-export const OWNER_JOB: Readonly<Record<SpecOwner, string>> = {
-	product: 'product',
-	design: 'design',
-	tech: 'tech'
-};
-
-/** Additional default reviewers for the stable kinds of Knowledge elements. */
-const TOPIC_JOBS: Readonly<Record<string, readonly string[]>> = {
-	product: ['business'],
-	problem: ['business'],
-	target: ['business'],
-	permissions: ['security'],
-	core: ['business'],
-	feature: ['qa', 'business'],
-	action: ['development', 'qa'],
-	rule: ['development', 'qa'],
-	flow: ['development'],
-	datamap: ['development'],
-	data: ['development'],
-	stack: ['development'],
-	health: ['qa'],
-	requirements: ['development', 'qa'],
-	constraint: ['development', 'security'],
-	term: ['business']
-};
-
-const SECURITY_REQUIREMENTS = new Set(['requirements:security', 'requirements:compliance']);
 
 /** One member of the project's team with the jobs they hold on it. */
 export interface TeamMember {
 	readonly person: PersonRef;
 	readonly jobIds: readonly string[];
 	readonly jobNames?: readonly string[];
+	/** What each job they hold validates, as the workspace chose it; a job left out validates its defaults. */
+	readonly jobTopics?: JobTopics;
+	/** Their role in the workspace (owner, admin, designer, viewer), when the roster says it. */
+	readonly role?: string;
+}
+
+/** What the team's jobs validate, as their workspace chose it. */
+const teamJobTopics = (team: readonly TeamMember[]): JobTopics => Object.assign({}, ...team.map((member) => member.jobTopics ?? {}));
+
+/** A validation the element needs: from one person in particular (`job` null), or from any holder of a job. */
+export interface ReviewSeat {
+	readonly job: string | null;
+	readonly people: readonly PersonRef[];
 }
 
 export const samePersonRef = (a: PersonRef, b: PersonRef): boolean => a.id.trim().toLowerCase() === b.id.trim().toLowerCase();
@@ -56,15 +41,32 @@ function unique(people: readonly PersonRef[]): PersonRef[] {
 	return out;
 }
 
-/** The people who hold the job owning this part, in the team's order. */
-export function ownersOf(owner: SpecOwner, team: readonly TeamMember[], elementId = ''): PersonRef[] {
-	const kind = elementId.split(':', 1)[0];
-	const jobs = new Set([OWNER_JOB[owner], ...(TOPIC_JOBS[kind] ?? []), ...(SECURITY_REQUIREMENTS.has(elementId) ? ['security'] : [])]);
-	return unique(team.filter((member) => member.jobIds.some((job) => jobs.has(job))).map((member) => member.person));
+/**
+ * The seats of one element: the lead first, then each matching job held by
+ * somebody the project names as a validator (everybody who can open it while it
+ * names nobody, an older project), in the matrix's order with its holders in the
+ * team's order, then each reachable person asked by name who is not the lead.
+ * One validation may fill several seats: the lead's gives every job the lead holds.
+ */
+export function reviewSeats(
+	lead: PersonRef | null,
+	team: readonly TeamMember[],
+	requested: readonly PersonRef[] = [],
+	elementId = '',
+	validators: readonly PersonRef[] | null = null
+): ReviewSeat[] {
+	const seats: ReviewSeat[] = lead?.id.trim() ? [{ job: null, people: [lead] }] : [];
+	const validating = validators ? team.filter((member) => validators.some((v) => samePersonRef(v, member.person))) : team;
+	for (const job of reviewJobsOf(elementId, teamJobTopics(team))) {
+		const holders = unique(validating.filter((member) => member.jobIds.includes(job)).map((member) => member.person));
+		if (holders.length > 0) seats.push({ job, people: holders });
+	}
+	const asked = unique(requested.filter((person) => team.some((member) => samePersonRef(member.person, person))));
+	for (const person of asked) if (!lead || !samePersonRef(person, lead)) seats.push({ job: null, people: [person] });
+	return seats;
 }
 
-/** The lead first, then the owners; each person once. Empty only when no lead is known and nobody holds the job. */
-export function requiredValidators(owner: SpecOwner, lead: PersonRef | null, team: readonly TeamMember[], requested: readonly PersonRef[] = [], elementId = ''): PersonRef[] {
-	const reachable = requested.filter((person) => team.some((member) => samePersonRef(member.person, person)));
-	return unique([...(lead ? [lead] : []), ...ownersOf(owner, team, elementId), ...reachable]);
+/** Everyone who may fill a seat of the element, the lead first, each person once. */
+export function eligibleValidators(seats: readonly ReviewSeat[]): PersonRef[] {
+	return unique(seats.flatMap((seat) => seat.people));
 }

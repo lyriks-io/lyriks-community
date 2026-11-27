@@ -67,7 +67,7 @@ export function phaseLabels(keys: readonly string[], mode: RetrospecMode): strin
 }
 
 const REPORT_FIELDS =
-	'id, kind: new | changed | removed, anchor (what it changes or removes: feature:<featureId>, action:<featureId>:<actionId>, rule:<featureId>:<ruleId>, role:<id>, term:<id>, journey:<id>), dock (for a new element, the anchor it docks on), title, proposed (what it would read, in the words of the product), code (what the code reads), where (file:line)';
+	'id, kind: new | changed | removed, anchor (what it changes or removes: feature:<featureId>, action:<featureId>:<actionId>, rule:<featureId>:<ruleId>, role:<id>, term:<id>, journey:<id>), dock (for a new element, the anchor it docks on), title, proposed (what it would read, in the words of the product), code (what the code reads), where (file:line), writes (what Lyriks writes once a person validates it, in order: { featureId, operations } for apply_behavior_batch on that feature, { section, edits } for patch_section on foundation, users, features, experience, rules, data, architecture or glossary)';
 
 function complementaryPrompt(mode: RetrospecMode, productName: string, projectId: string, c: ComplementaryPrompt, docsAt: DocsLocation): string {
 	const code = readsCode(mode);
@@ -94,7 +94,7 @@ function complementaryPrompt(mode: RetrospecMode, productName: string, projectId
 			: `Then read only the delta: ${reads.join(', ')}.`,
 		docs ? `${docsWhere(docsAt)} ${docsRegister(docsAt)}` : null,
 		c.held
-			? `Write nothing in the specification: Lyriks refuses it until a person validates it on Mismatch and clicks Write the validated changes. Register the sources you read as usual, and report each difference with report_retrospec_reading, changes: [{ ${REPORT_FIELDS} }]. A value a person validated that the product now reads otherwise is reported the same way, and leave out what still holds.`
+			? `Write nothing in the specification: Lyriks refuses it, and once a person validates a change on Mismatch Lyriks writes it itself, with the writes you prepared. Register the sources you read as usual, and report each difference with report_retrospec_reading, changes: [{ ${REPORT_FIELDS} }]; Lyriks dry-runs the writes as you report them and refuses a change whose writes would not apply. A value a person validated that the product now reads otherwise is reported the same way, and leave out what still holds.`
 			: null,
 		c.held ? REPORT_PROGRESS : null,
 		c.held ? null : 'Write what you find through the section tools: add what is new, update what changed, and leave every other element as it is. Erase nothing: an element whose code or document is gone, and a value a person validated that the product now reads otherwise, are written as findings of the run (rules.issues) for a person to decide.',
@@ -131,7 +131,7 @@ function resumePrompt(mode: RetrospecMode, productName: string, projectId: strin
 		fromGit ? `Also read what changed in the code since commit ${r.fromCommit}: the files \`git diff --name-only ${r.fromCommit}..HEAD\` lists.` : null,
 		mode !== 'repo' ? `${docsWhere(docsAt)} ${docsRegister(docsAt)}` : null,
 		c.held
-			? `Write nothing in the specification: Lyriks refuses it until a person validates it on Mismatch and clicks Write the validated changes. Register the sources you read as usual, and report each difference with report_retrospec_reading, changes: [{ ${REPORT_FIELDS} }]. A value a person validated that the product now reads otherwise is reported the same way, and leave out what still holds.`
+			? `Write nothing in the specification: Lyriks refuses it, and once a person validates a change on Mismatch Lyriks writes it itself, with the writes you prepared. Register the sources you read as usual, and report each difference with report_retrospec_reading, changes: [{ ${REPORT_FIELDS} }]; Lyriks dry-runs the writes as you report them and refuses a change whose writes would not apply. A value a person validated that the product now reads otherwise is reported the same way, and leave out what still holds.`
 			: 'Write what you find through the section tools, erasing nothing.',
 		c.held ? REPORT_PROGRESS : null,
 		code ? (c.held ? RECORD_COMMIT_HELD : RECORD_COMMIT) : null,

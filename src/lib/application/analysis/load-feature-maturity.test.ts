@@ -56,7 +56,9 @@ describe('the per-feature behavior maturity', () => {
 			coreId: 'core-pay',
 			coreName: 'Payments',
 			maturity: 85,
-			entities: ['Order', 'Refund']
+			entities: ['Order', 'Refund'],
+			actions: 0,
+			journeyLinked: false
 		});
 	});
 
@@ -75,5 +77,27 @@ describe('the per-feature behavior maturity', () => {
 		expect(orphan).toMatchObject({ coreId: 'core-gone', coreName: '' });
 		const loose = rows.find((r) => r.featureId === 'f-loose');
 		expect(loose).toMatchObject({ coreName: '' });
+	});
+
+	it('counts the actions in force and says whether a journey links them (criterion a0ebe123)', async () => {
+		const act = (id: string, disabled = false) => ({ id, ...(disabled ? { disabled: { by: 'x', at: 'y', reason: 'z' } } : {}) });
+		const draft: ProjectFeaturesDraft = {
+			...DRAFT,
+			actionJourneys: { 'f-refund': [{ id: 'j', name: 'Journeys', nodes: ['a', 'b'], links: [{ from: 'a', to: 'b' }], origin: 'ai' }] }
+		};
+		const rows = await new LoadFeatureMaturityUseCase(
+			loadFeatures(draft),
+			new ShellStore({
+				'f-refund': { surfaces: [{ actions: [act('a'), act('b')] }] },
+				'f-orphan': { surfaces: [{ actions: [act('c'), act('d'), act('e', true)] }] },
+				'f-loose': { disabled: { by: 'x', at: 'y', reason: 'z' }, surfaces: [{ actions: [act('f'), act('g')] }] }
+			}),
+			scorer
+		).execute('p1');
+		expect(rows.map((r) => [r.featureId, r.actions, r.journeyLinked])).toEqual([
+			['f-refund', 2, true],
+			['f-orphan', 2, false],
+			['f-loose', 0, false]
+		]);
 	});
 });

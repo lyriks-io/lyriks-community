@@ -136,13 +136,6 @@ describe('the sign-in wall', () => {
 		expect(event.cookies.deletes).toEqual([]);
 	});
 
-	it('answers the dashboard data plane with a JSON 401 rather than a login page', async () => {
-		const { response } = await visit('/behavior/api/features', { cookie: null });
-		expect(response?.status).toBe(401);
-		expect(await response?.json()).toEqual({ error: 'unauthenticated' });
-		expect(served).toEqual([]);
-	});
-
 	it('leaves the sign-in page and the health probes open without a session', async () => {
 		for (const path of ['/login', '/logout', '/healthz', '/readyz', '/api/first-run']) {
 			const { response } = await visit(path, { cookie: null });
@@ -324,9 +317,9 @@ describe('the security headers', () => {
 		}
 	});
 
-	it('lets the behavior dashboard be framed by its own origin only', async () => {
+	it('lets no page be framed, the former address of the behaviour editor included [criterion:ea8894f2]', async () => {
 		const { response } = await visit('/behavior');
-		expect(response?.headers.get('x-frame-options')).toBe('SAMEORIGIN');
+		expect(response?.headers.get('x-frame-options')).toBe('DENY');
 	});
 
 	it('keeps a static asset cacheable', async () => {
@@ -354,12 +347,10 @@ describe('the security headers', () => {
 		expect((await visit('/projects')).response!.headers.get('content-security-policy')).toBe(PAGE_CSP);
 	});
 
-	it('names the behavior dashboard origin in frame-src and form-action, once each', async () => {
-		publicEnv.PUBLIC_UNSPA_DASHBOARD_URL = 'https://lyriks.test:8173/some/path';
+	it('names no other origin to frame or to return to after a sign-in [criterion:ea8894f2]', async () => {
 		const csp = (await visit('/projects')).response!.headers.get('content-security-policy')!;
-		expect(csp).toContain("frame-src 'self' blob: https://lyriks.test:8173;");
-		expect(csp).toContain("form-action 'self' http://localhost:* http://127.0.0.1:* https://lyriks.test:8173;");
-		expect(csp).toContain("connect-src 'self' ws: wss:;");
+		expect(csp).toContain("frame-src 'self' blob:;");
+		expect(csp).toContain("form-action 'self' http://localhost:* http://127.0.0.1:*;");
 	});
 });
 

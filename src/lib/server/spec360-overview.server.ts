@@ -2,6 +2,7 @@ import { timedPart } from './slow-requests.server';
 import type { AppServices } from '$composition/container.server';
 import { withCarriedGrants } from '$application/specification/capability-registry';
 import { noticedSummary, noticedView } from '$application/spec360/noticed';
+import { scopeBoundaryView } from '$application/spec360/scope-boundary';
 import { accessCount, permissionMatrix } from '$application/spec360/users';
 import { fixToConfirmFindings, keptIssueFindings, type Finding } from '$domain/retrospec';
 import { readGlance } from './spec360-read.server';
@@ -65,7 +66,12 @@ export async function readNoticed(services: AppServices, projectId: string) {
  * page's (criterion 2dbed801).
  */
 export async function readOverview(services: AppServices, projectId: string) {
-	const [glance, users, derived] = await Promise.all([timedPart('overview:glance', readGlance(services, projectId)), timedPart('overview:users', services.loadUsersDraft.execute(projectId)), timedPart('overview:derived', services.refreshDerivedCapabilities.execute(projectId))]);
+	const [glance, users, derived, scope] = await Promise.all([
+		timedPart('overview:glance', readGlance(services, projectId)),
+		timedPart('overview:users', services.loadUsersDraft.execute(projectId)),
+		timedPart('overview:derived', services.refreshDerivedCapabilities.execute(projectId)),
+		timedPart('overview:scope', services.loadScopeDraft.execute(projectId))
+	]);
 	const view = await timedPart('overview:noticed', readNoticedView(services, projectId, glance.noticed));
 	const noticed = { ...noticedSummary(view), waitsForFeature: view.waitsForFeature };
 	// Counted as Users counts it (criteria 90232fe6, 4146848b): the actions of the matrix the user holds a right on.
@@ -76,6 +82,8 @@ export async function readOverview(services: AppServices, projectId: string) {
 		// Before the first feature no score is drawn either: the figure says it is not measured yet (criterion 01761816).
 		glance: { ...glance, noticed: [], ...(view.waitsForFeature ? { health: null, healthReading: false } : {}) },
 		noticed,
-		reach
+		reach,
+		// Where the specification stops (criteria 3b04797c, 9424a65d): null leaves the frame out.
+		scope: scopeBoundaryView(scope)
 	};
 }

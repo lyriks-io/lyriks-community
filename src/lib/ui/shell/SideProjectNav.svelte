@@ -3,6 +3,7 @@
 	import { isCommunity, lockedSentence, planOpening, UPGRADE_PLAN_NAMES } from '$domain/licensing';
 	import { page } from '$app/state';
 	import { projectNavTabs } from './app-nav';
+	import { navCapabilitiesFor } from './capabilities';
 	import { shownPath } from './shown-path.svelte';
 	import { sidePlace, type SideEntry } from './side-nav';
 	import type { SideIconName } from './side-icons';
@@ -16,9 +17,11 @@
 	 * Knowledge (its chapters are the tab bar of its pages, criterion
 	 * 8e942b12), Changes with the evolutions still under way, Mismatch with the
 	 * code changes waiting for a decision, and Notices; a section with nothing
-	 * yet says why on its own page (criterion 6213ef4c). The
-	 * entry of the page on screen lights the moment it is chosen (criterion
-	 * d7b34c94) and stays lit on every page under it.
+	 * yet says why on its own page (criterion 6213ef4c). The project's
+	 * Settings follow them for whoever administers the project, where the
+	 * Enterprise overlay registers them (criterion a3ada381). The entry of the
+	 * page on screen lights the moment it is chosen (criterion d7b34c94) and
+	 * stays lit on every page under it.
 	 */
 	interface Props {
 		projectId: string;
@@ -44,6 +47,9 @@
 	// Reverse opens the Reverse page, the run under way or the history of the runs (criteria 9359cb3c, 2dbed801).
 	const running = $derived(opened.has('retro'));
 	const lit = (entry: SideEntry) => place.entry === entry;
+	// The project's own settings, shown to whoever administers it (criterion 7ebad53e of feat-135).
+	const administers = $derived(!!(page.data as { administers?: boolean }).administers);
+	const settings = $derived(navCapabilitiesFor(administers).filter((c) => c.foot && c.route));
 	const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 	// Evolutions are not part of Community (EVO-001): the entry stays, locked, naming the plan that opens them.
@@ -75,6 +81,9 @@
 		drift?.pending ? `${plural(drift.pending, 'code change waits', 'code changes wait')} for a decision` : 'Code changes made outside the specification'
 	)}
 	{@render entry('noticed', 'Health', `${spec}/noticed`, 'notices', 0)}
+	{#each settings as cap (cap.id)}
+		{@render entry('settings', cap.title, cap.route?.(projectId) ?? `${base}/settings`, 'settings', 0, "The project's settings")}
+	{/each}
 </nav>
 
 <style>

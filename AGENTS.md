@@ -13,7 +13,7 @@ Lyriks ships as a **self-hosted, on-prem appliance** that must run **air-gapped 
 Protect this — it is a sales-critical, audited property (see `docs/`).
 
 - **The platform is the product.** It runs on its own with PostgreSQL, the local coherence engine
-  and the stub AI; the MCP gateway (`packages/mcp`) and the behaviour dashboard run beside it.
+  and the stub AI; the MCP gateway (`packages/mcp`) runs beside it, and the behaviour editor opens on demand.
   Enterprise adds private components; everything here keeps working with `LYRIKS_BACK_URL` unset.
 - **No new default egress.** Never introduce a runtime call to the public Internet that runs by default —
   no CDNs, web fonts, telemetry, or remote APIs. The AI backend is **opt-in / BYOK only** (default = local

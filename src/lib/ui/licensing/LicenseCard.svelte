@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Icon, type IconName } from '$ui/design-system';
-	import type { LicenseStatus, LicenseView } from '$domain/licensing';
+	import { keyProjectsLabel, type LicenseStatus, type LicenseView } from '$domain/licensing';
 
 	let { view }: { view: LicenseView } = $props();
 
@@ -49,6 +49,11 @@
 			<div>
 				<dt class="text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-ink-400">Seats</dt>
 				<dd class="text-ink-900">{ent.seats}</dd>
+			</div>
+			<!-- The number of active projects the key grants (EVO-016, criterion 033088d7). -->
+			<div>
+				<dt class="text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-ink-400">Projects</dt>
+				<dd class="text-ink-900" data-licence-projects>{keyProjectsLabel(ent)}</dd>
 			</div>
 			<div>
 				<dt class="text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-ink-400">Expires</dt>

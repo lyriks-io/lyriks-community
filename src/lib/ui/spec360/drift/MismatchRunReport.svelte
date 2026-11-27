@@ -4,6 +4,8 @@
 	import { sectionSyncKey } from '$lib/shared/section-sync';
 	import { pushToast } from '$ui/design-system';
 	import { copyPrompt } from '$ui/evolution/copy-prompt';
+	import { writingLine } from './writing-line';
+	import { RUN_FOUND_NOTHING } from './mismatch-words';
 	import RetroDelta from '$ui/retrospec/RetroDelta.svelte';
 	import { sendRetrospecActs } from '$ui/retrospec/review.svelte';
 	import { BANNER, BTN, BTN_MAIN, CARD } from '$ui/spec360/page/look';
@@ -22,8 +24,10 @@
 		projectId: string;
 		report: RunReportView;
 		canWrite?: boolean;
+		/** The reader's name, for the green box of a decision that was theirs (YOU). */
+		readerName?: string | null;
 	}
-	let { projectId, report, canWrite = false }: Props = $props();
+	let { projectId, report, canWrite = false, readerName = null }: Props = $props();
 
 	const base = $derived(`/projects/${encodeURIComponent(projectId)}`);
 	const held = $derived(report.held);
@@ -42,11 +46,13 @@
 	}
 	// One act naming every card still open: a report of hundreds of changes validates in one save.
 	const validateAll = () => void act([{ op: 'validate_changes', ids: (held?.cards ?? []).filter((c) => !c.decision).map((c) => c.id) }], 'Validating these changes');
-	async function write() {
+	// Lyriks writes what was validated itself, with the writes the AI prepared (feat-120): nothing is copied.
+	async function write(op: 'open_writing' | 'write_remaining') {
 		if (!held) return;
-		await copyPrompt(held.writePrompt, 'Prompt copied: paste it in your LLM session, it writes what you validated');
-		await act([{ op: 'open_writing' }], 'Sending what you validated');
+		const what = op === 'open_writing' ? 'Writing what you validated' : 'Writing the remaining changes';
+		if (await act([{ op }], what)) pushToast({ level: 'info', message: `Lyriks writes the ${held.counts.validated} validated ${held.counts.validated === 1 ? 'change' : 'changes'}` });
 	}
+	const writingAt = $derived(held?.written ? writingLine(held.written) : null);
 	async function close() {
 		if (await act([{ op: 'cancel' }], 'Closing this report')) pushToast({ level: 'success', message: 'Report closed: nothing was written' });
 	}
@@ -60,19 +66,30 @@
 				<div class="text-[1.75rem] leading-[1.1] font-bold tracking-[-0.03em] text-ink">{held.counts.pending}</div>
 				<div class="font-evo-mono text-xs tracking-[0.06em] text-ink-3 uppercase">to decide, of {held.counts.total}</div>
 			</div>
-			<p class="m-0 flex-[1_1_260px] text-sm text-ink-2">{held.counts.total === 0 ? 'This run found nothing that differs from the specification.' : 'Nothing below is in the specification yet. Each change sits beside what the specification says today. Validate only records your decision: once every change is decided, Write the validated changes has your AI write them into the specification.'}</p>
+			<p class="m-0 flex-[1_1_260px] text-sm text-ink-2">{held.counts.total === 0 ? RUN_FOUND_NOTHING : 'Nothing below is in the specification yet. Each change sits beside what the specification says today. Validate only records your decision: once every change is decided, Write the validated changes has Lyriks write them into the specification, exactly as your AI prepared them.'}</p>
 			{#if canWrite && !held.writing && held.counts.pending > 1}
 				<button type="button" class={BTN} disabled={busy} onclick={validateAll}>Validate all</button>
 			{/if}
 		</div>
 		{#each held.cards as card (card.id)}
-			<ReportChangeCard {projectId} {card} canDecide={canWrite && !held.writing} {busy} onDecide={(verdict, note) => decide(card, verdict, note)} />
+			<ReportChangeCard {projectId} {card} {readerName} canDecide={canWrite && !held.writing} {busy} onDecide={(verdict, note) => decide(card, verdict, note)} />
 		{/each}
-		{#if held.writing}
-			<div class="{CARD} mt-4 flex flex-wrap items-center gap-3" data-report-writing>
-				<p class="m-0 flex-[1_1_260px] text-sm text-ink-2">Your AI writes the {held.counts.validated} validated {held.counts.validated === 1 ? 'change' : 'changes'}. Then validate the specification in Knowledge.</p>
-				<button type="button" class={BTN} onclick={() => copyPrompt(held.writePrompt, 'Prompt copied: paste it in your LLM session, it writes what you validated')}>Copy the prompt</button>
-				<a href="{base}/spec" class="{LINK} self-center">Open Knowledge →</a>
+		{#if held.writing && writingAt}
+			<div class="{CARD} mt-4 flex flex-wrap items-center gap-3" data-report-writing={writingAt.state}>
+				<p class="m-0 flex-[1_1_260px] text-sm text-ink-2" aria-live="polite">
+					{writingAt.line}
+					{#if writingAt.stop}<br /><span class="text-red-ink">{writingAt.stop}</span>{/if}
+				</p>
+				{#if writingAt.state === 'stopped' && canWrite}
+					{#if held.written?.stop}
+						{@const stopped = held.written.stop}
+						<!-- A change that no longer applies leaves the report; the next run reports it again (action d113882a). -->
+						<button type="button" class={BTN} disabled={busy} onclick={() => void act([{ op: 'leave_out_change', id: stopped.change }], 'Leaving this change out')}>Leave this change out</button>
+					{/if}
+					<button type="button" class={BTN_MAIN} disabled={busy} onclick={() => void write('write_remaining')}>Write the remaining {writingAt.left}</button>
+				{:else if writingAt.state === 'done'}
+					<a href="{base}/spec" class="{LINK} self-center">Open Knowledge →</a>
+				{/if}
 			</div>
 		{:else if canWrite && held.counts.rejected > 0}
 			<div class="{CARD} mt-4 flex flex-wrap items-center gap-3" data-report-rework>
@@ -85,7 +102,7 @@
 		{:else if canWrite && held.counts.pending === 0}
 			<div class="mt-4 flex justify-end">
 				{#if held.counts.validated > 0}
-					<button type="button" class={BTN_MAIN} disabled={busy} onclick={() => void write()}>Write the {held.counts.validated} validated {held.counts.validated === 1 ? 'change' : 'changes'}</button>
+					<button type="button" class={BTN_MAIN} disabled={busy} onclick={() => void write('open_writing')}>Write the {held.counts.validated} validated {held.counts.validated === 1 ? 'change' : 'changes'}</button>
 				{:else}
 					<button type="button" class={BTN} disabled={busy} onclick={() => void close()}>Close this report</button>
 				{/if}

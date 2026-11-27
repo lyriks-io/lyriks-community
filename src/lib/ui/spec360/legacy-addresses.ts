@@ -21,7 +21,12 @@ export type LegacyPage =
 	| 'infrastructure'
 	| 'data'
 	| 'documents'
-	| 'glossary';
+	| 'glossary'
+	| 'approvals'
+	| 'baselines'
+	| 'traceability'
+	| 'generate'
+	| 'kickoff';
 
 /** The tabs Foundation had before it became the Brief alone; their questions are asked in Requirements. */
 const REQUIREMENT_TABS = new Set(['requirements', 'technical', 'security', 'ops']);
@@ -85,5 +90,23 @@ export function legacyPageTarget(projectId: string, page: LegacyPage, query: URL
 			return `${spec}/tech/sources${keep(query, ['source', 'from'])}`;
 		case 'glossary':
 			return `${spec}/glossary${keep(query, ['term'])}`;
+		// Traceability, Generate specs and Kickoff were reached by their address
+		// only and are retired (feat-73 rules 8bc8522a, 32a16816, 3dfded38): what
+		// they held that is still of use lives where people already are.
+		// Approvals are retired: what a sign-off of the scope stood for, where the
+		// specification stops, reads on the Overview (rule b995ffb1).
+		case 'approvals':
+			return `${spec}#kb-scope`;
+		// Baselines have no page any more: the Overview's version line reads the version they count (rule 20f14192).
+		case 'baselines':
+			return spec;
+		case 'traceability':
+			if (tab === 'approvals') return `${spec}#kb-scope`;
+			if (tab === 'baselines') return spec;
+			return `${spec}/features`;
+		case 'generate':
+			return `${spec}/noticed`;
+		case 'kickoff':
+			return `${project}/retrospec`;
 	}
 }

@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-const deps = vi.hoisted(() => ({ access: vi.fn(), shared: vi.fn(), features: vi.fn() }));
+const deps = vi.hoisted(() => ({ access: vi.fn(), features: vi.fn() }));
 vi.mock('./project-access.server', () => ({ requireProjectAccess: deps.access }));
-vi.mock('./shared-editor-access.server', () => ({ canUseSharedEditor: deps.shared }));
 vi.mock('$composition/container.server', () => ({ getServices: () => ({ loadFeaturesDraft: { execute: deps.features } }) }));
 import { getServices } from '$composition/container.server';
 import { authorizeSocket } from './socket-access.server';
@@ -27,10 +26,7 @@ describe('socket authorization', () => {
 			await expect(authorizeSocket(event, path)).rejects.toMatchObject({ status: 400 });
 		}
 	});
-	it('reserves the global behavior store for the shared-editor policy', async () => {
-		deps.shared.mockReturnValue(false);
-		await expect(authorizeSocket(event, '/behavior/sync/feature:feature-1')).rejects.toMatchObject({ status: 403 });
-		deps.shared.mockReturnValue(true);
-		expect(await authorizeSocket(event, '/behavior/sync/feature:feature-1')).toBe('/behavior/sync/feature:feature-1');
+	it('opens no room of the behaviour editor: it is launched on the host, not served by the app [criterion:ea8894f2]', async () => {
+		await expect(authorizeSocket(event, '/behavior/sync/feature:feature-1')).rejects.toMatchObject({ status: 400 });
 	});
 });

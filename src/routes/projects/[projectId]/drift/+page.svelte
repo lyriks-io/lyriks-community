@@ -11,6 +11,7 @@
 	import MismatchRunPreview from '$ui/spec360/drift/MismatchRunPreview.svelte';
 	import NextRunLauncher from '$ui/spec360/drift/NextRunLauncher.svelte';
 	import { DriftReview } from '$ui/spec360/drift/drift-review.svelte';
+	import { codeChangesSaid, noMismatch, noMismatchInTheCode } from '$ui/spec360/drift/mismatch-words';
 	import SectionWaiting from '$ui/shell/SectionWaiting.svelte';
 	import { sectionWait } from '$ui/shell/section-wait';
 	import type { PageData } from './$types';
@@ -75,7 +76,7 @@
 		{:else if wait}
 			<SectionWaiting {wait} />
 		{:else if drift.report}
-			<MismatchRunReport projectId={data.projectId} report={drift.report} canWrite={data.canWrite} />
+			<MismatchRunReport projectId={data.projectId} report={drift.report} canWrite={data.canWrite} readerName={data.memberName ?? null} />
 		{:else if drift.state === 'draft'}
 			<div class="{CARD} animate-lk-in mt-[22px] text-center">
 				<b class="mb-1 block text-[0.9375rem] text-ink">The code is followed once the spec is validated</b>
@@ -85,7 +86,13 @@
 				<a href={specHref} class="mt-3 inline-flex min-h-10 items-center gap-1 text-sm font-semibold text-blue-ink no-underline hover:underline">Open Knowledge →</a>
 			</div>
 		{:else if drift.changes.length === 0 && drift.specEdits.length > 0}
-			<!-- Nothing changed in the code: only the edits made by hand are listed below. -->
+			<!-- Nothing changed in the code: said in words, then the edits made by hand are listed below (criterion 20b41c3a). -->
+			{@const said = noMismatchInTheCode(drift.productName)}
+			<div class="{CARD} animate-lk-in mt-[22px] px-5 py-5" data-no-mismatch="code">
+				<b class="mb-1 block text-[0.9375rem] text-ink">{said.title}</b>
+				<p class="m-0 text-sm text-ink-2">{said.text}</p>
+				<p class="m-0 mt-2 font-evo-mono text-[0.8125rem] text-ink-3">{@render compared()}</p>
+			</div>
 		{:else if drift.changes.length === 0}
 			<div class="{CARD} animate-lk-in mt-[22px] px-5 py-7 text-center">
 				{#if drift.followed === 0}
@@ -94,9 +101,11 @@
 						When the spec of {drift.productName} was validated, its code was not located yet: Lyriks has no reading of the code to compare it with. The code an evolution brings is followed from its merge.
 					</p>
 				{:else}
-					<b class="mb-1 block text-[0.9375rem] text-ink">No drift detected</b>
-					<p class="m-0 text-sm text-ink-2">The code of {drift.productName} matches its specification.</p>
+					{@const said = noMismatch(drift.productName)}
+					<b class="mb-1 block text-[0.9375rem] text-ink" data-no-mismatch="all">{said.title}</b>
+					<p class="m-0 text-sm text-ink-2">{said.text}</p>
 					<p class="m-0 mt-2 font-evo-mono text-[0.8125rem] text-ink-3">{@render compared()}</p>
+					<p class="m-0 mt-1 text-[0.8125rem] text-ink-3">{said.next}</p>
 				{/if}
 			</div>
 		{:else}
@@ -116,9 +125,11 @@
 					/>
 					<div class="flex-[1_1_200px] font-evo-mono text-[0.8125rem] text-ink-3">{@render compared()}</div>
 				</div>
+				<!-- What the counts expect of the reader, in words (criterion d10bd6a6). -->
+				<p class="m-0 mt-3 text-sm text-ink-2" data-code-changes-said>{codeChangesSaid(counts)}</p>
 			</div>
 			{#each drift.changes as change (change.key)}
-				<DriftChangeCard projectId={data.projectId} {change} {review} />
+				<DriftChangeCard projectId={data.projectId} {change} {review} readerName={data.memberName ?? null} />
 			{/each}
 		{/if}
 

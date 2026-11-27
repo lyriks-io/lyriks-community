@@ -36,7 +36,8 @@ export const COUNT = 'bg-orange font-evo-mono font-bold text-ink';
 
 /** The design's avatar (.ly-avatar): a square, toner-2, ink mono initials; dashed while the person is waited on. */
 export const AVATAR = 'bg-toner-2 font-evo-mono font-bold text-ink';
-export const AVATAR_OK = 'border-green bg-green font-evo-mono font-bold text-ink';
+/** A person who validated: filled green inside an ink border (criterion 8d6c8ec0). */
+export const AVATAR_OK = 'border-ink bg-green font-evo-mono font-bold text-ink';
 export const AVATAR_PENDING = 'border-dashed border-ink-3 bg-transparent font-evo-mono font-bold text-ink-3';
 
 /** The design's light action (.ly-quiet): an uppercase word on a thick underline, beside a filled button. */

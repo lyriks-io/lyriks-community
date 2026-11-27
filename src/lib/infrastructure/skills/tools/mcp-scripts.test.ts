@@ -330,6 +330,198 @@ describe('await-event.mjs [criterion:ac-leaf-ac-evo-live-chat-free]', () => {
 	});
 });
 
+/**
+ * A stand-in for the AI CLIs the waker starts: answers how it is signed in and
+ * which MCP servers it holds as the real ones do (`claude auth status --json`,
+ * `claude mcp list`, `codex login status`, `codex mcp list --json`), and
+ * records how it was started without a window (its arguments and the API keys
+ * it got) in woken.json, in the directory it runs in.
+ */
+function fakeClaude(dir: string, { loggedIn = true, mcpUrl = url, codexLogin = 'Logged in using ChatGPT' }: { loggedIn?: boolean; mcpUrl?: string; codexLogin?: string } = {}) {
+	const path = join(dir, 'cli-double.mjs');
+	writeFileSync(
+		path,
+		`#!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+if (args[0] === 'auth') { console.log(JSON.stringify({ loggedIn: ${loggedIn}, authMethod: 'claude.ai', email: 'someone@example.test', subscriptionType: 'max' })); process.exit(0); }
+if (args[0] === 'login') { console.error(${JSON.stringify(codexLogin)}); process.exit(${loggedIn ? 0 : 1}); }
+if (args[0] === 'mcp' && args[2] === '--json') { console.log(JSON.stringify([{ name: 'other', transport: { type: 'streamable_http', url: 'https://elsewhere.example/mcp' } }, { name: 'lyriks-codex', transport: { type: 'streamable_http', url: '${mcpUrl}' } }])); process.exit(0); }
+if (args[0] === 'mcp') { console.log('Checking MCP server health…'); console.log(''); console.log('other: https://elsewhere.example/mcp (HTTP) - ✔ Connected'); console.log('lyriks-lab: ${mcpUrl} (HTTP) - ✔ Connected'); process.exit(0); }
+const keys = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CODEX_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'COPILOT_PROVIDER_API_KEY'];
+writeFileSync('woken.json', JSON.stringify({ args, keys: Object.fromEntries(keys.filter((k) => process.env[k]).map((k) => [k, process.env[k]])), apiKey: process.env.ANTHROPIC_API_KEY ?? null, authToken: process.env.ANTHROPIC_AUTH_TOKEN ?? null, cwd: process.cwd() }));
+`,
+		{ mode: 0o755 }
+	);
+	return path;
+}
+
+describe('wake-ai.mjs, the person\'s waker (feat-ai-session)', () => {
+	const woken = (dir: string) => JSON.parse(readFileSync(join(dir, 'woken.json'), 'utf8')) as { args: string[]; keys: Record<string, string>; apiKey: string | null; authToken: string | null };
+
+	it('starts Claude Code without a window once a wake comes, on the plan it is signed in with and with narrow tools [criterion:2c01fb5f] [criterion:47d4a354]', async () => {
+		let calls = 0;
+		fake.tools.await_ai_wake = () => {
+			calls += 1;
+			return { json: calls < 2 ? { kind: 'nothing', waitedSeconds: 45 } : { kind: 'wake', clicks: 2, wokenAt: '2026-11-25T23:00:00.000Z' } };
+		};
+		const dir = tempDir();
+		const out = await run('wake-ai.mjs', ['p1', '--once'], {
+			cwd: dir,
+			env: { LYRIKS_MCP_URL: url, LYRIKS_WAKER_COMMAND: fakeClaude(dir), ANTHROPIC_API_KEY: 'sk-test', ANTHROPIC_AUTH_TOKEN: 'bearer-test' }
+		});
+		expect(out.status).toBe(0);
+		expect(toolCalls().map(argsOf)).toEqual([
+			{ project_id: 'p1', max_wait_seconds: 45 },
+			{ project_id: 'p1', max_wait_seconds: 45 }
+		]);
+		const start = woken(dir);
+		// The plan the person signed in with, never an API key from the environment.
+		expect(start.apiKey).toBeNull();
+		expect(start.authToken).toBeNull();
+		expect(out.stdout).toContain('sign-in: claude.ai (max plan)');
+		expect(out.stdout).not.toContain('someone@example.test');
+		// Without a window, told to open its session and to stop once nothing waits.
+		expect(start.args[0]).toBe('-p');
+		expect(start.args[1]).toContain('Lyriks project p1');
+		expect(start.args[1]).toContain('start_evolution_session');
+		expect(start.args[1]).toContain('client "Claude Code (woken)"');
+		expect(start.args[1]).toContain('2 clicks');
+		expect(start.args[1]).toContain('end: true');
+		expect(start.args).toEqual(expect.arrayContaining(['--permission-mode', 'dontAsk']));
+		// The Lyriks MCP as Claude Code names it, reading the code and its history; never an edit.
+		const allowed = start.args.slice(start.args.indexOf('--allowedTools') + 1, start.args.indexOf('--disallowedTools'));
+		expect(allowed).toContain('mcp__lyriks-lab');
+		expect(allowed).toEqual(expect.arrayContaining(['Read', 'Grep', 'Glob', 'Bash(git log:*)']));
+		expect(allowed.some((tool) => /Edit|Write|git commit|git push/.test(tool))).toBe(false);
+		expect(start.args.slice(start.args.indexOf('--disallowedTools') + 1)).toEqual(expect.arrayContaining(['Edit', 'Write']));
+	});
+
+	it('keeps an API key only when the person started it with --allow-api-key, and says so', async () => {
+		fake.tools.await_ai_wake = () => ({ json: { kind: 'wake', clicks: 1, wokenAt: '2026-11-25T23:00:00.000Z' } });
+		const dir = tempDir();
+		const out = await run('wake-ai.mjs', ['p1', '--once', '--allow-api-key', '--mcp-server', 'lyriks'], {
+			cwd: dir,
+			env: { LYRIKS_MCP_URL: url, LYRIKS_WAKER_COMMAND: fakeClaude(dir), ANTHROPIC_API_KEY: 'sk-test' }
+		});
+		expect(out.status).toBe(0);
+		expect(woken(dir).apiKey).toBe('sk-test');
+		expect(out.stdout).toContain('an API key (--allow-api-key)');
+		expect(woken(dir).args).toContain('mcp__lyriks');
+	});
+
+	it('starts nothing while Claude Code is not signed in, and says how to fix it', async () => {
+		fake.tools.await_ai_wake = () => ({ json: { kind: 'wake', clicks: 1, wokenAt: '2026-11-25T23:00:00.000Z' } });
+		const dir = tempDir();
+		const out = await run('wake-ai.mjs', ['p1', '--once'], { cwd: dir, env: { LYRIKS_MCP_URL: url, LYRIKS_WAKER_COMMAND: fakeClaude(dir, { loggedIn: false }) } });
+		expect(out.status).toBe(0);
+		expect(existsSync(join(dir, 'woken.json'))).toBe(false);
+		expect(out.stdout).toContain('Claude Code is not signed in');
+	});
+
+	it('stops on a refused sign-in and says where a new waking command comes from [criterion:ab716003]', async () => {
+		fake.requireToken = 'ticket';
+		const dir = tempDir();
+		const out = await run('wake-ai.mjs', ['p1', '--token', 'expired'], { cwd: dir, env: { LYRIKS_MCP_URL: url, LYRIKS_WAKER_COMMAND: fakeClaude(dir) } });
+		expect(out.status).toBe(1);
+		expect(out.stderr).toContain('(401)');
+		expect(out.stderr).toContain('open a session from the prompt');
+	});
+
+	it('starts Codex read-only with the Lyriks MCP tools approved, held to its ChatGPT sign-in [criterion:72220b6f] [criterion:2c01fb5f]', async () => {
+		fake.tools.await_ai_wake = () => ({ json: { kind: 'wake', clicks: 1, wokenAt: '2026-11-26T00:00:00.000Z' } });
+		const dir = tempDir();
+		const out = await run('wake-ai.mjs', ['p1', '--once', '--ai', 'codex'], {
+			cwd: dir,
+			env: { LYRIKS_MCP_URL: url, LYRIKS_WAKER_COMMAND: fakeClaude(dir), CODEX_API_KEY: 'sk-codex', OPENAI_API_KEY: 'sk-openai' }
+		});
+		expect(out.status).toBe(0);
+		expect(out.stdout).toContain('MCP server "lyriks-codex" in Codex');
+		expect(out.stdout).toContain('sign-in: Logged in using ChatGPT');
+		const start = woken(dir) as { args: string[]; keys: Record<string, string> };
+		expect(start.keys).toEqual({});
+		expect(start.args[0]).toBe('exec');
+		expect(start.args).toEqual(expect.arrayContaining(['--sandbox', 'read-only', 'approval_policy="never"', 'forced_login_method="chatgpt"', 'mcp_servers.lyriks-codex.default_tools_approval_mode="approve"']));
+		expect(start.args[start.args.length - 1]).toContain('client "Codex (woken)"');
+	});
+
+	it('starts no Codex signed in with an API key alone, unless the person allowed one [criterion:2c01fb5f]', async () => {
+		fake.tools.await_ai_wake = () => ({ json: { kind: 'wake', clicks: 1, wokenAt: '2026-11-26T00:00:00.000Z' } });
+		const dir = tempDir();
+		const keyed = { cwd: dir, env: { LYRIKS_MCP_URL: url, LYRIKS_WAKER_COMMAND: fakeClaude(dir, { codexLogin: 'API key configured - sk-12***' }), OPENAI_API_KEY: 'sk-openai' } };
+		const refused = await run('wake-ai.mjs', ['p1', '--once', '--ai', 'codex'], keyed);
+		expect(refused.stdout).toContain('Codex is signed in with an API key only');
+		expect(existsSync(join(dir, 'woken.json'))).toBe(false);
+		const allowed = await run('wake-ai.mjs', ['p1', '--once', '--ai', 'codex', '--allow-api-key'], keyed);
+		expect(allowed.stdout).toContain('an API key (--allow-api-key)');
+		const start = woken(dir) as { args: string[]; keys: Record<string, string> };
+		expect(start.keys).toEqual({ OPENAI_API_KEY: 'sk-openai' });
+		expect(start.args).not.toContain('forced_login_method="chatgpt"');
+	});
+
+	it('starts Gemini CLI headless with the Lyriks MCP server its settings name, and Copilot CLI with writes denied [criterion:72220b6f] [criterion:47d4a354]', async () => {
+		fake.tools.await_ai_wake = () => ({ json: { kind: 'wake', clicks: 1, wokenAt: '2026-11-26T00:00:00.000Z' } });
+		const home = tempDir();
+		mkdirSync(join(home, '.gemini'), { recursive: true });
+		writeFileSync(join(home, '.gemini', 'settings.json'), JSON.stringify({ security: { auth: { selectedType: 'oauth-personal' } }, mcpServers: { lyriks: { httpUrl: url } } }));
+		mkdirSync(join(home, '.copilot'), { recursive: true });
+		writeFileSync(join(home, '.copilot', 'mcp-config.json'), JSON.stringify({ mcpServers: { 'lyriks-gh': { type: 'http', url, tools: ['*'] } } }));
+		const dir = tempDir();
+		const env = { LYRIKS_MCP_URL: url, LYRIKS_WAKER_COMMAND: fakeClaude(dir), HOME: home, GEMINI_API_KEY: 'g-key', COPILOT_PROVIDER_API_KEY: 'p-key' };
+		const gemini = await run('wake-ai.mjs', ['p1', '--once', '--ai', 'gemini'], { cwd: dir, env });
+		expect(gemini.stdout).toContain('sign-in: oauth-personal');
+		const g = woken(dir) as { args: string[]; keys: Record<string, string> };
+		// Each CLI loses the keys that would bill it, and only those.
+		expect(g.keys).toEqual({ COPILOT_PROVIDER_API_KEY: 'p-key' });
+		expect(g.args).toEqual(expect.arrayContaining(['-p', '--skip-trust', '--approval-mode', 'default', '--allowed-mcp-server-names', 'lyriks']));
+		expect(g.args).not.toContain('--yolo');
+		const copilot = await run('wake-ai.mjs', ['p1', '--once', '--ai', 'copilot'], { cwd: dir, env });
+		expect(copilot.status).toBe(0);
+		const c = woken(dir) as { args: string[]; keys: Record<string, string> };
+		expect(c.keys).toEqual({ GEMINI_API_KEY: 'g-key' });
+		expect(c.args).toEqual(expect.arrayContaining(['-p', '--no-ask-user', '--allow-tool=lyriks-gh', '--allow-tool=shell(git log)', '--deny-tool=write']));
+	});
+
+	it('refuses a CLI it cannot start before touching the network', async () => {
+		const dir = tempDir();
+		const unknown = await run('wake-ai.mjs', ['p1', '--ai', 'cursor'], { cwd: dir, env: { LYRIKS_MCP_URL: url } });
+		expect(unknown.status).toBe(1);
+		expect(unknown.stderr).toContain('--ai is one of claude, codex, gemini, copilot');
+		expect(toolCalls()).toHaveLength(0);
+	});
+
+	it('refuses a call that cannot mean anything, and names the server Claude Code lacks', async () => {
+		const dir = tempDir();
+		const missing = await run('wake-ai.mjs', [], { cwd: dir, env: { LYRIKS_MCP_URL: url } });
+		expect(missing.status).toBe(1);
+		expect(missing.stderr).toContain('Usage: wake-ai.mjs');
+		const unknown = await run('wake-ai.mjs', ['p1'], { cwd: dir, env: { LYRIKS_MCP_URL: url, LYRIKS_WAKER_COMMAND: fakeClaude(dir, { mcpUrl: 'https://another.example/mcp' }) } });
+		expect(unknown.status).toBe(1);
+		expect(unknown.stderr).toContain('--mcp-server');
+		expect(toolCalls()).toHaveLength(0);
+	});
+
+	it('runs apart from the conversation, says whether it runs, and stops [criterion:ab716003]', async () => {
+		fake.tools.await_ai_wake = () => ({ json: { kind: 'nothing', waitedSeconds: 45 } });
+		const dir = tempDir();
+		const env = { LYRIKS_MCP_URL: url, LYRIKS_WAKER_COMMAND: fakeClaude(dir) };
+		const started = await run('wake-ai.mjs', ['p1', '--detach', '--mcp-server', 'lyriks-lab'], { cwd: dir, env });
+		expect(started.status).toBe(0);
+		expect(started.stdout).toContain('The waker listens on p1');
+		const status = JSON.parse((await run('wake-ai.mjs', ['--status'], { cwd: dir })).stdout) as { running: boolean; pid: number; projectId: string };
+		expect(status).toMatchObject({ running: true, projectId: 'p1' });
+		// Started again, it replaces the one running.
+		const again = await run('wake-ai.mjs', ['p1', '--detach', '--mcp-server', 'lyriks-lab'], { cwd: dir, env });
+		expect(again.stdout).toContain('The waker was restarted');
+		const replaced = JSON.parse((await run('wake-ai.mjs', ['--status'], { cwd: dir })).stdout) as { pid: number };
+		expect(replaced.pid).not.toBe(status.pid);
+		const stopped = await run('wake-ai.mjs', ['--stop'], { cwd: dir });
+		expect(stopped.stdout).toContain('stopped');
+		expect(JSON.parse((await run('wake-ai.mjs', ['--status'], { cwd: dir })).stdout)).toEqual({ running: false });
+		expect(readFileSync(join(dir, '.lyriks', 'waker.log'), 'utf8')).toContain('Listening for wakes on p1');
+	});
+});
+
 describe('sync-index.mjs', () => {
 	it('sends the whole index for the project the file names, and prints counters and semantics only', async () => {
 		fake.mode = 'sse';
@@ -764,6 +956,57 @@ describe('the code of a request, reported from git [criterion:ac-leaf-ac-evo-bra
 		expect(JSON.parse(result.stdout).codeState.history).toBeUndefined();
 	});
 
+	it('counts only the proofs of the request\'s own features, and every proof when they cannot be read [criterion:4a83650a]', async () => {
+		const { dir } = branchRepo(PROVEN);
+		fake.tools.sync_implementation_index = () => ({ json: SYNC_ANSWER });
+		fake.tools.get_evolution = () => ({
+			json: { requests: [{ id: 'req-1', status: 'open', leafIds: ['feat-boost'], code: { deploymentBranch: 'main', expectedBranch: 'evo/EVO-1-boost' } }] }
+		});
+		fake.tools.get_behavior_feature = () => ({ json: { featureId: 'feat-boost', total: 2, keys: ['action:boost', 'criterion:c-2'] } });
+		fake.tools.apply_evolution_batch = () => ({ json: { ok: true, applied: true, results: [{ index: 0, op: 'report_code_state', ok: true, summary: 'reported' }] } });
+		const scoped = await run('sync-index.mjs', ['--url', url], { cwd: dir });
+		expect(scoped.status).toBe(0);
+		expect(toolCalls().map((c) => c.message.params?.name)).toEqual(['sync_implementation_index', 'get_evolution', 'get_behavior_feature', 'apply_evolution_batch']);
+		expect(argsOf(toolCalls()[2])).toEqual({ project_id: 'vector-rally', feature_id: 'feat-boost', index_keys: true });
+		const op = (argsOf(toolCalls()[3]).operations as Record<string, unknown>[])[0];
+		// action:boost on the last commit of code, c-2 on uncommitted code; refuel and c-1 belong to no feature of the request.
+		expect(op).toMatchObject({ proofsChecked: 2, proofsOnOtherCommits: 1 });
+		expect(op.proofsLeftOut).toBeUndefined();
+		expect(JSON.parse(scoped.stdout).codeState).toMatchObject({ proofsScope: 'request', proofsLeftOut: { otherFeatures: 2, byHand: 0, otherRepositories: 0 } });
+
+		// A gateway that does not answer the keys: every proof of the index counts, as before.
+		fake.seen = [];
+		fake.tools.get_behavior_feature = () => ({ json: { featureId: 'feat-boost', name: 'Boost' } });
+		const whole = await run('sync-index.mjs', ['--url', url], { cwd: dir });
+		expect(whole.status).toBe(0);
+		const wholeOp = (argsOf(toolCalls().find((c) => c.message.params?.name === 'apply_evolution_batch')!).operations as Record<string, unknown>[])[0];
+		expect(wholeOp).toMatchObject({ proofsChecked: 4, proofsOnOtherCommits: 2 });
+		expect(JSON.parse(whole.stdout).codeState).toMatchObject({ proofsScope: 'index' });
+
+		// A board the gateway capped shows no card whole: the request the platform resolved names its features in its
+		// answer, and the count is sent again on them alone.
+		fake.seen = [];
+		fake.tools.get_behavior_feature = () => ({ json: { featureId: 'feat-boost', total: 2, keys: ['action:boost', 'criterion:c-2'] } });
+		fake.tools.get_evolution = () => ({ json: { _capped: true, bytes: 90000, partial: { requests: { total: 1, returned: 1, items: [{ id: 'req-1', key: 'EVO-1', status: 'open' }] } } } });
+		fake.tools.apply_evolution_batch = () => ({
+			json: {
+				ok: true,
+				applied: true,
+				results: [{ index: 0, op: 'report_code_state', ok: true, summary: 'reported' }],
+				requests: [{ id: 'req-1', status: 'open', leafIds: ['feat-boost'], code: { branch: 'evo/EVO-1-boost' } }]
+			}
+		});
+		const capped = await run('sync-index.mjs', ['--url', url], { cwd: dir });
+		expect(capped.status).toBe(0);
+		expect(toolCalls().map((c) => c.message.params?.name)).toEqual(['sync_implementation_index', 'get_evolution', 'apply_evolution_batch', 'get_behavior_feature', 'apply_evolution_batch']);
+		const [first, second] = toolCalls()
+			.filter((c) => c.message.params?.name === 'apply_evolution_batch')
+			.map((c) => (argsOf(c).operations as Record<string, unknown>[])[0]);
+		expect(first).toMatchObject({ proofsChecked: 4, proofsOnOtherCommits: 2 });
+		expect(second).toMatchObject({ proofsChecked: 2, proofsOnOtherCommits: 1 });
+		expect(JSON.parse(capped.stdout).codeState).toMatchObject({ proofsScope: 'request', reported: true, proofsChecked: 2, proofsOnOtherCommits: 1 });
+	});
+
 	it('says uncommitted code, and keeps the sync standing when the platform refuses the report [criterion:ac-leaf-ac-evo-branch-derived]', async () => {
 		const { dir } = branchRepo(PROVEN);
 		writeFileSync(join(dir, 'src/a.ts'), 'export const a = 3;\n');
@@ -950,6 +1193,8 @@ describe('sync-skills.mjs [criterion:3f42911b]', () => {
 	const TOOLS_HOOK = { path: '.claude/hooks/lyriks-allow-tools.mjs', content: '#!/usr/bin/env node\n// contentHash: h-tools\n', contentHash: 'h-tools' };
 	const promptEntry = { type: 'command', command: `node ${HOOK.path}`, timeout: 10, statusMessage: 'Lyriks binding' };
 	const toolsEntry = { type: 'command', command: `node ${TOOLS_HOOK.path}`, timeout: 10, statusMessage: 'Lyriks tools' };
+	const STOP_HOOK = { path: '.claude/hooks/lyriks-stop.mjs', content: '#!/usr/bin/env node\n// contentHash: h-stop\n', contentHash: 'h-stop' };
+	const stopEntry = { type: 'command', command: `node ${STOP_HOOK.path}`, timeout: 10, statusMessage: 'Lyriks end of turn' };
 	const hash = (text: string) => /contentHash: (\S+)/.exec(text)![1];
 	const layout = (client: string, id: string) =>
 		client === 'claude'
@@ -992,6 +1237,7 @@ describe('sync-skills.mjs [criterion:3f42911b]', () => {
 				const hookWaits = firstRound ? (deferredScripts.push(HOOK.path), true) : false;
 				target.hook = hookWaits ? { path: HOOK.path, contentHash: HOOK.contentHash, deferred: true } : hookOf(HOOK, { settingsPath: '.claude/settings.json', settingsEvent: 'UserPromptSubmit', settingsEntry: promptEntry, settingsContent: JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [promptEntry] }] } }, null, 2) + '\n' });
 				target.toolsHook = hookOf(TOOLS_HOOK, { settingsPath: '.claude/settings.json', settingsEvent: 'PreToolUse', settingsMatcher: '^mcp__.*', settingsEntry: toolsEntry, settingsContent: JSON.stringify({ hooks: { PreToolUse: [{ matcher: '^mcp__.*', hooks: [toolsEntry] }] } }, null, 2) + '\n' });
+				target.stopHook = hookOf(STOP_HOOK, { settingsPath: '.claude/settings.json', settingsEvent: 'Stop', settingsEntry: stopEntry, settingsContent: JSON.stringify({ hooks: { Stop: [{ hooks: [stopEntry] }] } }, null, 2) + '\n' });
 			}
 			return {
 				json: {
@@ -1026,12 +1272,15 @@ describe('sync-skills.mjs [criterion:3f42911b]', () => {
 		for (const [path, content] of Object.entries(SCRIPTS)) expect(read(dir, path)).toBe(content);
 		expect(read(dir, HOOK.path)).toBe(HOOK.content);
 		expect(read(dir, TOOLS_HOOK.path)).toBe(TOOLS_HOOK.content);
+		expect(read(dir, STOP_HOOK.path)).toBe(STOP_HOOK.content);
 		// The block between the markers is replaced; the person's text around it is not.
 		expect(read(dir, 'CLAUDE.md')).toBe('# My notes\n\nKeep this.\n\n' + block('vector-rally') + '\n\nAnd this.\n');
 		const settings = JSON.parse(read(dir, '.claude/settings.json'));
 		expect(settings.permissions).toEqual({ allow: ['Bash(ls:*)'] });
 		expect(settings.hooks.UserPromptSubmit[0].hooks).toEqual([{ type: 'command', command: 'node other.mjs' }, promptEntry]);
 		expect(settings.hooks.PreToolUse).toEqual([{ matcher: '^mcp__.*', hooks: [toolsEntry] }]);
+		// The end-of-turn hook is wired on Stop [criterion:7b37377d].
+		expect(settings.hooks.Stop).toEqual([{ hooks: [stopEntry] }]);
 		// The project the binding block names travels with every sync, so the block keeps naming it.
 		const syncs = toolCalls().filter((call) => call.message.params?.name === 'sync_skills');
 		expect(syncs.every((call) => argsOf(call).project_id === 'vector-rally' && argsOf(call).client === 'claude')).toBe(true);
@@ -1054,7 +1303,7 @@ describe('sync-skills.mjs [criterion:3f42911b]', () => {
 			{ id: 'lyriks-big', content_hash: 'g-big' },
 			{ id: 'lyriks-build', content_hash: 'g-build' }
 		]);
-		expect((second.installed_tools as { path: string }[]).map((ref) => ref.path).sort()).toEqual([HOOK.path, TOOLS_HOOK.path, ...Object.keys(SCRIPTS)].sort());
+		expect((second.installed_tools as { path: string }[]).map((ref) => ref.path).sort()).toEqual([HOOK.path, TOOLS_HOOK.path, STOP_HOOK.path, ...Object.keys(SCRIPTS)].sort());
 		expect(toolCalls().length).toBe(1);
 	});
 

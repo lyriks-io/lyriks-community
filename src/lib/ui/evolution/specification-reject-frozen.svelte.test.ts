@@ -36,9 +36,15 @@ function specification(frozen: boolean) {
 	);
 }
 
-const rejects = (html: string) => html.match(/>Reject<\/button>/g)?.length ?? 0;
+// The cross that refuses a feature, named Reject <feature> (criterion 916e2ee4): no Reject word on the page.
+const CROSS = /<button[^>]*aria-label="Reject [^"]*"[^>]*data-reject-state="offered"/g;
+const rejects = (html: string) => html.match(CROSS)?.length ?? 0;
 
-describe('Reject on the Specification of a change [criterion:e67a372d]', () => {
+describe('Reject on the Specification of a change [criterion:e67a372d] [criterion:916e2ee4]', () => {
+	it('refuses with the cross, never a Reject word', () => {
+		expect(specification(false)).not.toMatch(/>\s*Reject\s*</);
+	});
+
 	it('offers Reject on every feature before the freeze', () => {
 		expect(rejects(specification(false))).toBe(2);
 	});
@@ -48,7 +54,7 @@ describe('Reject on the Specification of a change [criterion:e67a372d]', () => {
 		expect(rejects(html)).toBe(1);
 		const drafted = html.indexOf('Pay an invoice');
 		const touched = html.indexOf('Refund a payment');
-		const reject = html.indexOf('>Reject</button>');
+		const reject = html.search(CROSS);
 		expect(drafted).toBeGreaterThan(-1);
 		expect(touched).toBeGreaterThan(-1);
 		// The one Reject left sits with the drafted feature, before the touched one.

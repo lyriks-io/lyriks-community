@@ -31,6 +31,7 @@ import {
 	type RetrospecSpec
 } from '$domain/retrospec';
 import { nextRunReads, runCards } from '$domain/retrospec/run-history';
+import { scopeBoundaryView } from '$application/spec360/scope-boundary';
 import { withoutServerReadings } from '$domain/retrospec';
 import { readBehavior } from './behavior-read.server';
 import { aiCallsOf, aiLastSeenOf } from './retrospec-ai.server';
@@ -173,6 +174,8 @@ export async function loadRetrospecPage(services: AppServices, projectId: string
 		comments: store.doc.comments,
 		// The runs of the product, newest first, and what the next one reads (criterion 2dbed801).
 		runs: runCards(store.doc, status.status, facts.rebuiltFrom),
+		// What is out of scope, once a person approved it: a decision of the past, a row of the History (criterion bccbfdb5).
+		scope: scopeBoundaryView(scope),
 		next: nextRunReads(store.doc, status.status !== 'start'),
 		// Relaunch the analysis asks what the next run reads by default; its Source step lets the person choose (EVO-014, criterion bf0ea80c).
 		relaunch: relaunchOf(facts, productName, projectId, specEditLines(store.doc.specEdits).length),

@@ -33,5 +33,9 @@ export interface RoleGatePort {
 /**
  * `outside` is a refusal too, for an account that belongs to no workspace at all:
  * what it misses is an invitation, not a role, and it is told so (rule 2bc8ec30).
+ * `signed-out` is no judgement of a role: the account service refused the session
+ * itself (a sign-out elsewhere, a password change, an expiry), so the person is
+ * not signed in and is sent to sign in again (rule adfc7ef2), never told they are
+ * a viewer.
  */
-export type RoleVerdict = 'allowed' | 'denied' | 'outside' | 'unreachable';
+export type RoleVerdict = 'allowed' | 'denied' | 'outside' | 'signed-out' | 'unreachable';

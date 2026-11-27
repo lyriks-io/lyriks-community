@@ -68,7 +68,7 @@ function amendedActions(state: State): string[] {
 	return ['a1', ...Array.from({ length: others }, (_, i) => `a${i + 2}`)];
 }
 
-const actionElement = (id: string): SpecElement => ({ id: `action:${F}:${id}`, title: `Action ${id}`, owner: 'product', place: 'Shop › Cart', fingerprint: `f-${id}` });
+const actionElement = (id: string): SpecElement => ({ id: `action:${F}:${id}`, title: `Action ${id}`, place: 'Shop › Cart', fingerprint: `f-${id}` });
 
 /** The project as the doors read it: the request, Knowledge, the roster and who reads. */
 interface World {
@@ -81,7 +81,7 @@ interface World {
 function worldOf(state: State): World {
 	const actions = amendedActions(state);
 	const lead = state['touchedElement.waitsOnMe'] === true ? mia : leo;
-	const elements: SpecElement[] = [{ id: `feature:${F}`, title: 'Cart', owner: 'product', place: 'Shop', fingerprint: 'f-cart' }, ...actions.map(actionElement)];
+	const elements: SpecElement[] = [{ id: `feature:${F}`, title: 'Cart', place: 'Shop', fingerprint: 'f-cart' }, ...actions.map(actionElement)];
 	let doc = emptyRetrospecDocument();
 	const act = (acts: RetrospecAct[], actor: PersonRef) => {
 		const outcome = applyRetrospecActs(doc, acts, { actor, now: NOW });
@@ -521,8 +521,8 @@ function freezeWorld(state: State): World {
 	const used = Array.from({ length: Math.max(0, open - 1) }, (_, i) => `feat-used-${i + 1}`);
 	const lead = mia;
 	const elements: SpecElement[] = [
-		{ id: `feature:${F}`, title: 'Cart', owner: 'product', place: 'Shop', fingerprint: 'f-cart' },
-		...used.map((id, i) => ({ id: `feature:${id}`, title: `Used ${i + 1}`, owner: 'product' as const, place: 'Shop', fingerprint: `f-${id}` }))
+		{ id: `feature:${F}`, title: 'Cart', place: 'Shop', fingerprint: 'f-cart' },
+		...used.map((id, i) => ({ id: `feature:${id}`, title: `Used ${i + 1}`, place: 'Shop', fingerprint: `f-${id}` }))
 	];
 	const started = applyRetrospecActs(emptyRetrospecDocument(), [{ op: 'start_review', total: elements.length }], { actor: lead, now: NOW });
 	if (!started.ok) throw new Error(started.reason);
@@ -607,8 +607,8 @@ async function standingOf(id: string) {
 describe('what the Simulation lists', () => {
 	it('lists every existing element the change amends, removes from or builds on that Knowledge has not validated, with where it sits and whom it waits on [criterion:ac-leaf-769057fc-7031-4939-bb83-26035517e7c6]', async () => {
 		const world = worldOf(given({ 'touchedElement.waitsOnMe': false, 'touched.awaitingChoice': 1 }));
-		const used: SpecElement = { id: 'feature:feat-pay', title: 'Payments', owner: 'product', place: 'Shop', fingerprint: 'f-pay' };
-		const rule: SpecElement = { id: `rule:${F}:r9`, title: 'At most ten items', owner: 'product', place: 'Shop › Cart', under: `action:${F}:a9`, fingerprint: 'f-r9' };
+		const used: SpecElement = { id: 'feature:feat-pay', title: 'Payments', place: 'Shop', fingerprint: 'f-pay' };
+		const rule: SpecElement = { id: `rule:${F}:r9`, title: 'At most ten items', place: 'Shop › Cart', under: `action:${F}:a9`, fingerprint: 'f-r9' };
 		const removedFrom: SpecElement = { ...actionElement('a9') };
 		const base = world.request;
 		const request: EvolutionRequest = {
@@ -629,7 +629,7 @@ describe('what the Simulation lists', () => {
 	it('lists neither an element a draft removes nor one already validated [criterion:ac-leaf-d7f48fff-50fa-4cf6-a650-c557f9bb6a2c]', async () => {
 		const world = worldOf(given({ 'touchedElement.choice': 'validated_now', 'touched.awaitingChoice': 1 }));
 		const gone: SpecElement = actionElement('a7');
-		const goneRule: SpecElement = { id: `rule:${F}:r7`, title: 'Rule of a7', owner: 'product', place: 'Shop › Cart', under: gone.id, fingerprint: 'f-r7' };
+		const goneRule: SpecElement = { id: `rule:${F}:r7`, title: 'Rule of a7', place: 'Shop › Cart', under: gone.id, fingerprint: 'f-r7' };
 		const base = world.request;
 		const request: EvolutionRequest = {
 			...base,

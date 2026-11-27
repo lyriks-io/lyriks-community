@@ -9,7 +9,7 @@
 	import { AI_ACTIVITY_EVENT, type AiActivity } from '$lib/shared/ai-activity';
 	import { aiCallWords, buildFiles, buildPackages, buildProgress, buildStatus, codePlaceOf, briefSubject, briefToCopy, isRequirement, lineLabels, ownLines, readLine, requirementParts } from './report-board';
 	import CodePlace from '$ui/spec360/CodePlace.svelte';
-	import BlockControls from './BlockControls.svelte';
+	import BlockControls, { type ValidateControl } from './BlockControls.svelte';
 	import LineCodeSource from './LineCodeSource.svelte';
 	import { useLiveSession } from './live-session.svelte';
 	import { FOOT_BAR, KICKER, PRIMARY_48, SECONDARY_44, SECONDARY_48, SECTION_TITLE, numberPill } from './evo-look';
@@ -253,8 +253,24 @@
 
 	/** A line only a person settles (a table change the index cannot locate): validated where it is read. */
 	async function validateLine(lineId: string) {
-		await applyEvolution(projectId, [{ op: 'decide_line', requestId: dossier.id, lineId, decision: 'validated' }], { what: 'the validation of the line' });
+		savingLine = lineId;
+		try {
+			await applyEvolution(projectId, [{ op: 'decide_line', requestId: dossier.id, lineId, decision: 'validated' }], { what: 'the validation of the line' });
+		} finally {
+			savingLine = null;
+		}
 	}
+	let savingLine = $state<string | null>(null);
+	/** The reader's own box on a line Yours to validate, the only way to validate it (criterion f27ab2f8). */
+	const lineValidation = (lineId: string, title: string): ValidateControl => ({
+		saving: savingLine === lineId,
+		what: title,
+		look: 'grey',
+		title: 'Validate this line',
+		run: () => void validateLine(lineId),
+		stamps: [],
+		settled: false
+	});
 	/** Opens the package holding the first line that waits for a person, and brings it into view in the verification. */
 	function showLineForYou() {
 		const pkg = packages.find((p) => p.lines.some((r) => r.read.state === 'yours'));
@@ -556,12 +572,10 @@
 										</span>
 										<span class="flex flex-none flex-col items-end gap-1.5">
 											<span class="flex items-center gap-1.5">
-												{#if code}<BlockControls icons small sources={{ count: 1, open: sourcesOpen === l.id, toggle: () => (sourcesOpen = sourcesOpen === l.id ? null : l.id) }} />{/if}
+												<!-- A line Yours to validate carries the reader's own box, no Validate button (criterion f27ab2f8). -->
+												{#if code || (read.state === 'yours' && canEdit)}<BlockControls icons small sources={code ? { count: 1, open: sourcesOpen === l.id, toggle: () => (sourcesOpen = sourcesOpen === l.id ? null : l.id) } : null} validate={read.state === 'yours' && canEdit ? lineValidation(l.id, read.title) : null} />{/if}
 												<span class="border-[1.5px] px-2.5 py-1 font-evo-mono text-xs font-bold tracking-[0.04em] transition-colors duration-300 {read.look}">{read.word}</span>
 											</span>
-											{#if read.state === 'yours' && canEdit}
-												<button type="button" class="{SECONDARY_44} h-8! px-3! text-xs!" onclick={() => validateLine(l.id)}>Validate</button>
-											{/if}
 										</span>
 										{#if code && sourcesOpen === l.id}<LineCodeSource {projectId} {code} kind={read.kind || 'Line'} name={read.title} />{/if}
 									</div>

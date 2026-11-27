@@ -46,11 +46,22 @@ describe('the authorable section vocabulary', () => {
 		expect(existsSync('src/routes/api/evolution/+server.ts')).toBe(true);
 	});
 
+	// The baselines are recorded by Lyriks: their door answers why it is closed (criterion 20f33346).
+	const writable = raw.filter((section) => section !== 'baselines');
+
+	it('refuses every write of the baselines, saying why [criterion:20f33346]', async () => {
+		const route = await draftRoute['/src/routes/api/draft/baselines/+server.ts']();
+		await expect(route.PUT(requestEvent({ path: '/api/draft/baselines', method: 'PUT' }))).rejects.toMatchObject({
+			status: 405,
+			body: { message: expect.stringContaining('they are never written') }
+		});
+	});
+
 	it('reads revisions from the same channel as each public save endpoint', async () => {
 		// What each route really hands the save protocol: the spec it saves with,
 		// whether written inline or taken from the shared registry a landing uses too.
-		const routes = await Promise.all(raw.map((section) => draftRoute[`/src/routes/api/draft/${section}/+server.ts`]()));
-		for (const [i, section] of raw.entries()) {
+		const routes = await Promise.all(writable.map((section) => draftRoute[`/src/routes/api/draft/${section}/+server.ts`]()));
+		for (const [i, section] of writable.entries()) {
 			const route = routes[i];
 			saved.spec = null;
 			await route.PUT(requestEvent({ path: `/api/draft/${section}`, method: 'PUT' }));

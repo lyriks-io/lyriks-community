@@ -107,7 +107,7 @@ interface World {
 	readonly doc: RetrospecDocument;
 }
 
-const elementOf = (id: string): SpecElement => ({ id, title: id.split(':')[1] ?? id, owner: 'product' });
+const elementOf = (id: string): SpecElement => ({ id, title: id.split(':')[1] ?? id });
 
 /**
  * The world a state stands for. The element waits on its lead and on whoever

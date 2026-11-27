@@ -80,7 +80,7 @@ describe('Say what I am doing (action 083b734b of feat-7, EVO-015)', () => {
     const calls: Call[] = []
     const platform = { post: async (path: string, body: Record<string, unknown>) => void calls.push({ path, body }) } as unknown as LyriksClient
     const answer = await updateEvolutionSessionHandler({ project_id: 'p1', session_id: 's1', say: '' }, platform)
-    expect(answer).toEqual({ ok: false, message: 'Nothing to do: pass say or end.' })
+    expect(answer).toEqual({ ok: false, message: 'Nothing to do: pass say, ask, stopped or end.' })
     // The gateway answers ok false and calls nothing.
     expect(calls).toEqual([])
   })

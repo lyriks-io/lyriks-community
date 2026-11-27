@@ -23,7 +23,7 @@ const run = (id: string, over: Partial<RetrospecRun> = {}): RetrospecRun => ({
 	...over
 });
 const docOf = (...runs: RetrospecRun[]): RetrospecDocument => ({ version: 1, runs, comments: {} });
-const element = (id: string, fingerprint: string, title = id): SpecElement => ({ id, title, owner: 'product', fingerprint });
+const element = (id: string, fingerprint: string, title = id): SpecElement => ({ id, title, fingerprint });
 const later = { fromRunId: 'run-1', fromCommit: null, scope: 'delta' } as const;
 const atStart = { fingerprints: { 'action:f:a': 'one', 'rule:f:r': 'two', 'term:gone': 'three' }, titles: { 'action:f:a': 'Sign in', 'rule:f:r': 'A rule', 'term:gone': 'Term · Slug' } };
 
@@ -67,7 +67,7 @@ describe('the list of what a later run changed is docked on the specification [c
 
 	it('takes the place and the action from the elements', () => {
 		const titles = new Map([['action:f:a', 'Sign in']]);
-		expect(deltaElement({ id: 'rule:f:r', title: 'R', owner: 'product', place: 'Access › Accounts', under: 'action:f:a' }, titles, 4)).toMatchObject({ place: 'Access › Accounts', under, order: 4 });
+		expect(deltaElement({ id: 'rule:f:r', title: 'R', place: 'Access › Accounts', under: 'action:f:a' }, titles, 4)).toMatchObject({ place: 'Access › Accounts', under, order: 4 });
 	});
 });
 

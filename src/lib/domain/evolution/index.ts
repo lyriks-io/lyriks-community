@@ -50,6 +50,7 @@ export * from './code-branch';
 export * from './code-branch-acts';
 export * from './crossings-on-their-own';
 export * from './project-session';
+export * from './ai-waker';
 export * from './click-routing';
 export * from './peer-question';
 export * from './test-kit';

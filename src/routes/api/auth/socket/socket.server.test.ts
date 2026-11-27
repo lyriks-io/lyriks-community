@@ -56,8 +56,8 @@ describe('authorizing a collaborative socket', () => {
 		expect((await ask('/yjs/feature:feat-payroll?project=p-shop')).status).toBe(404);
 	});
 
-	it('keeps the shared behavior store to installation administrators', async () => {
-		expect((await ask('/behavior/sync/feature:feat-cart')).status).toBe(403);
+	it('opens no room of the behaviour editor, which the app no longer serves [criterion:ea8894f2]', async () => {
+		expect((await ask('/behavior/sync/feature:feat-cart')).status).toBe(400);
 	});
 
 	it('refuses an off-site or malformed room', async () => {

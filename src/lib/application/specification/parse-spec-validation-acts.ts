@@ -13,6 +13,10 @@ export type SpecValidationAct =
 	| { readonly op: 'withdraw_request_validation'; readonly itemId: string }
 	| { readonly op: 'remind'; readonly itemId: string; readonly to: string }
 	| { readonly op: 'request_validation' | 'cancel_validation_request'; readonly itemId: string; readonly to: string }
+	/** Choose who leads the validation, a person of the project's roster. */
+	| { readonly op: 'set_lead'; readonly to: string }
+	/** Tick or untick a person of the project's roster as a validator (action 3938d0f4 of feat-135). */
+	| { readonly op: 'set_validator'; readonly to: string; readonly validates: boolean }
 	| { readonly op: 'finalize' }
 	/**
 	 * Every element still waiting on the reader, picked by the server: of the
@@ -49,6 +53,15 @@ function one(raw: unknown): SpecValidationAct | string {
 			const itemId = id(o.itemId);
 			const to = id(o.to, 320);
 			return itemId && to ? { op: o.op, itemId, to } : 'itemId and to are required.';
+		}
+		case 'set_lead': {
+			const to = id(o.to, 320);
+			return to ? { op: 'set_lead', to } : 'to is required.';
+		}
+		case 'set_validator': {
+			const to = id(o.to, 320);
+			if (!to) return 'to is required.';
+			return typeof o.validates === 'boolean' ? { op: 'set_validator', to, validates: o.validates } : 'validates is true or false.';
 		}
 		case 'finalize':
 			return { op: 'finalize' };

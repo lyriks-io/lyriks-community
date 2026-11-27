@@ -63,7 +63,7 @@ describe('project elaboration', () => {
 	it('flags full-product omissions without downgrading the requested scope', () => {
 		const data = input();
 		data.scope!.mode = 'full_product';
-		data.scope!.capabilities.push(createScopeCapability('cap', { name: 'Export', disposition: 'deferred', rationale: 'Later', approvalId: 'approval' }));
+		data.scope!.capabilities.push(createScopeCapability('cap', { name: 'Export', disposition: 'deferred', rationale: 'Later' }));
 		const before = structuredClone(data);
 		expect(analyzeElaboration(data).items.find(i => i.id.startsWith('scope-omission'))?.requiresUserDecision).toBe(true);
 		expect(data).toEqual(before);

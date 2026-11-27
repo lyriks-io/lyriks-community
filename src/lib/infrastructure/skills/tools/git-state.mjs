@@ -133,26 +133,65 @@ export function sameCommit(a, b) {
 	return a.startsWith(b) || b.startsWith(a);
 }
 
+/** Checks a person makes: no run of the tests takes them again. */
+const BY_HAND = new Set(['manual', 'visual']);
+
+/** A path outside the checkout: one that climbs out of it, or an absolute one. */
+function outsideCheckout(file) {
+	return typeof file === 'string' && (file.startsWith('../') || file.startsWith('/'));
+}
+
+/**
+ * Why a run of this repository's tests could not take the proof again, or null
+ * when it could: a check made by hand, or a proof whose files all lie in another
+ * repository, whose commits this branch never holds.
+ */
+function notRetakenHere(key, entry) {
+	if (key.startsWith('criterion:')) {
+		if (BY_HAND.has(entry.verification?.kind)) return 'byHand';
+		const files = Array.isArray(entry.verification?.files) ? entry.verification.files : [];
+		return files.length > 0 && files.every(outsideCheckout) ? 'otherRepositories' : null;
+	}
+	return outsideCheckout(entry.file) ? 'otherRepositories' : null;
+}
+
 /**
  * Over index entries, the passing results that prove something and how many of
  * them were taken on another commit than `codeHead` or on uncommitted code. A
  * result that names no commit proves nothing about the code at hand, so it
  * counts as taken elsewhere (ac-evo-branch-proof-commit).
+ *
+ * Only a proof a run on this commit could take again is counted (criterion
+ * 4a83650a): a check made by hand, a proof whose files all lie in another
+ * repository and, when `keys` names the request's own index keys, a proof of
+ * another feature are left out, counted apart in `proofsLeftOut`, so the Build
+ * never waits on a proof nobody could take here.
  */
-export function proofsAgainst(entries, codeHead) {
+export function proofsAgainst(entries, codeHead, { keys = null } = {}) {
 	let proofsChecked = 0;
 	let proofsOnOtherCommits = 0;
+	const proofsLeftOut = { otherFeatures: 0, byHand: 0, otherRepositories: 0 };
 	for (const [key, entry] of entries) {
 		if (!entry || typeof entry !== 'object') continue;
+		let onOtherCommit;
 		if (key.startsWith('criterion:')) {
 			const result = entry.verification?.lastResult;
 			if (!result || typeof result !== 'object' || result.passed !== true) continue;
-			proofsChecked += 1;
-			if (result.dirty === true || !sameCommit(result.revision, codeHead)) proofsOnOtherCommits += 1;
+			onOtherCommit = result.dirty === true || !sameCommit(result.revision, codeHead);
 		} else if (key.startsWith('action:') && typeof entry.verifiedAt === 'string' && entry.verifiedAt) {
-			proofsChecked += 1;
-			if (entry.verifiedDirty === true || !sameCommit(entry.verifiedRevision, codeHead)) proofsOnOtherCommits += 1;
+			onOtherCommit = entry.verifiedDirty === true || !sameCommit(entry.verifiedRevision, codeHead);
+		} else continue;
+		if (keys && !keys.has(key)) {
+			proofsLeftOut.otherFeatures += 1;
+			continue;
 		}
+		const why = notRetakenHere(key, entry);
+		if (why) {
+			proofsLeftOut[why] += 1;
+			continue;
+		}
+		proofsChecked += 1;
+		if (onOtherCommit) proofsOnOtherCommits += 1;
 	}
-	return { proofsChecked, proofsOnOtherCommits };
+	return { proofsChecked, proofsOnOtherCommits, proofsLeftOut };
 }

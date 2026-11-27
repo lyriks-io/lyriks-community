@@ -120,7 +120,7 @@ export interface BindingHookInstall {
 	/** The Claude Code project settings file the hook is wired in. */
 	settingsPath: string;
 	/** The hook event the entry belongs to. */
-	settingsEvent: 'UserPromptSubmit' | 'PreToolUse';
+	settingsEvent: 'UserPromptSubmit' | 'PreToolUse' | 'Stop';
 	/** The tools a PreToolUse entry runs for: the `matcher` of its item under `hooks.PreToolUse`. */
 	settingsMatcher?: string;
 	/** The entry to add under `hooks.<settingsEvent>[].hooks` (the item whose matcher is `settingsMatcher`, when given), unless a command naming `path` is already there. */
@@ -140,6 +140,8 @@ export interface BindingInstallTarget {
 	hook?: BindingHookInstall;
 	/** Claude Code only: the hook that allows the Lyriks tools without a prompt (ac-mcp-binding-allows-tools). */
 	toolsHook?: BindingHookInstall;
+	/** Claude Code only: the end-of-turn hook that makes the AI say on the person's pages why it stops (action 900dbea1). */
+	stopHook?: BindingHookInstall;
 }
 
 /**

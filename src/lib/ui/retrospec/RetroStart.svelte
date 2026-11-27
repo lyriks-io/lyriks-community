@@ -7,7 +7,8 @@
 	 * how it goes, and the one call to action. Starting records the run, so
 	 * the team sees it under way from then on.
 	 */
-	let { canWrite, onStart }: { canWrite: boolean; onStart: () => void } = $props();
+	/** `fromScratch` names a product started from scratch: its specification is written in Knowledge (criterion 9b3dbb64). */
+	let { canWrite, onStart, fromScratch = null }: { canWrite: boolean; onStart: () => void; fromScratch?: string | null } = $props();
 
 	const KICKER = 'font-evo-mono text-xs tracking-[0.08em] text-ink-3';
 	const LI = 'flex items-baseline gap-2 text-sm leading-normal';
@@ -21,6 +22,11 @@
 {/snippet}
 
 <div class="flex animate-[lk-in_0.35s_ease_both] flex-col gap-5">
+	{#if fromScratch}
+		<p class="m-0 border-l-4 border-blue bg-paper px-4 py-3 text-sm leading-normal text-ink" data-from-scratch>
+			{fromScratch} was started from scratch: its specification is written in Knowledge. Start a Reverse-Specification once there is code to read.
+		</p>
+	{/if}
 	<div class="flex flex-col gap-[18px] border border-evo-line bg-surface p-6">
 		<h2 class="m-0 text-xl leading-tight font-bold tracking-[-0.02em] text-ink">What it does</h2>
 		<div class="flex flex-wrap items-stretch gap-5">

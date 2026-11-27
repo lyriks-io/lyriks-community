@@ -233,28 +233,6 @@ export const CAPABILITIES: Capability[] = [
 		route: (projectId) => `/projects/${projectId}/spec/noticed`
 	},
 	{
-		// The spec generator, its guarantee tiers and its threshold, which the old
-		// health page used to host under its readings. Off the left nav; found
-		// through the search box.
-		id: 'generate',
-		title: 'Generate specs',
-		subtitle: 'Guarantees, threshold and the spec generator',
-		icon: 'file',
-		tier: 'oss',
-		status: 'hidden',
-		route: projectRoute('generate')
-	},
-	{
-		// Off the left nav; deep-linkable, so a "Fix now" on a point resolves.
-		id: 'traceability',
-		title: 'Traceability',
-		subtitle: 'Requirement links & coverage gaps',
-		icon: 'list',
-		tier: 'oss',
-		status: 'hidden',
-		route: projectRoute('traceability')
-	},
-	{
 		// Merged into "Tech & Data" as its "Knowledge graph" tab: the graph is
 		// the whole model seen at once, which belongs beside the data spine rather
 		// than as a page of its own. Kept as a hidden alias so the Fix of a
@@ -267,32 +245,6 @@ export const CAPABILITIES: Capability[] = [
 		status: 'hidden',
 		partOf: 'infrastructure',
 		route: (projectId) => `/projects/${projectId}/infrastructure?tab=graph`
-	},
-	{
-		// Merged into Traceability as its "Baselines" tab (matching the prototype).
-		// Kept as a hidden alias so a "Fix now" link of What Lyriks noticed + legacy deep links
-		// resolve to the merged tab instead of a retired route.
-		id: 'baselines',
-		title: 'Baselines',
-		subtitle: 'Named versions, snapshots & comparison',
-		icon: 'flag',
-		tier: 'oss',
-		status: 'hidden',
-		partOf: 'traceability',
-		route: (projectId) => `/projects/${projectId}/traceability?tab=baselines`
-	},
-	{
-		// Merged into Traceability as its "Approvals" tab (matching the prototype).
-		// Kept as a hidden alias so a "Fix now" link of What Lyriks noticed + legacy deep links
-		// resolve to the merged tab instead of a retired route.
-		id: 'approvals',
-		title: 'Approvals',
-		subtitle: 'Sign-off, reviews & accepted risks',
-		icon: 'file-check',
-		tier: 'oss',
-		status: 'hidden',
-		partOf: 'traceability',
-		route: (projectId) => `/projects/${projectId}/traceability?tab=approvals`
 	},
 	// Enterprise-only capabilities (Settings, Team) are registered by the
 	// Enterprise overlay when it is compiled in; see `overlayCapabilities` below.

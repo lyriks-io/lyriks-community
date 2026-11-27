@@ -5,7 +5,8 @@ const mockEnv = vi.hoisted(() => ({}) as Record<string, string | undefined>);
 vi.mock('$env/dynamic/private', () => ({ env: mockEnv }));
 /**
  * The role gate the composition root hands out: a designer token passes, a viewer's
- * does not, and `jwt-back-down` meets a back that cannot answer.
+ * does not, `jwt-back-down` meets a back that cannot answer and `jwt-ended` is a
+ * session the back no longer accepts.
  */
 vi.mock('$composition/container.server', () => ({
 	getServices: () => ({
@@ -18,7 +19,9 @@ vi.mock('$composition/container.server', () => ({
 						? 'unreachable'
 						: token === 'jwt-outside'
 							? 'outside'
-							: 'denied'
+							: token === 'jwt-ended'
+								? 'signed-out'
+								: 'denied'
 		}
 	})
 }));
@@ -223,6 +226,20 @@ describe('proxyToMcp refuses a reader', () => {
 			'Your account belongs to no workspace on this installation yet. Ask an owner or admin for an invitation, open its link and press Accept & join, then connect your AI client again.'
 		);
 		expect(text).not.toContain('viewer');
+	});
+
+	it('sends a session that ended elsewhere on to sign in again, never calls it a viewer [rule:adfc7ef2]', async () => {
+		const fetchImpl = vi.fn(
+			async () => new Response(null, { status: 302, headers: { location: '/login?redirect=%2Fmcp%2Foauth%2Fauthorize%3Fstate%3Dabc' } })
+		) as unknown as typeof fetch;
+		const res = await proxyToMcp(
+			event('/mcp/oauth/authorize?state=abc', { headers: { cookie: 'lyriks_session=jwt-ended' } }),
+			'http://mcp:3055',
+			fetchImpl
+		);
+		expect(res.status).toBe(302);
+		expect(res.headers.get('location')).toContain('/login?redirect=');
+		expect(await res.text()).not.toContain('viewer');
 	});
 
 	it('asks to reload, not to be a designer, when the role source cannot answer', async () => {

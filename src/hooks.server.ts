@@ -1,21 +1,13 @@
 import { authEnforced } from '$lib/server/auth-policy.server';
 import { isAdmin } from '$lib/server/admin.server';
-import { canUseSharedEditor } from '$lib/server/shared-editor-access.server';
 import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
-import { env as publicEnv } from '$env/dynamic/public';
 import { getServices } from '$composition/container.server';
 import { isLicenseValid } from '$domain/licensing';
 import { runWithRequestContext } from '$lib/server/request-context.server';
 import { enforceTrustedOrigin } from '$lib/server/csrf.server';
 import { isMcpPath, mcpTarget, proxyToMcp } from '$lib/server/mcp-proxy.server';
 import { followAiProjectCalls } from '$lib/server/retrospec-ai.server';
-import {
-	editorForbidden,
-	isUnspaPath,
-	proxyToUnspa,
-	unspaTarget
-} from '$lib/server/unspa-proxy.server';
 import { slowRequestLine } from '$lib/server/slow-requests.server';
 import { startStallWatch, trackRequest } from '$lib/server/event-loop-stalls.server';
 import { WARM_UP_DELAY_MS, warmUp, warmUpEnabled } from '$lib/server/startup-warm-up.server';
@@ -148,46 +140,6 @@ async function enforceActivation(
 }
 
 /**
- * Let the policy name the behaviour dashboard, in both directives that reach it.
- *
- * It is a separate origin (the app's host on its own port), so `'self'` covers
- * neither embedding it nor being redirected to it:
- *
- *  - `frame-src`, or the tab that shows it renders nothing.
- *  - `form-action`, because signing in RETURNS there. That directive is enforced
- *    across the whole redirect chain of a submission, so the 303 out of /login
- *    is blocked at the last hop and the browser simply sits on the login page,
- *    reporting a violation against a same-origin URL. Exactly the failure the
- *    MCP loopback callback hit, and the reason that one is listed too.
- *
- * The address is per-deployment while SvelteKit's csp config is compiled in, so
- * the one origin this install is configured for is added at runtime rather than
- * widening the policy at build time for every install. Directives are rewritten
- * in place: SvelteKit builds them with the nonces and hashes the page needs, and
- * replacing the policy would drop those and break every script on it.
- */
-function allowDashboardOrigin(res: Response): void {
-	const configured = (publicEnv.PUBLIC_UNSPA_DASHBOARD_URL ?? '').trim();
-	if (!configured) return;
-	const csp = res.headers.get('content-security-policy');
-	if (!csp) return;
-	let origin: string;
-	try {
-		origin = new URL(configured).origin;
-	} catch {
-		return;
-	}
-	let next = csp;
-	for (const directive of ['frame-src', 'form-action']) {
-		const pattern = new RegExp(`${directive} ([^;]*)`);
-		const match = next.match(pattern);
-		if (!match || match[1].includes(origin)) continue;
-		next = next.replace(pattern, `${directive} ${match[1].trim()} ${origin}`);
-	}
-	if (next !== csp) res.headers.set('content-security-policy', next);
-}
-
-/**
  * The feedback dialog's online channel posts from the BROWSER straight to the
  * configured relay (never through this server), and the build-time CSP cannot
  * know that runtime origin. Sanction exactly that one destination in
@@ -224,10 +176,7 @@ function allowFeedbackOrigin(res: Response): void {
  */
 function withSecurityHeaders(event: Parameters<Handle>[0]['event'], res: Response): Response {
 	res.headers.set('x-content-type-options', 'nosniff');
-	// The behavior dashboard is proxied on this origin precisely to be FRAMED
-	// by the project page (frame-src 'self' in the CSP); DENY on those
-	// responses would blank the iframe. Everything else stays unframeable.
-	res.headers.set('x-frame-options', isUnspaPath(event.url.pathname) ? 'SAMEORIGIN' : 'DENY');
+	res.headers.set('x-frame-options', 'DENY');
 	res.headers.set('referrer-policy', 'strict-origin-when-cross-origin');
 	res.headers.set('cross-origin-opener-policy', 'same-origin');
 	res.headers.set(
@@ -237,7 +186,6 @@ function withSecurityHeaders(event: Parameters<Handle>[0]['event'], res: Respons
 	if (event.url.pathname.startsWith('/api/') || res.headers.get('content-type')?.includes('text/html')) {
 		res.headers.set('cache-control', 'private, no-store');
 	}
-	allowDashboardOrigin(res);
 	allowFeedbackOrigin(res);
 	const proto =
 		event.request.headers.get('x-forwarded-proto') ?? event.url.protocol.replace(':', '');
@@ -297,12 +245,6 @@ const handleRequest: Handle = async ({ event, resolve }) => {
 		event.locals.session = devSession;
 		const licenseBlock = await enforceActivation(event);
 		if (licenseBlock) return withSecurityHeaders(event, licenseBlock);
-		// Behavior dashboard on this origin (see unspa-proxy.server.ts). Placed
-		// after the licence gate so /behavior obeys activation like any app page.
-		const devEditor = unspaTarget();
-		if (devEditor && isUnspaPath(event.url.pathname)) {
-			return withSecurityHeaders(event, await proxyToUnspa(event, devEditor));
-		}
 		const inactive = await inactiveProjectResponse(event);
 		if (inactive) return withSecurityHeaders(event, inactive);
 		return runWithRequestContext({ token: null, workspaceId: null, session: devSession }, async () =>
@@ -344,10 +286,7 @@ const handleRequest: Handle = async ({ event, resolve }) => {
 	event.locals.session = session;
 
 	if (!session.isAuthenticated && !isSessionlessPath(event.url.pathname)) {
-		// The dashboard's own data plane gets the same JSON 401 as ours: its
-		// in-frame fetches must surface auth expiry, not follow a redirect into
-		// login HTML they cannot render.
-		if (event.url.pathname.startsWith('/api/') || event.url.pathname.startsWith('/behavior/api/')) {
+		if (event.url.pathname.startsWith('/api/')) {
 			// An outage is not a verdict on the session, and 401 reads as one: the
 			// MCP gateway checks its clients' sessions through /api/auth/session and
 			// ends their sign-in on a 401, which sends every client process to the
@@ -420,18 +359,6 @@ const handleRequest: Handle = async ({ event, resolve }) => {
 		!(await getServices().loadInstallConfiguration.execute()).validated
 	) {
 		redirect(303, '/first-configuration');
-	}
-
-	// Behavior dashboard on this origin: forwarded only past the session wall
-	// and licence gate above, so the platform's own login is what guards it
-	// (see unspa-proxy.server.ts). Same-origin by construction, so the iframe
-	// always frames and no cookie ever has to cross a host boundary.
-	const editor = unspaTarget();
-	if (editor && isUnspaPath(event.url.pathname)) {
-		// Global editor operations require installation-wide authority.
-		const canOpenEditor = canUseSharedEditor(event);
-		if (!canOpenEditor) return withSecurityHeaders(event, editorForbidden(event.url.pathname));
-		return withSecurityHeaders(event, await proxyToUnspa(event, editor));
 	}
 
 	// Propagate the caller's identity + selected workspace through the request so

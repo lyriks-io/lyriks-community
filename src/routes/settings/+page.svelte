@@ -7,7 +7,9 @@
 	import { Icon, ToggleTile, confirmDialog, type IconName } from '$ui/design-system';
 	import type { AiSettings } from '$domain/settings';
 	import { FEEDBACK_EMAIL } from '$domain/feedback';
+	import { accessLabel } from '$domain/team';
 	import { isCommunity, lockedSentence, planOpening, PRICING_URL, UPGRADE_PLAN_NAMES } from '$domain/licensing';
+	import AccountLicence from '$ui/settings/AccountLicence.svelte';
 	import ComponentsSection from '$ui/settings/ComponentsSection.svelte';
 	import AssistantPanelBody from '$ui/settings/AssistantPanelBody.svelte';
 	import ProofsPanelBody from '$ui/settings/ProofsPanelBody.svelte';
@@ -310,7 +312,7 @@
 		{ id: 'proofs', label: 'Proofs', icon: 'cpu', keywords: 'proofs proof solver z3 prove rules verdict machine processors memory cpu vm enterprise', badge: untrack(() => (data.proofs.allowed ? undefined : 'Enterprise')) },
 		{ id: 'display', label: 'Display', icon: 'eye', keywords: 'display new badge days recent specification features appeared' },
 		{ id: 'feedback', label: 'Feedback', icon: 'megaphone', keywords: 'feedback share message bug idea contact email online channel send team' },
-		{ id: 'members', label: 'Members', icon: 'users', keywords: 'members team invite invitations role admin designer viewer access projects scope grant first last name enterprise edition', when: membersShown, badge: membersLocked ? membersPlan : undefined },
+		{ id: 'members', label: 'Members', icon: 'users', keywords: 'members team invite invitations role admin editor designer viewer access job jobs validate projects scope grant first last name enterprise edition', when: membersShown, badge: membersLocked ? membersPlan : undefined },
 		{ id: 'reclaim', label: 'Reclaim projects', icon: 'download', keywords: 'reclaim community enterprise ownership projects verify', when: untrack(() => !!data.reclaim) },
 		{ id: 'versions', label: 'Versions', icon: 'layers', keywords: 'version versions build image tag commit release platform unspaghettit engine back dpo postgres node support components install' },
 		{ id: 'danger', label: 'Danger zone', icon: 'circle-alert', keywords: 'danger reset workspace destructive irreversible wipe' }
@@ -491,74 +493,13 @@
 							<p class="mt-0.5 text-ink-800">{account?.editionLabel}</p>
 						</div>
 						<div>
-							<p class="font-evo-mono tracking-[0.08em] text-ink-3 uppercase">Workspace role</p>
-							<p class="mt-0.5 text-ink-800">{account?.role ?? 'None'}</p>
+							<p class="font-evo-mono tracking-[0.08em] text-ink-3 uppercase">Access</p>
+							<p class="mt-0.5 text-ink-800">{account?.role ? accessLabel(account.role) : 'None'}</p>
 						</div>
 					</div>
 
-					<!-- Everything the licence key reports, right where the operator looks
-					     themselves up. Client-safe view only; the raw key never leaves the
-					     server. Managing (activate / replace) stays on /activate. -->
-					{#if license}
-						<div class="bg-surface-sunken p-3 text-xs">
-							<div class="mb-2 flex items-center justify-between">
-								<p class="font-evo-mono tracking-[0.08em] text-ink-3 uppercase">Licence</p>
-								<a href="/activate" class="font-semibold text-blue-ink hover:underline">Manage</a>
-							</div>
-							{#if license.entitlements}
-								<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-									<div>
-										<p class="text-ink-400">Licensed to</p>
-										<p class="mt-0.5 font-medium text-ink-800">{license.entitlements.customer}</p>
-									</div>
-									<div>
-										<p class="text-ink-400">Edition</p>
-										<p class="mt-0.5 capitalize text-ink-800">{license.entitlements.edition}</p>
-									</div>
-									<div>
-										<p class="text-ink-400">Seats</p>
-										<p class="mt-0.5 text-ink-800">{license.entitlements.seats}</p>
-									</div>
-									<div>
-										<p class="text-ink-400">Expires</p>
-										<p class="mt-0.5 text-ink-800">
-											{#if license.entitlements.expiresAt}
-												{license.entitlements.expiresAt.slice(0, 10)}{license.daysRemaining != null
-													? ` (${license.daysRemaining} days left)`
-													: ''}
-											{:else}
-												Never (perpetual)
-											{/if}
-										</p>
-									</div>
-									<div>
-										<p class="text-ink-400">Issued</p>
-										<p class="mt-0.5 text-ink-800">{license.entitlements.issuedAt.slice(0, 10)}</p>
-									</div>
-									<div>
-										<p class="text-ink-400">Activated</p>
-										<p class="mt-0.5 text-ink-800">
-											{license.activatedAt ? license.activatedAt.slice(0, 10) : 'Not yet'}
-										</p>
-									</div>
-									<div class="col-span-2 sm:col-span-3">
-										<p class="text-ink-400">Licence id</p>
-										<p class="mt-0.5 font-mono text-[0.6875rem] text-ink-600">{license.entitlements.licenseId}</p>
-									</div>
-								</div>
-								{#if license.status !== 'active'}
-									<p class="mt-2 font-medium text-red-ink">
-										Status: {license.status.replace('_', ' ')}. See /activate.
-									</p>
-								{/if}
-							{:else}
-								<p class="text-ink-500">
-									Not activated.
-									<a class="font-semibold text-blue-ink hover:underline" href="/activate">Activate now</a>.
-								</p>
-							{/if}
-						</div>
-					{/if}
+					<!-- Everything the licence key reports (criterion dc792f74). -->
+					<AccountLicence {license} />
 
 					{#if account?.nameSource === 'self'}
 						<!-- Enterprise: the back owns the identity as first + last name, and an
@@ -902,7 +843,7 @@
 					meta={membersLocked
 						? membersPlan === 'Enterprise' ? 'Enterprise edition' : membersPlan
 						: membersAdmin?.workspace
-							? `${membersAdmin.workspace.name} · you are ${membersAdmin.workspace.role}`
+							? `${membersAdmin.workspace.name} · you are ${accessLabel(membersAdmin.workspace.role)}`
 							: undefined}
 					open={openSection === 'members'}
 					onToggle={togglePanel}

@@ -16,7 +16,7 @@ vi.mock('$ui/ai-session/project-ai-session.svelte', () => ({ useProjectAiSession
 vi.mock('$ui/rules/rule-verdicts.svelte', () => ({ getRuleVerdicts: () => null }));
 
 const ana = { id: 'ana@example.test', name: 'Ana Diaz' };
-const elements: SpecElement[] = ['product', 'core:billing'].map((id) => ({ id, title: id, owner: 'product' }));
+const elements: SpecElement[] = ['product', 'core:billing'].map((id) => ({ id, title: id }));
 const mode = { active: false, available: true };
 const edits = {
 	editing: null as string | null,

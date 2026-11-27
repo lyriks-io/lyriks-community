@@ -396,6 +396,17 @@ function waitingClicks(draft: ProjectEvolutionDraft, personId: string): (NextCli
 }
 
 /**
+ * When each click of the person still waiting for an AI was made, on any page
+ * of the project ("Wake my AI", action ccca0911): a question of one AI to
+ * another waits for that AI only, so it never wakes one.
+ */
+export function waitingClickTimesOf(draft: ProjectEvolutionDraft, personId: string): string[] {
+	return waitingClicks(draft, personId)
+		.filter((c) => c.where !== 'project' || c.click.kind !== 'question')
+		.map((c) => c.at);
+}
+
+/**
  * The clicks that go to this session now, oldest first ("Hand my oldest click
  * to my AI", rules 4f501fce and 9896d434): each click of the person is routed
  * by clickRecipient, the session asking counting as free since it waits.

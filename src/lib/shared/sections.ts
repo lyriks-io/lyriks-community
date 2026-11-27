@@ -5,7 +5,7 @@
  *
  * It lives here because it was duplicated: the read endpoint and the describe
  * endpoint each kept their own copy, and the MCP a third one in another repo —
- * which is how `approvals` and `baselines` shipped in the app while
+ * which is how `baselines` shipped in the app while
  * staying unreachable over MCP for months. One list, checked against the actual
  * `/api/draft/*` routes by `sections.test.ts`. `evolution` is the one section
  * with no raw write: it is read like the others and written only through its
@@ -25,7 +25,6 @@ export const SECTIONS = [
 	'architecture',
 	'coherence',
 	'glossary',
-	'approvals',
 	'baselines',
 	'documents',
 	'evolution'
@@ -67,7 +66,6 @@ export const SECTION_AUDIENCE: Readonly<Record<Section, SectionAudience>> = {
 	architecture: 'product',
 	coherence: 'derived',
 	glossary: 'product',
-	approvals: 'product',
 	baselines: 'derived',
 	documents: 'product',
 	// A dossier is a change being qualified, not a part of the product
@@ -86,6 +84,6 @@ export function isAgentAuthorable(section: Section): boolean {
 export const SECTION_REVISION_STORAGE: Readonly<Record<Section, 'document' | 'legacy'>> = {
 	scope: 'document', foundation: 'legacy', users: 'legacy', features: 'legacy',
 	experience: 'legacy', rules: 'legacy', data: 'legacy', architecture: 'document',
-	coherence: 'document', glossary: 'document', approvals: 'document',
+	coherence: 'document', glossary: 'document',
 	baselines: 'document', documents: 'document', evolution: 'document'
 };

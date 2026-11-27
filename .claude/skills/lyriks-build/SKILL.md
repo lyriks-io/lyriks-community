@@ -70,7 +70,7 @@ option and record it with the alternative set aside:
 
 - in `rules.issues[]`: `kind` `missing_rule` or `ambiguity`, `status` `in_review`, `title` the question, `detail` the option taken, the alternative and why, `relatedFeatureId`, `sourceIds`.
 - **Title grammar**: subject first, the thing that is wrong, under 80 characters, no reasoning ("Sidebar colour has no dark-palette value"). The why goes in `detail`.
-- a scope-level decision is an `approvals` row (`area`, `title`, `status` `in_review`, `note`). `in_review` is the status YOU write; never write `approved` or `accepted_risk`, both say a person signed.
+- a scope-level decision is the scope's `boundary`: `covers` (what the specification covers, one sentence), `decision` (who asked for the boundary and why), `decidedAt`, and `groups[]` ({name, summary}). The Overview opens it from a discreet link (<n> out of scope) while the list waits for a person to approve it in the Scope drawer; you never approve it and never write `boundary.approval`. When you change that list, say so: the approval reads Changed since until the person approves it again.
 
 **Two modes, chosen by the user's words.**
 
@@ -88,7 +88,7 @@ yours.
 The model cannot see a capability it never inventoried. Before the feature tree:
 
 1. Read every supplied source and register it in **documents**.
-2. Choose `scope.mode` from explicit intent only: `full_product` (no exclusion allowed), `selected_scope` or `prototype` (each omission with a rationale and an approval). Ambiguous: leave `unclassified` and ask. Never downgrade a whole-product request.
+2. Choose `scope.mode` from explicit intent only: `full_product` (no exclusion allowed), `selected_scope` or `prototype` (each omission with its reason in `rationale` and a `group` a person recognises, about five groups in all). Ambiguous: leave `unclassified` and ask. Never downgrade a whole-product request.
 3. Inventory every expected capability in `scope.capabilities[]` with its `sourceIds` and a `disposition`; map each `included` one to its leaf `featureIds`.
 4. Never derive the inventory from the features you authored: that is circular.
 
@@ -100,9 +100,10 @@ and the Notion pages, and ask me what they cannot tell you."* Never ask for a
 fuller brief.
 
 1. **Load the playbooks**: `sync_skills` with `client` set to what you are; with Node in the repository, `self_install: true` and run its `selfInstall.command`; otherwise install each `installTargets` entry. Then follow this skill in full.
-2. **Resolve the target project, never create a second one**: "create the project X" is `create_wizard_project` (domain resolved with `list_domains`) unless an empty one of that name exists; a named project is resolved with `list_wizard_projects`; no name, ask.
+2. **Resolve the target project, never create a second one**: "create the project X" is `create_wizard_project` (domain resolved with `list_domains`) unless an empty one of that name exists; a named project is resolved with `list_wizard_projects`; no name, ask. An id this server does not hold: say in one sentence which server the prompt names, and stop; never offer another project.
 3. **Harvest what the client's other MCP servers reach, and register each source with the web address the tool answer carries**: backlogs (epics and stories make the tree, their criteria the rules and scenarios), wiki pages (`foundation`, `users`, `glossary`), BMAD or Spec Kit files in the repository, Figma (`experience`, per lyriks-design), documents the user hands you.
 4. **What no source says is a recorded decision**, presented at checkpoints. Never fill a gap a source left open.
+   From an idea, interview: one short question at a time, each with an example answer to pick or correct; never a list of questions.
 5. Then the build order, every section assessed.
 
 ## Build order (persisted, resumable)
@@ -120,13 +121,13 @@ memory. Several projects: assess each, audit and finish each alone.
 7. **Design system**: `lyriks-design`, the `brand` sources.
 8. Targeted edits with `patch_section` (one journey, step, screen or brand item by id).
 9. The **users** permission pass over system, feature, action, journey and surface capabilities. A permission is ACCESS: one `{roleId, capabilityId, capabilitySource}` row per role and capability it reaches, no verb, no row where it cannot. Give every role the values the behaviour reads it by (`roles[].behaviorValues: [{path:"session.workspaceRole", value:"admin"}]`): Lyriks then names each action whose rules refuse a role the matrix grants, or let in one it keeps out. Send the pass as ONE `patch_section` of `append` ops.
-10. **glossary**, **approvals**, **baselines**, **coherence**, **documents**: authored, or recorded as derived or not applicable in `scope.sectionAssessments`; never silent.
-11. Every `sectionAssessments` row seeded `required`: `ready` means reviewed; `not_applicable` needs a rationale and an approval and is forbidden in `full_product`. Rows seeded `derived` are not yours.
+10. **glossary**, **baselines**, **coherence**, **documents**: authored, or recorded as derived or not applicable in `scope.sectionAssessments`; never silent.
+11. Every `sectionAssessments` row seeded `required`: `ready` means reviewed; `not_applicable` needs a rationale and is forbidden in `full_product`. Rows seeded `derived` are not yours.
 12. The local verification, then the global protocol. Any later save makes the audit stale, by design.
 
 ## Authoring quality
 
-- **Every section filled or assessed** from its `describe_section` schema: scope, foundation, users, features, experience, rules, data, architecture, coherence, glossary, approvals, baselines, documents. The usual accidental empties: glossary, permissions, Foundation operations, documents, rules. `evolution` is read with `get_evolution` and never assessed.
+- **Every section filled or assessed** from its `describe_section` schema: scope, foundation, users, features, experience, rules, data, architecture, coherence, glossary, baselines, documents. The usual accidental empties: glossary, permissions, Foundation operations, documents, rules. `evolution` is read with `get_evolution` and never assessed.
 - **Every checkable field linked to the state that holds it** (`link_data_fields`, many at once, plus each table's existence state). `get_data_links` lists what remains; the audit counts it as `data-field-unlinked`.
 - **Link meaning, not spelling.** Distinguish a value, presence, counter, comparison, unit and historical version. Preserve optional-presence booleans and numeric clocks the planner accepts. SQL `NOT NULL` does not prove non-empty text; read defaults and normalization. Copy stored enum codes, not display labels. Inventory calculated records consumed by journeys too, without inventing physical storage for them.
 - **No orphan table.** Every data write answers `unrelated-entity` for a table that points at nothing and that nothing points at, and the audit repeats it as `data-entity-unrelated`. Add the relation the product has (ownership, reference, provenance), or mark a truly standalone table `standalone: true` with the reason. Never invent a relation; never mark `data` ready while one remains.

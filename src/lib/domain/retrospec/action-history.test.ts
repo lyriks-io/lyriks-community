@@ -24,7 +24,7 @@ const run = (id: string, over: Partial<RetrospecRun> = {}): RetrospecRun => ({
 	verdicts: {},
 	...over
 });
-const change = (id: string, over: Partial<ReportedChange> = {}): ReportedChange => ({ id, kind: 'changed', anchor: 'action:f:a', dock: null, title: 'Sign in', proposed: 'With a key', code: '', where: '', decision: null, ...over });
+const change = (id: string, over: Partial<ReportedChange> = {}): ReportedChange => ({ id, kind: 'changed', anchor: 'action:f:a', dock: null, title: 'Sign in', proposed: 'With a key', code: '', where: '', writes: [{ featureId: 'f', operations: [{ kind: 'update_action' }] }], decision: null, ...over });
 const published = run('run-1', { publishedAt: '2026-11-01T10:00:00.000Z', publishedBy: ann });
 const held = (over: Partial<RetrospecRun> = {}) => run('run-2', { holds: true, complementary: { fromRunId: 'run-1', fromCommit: null, scope: 'delta' }, report: { c1: change('c1') }, ...over });
 const docOf = (...runs: RetrospecRun[]): RetrospecDocument => ({ version: 1, runs, comments: {} });
@@ -67,14 +67,14 @@ describe('every action on Mismatch stays in a history only administrators read [
 		expect(historyLines(doc)).toEqual([{ at: '2026-11-10T09:30:00.000Z', who: 'Lyriks', through: 'Ann', what: 'reported 2 differences', note: null }]);
 	});
 
-	it('reads a rework beside its new words, and a report in the same words as nothing', () => {
+	it('reads a rework beside its new words, and a report in the same words as nothing [criterion:1d177c80]', () => {
 		const rejected = docOf(published, held({ report: { c1: change('c1', { decision: { verdict: 'rejected', by: ann, at: 'x', note: 'n' } }) } }));
 		const reworked = acted(rejected, { op: 'report_changes', changes: [{ ...change('c1'), proposed: 'Other words' }] });
 		expect(historyLines(reworked)).toMatchObject([{ what: 'reworked “Sign in”', note: 'Other words' }]);
 		expect(historyLines(acted(rejected, { op: 'report_changes', changes: [change('c1')] }))).toEqual([]);
 	});
 
-	it('names a withdrawn change once its card is gone', () => {
+	it('names a withdrawn change once its card is gone [criterion:1d177c80]', () => {
 		const rejected = docOf(published, held({ report: { c1: change('c1', { decision: { verdict: 'rejected', by: ann, at: 'x', note: 'n' } }) } }));
 		expect(whats(acted(rejected, { op: 'withdraw_changes', ids: ['c1'] }))).toEqual(['withdrew “Sign in”: it was not a change']);
 	});
@@ -87,11 +87,16 @@ describe('every action on Mismatch stays in a history only administrators read [
 		expect(whats(acted(docOf(), { op: 'start', mode: 'repo', baseline: {} }))).toEqual(['started the first Reverse-Specification']);
 	});
 
-	it('follows the writing, change by change', () => {
+	it('follows the writing, change by change [criterion:1d177c80]', () => {
 		const validated = docOf(published, held({ report: { c1: change('c1', { decision: { verdict: 'validated', by: ann, at: 'x' } }) } }));
 		const open = acted(validated, { op: 'open_writing' });
-		expect(whats(open)).toEqual(['opened the writing of 1 validated change']);
-		expect(whats(acted(open, { op: 'record_written', written: [{ change: 'c1', elements: [] }] }))).toContain('wrote “Sign in” into the specification');
+		expect(whats(open)).toEqual(['had the 1 validated change written']);
+		const stopped = acted(open, { op: 'record_write_stop', change: 'c1', reason: 'the engine did not answer.' });
+		expect(historyLines(stopped)[0]).toMatchObject({ who: 'Lyriks', through: null, what: 'stopped writing at “Sign in”', note: 'the engine did not answer.' });
+		const resumed = acted(stopped, { op: 'write_remaining' });
+		expect(whats(resumed)[0]).toBe('started the writing again');
+		const written = acted(resumed, { op: 'record_writes', change: 'c1', done: 1, elements: ['action:f:a'] });
+		expect(historyLines(written)[0]).toMatchObject({ who: 'Lyriks', through: null, what: 'wrote “Sign in” into the specification' });
 	});
 
 	it('follows the decisions on the code and on the hand edits', () => {

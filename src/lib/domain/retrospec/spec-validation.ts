@@ -1,7 +1,7 @@
 import { specVersionOf, type Baseline, type SpecVersion } from '../baselines';
 import { currentRun, lastPublishedRun, type PersonRef, type RequestValidation, type RetrospecDocument, type RetrospecRun } from './document';
 import { writesHeld } from './run-report';
-import { requiredValidators, samePersonRef, type SpecOwner, type TeamMember } from './spec-validators';
+import { eligibleValidators, reviewSeats, samePersonRef, type ReviewSeat, type TeamMember } from './spec-validators';
 
 /**
  * The validation of the Specification 360°: element by element, the people
@@ -19,7 +19,6 @@ import { requiredValidators, samePersonRef, type SpecOwner, type TeamMember } fr
 export interface SpecElement {
 	readonly id: string;
 	readonly title: string;
-	readonly owner: SpecOwner;
 	/** What the element reads, condensed: a validation carried by a complementary run stands while it is the same. */
 	readonly fingerprint?: string;
 	/** Where it sits: its core feature and its feature, or its page of Knowledge. */
@@ -80,16 +79,18 @@ export interface SpecValidationBoard {
 	readonly complete: boolean;
 }
 
-/** The person who leads the validation: who started the current run, else the reader. */
+/** The person who leads the validation: whom the project chose, else who started the current run, else the reader. */
 export function validationLead(doc: RetrospecDocument, viewer: PersonRef | null): PersonRef | null {
+	if (doc.lead) return doc.lead.to;
 	const run = currentRun(doc);
 	return run && 'validationLead' in run ? run.validationLead ?? null : run?.startedBy ?? viewer;
 }
 
 /**
  * Whether the actor may give, or take back, their own validation of an element:
- * the element waits on them (they lead the validation, hold the job that owns
- * it, or were asked); a writer also when it waits on nobody named, or to take
+ * the element still waits on them or holds their validation (they lead the
+ * validation, hold a job no colleague validated for yet, or were asked by
+ * name); a writer also when it waits on nobody named, or to take
  * back a validation of theirs that stands on it. A writer leads while no run names a lead;
  * a reader never does, so merely viewing a page never makes one the lead. Any
  * other validation would read as an approval and count for nothing, so the
@@ -98,16 +99,18 @@ export function validationLead(doc: RetrospecDocument, viewer: PersonRef | null)
 export function canReviewElement(doc: RetrospecDocument, element: SpecElement | undefined, team: readonly TeamMember[], actor: PersonRef, canWrite: boolean): boolean {
 	if (!element) return false;
 	const requested = doc.validationRequests?.[element.id]?.map((request) => request.to) ?? [];
-	const required = requiredValidators(element.owner, validationLead(doc, canWrite ? actor : null), team, requested, element.id);
-	if (required.some((person) => samePersonRef(person, actor))) return true;
+	const run = currentRun(doc);
+	const { standing, seats } = measure(run, element, validationLead(doc, canWrite ? actor : null), team, requested, namedValidators(doc));
+	if (standing.required.some((person) => samePersonRef(person, actor))) return true;
 	if (!canWrite) return false;
-	return required.length === 0 || !!currentRun(doc)?.verdicts[element.id]?.validatedBy.some((v) => samePersonRef(v.person, actor));
+	return seats.length === 0 || !!run?.verdicts[element.id]?.validatedBy.some((v) => samePersonRef(v.person, actor));
 }
 
 /** DRAFT until the current run is published; a new run under way reads DRAFT again, unless it holds what it found: nothing moved yet (criterion 50b00229). */
 export function specState(doc: RetrospecDocument): 'draft' | 'validated' {
 	const run = currentRun(doc);
-	return run?.publishedAt || (writesHeld(run) && lastPublishedRun(doc)) ? 'validated' : 'draft';
+	// A later run leaves the specification validated until a person had what it found written: it reads draft from then on.
+	return run?.publishedAt || (writesHeld(run) && !run?.writingOpenedAt && lastPublishedRun(doc)) ? 'validated' : 'draft';
 }
 
 /** The baseline the first validation captured: version 1.0. */
@@ -143,17 +146,43 @@ export function requestValidationOf(run: RetrospecRun | null, element: SpecEleme
 	return !element.fingerprint || given.fingerprint === element.fingerprint ? given : null;
 }
 
-export function elementStanding(run: RetrospecRun | null, element: SpecElement, lead: PersonRef | null, team: readonly TeamMember[], requested: readonly PersonRef[] = []): ElementStanding {
-	const required = requiredValidators(element.owner, lead, team, requested, element.id);
+interface Measured {
+	readonly standing: ElementStanding;
+	readonly seats: readonly ReviewSeat[];
+	/** Seats some validation fills. */
+	readonly filled: number;
+}
+
+/** The validators the project names, or null while it names none: everyone who can open it then counts (criterion e3296696). */
+export const namedValidators = (doc: RetrospecDocument): readonly PersonRef[] | null => doc.validators?.people ?? null;
+
+function measure(
+	run: RetrospecRun | null,
+	element: SpecElement,
+	lead: PersonRef | null,
+	team: readonly TeamMember[],
+	requested: readonly PersonRef[],
+	validators: readonly PersonRef[] | null = null
+): Measured {
+	const seats = reviewSeats(lead, team, requested, element.id, validators);
 	const verdict = run?.verdicts[element.id];
 	const validatedBy = validationsOf(run, element);
 	const has = (p: PersonRef) => validatedBy.some((v) => samePersonRef(v, p));
 	// A request's validation counts as every validation the element waits on (criterion 939f5eef).
 	const through = requestValidationOf(run, element);
-	const missing = through ? [] : required.filter((p) => !has(p));
+	const open = through ? [] : seats.filter((seat) => !seat.people.some(has));
+	const missing = eligibleValidators(open);
+	// One holder fills a job's seat (criterion f02f078b): its other holders are no longer waited on.
+	const eligible = eligibleValidators(seats);
+	const required = through ? eligible : eligible.filter((p) => has(p) || missing.some((m) => samePersonRef(m, p)));
 	// Nobody to wait on (no lead known, nobody holding the job): one validation settles it.
-	const settled = through !== null || (required.length > 0 ? missing.length === 0 : validatedBy.length > 0);
-	return { state: settled ? 'ok' : validatedBy.length > 0 ? 'waiting' : 'todo', required, validatedBy, missing, rejected: verdict?.flag?.kind === 'rejected', through };
+	const settled = through !== null || (seats.length > 0 ? open.length === 0 : validatedBy.length > 0);
+	const standing: ElementStanding = { state: settled ? 'ok' : validatedBy.length > 0 ? 'waiting' : 'todo', required, validatedBy, missing, rejected: verdict?.flag?.kind === 'rejected', through };
+	return { standing, seats, filled: seats.length - open.length };
+}
+
+export function elementStanding(run: RetrospecRun | null, element: SpecElement, lead: PersonRef | null, team: readonly TeamMember[], requested: readonly PersonRef[] = [], validators: readonly PersonRef[] | null = null): ElementStanding {
+	return measure(run, element, lead, team, requested, validators).standing;
 }
 
 export function specValidationBoard(input: SpecValidationInput): SpecValidationBoard {
@@ -167,13 +196,13 @@ export function specValidationBoard(input: SpecValidationInput): SpecValidationB
 	for (const element of input.elements) {
 		if (standings[element.id]) continue;
 		const requested = input.doc.validationRequests?.[element.id]?.map((request) => request.to) ?? [];
-		const s = elementStanding(run, element, lead, input.team, requested);
+		const { standing: s, seats, filled } = measure(run, element, lead, input.team, requested, namedValidators(input.doc));
 		standings[element.id] = s;
 		if (s.state === 'ok') validated++;
 		else if (s.state === 'waiting') waiting++;
-		const requiredCount = Math.max(1, s.required.length);
-		need += requiredCount;
-		got += s.required.length > 0 ? s.required.length - s.missing.length : s.state === 'ok' ? 1 : 0;
+		// Validations given over validations needed: the lead, each job and each person asked count once (invariant fb724709).
+		need += Math.max(1, seats.length);
+		got += seats.length > 0 ? filled : s.state === 'ok' ? 1 : 0;
 	}
 	const total = Object.keys(standings).length;
 	const baselineId = validationBaselineId(input.doc);

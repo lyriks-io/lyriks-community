@@ -59,7 +59,8 @@
 		<!-- Plans and keys do not share a vocabulary: four offers, two key editions.
 		     Said here so Switch to <plan> promises nothing a key alone does not do (issues.238, issues.332). -->
 		<p class="m-0 text-[0.8125rem] leading-[1.5] text-ink-2" data-plans-switch-note>
-			Plans are named as on lyriks.io/pricing; a licence key grants one of two editions, Community or Enterprise.
+			Plans are named as on lyriks.io/pricing; a licence key grants one of two editions, Community or Enterprise,
+			and the number of active projects: one on Community, the number an Enterprise key states.
 			On an installation that runs the Enterprise images, the key in force decides what it opens: entering a key
 			on the activation page is all a switch takes. A Community installation opens a paid plan once whoever runs
 			it installs the Enterprise images.

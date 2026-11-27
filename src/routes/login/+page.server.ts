@@ -4,7 +4,6 @@ import { env } from '$env/dynamic/private';
 // PUBLIC_-prefixed variables live ONLY in the public store; $env/dynamic/private
 // excludes them, so reading the dashboard URL from `env` returned undefined and
 // every return to it silently fell back to "/".
-import { env as publicEnv } from '$env/dynamic/public';
 import { loginRateLimiter } from '$lib/server/rate-limit.server';
 import { setSessionCookie } from '$lib/server/session-cookie.server';
 import { postLoginRedirect } from '$domain/auth';
@@ -48,7 +47,7 @@ async function awaitingClaim(locals: App.Locals): Promise<boolean> {
  * Post-login destination — see postLoginRedirect for the rule and its refusals.
  */
 function safeRedirect(url: URL): string {
-	return postLoginRedirect(url.searchParams.get('redirect') ?? '', publicEnv.PUBLIC_UNSPA_DASHBOARD_URL);
+	return postLoginRedirect(url.searchParams.get('redirect') ?? '');
 }
 
 /**

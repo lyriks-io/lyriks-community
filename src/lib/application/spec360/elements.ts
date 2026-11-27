@@ -1,6 +1,5 @@
 import { anchorOf } from '$domain/discussions';
 import type { SpecElement } from '$domain/retrospec';
-import type { SpecOwner } from '$domain/retrospec';
 import type { FeatureActionIndex } from '../specification/index-feature-actions';
 import type { KernelRulesReadModel } from '../specification/index-feature-rules';
 import type { ExperienceView } from './experience';
@@ -51,30 +50,6 @@ export interface SpecElementsInput {
 	readonly contents?: Readonly<Record<string, unknown>>;
 }
 
-/** Which job owns each kind of element (see `spec-validators`). */
-const OWNER: Readonly<Record<string, SpecOwner>> = {
-	product: 'product',
-	problem: 'product',
-	target: 'product',
-	role: 'product',
-	permissions: 'product',
-	core: 'product',
-	feature: 'product',
-	action: 'product',
-	rule: 'product',
-	term: 'product',
-	flow: 'design',
-	branding: 'design',
-	journey: 'design',
-	component: 'design',
-	datamap: 'tech',
-	data: 'tech',
-	stack: 'tech',
-	health: 'tech',
-	requirements: 'tech',
-	constraint: 'tech'
-};
-
 /** The page of Knowledge an element sits on, when no core feature and feature say more. */
 const PAGE: Readonly<Record<string, string>> = {
 	product: 'Overview',
@@ -95,11 +70,6 @@ const PAGE: Readonly<Record<string, string>> = {
 	constraint: 'Technology & data',
 	term: 'Glossary'
 };
-
-/** The job that owns an element, read from its anchor alone. */
-export function ownerOfElement(id: string): SpecOwner {
-	return OWNER[id.split(':', 1)[0]] ?? 'product';
-}
 
 /** Stable JSON: the same content reads the same whatever order its keys were written in. */
 function stable(value: unknown): string {
@@ -128,7 +98,7 @@ export function fingerprintOf(content: unknown): string {
 export function specElements(input: SpecElementsInput): SpecElement[] {
 	const out: SpecElement[] = [];
 	const add = (id: string, title: string, content?: unknown, at?: { readonly place: string; readonly under?: string }) =>
-		out.push({ id, title, owner: ownerOfElement(id), fingerprint: fingerprintOf([title, input.contents?.[id] ?? content ?? null]), place: at?.place ?? PAGE[id.split(':', 1)[0]], ...(at?.under ? { under: at.under } : {}) });
+		out.push({ id, title, fingerprint: fingerprintOf([title, input.contents?.[id] ?? content ?? null]), place: at?.place ?? PAGE[id.split(':', 1)[0]], ...(at?.under ? { under: at.under } : {}) });
 
 	if (text(input.pitch)) add('product', 'Product summary', input.pitch);
 	if (input.hasProblem) add('problem', 'Current situation');

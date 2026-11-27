@@ -23,7 +23,7 @@ import {
 const NOW = '2026-11-20T10:00:00.000Z';
 const lead: PersonRef = { id: 'lead@company.test', name: 'Lead' };
 const owner: PersonRef = { id: 'owner@company.test', name: 'Owner' };
-const element: SpecElement = { id: 'stack:a', title: 'Stack', owner: 'tech', fingerprint: 'f-1' };
+const element: SpecElement = { id: 'stack:a', title: 'Stack', fingerprint: 'f-1' };
 const request = { requestId: 'req-2', requestKey: 'EVO-002', approvedBy: [lead], at: NOW };
 
 /** The state the scenarios start from, the surface's defaults under each scenario's overrides. */

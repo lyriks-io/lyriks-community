@@ -10,7 +10,11 @@ import {
 	deliveryOf,
 	lyriksNote,
 	markPublished,
+	markSeen,
 	markWithdrawn,
+	messageWords,
+	needsYou,
+	startAiConversation,
 	startConversation,
 	waitingProposal,
 	writeInConversation,
@@ -18,6 +22,7 @@ import {
 	type AiChatContext,
 	type AiChatProposal,
 	type AiConversation,
+	type AiTellAbout,
 	type ChatTurn,
 	type MessageDelivery
 } from '$domain/ai-conversations';
@@ -44,6 +49,8 @@ export interface ConversationView extends AiConversation {
 	readonly turn: ChatTurn;
 	/** Whether each message of the person reached the AI, by message id (criterion 03172878). */
 	readonly delivery: Readonly<Record<string, MessageDelivery>>;
+	/** It waits on its person: their AI's question, or why it stopped not read yet (state conversation.needsYou). */
+	readonly needsYou: boolean;
 }
 
 async function clicksOf(services: AppServices, projectId: string, personId: string) {
@@ -72,6 +79,7 @@ export async function readMyConversations(services: AppServices, projectId: stri
 	return mine.map((c) => ({
 		...c,
 		turn: chatTurn(c, clickOf),
+		needsYou: needsYou(c),
 		delivery: Object.fromEntries(c.messages.filter((m) => m.role === 'person').map((m) => [m.id, deliveryOf(m, clickOf(m.id))]))
 	}));
 }
@@ -141,6 +149,59 @@ export async function writeChat(
 	const sent = await sendClickOnProject(services, projectId, personId, clickInput(written.conversation, messageId, written.message.text), canEdit);
 	if (!sent?.ok) return refused(sent && !sent.ok ? sent.reason : SAVE_FAILED, sent ? 422 : 409);
 	return { ok: true };
+}
+
+/**
+ * The person's AI asks them on its own, or says why it stopped (action
+ * cf381e92, actions 385983f9 and 559ba487): a conversation of the person's
+ * opens with its words, for them to read and answer on their pages. Their
+ * answer is an ordinary message of the conversation (action f11314df).
+ */
+export async function tellPerson(
+	services: AppServices,
+	projectId: string,
+	personId: string,
+	input: { readonly text: string; readonly about: AiTellAbout; readonly context: AiChatContext | null },
+	origin: string | null
+): Promise<ChatOutcome<{ readonly conversationId: string }>> {
+	const ids = { conversationId: crypto.randomUUID(), messageId: crypto.randomUUID() };
+	const at = services.clock.nowIso();
+	const told = await services.aiConversations.change(projectId, origin, (document) => {
+		const outcome = startAiConversation(document, personId, input, ids, at);
+		return { document: outcome.ok ? outcome.document : null, result: outcome };
+	});
+	if (!told) return refused(SAVE_FAILED, 409);
+	if (!told.ok) return refused(told.reason, 400);
+	return { ok: true, conversationId: ids.conversationId };
+}
+
+/** The person opened their conversation (action f08d6986): why their AI stopped reads as read (rule fc2ad132). */
+export async function seeChat(services: AppServices, projectId: string, personId: string, conversationId: string, origin: string | null): Promise<ChatOutcome> {
+	const seen = await services.aiConversations.change(projectId, origin, (document) => {
+		const conversation = conversationOf(document, personId, conversationId);
+		// Nothing to settle: no write, so the other readers of the section are not woken for nothing.
+		if (!conversation || !needsYou(conversation)) return { document: null, result: conversation ? 'seen' : 'missing' };
+		const outcome = markSeen(document, personId, conversationId, services.clock.nowIso());
+		return { document: outcome.ok ? outcome.document : null, result: outcome.ok ? 'seen' : 'missing' };
+	});
+	if (seen === null) return refused(SAVE_FAILED, 409);
+	return seen === 'seen' ? { ok: true } : refused('Conversation not found', 404);
+}
+
+/** What waits on the person in Ask my AI, for the foot of the navigation (criterion 31488628): how many, and the latest. */
+export interface NeedsYou {
+	readonly count: number;
+	readonly latest: { readonly conversationId: string; readonly text: string; readonly about: AiTellAbout; readonly at: string } | null;
+}
+
+export async function needsYouOf(services: AppServices, projectId: string, personId: string): Promise<NeedsYou> {
+	const waiting = conversationsOf(await services.aiConversations.load(projectId), personId).filter(needsYou);
+	const first = waiting[0];
+	const last = first?.messages[first.messages.length - 1];
+	return {
+		count: waiting.length,
+		latest: first && last ? { conversationId: first.id, text: messageWords(last.text), about: last.asks ? 'question' : 'stopped', at: last.at } : null
+	};
 }
 
 /** The person takes back a message their AI has not taken yet (action 2d5ce3ce). */

@@ -11,7 +11,7 @@ import { specState, specValidationBoard } from './spec-validation';
 
 const NOW = '2026-11-20T09:00:00.000Z';
 const lead: PersonRef = { id: 'lead@company.test', name: 'Lead' };
-const elements: SpecElement[] = [{ id: 'feature:refunds', title: 'Refunds', owner: 'product' }];
+const elements: SpecElement[] = [{ id: 'feature:refunds', title: 'Refunds' }];
 
 function apply(acts: RetrospecAct[]) {
 	const outcome = applyRetrospecActs(emptyRetrospecDocument(), acts, { actor: lead, now: NOW });

@@ -16,7 +16,7 @@ vi.mock('$ui/design-system', async (original) => ({ ...await original<object>(),
 
 const ana = { id: 'ana@example.test', name: 'Ana Diaz' };
 const anchor = 'rule:f1:r1';
-const elements: SpecElement[] = [{ id: anchor, title: 'Refuse to save', owner: 'product' }];
+const elements: SpecElement[] = [{ id: anchor, title: 'Refuse to save' }];
 
 function page() {
 	const started = applyRetrospecActs(emptyRetrospecDocument(), [{ op: 'validate', itemId: 'outside', title: 'outside', tab: 'spec360' }], { actor: ana, now: '2026-11-18T02:00:00.000Z' });

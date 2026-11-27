@@ -28,8 +28,8 @@ describe('a point is fixed on the page the reader finds it under', () => {
 		expect(resolveVisibleCapability(id)).toBeUndefined();
 	});
 
-	it('keeps the Baselines address under Traceability', () => {
-		expect(capabilityById('baselines')?.route?.('project-1')).toBe('/projects/project-1/traceability?tab=baselines');
+	it.each(['traceability', 'generate', 'baselines', 'approvals'])('registers no page for the retired %s', (id) => {
+		expect(capabilityById(id)).toBeUndefined();
 	});
 });
 

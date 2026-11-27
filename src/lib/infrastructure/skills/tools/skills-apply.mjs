@@ -155,7 +155,7 @@ export function applyAnswer(root, report, answer, client) {
 		const target = targets.find((candidate) => candidate.client === client) ?? targets[0];
 		const markers = binding.markers ?? { open: '<!-- lyriks-binding -->', close: '<!-- /lyriks-binding -->' };
 		if (target?.pointerPath && target.pointerBlock) applyMerge(root, report, target.pointerPath, target.pointerBlock, markers.open, markers.close);
-		for (const hook of [target?.hook, target?.toolsHook]) {
+		for (const hook of [target?.hook, target?.toolsHook, target?.stopHook]) {
 			// A deferred hook comes with a later answer: wiring it before its file exists would fail on every prompt.
 			if (!hook || hook.deferred) continue;
 			if (typeof hook.content === 'string') {

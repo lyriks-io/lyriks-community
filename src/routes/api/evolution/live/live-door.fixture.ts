@@ -3,6 +3,7 @@ import type { AccessAction, AccessDecision, SectionDraftRepositoryPort, SectionD
 import { LoadResidueDraftUseCase, SaveResidueDraftUseCase } from '$application/specification/residue-draft-use-cases';
 import { createEmptyEvolutionDraft, type ProjectEvolutionDraft } from '$domain/evolution';
 import { GET, POST } from './+server';
+import { emptyAiConversations } from '$domain/ai-conversations';
 import { requestEvent, servicesWith } from '$lib/server/request-event.fixture';
 
 /**
@@ -53,6 +54,8 @@ export function liveDoor(projectId: string, opts: LiveDoorOptions = {}) {
 		saveEvolutionDraft: new SaveResidueDraftUseCase(repo, clock),
 		// The waiting look reads the Reverse-Specification's standing: this project holds none.
 		sectionDocuments: { currentRevision: async () => revision, load: async () => null },
+		// The session reading says what waits on the reader in Ask my AI: nothing here.
+		aiConversations: { load: async () => emptyAiConversations() },
 		draftLock: { current: async () => 0, commit: async () => 1, rollback: async () => {} }
 	});
 	/** One call through the door, as the person or as their AI (marked x-lyriks-actor), answered as status and JSON body. */

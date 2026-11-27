@@ -33,3 +33,20 @@ describe('my conversations are grouped by when they last moved [criterion:2ed3cf
 		expect(groupConversations([], NOW)).toEqual([]);
 	});
 });
+
+describe('an AI that stopped waits under Needs you until read [criterion:31488628]', () => {
+	it('puts a conversation that needs the reader first, whatever its turn', () => {
+		const now = new Date('2026-11-25T12:00:00.000Z');
+		const groups = groupConversations(
+			[
+				{ id: 'a', updatedAt: '2026-11-25T11:00:00.000Z', turn: 'answered', needsYou: false },
+				{ id: 'b', updatedAt: '2026-11-25T10:00:00.000Z', turn: 'answered', needsYou: true }
+			],
+			now
+		);
+		expect(groups.map((g) => [g.label, g.items.map((c) => c.id)])).toEqual([
+			['Needs you', ['b']],
+			['Today', ['a']]
+		]);
+	});
+});

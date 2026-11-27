@@ -92,7 +92,7 @@ function approved(over: Partial<EvolutionRequest> = {}): EvolutionRequest {
 	} as never);
 }
 
-const ruleElement = (id: string): SpecElement => ({ id: `rule:${F}:${id}`, title: `Rule ${id}`, owner: 'product', fingerprint: `f-${id}` });
+const ruleElement = (id: string): SpecElement => ({ id: `rule:${F}:${id}`, title: `Rule ${id}`, fingerprint: `f-${id}` });
 
 describe('the landing validates in Knowledge what the change delivered', () => {
 	beforeEach(() => {
@@ -105,7 +105,7 @@ describe('the landing validates in Knowledge what the change delivered', () => {
 		const before = approved();
 		const after = { ...before, status: 'closed' as const, drafts: before.drafts.map((d) => ({ ...d, materialisedAt: AT })) };
 		dossier = { draft: { projectId: PROJECT, requests: [after] } as ProjectEvolutionDraft, revision: 8 };
-		scene.elements = [ruleElement('r1'), ruleElement('r2'), { id: 'term:t', title: 'Term · Cart', owner: 'product', fingerprint: 'same' }];
+		scene.elements = [ruleElement('r1'), ruleElement('r2'), { id: 'term:t', title: 'Term · Cart', fingerprint: 'same' }];
 		const services = { sectionDocuments, loadEvolutionDraft: { execute: async () => dossier.draft }, saveEvolutionDraft: { execute: saveDossier } } as unknown as AppServices;
 		const results = await validateLandedInKnowledge(services, {
 			projectId: PROJECT,

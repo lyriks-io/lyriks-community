@@ -282,7 +282,12 @@ function main() {
 		'gives into your own code tools (search, code search, code graph, editor) and tell the person where the code ' +
 		'does otherwise. A question about the code alone (how to call an API, an internal mechanism, a library) goes ' +
 		'to your code tools directly, without a Lyriks call. ' +
-		'Only work with no user-visible effect skips the spec; say so in one line.' +
+		'Only work with no user-visible effect skips the spec; say so in one line. ' +
+		// The person follows a run, a request or a session on their pages and never sees this chat (rule f26545fa).
+		'When the person follows your work on their pages (a Reverse-Specification, an Evolution request, your session on the project): ' +
+		'before ending a turn on a question, or stopping for any other reason, say it there first with update_evolution_session ' +
+		'(ask for the one question you wait on, stopped for why you stop), opening your session with start_evolution_session given ' +
+		'the project alone when none is open, then wait in the background.' +
 		autoSessionInstruction(project, lines, process.env);
 	process.stdout.write(
 		JSON.stringify({

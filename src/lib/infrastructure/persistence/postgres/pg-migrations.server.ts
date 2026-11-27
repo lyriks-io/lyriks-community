@@ -418,6 +418,62 @@ ALTER TABLE IF EXISTS product_activation ALTER COLUMN activated_at DROP NOT NULL
 CREATE TABLE IF NOT EXISTS implementation_index_revisions (project_id TEXT PRIMARY KEY, revision INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS implementation_index_unit_writes (project_id TEXT NOT NULL, unit_key TEXT NOT NULL, revision INTEGER NOT NULL, PRIMARY KEY (project_id, unit_key));
 `
+	},
+	{
+		// Each baseline's requirements document leaves the list (criterion
+		// b2cba3cd): about 700 KB each, fifteen of them made an 11 MB list that
+		// Traceability sent whole to the browser. Each document goes to its own
+		// section, keyed as section-baselines.server.ts keys it, and the list
+		// keeps the rest. The list's revision is kept: what it lists is unchanged.
+		id: '0021-baseline-documents-apart',
+		sql: `
+INSERT INTO project_section_documents (project_id, section, schema_version, document, revision, updated_at)
+SELECT d.project_id, 'baselines.document.' || (b->>'id'), 1, jsonb_build_object('content', b->>'content'), 1, d.updated_at
+FROM project_section_documents d, jsonb_array_elements(d.document->'baselines') AS b
+WHERE d.section = 'baselines'
+  AND jsonb_typeof(d.document->'baselines') = 'array'
+  AND jsonb_typeof(b->'id') = 'string'
+  AND jsonb_typeof(b->'content') = 'string'
+ON CONFLICT (project_id, section) DO NOTHING;
+UPDATE project_section_documents d
+SET document = jsonb_set(
+	d.document,
+	'{baselines}',
+	(SELECT COALESCE(jsonb_agg(b - 'content' ORDER BY n), '[]'::jsonb)
+	 FROM jsonb_array_elements(d.document->'baselines') WITH ORDINALITY AS t(b, n))
+)
+WHERE d.section = 'baselines'
+  AND jsonb_typeof(d.document->'baselines') = 'array'
+  AND EXISTS (SELECT 1 FROM jsonb_array_elements(d.document->'baselines') AS b WHERE b ? 'content');
+`
+	},
+	{
+		// A baseline keeps its id, its name and its moment, nothing else (criteria
+		// 1eb35bd3, c7254cb1): the frozen requirements documents and the recorded
+		// scores served nobody. Same order, so the version reads as before.
+		id: '0022-baselines-name-and-moment',
+		sql: `
+DELETE FROM project_section_documents WHERE section LIKE 'baselines.document.%';
+UPDATE project_section_documents d
+SET document = jsonb_set(
+	d.document,
+	'{baselines}',
+	(SELECT COALESCE(jsonb_agg(jsonb_build_object('id', b->'id', 'name', COALESCE(b->'name', '""'::jsonb), 'createdAt', COALESCE(b->'createdAt', '""'::jsonb)) ORDER BY n), '[]'::jsonb)
+	 FROM jsonb_array_elements(d.document->'baselines') WITH ORDINALITY AS t(b, n))
+)
+WHERE d.section = 'baselines'
+  AND jsonb_typeof(d.document->'baselines') = 'array';
+`
+	},
+	{
+		// A person holds several jobs (owner 2026-11-24): member_jobs keeps the
+		// list in job_ids, seeded from the one job each held. job_id stays the
+		// first of the list, so an older platform rolled back still reads a job.
+		id: '0023-member-jobs-many',
+		sql: `
+ALTER TABLE member_jobs ADD COLUMN IF NOT EXISTS job_ids TEXT NOT NULL DEFAULT '[]';
+UPDATE member_jobs SET job_ids = json_build_array(job_id)::text WHERE job_ids = '[]' AND job_id <> '';
+`
 	}
 ];
 

@@ -6,6 +6,94 @@ versions follow the platform's semantic version.
 
 ## [Unreleased]
 
+## [0.9.52] - 2026-11-27
+
+An AI says on the person's pages what it waits on, a click wakes it, one box
+per person is the way to validate everywhere, a Mismatch run's validated
+changes are written by Lyriks itself, and a licence key can limit how many
+projects are active.
+
+### Added
+
+- An AI working through the MCP that ends its turn on a question, or stops
+  for any other reason, says so on the person's pages: the conversation
+  opens in Ask my AI as Needs you (`update_evolution_session` with `ask` or
+  `stopped`). The end-of-turn hook `sync_skills` installs for Claude Code
+  holds a turn once until it has.
+- A click in the app wakes the person's AI when none is in session: a small
+  local program (`.lyriks/tools/wake-ai.mjs`, started once) launches the AI
+  command line the person already uses (Claude Code, Codex, Gemini or
+  Copilot) without a window, and the woken AI opens its session and answers
+  the click. Nothing runs until the person starts it.
+- What a specification leaves out reads on the Overview: an "N out of scope"
+  link while a person has not approved it, a Scope drawer listing what is in
+  and out by group with its reason, and Approve, which only a person can
+  click. Once approved, the scope reads as a row of the Reverse-Specification
+  History. Sign-offs are retired.
+- A feature page reads its action journeys first, the loose actions in rows
+  under them, and the AI suggests journeys unasked. An action's card shows
+  its description on hover; dropping a card on another links the two
+  actions, and each arrow says what kind of link it is.
+- A licence key can state how many projects are active at once: the most
+  recently saved ones are active, and when every place is taken a dialog
+  asks which active project to set aside. A Community key keeps one project;
+  an Enterprise key without the number keeps every project.
+- One box per person is the validation control everywhere (Knowledge, the
+  changes of a request, Mismatch, Ask my AI proposals): the reader's own box
+  validates or withdraws after a confirmation, a colleague's pending box
+  sends a reminder, and the cross refuses. A project names who validates it;
+  a new project starts with its creator as the only validator, and a Team
+  step follows its creation.
+- Several jobs per person on a project, each job validating the topics its
+  workspace chose; the lead can be changed at any time.
+- A page the AI cites in an Ask my AI conversation is a link to that page.
+
+### Changed
+
+- A Mismatch run that holds its changes never writes in the specification:
+  the AI lists each difference with what it would write, a person validates,
+  and Lyriks writes the validated changes itself (Write the validated
+  changes). A writing that stops at one change leaves it out and goes on
+  with the others.
+- A validated specification refuses what an AI client writes in it, in the
+  sections and in the behaviour; a person's own edits and the change
+  requests still go through.
+- A validated step of a change request shows who stands behind each block,
+  with nothing left to validate and no note from Lyriks.
+- Mismatch says in words what is happening: no mismatch, the code matches,
+  or what the counts expect.
+- Pages no link led to are retired (Traceability, Generate, Kickoff, the
+  behaviour editor inside the app); what they held moved to the pages that
+  are reached.
+- A baseline keeps a name, a moment and the Health score; the Versions
+  panel and the frozen copies of the documents are gone.
+- A project's Settings sit among its own pages; Members, Team,
+  Notifications and Home read on white surfaces with one accent.
+- The Build of a change request waits only on the proofs of its own
+  features that a run on its commit can take again.
+- The behaviour engine's own editor is no longer served by the application at
+  `/behavior` and no longer runs with the stack. It is opened on demand from a
+  terminal on the host (`docker compose --profile editor run --rm --no-deps
+  --service-ports dashboard`, or `./lyriks editor` with the appliance kit), on
+  the host's loopback only (`LYRIKS_UNSPA_DASHBOARD_PORT`, default 3003), and
+  reached through an SSH tunnel: it has no login of its own. It writes feature
+  files named by id, like the platform, and refuses state deletions, which are
+  done in Lyriks. `LYRIKS_UNSPA_URL` and `PUBLIC_UNSPA_DASHBOARD_URL` are no
+  longer used. Update with `docker compose --profile editor pull` so its image
+  comes along.
+
+### Fixed
+
+- A change blocked because it came from another address names both
+  addresses and says what to do, instead of a bare refusal.
+- The appliance kit logs in to the images' registry before every pull, and
+  says what a refusal needs.
+- `./lyriks editor` leaves no editor running however it ends.
+- A confirmation asked from a drawer opens on top of it.
+- The project filter of Home fits the window and scrolls on its own.
+- A session that ended elsewhere is sent to sign in, never told it is a
+  viewer.
+
 ## [0.9.51] - 2026-11-23
 
 Pages answer sooner and the first pages after an update no longer wait, an

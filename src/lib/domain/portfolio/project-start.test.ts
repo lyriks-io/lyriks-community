@@ -61,7 +61,15 @@ describe('startPrompt', () => {
 		expect(fromDoc).toContain('Read the document I give you');
 		expect(fromDoc).toContain('suggest a complete first specification in one go');
 		const fromIdea = startPrompt({ ...base, way: 'scratch', scratch: { source: 'idea', pace: 'block' } });
-		expect(fromIdea).toContain('ask me what problem it solves');
+		expect(fromIdea).toContain('ask me one short question at a time (what problem it solves, for whom, what it must do)');
+		expect(fromIdea).toContain('each with an example answer I can pick or correct');
 		expect(fromIdea).toContain('block by block');
+	});
+
+	it('names the server it addresses, so an AI connected elsewhere says so and stops [criterion:a55ccdf4]', () => {
+		const prompt = startPrompt({ ...base, way: 'scratch', scratch: { source: 'idea', pace: 'block' }, mcpUrl: 'https://lab.example/mcp' });
+		expect(prompt.startsWith('With the Lyriks MCP at https://lab.example/mcp, work in the “Facturo” project (id facturo-a1b2c3).')).toBe(true);
+		expect(prompt.endsWith('If this project is not on that server, say so in one sentence and stop.')).toBe(true);
+		expect(startPrompt({ ...base, way: 'code' })).not.toContain('not on that server');
 	});
 });

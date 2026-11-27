@@ -38,7 +38,8 @@
 	/** Whether the reader sees every folder, so may put them in order (rule 8f68eccd); the server says so with the portfolio. */
 	let canOrder = $state(false);
 	/** Community works on one project at a time: the active one, marked in the list; null on every other edition (EVO-001). */
-	let activeProjectId = $state<string | null>(null);
+	// The projects marked active where some wait inactive (EVO-001, EVO-016); null where every project is open.
+	let activeProjectIds = $state<readonly string[] | null>(null);
 	/** The folder being dragged, and the slot it would land in: before the folder at that index of `placeable`. */
 	let dragging = $state<string | null>(null);
 	let slot = $state<number | null>(null);
@@ -89,10 +90,10 @@
 	async function load() {
 		const res = await fetch('/api/projects').catch(() => null);
 		if (!res?.ok) return;
-		const body = (await res.json()) as { portfolio: PortfolioView; canOrderFolders?: boolean; activeProjectId?: string | null };
+		const body = (await res.json()) as { portfolio: PortfolioView; canOrderFolders?: boolean; activeProjectIds?: string[] | null };
 		folders = projectFolders(body.portfolio);
 		canOrder = body.canOrderFolders === true;
-		activeProjectId = body.activeProjectId ?? null;
+		activeProjectIds = body.activeProjectIds ?? null;
 	}
 
 	function reset() {
@@ -137,8 +138,8 @@
 	function choose(p: FolderProject | undefined) {
 		if (!p) return;
 		shell.close();
-		// An inactive project opens on its refusal, which offers to make it the active one (EVO-001).
-		if (activeProjectId && p.id !== activeProjectId) return void goto(`/projects/${encodeURIComponent(p.id)}`);
+		// An inactive project opens on its refusal, which offers to make it active (EVO-001, EVO-016).
+		if (activeProjectIds && !activeProjectIds.includes(p.id)) return void goto(`/projects/${encodeURIComponent(p.id)}`);
 		const entry = projectEntryFrom(page.url.pathname, p.id);
 		if (entry) void goto(entry);
 	}
@@ -520,7 +521,7 @@
 							<button type="button" class="pn" title={p.featureCount ? plural(p.featureCount, 'feature') : 'Empty'} onmousemove={() => (hit = i)} onclick={() => choose(p)}>
 								<span class="pnt">{p.name}</span>
 								{#if on}<span class="ck" aria-label="(current)"><SideIcon name="check" size={13} strokeWidth={2.4} /></span>{/if}
-								{#if activeProjectId === p.id}<span class="act" title="Community works on this project">Active</span>{:else if activeProjectId}<span class="act off" title="Open it to make it the active project">Inactive</span>{/if}
+								{#if activeProjectIds?.includes(p.id)}<span class="act" title={page.data.edition === 'community' ? 'Community works on this project' : 'One of the projects the licence holds active'}>Active</span>{:else if activeProjectIds}<span class="act off" title={activeProjectIds.length === 1 ? 'Open it to make it the active project' : 'Open it to make it an active project'}>Inactive</span>{/if}
 							</button>
 							<div class="pa">
 								<!-- The row's menu (criterion 54b86d96 of feat-134): Duplicate and Export (.zip). -->

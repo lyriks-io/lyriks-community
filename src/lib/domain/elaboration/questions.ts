@@ -18,7 +18,7 @@ const TEXTS = {
 		dispositionObservation: (label: string) => `The disposition of "${label}" is unresolved.`,
 		dispositionPrompt: 'Should this capability be included, excluded, or deferred, and why?',
 		omissionObservation: (label: string, disposition: string) => `"${label}" is ${disposition} without a compatible, documented scope decision.`,
-		omissionPrompt: 'Confirm the intended scope and record the rationale and required approval. Do not manufacture approval or change scope automatically.'
+		omissionPrompt: 'Confirm the intended scope and record why it is left out: the reason a person reads on the Overview. Do not change scope automatically.'
 	},
 	fr: {
 		briefMissing: ["Aucun brief du projet n'est enregistré.", `À qui ce produit s'adresse-t-il, quel problème doit-il résoudre et qu'est-ce qui doit rester hors du périmètre${NBSP}?`],
@@ -32,7 +32,7 @@ const TEXTS = {
 		dispositionPrompt: `Cette capacité doit-elle être incluse, exclue ou reportée, et pourquoi${NBSP}?`,
 		omissionObservation: (label: string, disposition: string) =>
 			`La capacité ${quoteName('fr', label)} est ${FRENCH_DISPOSITIONS[disposition] ?? disposition} sans décision de périmètre compatible et documentée.`,
-		omissionPrompt: "Confirmez le périmètre voulu et enregistrez la justification et l'approbation requise. Ne fabriquez pas d'approbation et ne changez pas le périmètre automatiquement."
+		omissionPrompt: `Confirmez le périmètre voulu et enregistrez pourquoi la capacité est laissée de côté${NBSP}: la raison qu'une personne lit sur l'Overview. Ne changez pas le périmètre automatiquement.`
 	}
 } as const;
 
@@ -58,7 +58,7 @@ export function elaborationQuestions(input: ElaborationInput, add: AddElaboratio
 		const label = shortLabel(capability.name || capability.id);
 		const path = `capabilities.${capability.id}`;
 		if (capability.disposition === 'unresolved') question('scope-disposition', 'scope', path, t.dispositionObservation(label), t.dispositionPrompt, capability.id);
-		else if (['excluded', 'deferred'].includes(capability.disposition) && (scope.mode === 'full_product' || !capability.rationale.trim() || !capability.approvalId)) {
+		else if (['excluded', 'deferred'].includes(capability.disposition) && (scope.mode === 'full_product' || !capability.rationale.trim())) {
 			question('scope-omission', 'scope', path, t.omissionObservation(label, capability.disposition), t.omissionPrompt, capability.id);
 		}
 	}

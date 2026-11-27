@@ -173,9 +173,11 @@ if (isMainModule(import.meta.url)) {
 			const { answer, summary } = await sendEntries(session, project, slice, featureId, { positions: Boolean(flags.positions), expectedRevision });
 			if (sinceReport) summary.since = sinceReport;
 			if (!flags['no-git'] && !flags.positions) {
-				// Every proof the index holds, not only the slice sent: a slice would report its own few as the request's.
+				// The whole index, not only the slice sent: the request's own features are picked out of it
+				// (criterion 4a83650a), whichever feature this run sends.
 				const codeState = await reportCodeState(session, project.projectId, loaded.dir, entries, {
-					baseBranch: typeof flags['base-branch'] === 'string' ? flags['base-branch'] : null
+					baseBranch: typeof flags['base-branch'] === 'string' ? flags['base-branch'] : null,
+					featureKeys: (featureId) => featureKeys(session, project.projectId, featureId)
 				});
 				if (codeState) {
 					summary.codeState = codeState;

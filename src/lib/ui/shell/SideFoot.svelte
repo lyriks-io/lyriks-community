@@ -229,11 +229,6 @@
 		.lk-side .fm .mx.ck svg {
 			color: var(--color-blue-ink);
 		}
-		.lk-side .fm .sub {
-			min-height: 32px;
-			padding-left: 38px;
-			font-size: 0.78125rem;
-		}
 		.lk-side .fm .tag {
 			display: inline-flex;
 			align-items: center;

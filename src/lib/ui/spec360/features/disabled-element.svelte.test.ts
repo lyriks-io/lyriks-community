@@ -43,7 +43,7 @@ let validation: SpecValidation;
 const page = (actions: FeatureActionView[], canWrite = true) => {
 	const started = applyRetrospecActs(emptyRetrospecDocument(), [{ op: 'validate', itemId: 'outside', title: 'outside', tab: 'spec360' }], { actor: ana, now: '2026-11-18T02:00:00.000Z' });
 	if (!started.ok) throw new Error(started.reason);
-	const elements: SpecElement[] = actions.map((a) => ({ id: anchorOf('action', 'validation', a.id), title: a.name, owner: 'product' }));
+	const elements: SpecElement[] = actions.map((a) => ({ id: anchorOf('action', 'validation', a.id), title: a.name }));
 	validation = new SpecValidation(() => ({ projectId: 'p', me: ana, canWrite, doc: started.doc, elements, team: [{ person: ana, jobIds: ['product'] }], baselines: [] }));
 	return render(ActionList, { props: { featureId: 'validation', actions, actionData: {}, whole: true } }).body;
 };

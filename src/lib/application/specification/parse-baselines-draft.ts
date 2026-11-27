@@ -1,28 +1,17 @@
-import {
-	createEmptyBaselinesDraft,
-	type Baseline,
-	type ProjectBaselinesDraft
-} from '$domain/baselines';
+import { createEmptyBaselinesDraft, type Baseline, type ProjectBaselinesDraft } from '$domain/baselines';
 import { parseStableRecords } from './parse-stable-records';
 
-const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
-/** Anti-corruption parse for the Baselines draft (residue-backed, immutable snapshots). */
+/**
+ * Anti-corruption parse for the baselines: each keeps its id, its name and its
+ * moment. What an older list still carries (a note, scores, a feature count,
+ * a frozen requirements document) is dropped as it is read (criterion c7254cb1).
+ */
 export function parseBaselinesDraft(input: unknown, projectId: string): ProjectBaselinesDraft {
 	const base = createEmptyBaselinesDraft(projectId);
 	if (!input || typeof input !== 'object') return base;
 	const src = input as Record<string, unknown>;
-	const baselines = parseStableRecords(src.baselines, 'baseline', (r, id): Baseline => ({
-		id,
-		name: str(r.name),
-		note: str(r.note),
-		createdAt: str(r.createdAt),
-		readiness: num(r.readiness),
-		coherence: num(r.coherence),
-		featureCount: num(r.featureCount),
-		content: str(r.content)
-	})
-	);
-	return { ...base, projectId, baselines };
+	const baselines = parseStableRecords(src.baselines, 'baseline', (r, id): Baseline => ({ id, name: str(r.name), createdAt: str(r.createdAt) }));
+	return { ...base, baselines };
 }

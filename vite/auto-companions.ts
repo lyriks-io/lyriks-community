@@ -232,10 +232,6 @@ export function autoCompanions(): Plugin {
 		if (earlyMcp?.enabled && !process.env.LYRIKS_MCP_URL) {
 			process.env.LYRIKS_MCP_URL = `http://127.0.0.1:${process.env.LYRIKS_MCP_PORT ?? '3055'}`;
 		}
-		const earlyUnspa = early.find((c) => c.name === 'unspa');
-		if (earlyUnspa?.enabled && !process.env.PUBLIC_UNSPA_DASHBOARD_URL) {
-			process.env.PUBLIC_UNSPA_DASHBOARD_URL = `http://127.0.0.1:${process.env.UNSPA_DASHBOARD_PORT ?? '3001'}`;
-		}
 	}
 
 	function shutdown(): void {

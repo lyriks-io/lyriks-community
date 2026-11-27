@@ -18,7 +18,7 @@ import {
 	reportCards,
 	reportCounts,
 	reworkRejectedPrompt,
-	writeValidatedPrompt,
+	writingProgress,
 	writesHeld,
 	type ElementReading,
 	type RetrospecFacts,
@@ -43,12 +43,13 @@ import {
 	type RetrospecStatus
 } from '$domain/retrospec';
 import type { UnspaFeatureSnapshot } from '$lib/unspa-schema';
-import type { DriftChangeView, DriftPageData, HeldReportView, RunPreviewView, RunReportView, SpecEditView } from '$lib/shared/code-drift-page';
+import type { DriftChangeView, DriftPageData, HeldReportView, RunPreviewView, RunReportView, SpecEditView, WritingView } from '$lib/shared/code-drift-page';
 import { readBehavior } from './behavior-read.server';
 import { aiLastSeenOf } from './retrospec-ai.server';
 import { readRetrospecFacts } from './retrospec-status.server';
 import { readCodeChanges } from './spec-code-drift.server';
 import { readSpecElements } from './spec-elements.server';
+import { writingUnderWay } from './retrospec-writing.server';
 
 /**
  * What the Code drift page shows (criterion 4e7ec88c): whether the code is
@@ -164,7 +165,19 @@ async function readHeldReport(services: AppServices, projectId: string, run: Ret
 		return { title: title.replace(/^(Term|Journey) · /, ''), detail: text(intent ?? description ?? definition ?? '') || null, place: located?.kind === 'feature' ? `${located.core.name} › ${located.feature.name}` : null };
 	};
 	const counts = reportCounts(run.report);
-	return { cards: reportCards(run.report ?? {}, readOf, elements.map((e) => e.id), product), counts, writing: !!run.writingOpenedAt, writePrompt: writeValidatedPrompt(counts.validated, product), reworkPrompt: reworkRejectedPrompt(counts.rejected, product) };
+	return { cards: reportCards(run.report ?? {}, readOf, elements.map((e) => e.id), product), counts, writing: !!run.writingOpenedAt, written: run.writingOpenedAt ? writingView(projectId, run) : null, reworkPrompt: reworkRejectedPrompt(counts.rejected, product) };
+}
+
+/** Where Lyriks' writing stands: how many it wrote, whether it writes now, and where it stopped. */
+function writingView(projectId: string, run: RetrospecRun): WritingView {
+	const progress = writingProgress(run);
+	const stopped = progress.stop ? run.report?.[progress.stop.change] : undefined;
+	return {
+		total: progress.validated.length,
+		written: progress.written,
+		underWay: writingUnderWay(projectId),
+		stop: progress.stop ? { change: progress.stop.change, title: stopped?.title ?? progress.stop.change, reason: progress.stop.reason } : null
+	};
 }
 
 /**

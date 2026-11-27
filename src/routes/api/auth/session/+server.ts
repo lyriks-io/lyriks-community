@@ -19,6 +19,7 @@ export const GET: RequestHandler = async (event) => {
 	if (!account) error(401, 'unauthenticated');
 	const role = await services.roleGate.verdict(token, 'mcp', null);
 	if (role === 'unreachable') error(503, 'role check unavailable');
+	if (role === 'signed-out') error(401, 'unauthenticated');
 	if (role !== 'allowed') error(403, 'forbidden');
 	return json({ id: account.id }, { headers: { 'cache-control': 'no-store' } });
 };

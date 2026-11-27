@@ -131,23 +131,6 @@ export const CAPABILITY_HELP: Record<string, HelpEntry> = {
 		value:
 			'One list and one score say how the project stands. The score helps locate gaps; it does not certify runtime correctness.'
 	},
-	generate: {
-		title: 'Generate specs',
-		what: 'The spec generator, with the guarantee tiers it runs under and the threshold it waits for.',
-		how: ['Pick the guarantee tiers.', 'Set the threshold.', 'Generate the specs once nothing blocks.'],
-		value: 'The generated documents are read from the same specification the project health reads.'
-	},
-	traceability: {
-		title: 'Traceability',
-		what: 'Every feature as a requirement, traced to its acceptance criteria, behavior and source; the named versions of the spec; and who signed off what.',
-		how: [
-			'Coverage: read the matrix, where each red cell is a gap to close.',
-			'Baselines: freeze the spec at discovery, design or launch; each one records the scores, the feature count and a full requirements snapshot you can compare and export.',
-			'Approvals: track who reviews what and record the rationale behind every approval or accepted risk.'
-		],
-		value:
-			'A requirement nobody can trace is one nobody can defend. A lightweight worklist, not a workflow engine.'
-	},
 	documents: {
 		title: 'Documents & Sources',
 		what: 'A register of the interviews, research, links, regulations and evidence behind the spec, so any requirement can cite its source.',

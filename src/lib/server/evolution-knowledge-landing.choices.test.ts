@@ -80,7 +80,7 @@ function approved(): EvolutionRequest {
 	} as EvolutionRequest;
 }
 
-const element = (id: string, title: string): SpecElement => ({ id, title, owner: 'product', fingerprint: `f-${id}` });
+const element = (id: string, title: string): SpecElement => ({ id, title, fingerprint: `f-${id}` });
 
 describe('an element set to Validate at the landing', () => {
 	beforeEach(() => {

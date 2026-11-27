@@ -116,3 +116,11 @@ describe('both hooks recognise a Lyriks server by one rule [scenario:176d1671] [
 		expect(contextFor(failing('mcp__unspa__get_feature'), quiet)).not.toContain('The Lyriks MCP failed');
 	});
 });
+
+describe('the reminder makes the AI say on the person\'s pages why it stops [criterion:7b37377d]', () => {
+	it('tells it to ask or say why it stops on the pages before ending its turn', () => {
+		const context = contextFor([touched]);
+		expect(context).toContain('before ending a turn on a question, or stopping for any other reason');
+		expect(context).toContain('update_evolution_session (ask for the one question you wait on, stopped for why you stop)');
+	});
+});

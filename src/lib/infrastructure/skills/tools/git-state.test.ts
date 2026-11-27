@@ -80,3 +80,33 @@ describe('git-state reads the branch to suggest as the deployment branch [criter
 		expect(call(dir, 'g.defaultBranchOf(process.cwd())')).toBeNull();
 	});
 });
+
+describe('git-state counts only the proofs a run on this commit can take again [criterion:4a83650a]', () => {
+	const HEAD = 'c0ffee0000000000000000000000000000000000';
+	const OLD = '0ld0000000000000000000000000000000000000';
+	const proof = (kind: string, files: string[], revision: string) => ({ verification: { kind, files, lastResult: { passed: true, at: 'x', revision } } });
+	const ENTRIES = {
+		'criterion:mine-old': proof('unit', ['src/a.test.ts'], OLD),
+		'criterion:mine-new': proof('unit', ['src/a.test.ts'], HEAD),
+		'criterion:by-hand': proof('manual', ['src/a.svelte'], OLD),
+		'criterion:looked-at': proof('visual', ['src/a.svelte'], OLD),
+		'criterion:team-server': proof('unit', ['../Lyriks-back/packages/api/a.test.ts'], OLD),
+		'criterion:both-sides': proof('unit', ['../Lyriks-back/packages/api/a.test.ts', 'ee/lib/a.test.ts'], OLD),
+		'action:theirs': { file: '../Lyriks-back/packages/api/a.ts', verifiedAt: 'x', verifiedRevision: OLD },
+		'action:another-feature': { file: 'src/b.ts', verifiedAt: 'x', verifiedRevision: OLD }
+	};
+	const mine = Object.keys(ENTRIES).filter((key) => key !== 'action:another-feature');
+
+	it('leaves out the checks made by hand, the proofs of another repository and the features the request does not touch', () => {
+		const dir = repo();
+		const counted = call(dir, `g.proofsAgainst(Object.entries(${JSON.stringify(ENTRIES)}), ${JSON.stringify(HEAD)}, { keys: new Set(${JSON.stringify(mine)}) })`);
+		// Counted: mine-old and both-sides (one of its files is here) on another commit, mine-new on this one.
+		expect(counted).toEqual({ proofsChecked: 3, proofsOnOtherCommits: 2, proofsLeftOut: { otherFeatures: 1, byHand: 2, otherRepositories: 2 } });
+	});
+
+	it('weighs every feature of the index when the request names none, the hand checks and the other repositories still left out', () => {
+		const dir = repo();
+		const counted = call(dir, `g.proofsAgainst(Object.entries(${JSON.stringify(ENTRIES)}), ${JSON.stringify(HEAD)})`);
+		expect(counted).toEqual({ proofsChecked: 4, proofsOnOtherCommits: 3, proofsLeftOut: { otherFeatures: 0, byHand: 2, otherRepositories: 2 } });
+	});
+});

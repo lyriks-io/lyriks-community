@@ -4,6 +4,30 @@ import { parseScopeDraft } from './parse-scope-draft';
 import { SECTIONS } from '$lib/shared/sections';
 
 describe('parseScopeDraft', () => {
+	it('keeps where the specification stops and each group, and drops any approvalId sent [criterion:3a1f96bc]', () => {
+		const draft = parseScopeDraft(
+			{
+				mode: 'selected_scope',
+				boundary: {
+					covers: ' The application. ',
+					decision: 'The owner asked for the application only.',
+					decidedAt: '2026-11-12',
+					groups: [{ name: 'Website', summary: 'the public pages' }, { name: 'Website', summary: 'a second line' }, { name: '', summary: 'no name' }]
+				},
+				capabilities: [{ id: 'c1', name: 'Read the website', disposition: 'excluded', rationale: 'Outside the app.', group: ' Website ', approvalId: 'approval-1' }],
+				sectionAssessments: [{ section: 'glossary', applicability: 'not_applicable', status: 'ready', rationale: 'No terms.', approvalId: 'approval-2' }]
+			},
+			'p1'
+		);
+		expect(draft.boundary).toEqual({ covers: 'The application.', decision: 'The owner asked for the application only.', decidedAt: '2026-11-12', groups: [{ name: 'Website', summary: 'the public pages' }], approval: null });
+		expect(draft.capabilities[0]).toEqual({ id: 'c1', name: 'Read the website', description: '', sourceIds: [], featureIds: [], disposition: 'excluded', rationale: 'Outside the app.', group: 'Website' });
+		expect(draft.sectionAssessments.find((a) => a.section === 'glossary')).toEqual({ section: 'glossary', applicability: 'not_applicable', status: 'ready', rationale: 'No terms.' });
+		expect(parseScopeDraft({}, 'p1').boundary).toEqual({ covers: '', decision: '', decidedAt: null, groups: [], approval: null });
+		const approval = { by: 'Ann Lee', at: '2026-11-25T21:00:00.000Z', leftOut: 'fnv1a-1' };
+		expect(parseScopeDraft({ boundary: { approval } }, 'p1').boundary.approval).toEqual(approval);
+		expect(parseScopeDraft({ boundary: { approval: { by: 'x' } } }, 'p1').boundary.approval).toBeNull();
+	});
+
 	it('ignores retired operator assessments without mutating stored history or losing Baselines', () => {
 		const stored = {
 			sectionAssessments: [

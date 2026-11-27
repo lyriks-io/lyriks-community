@@ -5,8 +5,9 @@
 // the code says of each change a person made by hand in the validated
 // specification. Lyriks never reads the repository itself: the AI reports what
 // git and the code say. A later run holds what it finds (feat-ai-session criterion
-// 50b00229): it reports each difference in `changes`, says `finished`, and once a
-// person sent it what was validated, says in `written` what each change became.
+// 50b00229): it reports each difference in `changes`, each with the `writes` it
+// takes, and says `finished`; Lyriks writes what a person validates itself, so
+// the AI never writes during the run (feat-120, point 214).
 // A change a person rejected comes back under its id once reworked, or leaves the
 // report in `withdrawn` when the person said it is not a change at all
 // (feat-fb747-traceability criterion eb132bbd). A run that writes nothing as it
@@ -22,13 +23,15 @@ export interface RetrospecReadingArgs {
   commit?: string
   repository?: string
   checks?: { anchor: string; says: 'same' | 'other'; code?: string; where?: string }[]
-  changes?: { id: string; kind: 'new' | 'changed' | 'removed'; anchor?: string; dock?: string; title: string; proposed?: string; code?: string; where?: string }[]
+  changes?: { id: string; kind: 'new' | 'changed' | 'removed'; anchor?: string; dock?: string; title: string; proposed?: string; code?: string; where?: string; writes: ChangeWrite[] }[]
   withdrawn?: string[]
   finished?: boolean
-  written?: { change: string; elements: { anchor: string; title?: string }[] }[]
   phase?: string
   read?: string[]
 }
+
+/** What Lyriks writes once a person validates a change: a behaviour batch, or the edits of one section. */
+export type ChangeWrite = { featureId: string; operations: Record<string, unknown>[] } | { section: string; edits: Record<string, unknown>[] }
 
 const path = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}/retrospec/reading`
 
@@ -36,10 +39,9 @@ const path = (projectId: string) => `/api/projects/${encodeURIComponent(projectI
 export async function reportRetrospecReadingHandler(args: RetrospecReadingArgs, lyriks: LyriksClient): Promise<unknown> {
   const checks = args.checks ?? []
   const changes = args.changes ?? []
-  const written = args.written ?? []
   const withdrawn = args.withdrawn ?? []
   const read = args.read ?? []
-  if (!args.received && !args.commit && !args.finished && !args.phase && checks.length === 0 && changes.length === 0 && written.length === 0 && withdrawn.length === 0 && read.length === 0)
+  if (!args.received && !args.commit && !args.finished && !args.phase && checks.length === 0 && changes.length === 0 && withdrawn.length === 0 && read.length === 0)
     return lyriks.get(path(args.project_id))
   return lyriks.post(path(args.project_id), {
     ...(args.received ? { received: true } : {}),
@@ -47,7 +49,6 @@ export async function reportRetrospecReadingHandler(args: RetrospecReadingArgs, 
     ...(checks.length > 0 ? { checks } : {}),
     ...(changes.length > 0 ? { changes } : {}),
     ...(withdrawn.length > 0 ? { withdrawn } : {}),
-    ...(written.length > 0 ? { written } : {}),
     ...(args.finished ? { finished: true } : {}),
     ...(args.phase ? { phase: args.phase } : {}),
     ...(read.length > 0 ? { read } : {}),
