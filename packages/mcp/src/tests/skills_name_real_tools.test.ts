@@ -138,6 +138,9 @@ const NOT_TOOLS = new Set([
   'declare_deployment',
   'post_on_field',
   'register_source',
+  // The act the evolution playbook names to rewrite a step's text from its diagram
+  // (the dossier's `next` asks for it): an op of apply_evolution_batch, not a tool.
+  'write_text_from_diagram',
   'reopen_request',
   'report_ticket_post',
   'skip_question',

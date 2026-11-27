@@ -39,16 +39,33 @@ Activation makes no network call.
 
 ## Companion services behind the app origin
 
-The entry process serves three paths from the same origin as the application,
+The entry process serves two paths from the same origin as the application,
 so one session cookie covers everything and no extra ingress rule is needed.
 
 | Variable | Meaning |
 |---|---|
 | `LYRIKS_MCP_URL` | Internal address of the MCP gateway, served at `/mcp`. |
-| `LYRIKS_UNSPA_URL` | Internal address of the behaviour dashboard, served at `/behavior` behind the session. |
 | `LYRIKS_YJS_INTERNAL_URL` | Internal address of the realtime relay, served at `/yjs` behind the session. |
 | `PUBLIC_YJS_WS_URL` | Browser-facing WebSocket address of the relay when it is not on the app origin. |
-| `PUBLIC_UNSPA_DASHBOARD_URL` | Browser-facing address of the dashboard when it is not proxied. |
+
+## Behaviour editor (on demand)
+
+The behaviour engine's own editor is not served by the application and does
+not run with the stack. It is opened on demand from a terminal on the host:
+
+```bash
+docker compose --profile editor run --rm --no-deps --service-ports dashboard
+```
+
+It edits the same behaviour store as the platform, has no login of its own and
+is published on the host's loopback only. Reach it from a workstation through
+an SSH tunnel (`ssh -N -L 3003:127.0.0.1:3003 <user>@<host>`, then
+<http://localhost:3003/>). Deleting a state is refused there: delete states in
+Lyriks, which checks every reference to them first. Ctrl-C stops it.
+
+| Variable | Meaning |
+|---|---|
+| `LYRIKS_UNSPA_DASHBOARD_PORT` | Compose variable: the loopback port the editor is published on. Default `3003`. |
 
 ## Release awareness
 

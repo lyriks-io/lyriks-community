@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ElementStanding, SpecElement } from '$domain/retrospec';
 import { navChecks, viewAnchors } from './nav-checks';
 
-const element = (id: string): SpecElement => ({ id, title: id, owner: 'product' });
+const element = (id: string): SpecElement => ({ id, title: id });
 const standing = (state: ElementStanding['state']) => ({ state, required: [], validated: [], waitingOn: [] }) as unknown as ElementStanding;
 const read = (states: Record<string, ElementStanding['state']>) =>
 	navChecks(

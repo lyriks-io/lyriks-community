@@ -44,7 +44,7 @@ const edits = {
 const rule: ActionRule = { id: 'guard', text: 'When the payment is captured, the system shall refund it.', kind: 'rule', category: 'business', blocks: false };
 const action = (id: string, name: string) => ({ id, name, description: `What ${name} is for.`, who: [], rulesCount: '1 rule', refusalLead: null, rules: [rule] });
 const actions = [action('refund', 'Refund a payment'), action('void', 'Void a payment')];
-const elements: SpecElement[] = actions.map((a) => ({ id: anchorOf('action', 'refunds', a.id), title: a.name, owner: 'product' }));
+const elements: SpecElement[] = actions.map((a) => ({ id: anchorOf('action', 'refunds', a.id), title: a.name }));
 let validation: SpecValidation;
 
 const clean = (html: string) => html.replace(/<!--.*?-->/g, '').replace(/ class="svelte-[a-z0-9]+"/g, '').replace(/ svelte-[a-z0-9]+/g, '');

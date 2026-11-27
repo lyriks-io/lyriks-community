@@ -31,15 +31,18 @@
 		gap: 1px;
 		align-content: center;
 		justify-content: center;
-		background: var(--color-ink);
+		--mk-bg: var(--color-toner-1);
+		--mk-on: var(--color-ink-2);
+		background: var(--mk-bg);
 	}
+	/* Read: the mark keeps its shape, paler. */
 	.pix.faded {
-		background: var(--color-ink-4);
+		--mk-on: var(--color-ink-4);
 	}
 	i {
 		display: block;
 	}
 	i.on {
-		background: var(--color-paper);
+		background: var(--mk-on);
 	}
 </style>

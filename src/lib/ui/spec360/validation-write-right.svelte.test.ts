@@ -18,7 +18,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 const lead: PersonRef = { id: 'lead@company.test', name: 'Lead' };
 const reader: PersonRef = { id: 'reader@company.test', name: 'Reader' };
 const ANCHOR = 'feature:refunds';
-const elements: SpecElement[] = [{ id: ANCHOR, title: 'Refunds', owner: 'product' }];
+const elements: SpecElement[] = [{ id: ANCHOR, title: 'Refunds' }];
 // The reader holds no job owning the element and was not asked: it does not wait on them (canReview false).
 const team: TeamMember[] = [{ person: lead, jobIds: [] }, { person: reader, jobIds: [] }];
 const doc = (() => {

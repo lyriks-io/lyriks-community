@@ -14,7 +14,6 @@ const evidence = (overrides: Partial<CompletionEvidence> = {}): CompletionEviden
 	featureMaturity: {},
 	behaviorEntities: [],
 	dataEntityNames: [],
-	settledApprovalIds: [],
 	coherenceReady: true,
 	coherenceDetail: '',
 	experienceReady: true,
@@ -96,7 +95,7 @@ describe('CachedCompletionEvidence', () => {
 						featureIds: [],
 						disposition: 'included',
 						rationale: '',
-						approvalId: null
+						group: ''
 					}
 				]
 			})

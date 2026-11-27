@@ -17,7 +17,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 const ana = { id: 'ana@acme.io', name: 'Ana Diaz' };
 const bob = { id: 'bob@acme.io', name: 'Bob Li' };
 const cleo = { id: 'cleo@acme.io', name: 'Cleo Roy' };
-const elements: SpecElement[] = [{ id: 'branding', title: 'Branding', owner: 'design' }];
+const elements: SpecElement[] = [{ id: 'branding', title: 'Branding' }];
 
 function validated(doc: RetrospecDocument, by: typeof ana): RetrospecDocument {
 	const act: RetrospecAct = { op: 'validate', itemId: 'branding', title: 'Branding', tab: 'spec360' };
@@ -57,21 +57,20 @@ describe('the Specification 360° says whose validation an element awaits [crite
 	it('reads Waiting for the others once the reader validated, and Validated once everyone did', () => {
 		const one = validated(started(), ana);
 		const mine = controlFor(ana, one, team)!;
-		expect(validationView(mine)).toMatchObject({ state: 'waiting', label: 'Waiting for 1', title: 'Waiting for Bob Li. Click to withdraw yours' });
+		expect(validationView(mine)).toMatchObject({ state: 'waiting', label: 'Waiting for 1', title: 'Waiting for Bob Li. Click your box to withdraw yours' });
 		const both = validated(one, bob);
 		expect(validationView(controlFor(cleo, both, team)!)).toMatchObject({ state: 'validated', label: 'Validated' });
 	});
 
-	it('simulates eight people to validate: three initials, then +6, one line', () => {
+	it('simulates eight people to validate: three boxes, then +6, one line', () => {
 		const eight = ['Bob Li', 'Chloe Roy', 'Dan Ito', 'Eve Kim', 'Finn Moe', 'Gus Orr', 'Hana Pei', 'Ivo Sa'].map((name) => ({ id: `${name.split(' ')[0].toLowerCase()}@acme.io`, name }));
 		const big: TeamMember[] = [{ person: ana, jobIds: ['product'] }, ...eight.map((person) => ({ person, jobIds: ['design'] }))];
 		const c = controlFor(cleo, started(), big)!;
 		expect(c.stamps).toHaveLength(9);
 		const body = render(BlockControls, { props: { validate: c } }).body;
-		expect(body).toContain('Waiting for 9');
 		expect(body.match(/data-stamp-ok=/g)?.length).toBe(3);
 		expect(body).toMatch(/data-stamp-more[^>]*>\+6</);
-		expect(body).toContain('title="Waiting for Ana Diaz, Bob Li and 7 others"');
+		expect(body).not.toContain('data-own-box');
 	});
 });
 

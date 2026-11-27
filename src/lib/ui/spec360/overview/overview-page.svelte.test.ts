@@ -3,6 +3,7 @@ import { render } from 'svelte/server';
 import { applyRetrospecActs, emptyRetrospecDocument, type SpecElement } from '$domain/retrospec';
 import { SpecValidation } from '$ui/spec360/validation.svelte';
 import { commentsWords, sourcesWords } from '$ui/spec360/CiteLinks.svelte';
+import type { ScopeBoundaryView } from '$application/spec360/scope-boundary';
 import OverviewPage from '../../../../routes/projects/[projectId]/spec/+page.svelte';
 
 /**
@@ -22,7 +23,7 @@ vi.mock('$ui/ai-session/project-ai-session.svelte', () => ({ useProjectAiSession
 vi.mock('$ui/rules/rule-verdicts.svelte', () => ({ getRuleVerdicts: () => null }));
 
 const ana = { id: 'ana@example.test', name: 'Ana Diaz' };
-const elements: SpecElement[] = ['product', 'problem', 'target', 'core:billing', 'role:customer'].map((id) => ({ id, title: id, owner: 'product' }));
+const elements: SpecElement[] = ['product', 'problem', 'target', 'core:billing', 'role:customer'].map((id) => ({ id, title: id }));
 const mode = { active: false, available: true };
 const edits = {
 	editing: null as string | null,
@@ -41,7 +42,7 @@ let validation: SpecValidation;
 
 const LONG_NAME = 'Billing, invoicing, refunds and every reconciliation the finance team runs at the end of each month';
 const LONG_DESC = 'Collect payments, send invoices, return a payment and reconcile what the bank says with what the ledger holds, account by account.';
-interface Glance { symptoms?: string[]; outcomes?: { label: string; values: never[] }[]; meta?: { dimension: string; labels: string[] }[] }
+interface Glance { symptoms?: string[]; outcomes?: { label: string; values: never[] }[]; meta?: { dimension: string; labels: string[] }[]; scope?: ScopeBoundaryView | null }
 const clean = (html: string) => html.replace(/<!--.*?-->/g, '').replace(/ class="svelte-[a-z0-9]+"/g, '').replace(/ svelte-[a-z0-9]+/g, '');
 const overview = (over: Glance = {}) => clean(render(OverviewPage, { props: { data: {
 	projectId: 'p', canWrite: true, spec: { productName: 'Ledger' }, reach: { customer: 1 },
@@ -49,7 +50,8 @@ const overview = (over: Glance = {}) => clean(render(OverviewPage, { props: { da
 		target: 'Fast refunds.', outcomes: over.outcomes ?? [],
 		users: [{ id: 'customer', name: 'Customer', description: '', userClass: 'end' }],
 		cores: [{ id: 'billing', name: LONG_NAME, description: LONG_DESC, features: 1 }], health: null, healthReading: false },
-	noticed: { waitsForFeature: false, total: 0, pending: 0, major: 0, minor: 0, settled: 0, types: [], toConfirm: 0 }
+	noticed: { waitsForFeature: false, total: 0, pending: 0, major: 0, minor: 0, settled: 0, types: [], toConfirm: 0 },
+	scope: over.scope ?? null
 } } as never }).body);
 /** The part of the page between two markers. */
 const between = (html: string, from: string, to?: string) => html.slice(html.indexOf(from), to ? html.indexOf(to, html.indexOf(from)) : undefined);
@@ -122,7 +124,7 @@ describe('the two cards of Why it exists say which is the problem and which the 
 		for (const card of ['aria-label="The problem"', 'aria-label="The target"']) {
 			const marks = between(between(why, card, '</article>'), 'data-card-marks');
 			expect(marks).toContain('data-evo-validate');
-			expect(marks).toContain('aria-label="Request validation:');
+			expect(marks).toContain('aria-label="Ask a colleague to validate:');
 		}
 	});
 });
@@ -136,7 +138,7 @@ describe('every frame of the Overview offers its Validate the whole section at r
 	});
 
 	it('carries the standard review control on each profile of Who uses it', () => {
-		expect(frame(overview(), 'kb-who')).toContain('aria-label="Request validation: Customer"');
+		expect(frame(overview(), 'kb-who')).toContain('aria-label="Ask a colleague to validate: Customer"');
 	});
 });
 
@@ -162,5 +164,49 @@ describe('a card cuts a long name or description, whole in its tooltip [criterio
 		const what = frame(overview(), 'kb-what');
 		expect(what).toMatch(new RegExp(`<a[^>]*data-row-open[^>]*title="${LONG_NAME}"`));
 		expect(what).toContain(`title="${LONG_DESC}"`);
+	});
+});
+
+describe('What is out of scope opens from a discreet link while it waits for approval [criterion:3b04797c]', () => {
+	const view: ScopeBoundaryView = {
+		covers: 'The Lyriks application, Community and Enterprise.',
+		coveredCount: 109,
+		fullProduct: false,
+		leftOutCount: 62,
+		leftOut: [],
+		decision: '',
+		decidedAt: null,
+		approval: { state: 'none', by: '', at: '' },
+		shown: 'fnv1a-1'
+	};
+
+	it('ends the count of What it does with what is out of scope, To approve after it, and no frame of its own', () => {
+		const html = overview({ scope: view });
+		const what = frame(html, 'kb-what');
+		expect(what).toMatch(/<button[^>]*id="kb-scope"[^>]*>62 out of scope<\/button>/);
+		expect(what).toContain('To approve');
+		expect(html).not.toContain('In scope');
+	});
+
+	it('comes back once the list changed since its approval', () => {
+		const what = frame(overview({ scope: { ...view, approval: { state: 'changed', by: 'Ann Lee', at: '2026-11-25' } } }), 'kb-what');
+		expect(what).toContain('62 out of scope');
+	});
+});
+
+describe('Nothing waits for approval, no link [criterion:9424a65d]', () => {
+	it('draws no link while nothing is classified', () => {
+		expect(overview()).not.toContain('id="kb-scope"');
+	});
+
+	it('draws no link once the list is approved as it stands', () => {
+		const html = overview({ scope: { covers: '', coveredCount: 109, fullProduct: false, leftOut: [], leftOutCount: 62, decision: '', decidedAt: null, approval: { state: 'current', by: 'Ann Lee', at: '2026-11-25' }, shown: 'fnv1a-1' } });
+		expect(html).not.toContain('id="kb-scope"');
+		expect(html).not.toContain('out of scope');
+	});
+
+	it('draws no link for a full product, which has nothing to approve', () => {
+		const html = overview({ scope: { covers: '', coveredCount: 4, fullProduct: true, leftOut: [], leftOutCount: 0, decision: '', decidedAt: null, approval: null, shown: 'fnv1a-0' } });
+		expect(html).not.toContain('id="kb-scope"');
 	});
 });

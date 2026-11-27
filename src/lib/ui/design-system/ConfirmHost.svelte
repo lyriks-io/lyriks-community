@@ -42,7 +42,7 @@
 		aria-modal="true"
 		aria-label={req.title}
 		tabindex="-1"
-		class="fixed inset-0 z-50 grid place-items-center bg-ink/45 p-4"
+		class="fixed inset-0 z-[70] grid place-items-center bg-ink/45 p-4"
 		onclick={(e) => {
 			if (e.target === e.currentTarget) cancel();
 		}}

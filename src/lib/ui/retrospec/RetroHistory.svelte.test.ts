@@ -74,3 +74,43 @@ describe('the drawer of runs over the Overview is gone: an older link to it land
 		await expect(overviewLoad(event as never)).rejects.toMatchObject({ status: 303, location: '/projects/p%201/retrospec' });
 	});
 });
+
+describe('An approved scope reads in the History [criterion:bccbfdb5]', () => {
+	const scope = (state: 'none' | 'current' | 'changed') => ({
+		covers: 'The Lyriks application.',
+		coveredCount: 109,
+		fullProduct: false,
+		leftOutCount: 62,
+		leftOut: [],
+		decision: '',
+		decidedAt: null,
+		approval: { state, by: state === 'none' ? '' : 'Ann Lee', at: state === 'none' ? '' : '2026-11-25T21:00:00.000Z' },
+		shown: 'fnv1a-1'
+	});
+	const rows = (body: string) => [...body.matchAll(/<tr class="hover:bg-evo-hover"[^>]*>([\s\S]*?)<\/tr>/g)].map((m) => m[1]);
+
+	it('takes its row among the runs at the day of the approval, Source Scope, Result Approved', () => {
+		const body = render(RetroHistory, {
+			props: { runs: [card('run-2', { startedAt: '2026-11-26T08:00:00.000Z' }), card('run-1', { startedAt: '2026-11-12T08:00:00.000Z' })], scope: scope('current') }
+		}).body;
+		const [first, second, third] = rows(body);
+		expect(first).not.toContain('Scope');
+		expect(second).toContain('>Scope</td>');
+		expect(second).toContain('25 Nov 2026');
+		expect(second).toContain('>Approved</span>');
+		expect(second).toContain('aria-haspopup="dialog"');
+		expect(third).toContain('12 Nov 2026');
+	});
+
+	it('reads Changed since once the list moved, and alone when no run exists', () => {
+		const body = render(RetroHistory, { props: { runs: [], scope: scope('changed') } }).body;
+		expect(body).toContain('>History</h2>');
+		expect(rows(body)).toHaveLength(1);
+		expect(body).toContain('>Changed since</span>');
+	});
+
+	it('has no row while nobody approved it', () => {
+		expect(render(RetroHistory, { props: { runs: [], scope: scope('none') } }).body).not.toContain('History');
+		expect(render(RetroHistory, { props: { runs: [card('run-1')], scope: scope('none') } }).body).not.toContain('>Scope</td>');
+	});
+});

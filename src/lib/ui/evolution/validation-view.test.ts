@@ -27,10 +27,10 @@ describe('the one validation control reads its state in words [criterion:aba60be
 
 	it('says a validation can be taken back only when it can', () => {
 		const mine = validationView({ ...base, look: 'mine', withdraws: true, stamps: [stamp('Me', true, true), stamp('Bob', false)] });
-		expect(mine.title).toBe('Waiting for Bob. Point a moment to withdraw yours');
-		// A check that asks first is taken back on a click (EVO-007), never on rest.
+		// The reader's own green box takes it back after a confirmation, never on rest (EVO-007).
+		expect(mine.title).toBe('Waiting for Bob. Click your box to withdraw yours');
 		const asks = validationView({ ...base, look: 'mine', withdraws: true, withdrawConfirm: { question: 'Withdraw your validation of Ledger?', act: 'Withdraw' }, stamps: [stamp('Me', true, true), stamp('Bob', false)] });
-		expect(asks.title).toBe('Waiting for Bob. Click to withdraw yours');
+		expect(asks.title).toBe('Waiting for Bob. Click your box to withdraw yours');
 		expect(validationView({ ...base, look: 'done', settled: true, withdraws: true, run: null }).title).toBe('Validated by everyone it waits on');
 	});
 

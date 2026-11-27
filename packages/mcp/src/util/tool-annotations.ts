@@ -43,8 +43,8 @@ const ADD = [
   'attach_source', 'record_element_spans', 'stage_candidates', 'flag_conflict',
   // The audit and the closing record their run, which finish_project reads; they change nothing written.
   'audit_project_scope', 'finalize_analysis', 'finish_project',
-  // Opening a session and taking the next click move the session, never the spec.
-  'start_evolution_session', 'await_evolution_event',
+  // Opening a session and taking the next click move the session, never the spec; a wake starts the person's AI, never touches the spec.
+  'start_evolution_session', 'await_evolution_event', 'await_ai_wake',
   'generate_artifact',
 ] as const
 

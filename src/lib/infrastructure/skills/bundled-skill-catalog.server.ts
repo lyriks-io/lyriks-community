@@ -10,6 +10,7 @@ import type {
 import { buildBinding, buildSkillCatalog, diffSkillCatalog } from './skill-catalog-build';
 import bindingHookScript from './lyriks-bound-prompt.hook.mjs?raw';
 import toolsHookScript from './lyriks-allow-tools.hook.mjs?raw';
+import stopHookScript from './lyriks-stop.hook.mjs?raw';
 
 /**
  * Skill catalog bundled at BUILD time: Vite inlines every SKILL.md under
@@ -58,7 +59,7 @@ export class BundledSkillCatalog implements SkillCatalogPort {
 		// and helper scripts included, inlined at build time like the skills).
 		return {
 			...diffSkillCatalog(this.catalog, installed, client, options),
-			binding: buildBinding(bindingHookScript, client, projectId, bundledTools, options?.installedTools, toolsHookScript)
+			binding: buildBinding(bindingHookScript, client, projectId, bundledTools, options?.installedTools, toolsHookScript, stopHookScript)
 		};
 	}
 }

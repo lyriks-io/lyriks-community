@@ -30,7 +30,7 @@ export const DOC_TOPICS: readonly DocTopic[] = [
 	{ id: 'follow-up', label: 'Follow-up', group: 'The product', keywords: 'changes evolutions evolution request change mismatch code drift notices what lyriks noticed findings points' },
 	{ id: 'ai', label: 'Working with your AI', group: 'Working with Lyriks', keywords: 'ai llm mcp claude codex cursor client connect session ask my ai prompt assistant suggestions tools allow' },
 	{ id: 'measures', label: 'Health and the other measures', group: 'Working with Lyriks', keywords: 'health score coherence noticed major minor features users measure figure' },
-	{ id: 'team', label: 'Team, roles and jobs', group: 'Working with Lyriks', keywords: 'team members invite invitation role owner admin designer viewer job access enterprise' },
+	{ id: 'team', label: 'Team, roles and jobs', group: 'Working with Lyriks', keywords: 'team members invite invitation role owner admin editor designer viewer job access validate validation tech development enterprise' },
 	{ id: 'search', label: 'Search', group: 'Working with Lyriks', keywords: 'search find ctrl k cmd k palette recent recently changed rule' },
 	{ id: 'deployment', label: 'Deployment and air-gap', group: 'Running Lyriks', keywords: 'install deployment air-gap offline egress licence activation postgres versions update' },
 	{ id: 'shortcuts', label: 'Keyboard shortcuts', group: 'Running Lyriks', keywords: 'keyboard shortcut keys hotkey ctrl cmd escape' },

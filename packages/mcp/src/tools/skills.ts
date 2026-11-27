@@ -111,6 +111,8 @@ export interface SelfInstallSource {
   sessionTicket?: (sessionId: string) => { token: string | null; expiresAt?: string } | null
   /** The sync command of one project's index signs in with this (index-ticket.ts, criterion 2452b3d7). */
   indexTicket?: (projectId: string) => { token: string | null; expiresAt?: string } | null
+  /** The person's waker on one project signs in with this (wake-ticket.ts, criterion ab716003). */
+  wakeTicket?: (projectId: string) => { token: string | null; expiresAt?: string } | null
 }
 
 type SyncEntry = Record<string, unknown> & { id?: unknown; installContent?: unknown }
@@ -124,7 +126,7 @@ const weight = (key: string, text: string) => JSON.stringify(text).length + key.
 
 /** A hook of a binding target (Claude Code): written verbatim like a script, then wired. */
 type HookEntry = ScriptEntry & { settingsPath?: unknown }
-const HOOK_KEYS = ['hook', 'toolsHook'] as const
+const HOOK_KEYS = ['hook', 'toolsHook', 'stopHook'] as const
 
 /**
  * Keep the installer first when one is offered, then whole guides in catalog

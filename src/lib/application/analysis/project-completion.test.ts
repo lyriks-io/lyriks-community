@@ -33,7 +33,7 @@ function readyScope(overrides: Partial<ProjectScopeDraft> = {}): ProjectScopeDra
 				featureIds: ['feature-1'],
 				disposition: 'included',
 				rationale: '',
-				approvalId: null
+				group: ''
 			}
 		],
 		sectionAssessments: [
@@ -41,8 +41,7 @@ function readyScope(overrides: Partial<ProjectScopeDraft> = {}): ProjectScopeDra
 				section: 'features',
 				applicability: 'required',
 				status: 'ready',
-				rationale: 'Reviewed',
-				approvalId: null
+				rationale: 'Reviewed'
 			}
 		],
 		...overrides
@@ -56,7 +55,6 @@ function evidenceBuilder(
 ) {
 	return new BuildCompletionEvidenceUseCase(
 		{ execute: async () => ({ sources }) } as never,
-		{ execute: async () => ({ items: [] }) } as never,
 		{
 			execute: async () => ({
 				analysis: { gaps: [], readinessScore: coherenceReady ? 95 : 10 },
@@ -294,7 +292,6 @@ describe('project completion in French (spec language)', () => {
 		const verify = vi.fn(async () => ({ ready: false, blockers: [] }));
 		const builder = new BuildCompletionEvidenceUseCase(
 			{ execute: async () => ({ sources: [] }) } as never,
-			{ execute: async () => ({ items: [] }) } as never,
 			{ execute: async () => ({ analysis: { gaps: [], readinessScore: 10 }, draft: { threshold: 80 } }) } as never,
 			{ execute: async () => [] } as never,
 			{ execute: async () => ({ entities: [] }) } as never,
@@ -337,7 +334,6 @@ describe('the completion never reads more finished than its coherence', () => {
 	function builderWith(analysis: Record<string, unknown>) {
 		return new BuildCompletionEvidenceUseCase(
 			{ execute: async () => ({ sources: [{ id: 'source-1', url: 'https://example.test/brief', note: '' }] }) } as never,
-			{ execute: async () => ({ items: [] }) } as never,
 			{ execute: async () => ({ analysis: { gaps: [], readinessScore: 95, ...analysis }, draft: { threshold: 80 } }) } as never,
 			{ execute: async () => [{ featureId: 'feature-1', name: 'Send a message', maturity: 90, entities: ['Message'] }] } as never,
 			{ execute: async () => ({ entities: [{ name: 'Message' }] }) } as never,

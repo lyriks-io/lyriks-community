@@ -3,7 +3,8 @@
 	import { afterNavigate, goto, invalidateAll, replaceState } from '$app/navigation';
 	import { page } from '$app/state';
 	import { Logo, pushToast } from '$ui/design-system';
-	import { styledProjectName } from '$domain/foundation';
+	import { mcpEndpointFor, styledProjectName } from '$domain/foundation';
+	import { accessLabel } from '$domain/team';
 	import { rebuildsSpec, sourceModeOf, startPrompt, wayOf, type ScratchPace, type ScratchSource, type StartWay } from '$domain/portfolio/project-start';
 	import LlmConnection from '$ui/retrospec/LlmConnection.svelte';
 	import LearnSourceCard from './LearnSourceCard.svelte';
@@ -33,7 +34,6 @@
 	// specification holds a feature (criterion 40bef6da).
 	let { hasProject }: { hasProject: boolean } = $props();
 
-	const STEPS = 4;
 	let step = $state(1);
 	let name = $state('');
 	let product = $state<'existing' | 'scratch' | null>(null);
@@ -45,6 +45,16 @@
 	let created = $state<{ id: string; name: string } | null>(null);
 	let busy = $state(false);
 	let copied = $state(false);
+	/**
+	 * Who can open the project just created, who leads it (its creator) and the colleagues ticked to validate it beside
+	 * them (criterion bfe225b4 of feat-42): a Team step shows only when someone else can open it.
+	 */
+	let roster = $state<{ people: { id: string; name: string; role: string | null; jobs: string[] }[]; lead: string | null } | null>(null);
+	let ticked = $state<string[]>([]);
+	const teamShown = $derived(!!roster && roster.people.length > 1);
+	const STEPS = $derived(teamShown ? 5 : 4);
+	/** The step that holds the prompt: after the Team step when there is one. */
+	const promptStep = $derived(teamShown ? 5 : 4);
 	/** When the person's LLM last called Lyriks about the project created here, null before its first call. */
 	let aiSeenAt = $state<string | null>(null);
 	let now = $state(Date.now());
@@ -98,6 +108,8 @@
 		help = 'block';
 		emailWhenReady = true;
 		created = null;
+		roster = null;
+		ticked = [];
 		copied = false;
 		aiSeenAt = null;
 	}
@@ -138,7 +150,8 @@
 					name: created.name,
 					projectId: created.id,
 					scratch: way === 'scratch' && help !== 'myself' ? { source, pace: help } : undefined,
-					emailWhenReady: rebuildsSpec(way) && emailWhenReady ? { url: projectUrl(created.id, 'retrospec') } : null
+					emailWhenReady: rebuildsSpec(way) && emailWhenReady ? { url: projectUrl(created.id, 'retrospec') } : null,
+					mcpUrl: mcpEndpointFor(page.url.origin)
 				})
 			: ''
 	);
@@ -191,10 +204,40 @@
 	async function toPrompt() {
 		if (!way || busy) return;
 		if (!(await ensureProject(way))) return;
-		if (byHand) return begin(false);
+		if (!roster && created) roster = await readRoster(created.id);
 		copied = false;
+		if (teamShown) return void (step = 4);
+		if (byHand) return begin(false);
 		step = 4;
 	}
+
+	/** The people who can open the project, read once it exists; none on a single-person installation. */
+	async function readRoster(id: string) {
+		try {
+			const res = await fetch(`/projects/${encodeURIComponent(id)}/spec/validation`);
+			return res.ok ? ((await res.json()) as NonNullable<typeof roster>) : null;
+		} catch {
+			return null;
+		}
+	}
+
+	/** The colleagues ticked validate the project beside its creator; then the prompt, or the project without AI. */
+	async function confirmTeam() {
+		if (!created || busy) return;
+		if (ticked.length > 0) {
+			busy = true;
+			try {
+				const res = await fetch(`/projects/${encodeURIComponent(created.id)}/spec/validation`, json('POST', { acts: ticked.map((to) => ({ op: 'set_validator', to, validates: true })) }));
+				if (await failed(res, 'Who validates was not saved: tick them again, or name them later in Settings, Team.')) return;
+			} finally {
+				busy = false;
+			}
+		}
+		if (byHand) return begin(false);
+		step = 5;
+	}
+	const toggleTicked = (id: string) => (ticked = ticked.includes(id) ? ticked.filter((t) => t !== id) : [...ticked, id]);
+	const initialsOf = (n: string) => (n.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('') || n.slice(0, 2)).toUpperCase();
 
 	async function copy() {
 		try {
@@ -234,7 +277,7 @@
 	}
 
 	function back() {
-		step = step === 4 ? 3 : Math.max(1, step - 1);
+		step = step === promptStep ? (teamShown ? 4 : 3) : step === 4 ? 3 : Math.max(1, step - 1);
 		copied = false;
 	}
 
@@ -259,7 +302,13 @@
 				</span>
 				<button type="button" onclick={skip} class="min-h-9 cursor-pointer border-0 bg-transparent px-3 text-sm font-semibold text-ink underline decoration-[1.5px] underline-offset-[5px]">Skip for now</button>
 			</div>
-			{#if refused}
+			{#if refused && page.data.projectCreation?.ok === false && !page.data.projectCreation.plan}
+				<!-- The key in force holds no more projects (EVO-016, criterion ff8aad5f): its sentence, no offer of a plan. -->
+				<section class="flex flex-col items-start gap-2.5 border border-line bg-paper px-7 py-6 text-ink" data-project-limit>
+					<h1 class="m-0 text-[1.625rem] leading-[1.05] font-bold tracking-[-0.02em]">Create your project</h1>
+					<p class="m-0 text-[0.9375rem] leading-[1.55]">{page.data.projectCreation.reason}</p>
+				</section>
+			{:else if refused}
 				<CommunityLock lock="secondProject" title="Create your project" />
 			{:else}
 			<div class="flex flex-col gap-2">
@@ -368,6 +417,32 @@
 						</div>
 						<div class="flex justify-end">
 							<button type="button" aria-disabled={busy} onclick={toPrompt} class="{PRIMARY} {enabled(!busy)}">{byHand ? 'Create my project →' : 'Continue →'}</button>
+						</div>
+					</div>
+				{:else if way && created && teamShown && roster && step === 4}
+					<!-- Who validates the new project: its creator alone unless others are ticked (criterion bfe225b4 of feat-42). -->
+					<div class="flex flex-col gap-4" data-team-step>
+						<div class="flex flex-col gap-1.5">
+							<h2 class={H2}>Who validates {pName}?</h2>
+							<span class="text-[0.9375rem] leading-[1.55] text-evo-ink-3">You lead its validation. Tick the colleagues who validate it with you: each validates what their jobs cover. Everyone listed can open it; what they may edit is set in Settings, Members.</span>
+						</div>
+						<ul class="m-0 flex list-none flex-col divide-y divide-line border-[1.5px] border-line bg-paper p-0">
+							{#each [...roster.people].sort((a, b) => (a.id === roster?.lead ? -1 : b.id === roster?.lead ? 1 : a.name.localeCompare(b.name))) as person (person.id)}
+								{@const lead = person.id === roster.lead}
+								<li class="flex items-center gap-3 px-4 py-3">
+									<span class="grid size-8 flex-none place-items-center bg-blue-tint text-[0.6875rem] font-bold text-blue-ink" aria-hidden="true">{initialsOf(person.name)}</span>
+									<span class="flex min-w-0 flex-1 flex-col">
+										<span class="truncate text-sm font-semibold text-ink">{person.name}{#if lead}<span class="ml-1.5 text-xs font-medium text-ink-3">· Leads the validation</span>{/if}</span>
+										<span class="truncate text-xs text-ink-3">{person.role ? accessLabel(person.role) : 'Member'}{person.jobs.length > 0 ? ` · ${person.jobs.join(', ')}` : ''}</span>
+									</span>
+									<label class="inline-flex flex-none items-center gap-1.5 text-xs font-semibold text-ink" title={lead ? 'You lead the validation: you always validate' : undefined}>
+										<input type="checkbox" class="size-4 accent-ink" checked={lead || ticked.includes(person.id)} disabled={lead || busy} data-validates={person.id} onchange={() => toggleTicked(person.id)} />Validates
+									</label>
+								</li>
+							{/each}
+						</ul>
+						<div class="flex justify-end">
+							<button type="button" aria-disabled={busy} onclick={confirmTeam} class="{PRIMARY} {enabled(!busy)}">{byHand ? 'Create my project →' : 'Continue →'}</button>
 						</div>
 					</div>
 				{:else if way && created}

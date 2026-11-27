@@ -1,3 +1,4 @@
+import { messageWords } from './message-links';
 import { personKey } from '../evolution';
 import { isAnchor } from '../discussions';
 
@@ -65,8 +66,10 @@ export interface AiChatMessage {
 	readonly role: AiChatRole;
 	readonly text: string;
 	readonly at: string;
-	/** The AI asks the person what they mean (criterion 8fe54838). */
+	/** The AI asks the person what they mean (criterion 8fe54838), or asks them on its own (action 385983f9). */
 	readonly asks?: true;
+	/** The AI says why it stopped working on the project (action 559ba487). */
+	readonly stopped?: true;
 	/** Where the AI suggests the message belongs, for Publish. */
 	readonly place?: AiChatPlace;
 	readonly proposal?: AiChatProposal;
@@ -83,6 +86,10 @@ export interface AiConversation {
 	readonly startedAt: string;
 	readonly updatedAt: string;
 	readonly messages: readonly AiChatMessage[];
+	/** The AI opened it on its own, to ask the person something or say why it stopped (state conversation.openedBy). */
+	readonly openedBy?: 'ai';
+	/** When the person last opened it: why the AI stopped is settled once read (rule fc2ad132). */
+	readonly seenAt?: string;
 }
 
 export interface AiConversationsDocument {
@@ -140,6 +147,7 @@ function parseMessage(v: unknown): AiChatMessage | null {
 		text: str(r.text),
 		at: str(r.at),
 		...(r.asks === true ? { asks: true as const } : {}),
+		...(r.stopped === true ? { stopped: true as const } : {}),
 		...(place ? { place } : {}),
 		...(proposal ? { proposal } : {}),
 		...(pub && isAnchor(pub.anchor) && str(pub.threadId)
@@ -164,7 +172,9 @@ export function parseAiConversations(raw: unknown): AiConversationsDocument {
 			context: parseContext(o.context),
 			startedAt: str(o.startedAt),
 			updatedAt: str(o.updatedAt) || str(o.startedAt),
-			messages: Array.isArray(o.messages) ? o.messages.map(parseMessage).filter((m): m is AiChatMessage => m !== null) : []
+			messages: Array.isArray(o.messages) ? o.messages.map(parseMessage).filter((m): m is AiChatMessage => m !== null) : [],
+			...(o.openedBy === 'ai' ? { openedBy: 'ai' as const } : {}),
+			...(str(o.seenAt) ? { seenAt: str(o.seenAt) } : {})
 		});
 	}
 	return { version: AI_CONVERSATIONS_VERSION, conversations };
@@ -181,9 +191,9 @@ export function conversationOf(document: AiConversationsDocument, personId: stri
 	return found && same(found.personId, personId) ? found : null;
 }
 
-/** The title of a conversation: the first line of its first question, cut at a word. */
+/** The title of a conversation: the first line of its first question, its links read as their names (criterion 7f4690b0), cut at a word. */
 export function titleOf(text: string): string {
-	const line = text.trim().split(/\r?\n/, 1)[0].trim();
+	const line = messageWords(text).trim().split(/\r?\n/, 1)[0].trim();
 	if (line.length <= MAX_TITLE) return line;
 	const cut = line.slice(0, MAX_TITLE);
 	const space = cut.lastIndexOf(' ');
@@ -270,6 +280,62 @@ export function lyriksNote(
 	const message: AiChatMessage = { id: messageId, role: 'lyriks', text, at };
 	const next = { ...conversation, updatedAt: at, messages: [...conversation.messages, message] };
 	return { ok: true, conversation: next, message, document: replace(document, next) };
+}
+
+/** What the AI says on its own: one question it waits on, or why it stopped (action cf381e92). */
+export type AiTellAbout = 'question' | 'stopped';
+
+/** The longest question or stop the AI's own conversation keeps (parameter text of action cf381e92). */
+export const MAX_AI_TELL_LENGTH = 2000;
+
+/**
+ * The AI, working on the project, asks the person on its own or says why it
+ * stopped (actions 385983f9, 559ba487): a new conversation of the person's,
+ * opened by the AI, its words the first message, so the person reads and
+ * answers it on their pages and never in the AI client's chat alone.
+ */
+export function startAiConversation(
+	document: AiConversationsDocument,
+	personId: string,
+	input: { readonly text: string; readonly about: AiTellAbout; readonly context: AiChatContext | null },
+	ids: { readonly conversationId: string; readonly messageId: string },
+	at: string
+): Outcome<{ readonly conversation: AiConversation; readonly message: AiChatMessage }> {
+	const text = input.text.trim().slice(0, MAX_AI_TELL_LENGTH);
+	if (!text) return refuse('text is required: the question, or why you stop, in a sentence or two.');
+	const message: AiChatMessage = { id: ids.messageId, role: 'ai', text, at, ...(input.about === 'question' ? { asks: true as const } : { stopped: true as const }) };
+	const conversation: AiConversation = {
+		id: ids.conversationId,
+		personId,
+		title: titleOf(text),
+		context: input.context,
+		startedAt: at,
+		updatedAt: at,
+		messages: [message],
+		openedBy: 'ai'
+	};
+	return { ok: true, conversation, message, document: pruned({ ...document, conversations: [...document.conversations, conversation] }, personId) };
+}
+
+/** The person opened their conversation (action f08d6986): why their AI stopped is read from then on (rule fc2ad132). */
+export function markSeen(document: AiConversationsDocument, personId: string, conversationId: string, at: string): Outcome<{ readonly conversation: AiConversation }> {
+	const conversation = conversationOf(document, personId, conversationId);
+	if (!conversation) return refuse(NOT_FOUND, true);
+	const next = { ...conversation, seenAt: at };
+	return { ok: true, conversation: next, document: replace(document, next) };
+}
+
+/**
+ * Whether the conversation waits on its person (state conversation.needsYou):
+ * their AI's question not answered yet, or why it stopped not read since it
+ * came. Writing back settles both (effect bc86331d): the last message is then
+ * the person's.
+ */
+export function needsYou(conversation: AiConversation): boolean {
+	const last = conversation.messages[conversation.messages.length - 1];
+	if (!last || last.role !== 'ai') return false;
+	if (last.asks) return true;
+	return !!last.stopped && !(conversation.seenAt && conversation.seenAt >= last.at);
 }
 
 function updateMessage(

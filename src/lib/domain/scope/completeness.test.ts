@@ -3,6 +3,7 @@ import {
 	assessProjectCompletion,
 	createEmptyScopeDraft,
 	fingerprint,
+	leftOutFingerprint,
 	scopeContentFingerprint,
 	type CompletionEvidence,
 	type ProjectScopeDraft
@@ -21,7 +22,7 @@ function readyDraft(overrides: Partial<ProjectScopeDraft> = {}): ProjectScopeDra
 				featureIds: ['feature-1'],
 				disposition: 'included',
 				rationale: '',
-				approvalId: null
+				group: ''
 			}
 		],
 		sectionAssessments: [
@@ -29,8 +30,7 @@ function readyDraft(overrides: Partial<ProjectScopeDraft> = {}): ProjectScopeDra
 				section: 'features',
 				applicability: 'required',
 				status: 'ready',
-				rationale: 'Reviewed',
-				approvalId: null
+				rationale: 'Reviewed'
 			}
 		]
 	};
@@ -43,7 +43,6 @@ function evidence(draft: ProjectScopeDraft, overrides: Partial<CompletionEvidenc
 		featureMaturity: { 'feature-1': 90 },
 		behaviorEntities: [],
 		dataEntityNames: [],
-		settledApprovalIds: [],
 		coherenceReady: true,
 		coherenceDetail: 'Ready',
 		experienceReady: true,
@@ -106,14 +105,11 @@ describe('assessProjectCompletion', () => {
 					featureIds: [],
 					disposition: 'deferred',
 					rationale: 'Next release',
-					approvalId: 'approval-1'
+					group: ''
 				}
 			]
 		});
-		const report = assessProjectCompletion(
-			draft,
-			evidence(draft, { settledApprovalIds: ['approval-1'] })
-		);
+		const report = assessProjectCompletion(draft, evidence(draft));
 
 		expect(report.issues).toContainEqual(expect.objectContaining({ code: 'full-product-omission' }));
 	});
@@ -217,6 +213,31 @@ describe('assessProjectCompletion data links', () => {
 		for (const unlinkedDataFields of [[], undefined]) {
 			const report = assessProjectCompletion(draft, evidence(draft, unlinkedDataFields ? { unlinkedDataFields } : {}));
 			expect(report.issues.some((issue) => issue.code === 'data-field-unlinked')).toBe(false);
+		}
+	});
+});
+
+describe('assessProjectCompletion action journeys', () => {
+	it('names the features of several actions no journey links, in one warning that never blocks (criterion a0ebe123)', () => {
+		const draft = readyDraft();
+		const features = Array.from({ length: 7 }, (_, i) => ({ id: `feat-${i + 1}`, name: `Feature ${i + 1}` }));
+		const report = assessProjectCompletion(draft, evidence(draft, { featuresWithoutJourneys: features }));
+		const issues = report.issues.filter((issue) => issue.code === 'feature-journeys-missing');
+		expect(issues).toHaveLength(1);
+		expect(issues[0]).toMatchObject({ severity: 'warning', path: 'features.actionJourneys' });
+		expect(issues[0].message).toContain('7 feature(s)');
+		expect(issues[0].message).toContain('"Feature 1" (feat-1)');
+		expect(issues[0].message).toContain('"Feature 5" (feat-5) and 2 more');
+		expect(issues[0].message).not.toContain('Feature 6');
+		expect(issues[0].message).toContain('actionJourneys.<featureId>');
+		expect(report.canFinish).toBe(assessProjectCompletion(draft, evidence(draft)).canFinish);
+	});
+
+	it('says nothing when every feature of several actions has a journey, or when nothing was read', () => {
+		const draft = readyDraft();
+		for (const featuresWithoutJourneys of [[], undefined]) {
+			const report = assessProjectCompletion(draft, evidence(draft, featuresWithoutJourneys ? { featuresWithoutJourneys } : {}));
+			expect(report.issues.some((issue) => issue.code === 'feature-journeys-missing')).toBe(false);
 		}
 	});
 });
@@ -444,24 +465,46 @@ describe('the completion gate, one broken promise at a time', () => {
 		expect(blockers(audited({}, { featureMaturity: { 'feature-1': 0 } }))).toEqual(['capability-behavior-missing']);
 	});
 
-	it('takes a deferral in a selected scope once signed, reports it pending while the signature is under review, and blocks it unsigned', () => {
-		const deferred = { ...capability, featureIds: [], disposition: 'deferred' as const, rationale: 'Next release', approvalId: 'approval-1' };
+	it('takes a capability left out of a selected scope once it says why, asks no approval, and blocks it with no reason [criterion:3c66f8a9]', () => {
+		const deferred = { ...capability, featureIds: [], disposition: 'deferred' as const, rationale: 'Next release' };
 		const scoped = { mode: 'selected_scope' as const, capabilities: [capability, deferred] };
-		expect(audited(scoped, { settledApprovalIds: ['approval-1'] }).canFinish).toBe(true);
-		const pending = audited(scoped, { pendingApprovalIds: ['approval-1'] });
-		expect([pending.canFinish, warnings(pending)]).toEqual([true, ['capability-omission-approval-pending']]);
-		expect(blockers(audited(scoped))).toEqual(['capability-omission-unapproved']);
-		expect(blockers(audited({ ...scoped, capabilities: [capability, { ...deferred, rationale: ' ' }] }, { settledApprovalIds: ['approval-1'] }))).toEqual(['capability-omission-unapproved']);
+		const explained = audited(scoped);
+		// It finishes: what is left out only waits for a person's yes, as a warning (criterion 8fa35e1f).
+		expect([explained.canFinish, blockers(explained)]).toEqual([true, []]);
+		const silent = audited({ ...scoped, capabilities: [capability, { ...deferred, rationale: ' ' }] });
+		expect(blockers(silent)).toEqual(['capability-omission-unexplained']);
+		expect(silent.issues.find((i) => i.code === 'capability-omission-unexplained')?.message).toBe('"Send a message" is left for later with no reason. Say why, or bring it back into the spec.');
+		const excluded = audited({ ...scoped, capabilities: [capability, { ...deferred, disposition: 'excluded' as const, rationale: '' }] });
+		expect(excluded.issues.find((i) => i.code === 'capability-omission-unexplained')?.message).toBe('"Send a message" is left out with no reason. Say why, or bring it back into the spec.');
 	});
 
-	it('blocks a required section not assessed ready, and a section set aside without a signature', () => {
+	it('warns, never blocks, while nobody approved what is left out as it stands [criterion:8fa35e1f]', () => {
+		const deferred = { ...capability, id: 'cap-2', featureIds: [], disposition: 'deferred' as const, rationale: 'Next release' };
+		const scoped: Partial<ProjectScopeDraft> = { mode: 'selected_scope', capabilities: [capability, deferred] };
+		const waiting = audited(scoped);
+		expect([waiting.canFinish, warnings(waiting)]).toEqual([true, ['scope-left-out-unapproved']]);
+		expect(waiting.issues.find((i) => i.code === 'scope-left-out-unapproved')?.message).toBe(
+			'1 capability out of scope waits for a person to approve it: the out of scope link on the Overview.'
+		);
+		const draft = readyDraft(scoped);
+		const approval = { by: 'Ann Lee', at: '2026-11-25T21:00:00.000Z', leftOut: leftOutFingerprint(draft) };
+		expect(warnings(audited({ ...scoped, boundary: { ...draft.boundary, approval } }))).toEqual([]);
+		const changed = audited({ ...scoped, capabilities: [capability, { ...deferred, rationale: 'Never' }], boundary: { ...draft.boundary, approval } });
+		expect(changed.issues.find((i) => i.code === 'scope-left-out-unapproved')?.message).toBe(
+			'1 capability out of scope changed since Ann Lee approved it, and waits for a person to approve it again: the out of scope link on the Overview.'
+		);
+		expect(warnings(audited())).toEqual([]);
+	});
+
+	it('blocks a required section not assessed ready, and a section set aside with no reason [criterion:3c66f8a9]', () => {
 		const assessment = readyDraft().sectionAssessments[0];
 		expect(blockers(audited({ sectionAssessments: [{ ...assessment, status: 'in_progress' }] }))).toEqual(['section-not-ready']);
-		const setAside = { ...assessment, applicability: 'not_applicable' as const, rationale: 'No data', approvalId: 'approval-2' };
-		expect(blockers(audited({ mode: 'selected_scope', sectionAssessments: [setAside] }))).toEqual(['section-omission-unapproved']);
-		expect(audited({ mode: 'selected_scope', sectionAssessments: [setAside] }, { settledApprovalIds: ['approval-2'] }).canFinish).toBe(true);
-		expect(warnings(audited({ mode: 'selected_scope', sectionAssessments: [setAside] }, { pendingApprovalIds: ['approval-2'] }))).toEqual(['section-omission-approval-pending']);
-		expect(blockers(audited({ sectionAssessments: [setAside] }, { settledApprovalIds: ['approval-2'] }))).toEqual(['full-product-section-omission']);
+		const setAside = { ...assessment, applicability: 'not_applicable' as const, rationale: 'No data' };
+		expect(audited({ mode: 'selected_scope', sectionAssessments: [setAside] }).canFinish).toBe(true);
+		const silent = audited({ mode: 'selected_scope', sectionAssessments: [{ ...setAside, rationale: '' }] });
+		expect(blockers(silent)).toEqual(['section-omission-unexplained']);
+		expect(silent.issues[0].message).toBe('Features is marked not applicable with no reason. Say why, or describe it.');
+		expect(blockers(audited({ sectionAssessments: [setAside] }))).toEqual(['full-product-section-omission']);
 		expect(audited({ sectionAssessments: [{ ...assessment, applicability: 'derived', status: 'unassessed' }] }).canFinish).toBe(true);
 	});
 

@@ -1,6 +1,7 @@
 /**
  * The list of the Ask my AI page, grouped (criterion 2ed3cfa4): Needs you
- * first, the conversations where the AI asks the reader something, then by
+ * first, the conversations where the AI asks the reader something or said why
+ * it stopped and the reader has not read it yet (criterion 31488628), then by
  * when each last moved in the reader's own time zone: Today, Yesterday,
  * Previous 7 days, then one group per month. Empty groups are left out; each
  * group keeps the order it is given (latest first).
@@ -13,12 +14,12 @@ export interface ConversationGroup<T> {
 const DAY = 86_400_000;
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
-export function groupConversations<T extends { readonly updatedAt: string; readonly turn: string }>(conversations: readonly T[], now: Date): ConversationGroup<T>[] {
+export function groupConversations<T extends { readonly updatedAt: string; readonly turn: string; readonly needsYou?: boolean }>(conversations: readonly T[], now: Date): ConversationGroup<T>[] {
 	const today = startOfDay(now);
 	const groups = new Map<string, T[]>();
 	const add = (label: string, item: T) => groups.set(label, [...(groups.get(label) ?? []), item]);
 	for (const c of conversations) {
-		if (c.turn === 'asked_back') {
+		if (c.turn === 'asked_back' || c.needsYou) {
 			add('Needs you', c);
 			continue;
 		}

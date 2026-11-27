@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ScopeBoundaryView } from '$application/spec360/scope-boundary';
 	import { RUN_SOURCE_LABEL, RUN_STATUS_LABEL, type RunCard, type RunCardStatus } from '$domain/retrospec/run-history';
 	import { H2, LABEL, META, STATUS, TAG_BLUE, TAG_ORANGE, TAG_VALID, TAG_WATCH } from '$ui/spec360/page/look';
 
@@ -7,9 +8,28 @@
 	 * of the product, newest first, as a table of its date, where it read from,
 	 * the commit it read and where it stands. A click on a row unfolds who
 	 * started it and who validated it, then its steps, each with who and when.
-	 * The runs are listed nowhere else.
+	 * The runs are listed nowhere else. Once a person approved what is out of
+	 * scope, that decision takes its row among them at its day (criterion
+	 * bccbfdb5); its date opens the Scope drawer.
 	 */
-	let { runs }: { runs: readonly RunCard[] } = $props();
+	interface Props {
+		runs: readonly RunCard[];
+		scope?: ScopeBoundaryView | null;
+		onScope?: () => void;
+	}
+	let { runs, scope = null, onScope }: Props = $props();
+
+	const approved = $derived(scope?.approval && scope.approval.state !== 'none' ? scope.approval : null);
+	type Row = { kind: 'run'; run: RunCard } | { kind: 'scope'; at: string; current: boolean };
+	// Newest first: the approval sits before the first run started before it.
+	const rows = $derived.by((): Row[] => {
+		const all: Row[] = runs.map((run) => ({ kind: 'run', run }));
+		if (!approved) return all;
+		const row: Row = { kind: 'scope', at: approved.at, current: approved.state === 'current' };
+		const at = all.findIndex((r) => r.kind === 'run' && !!r.run.startedAt && r.run.startedAt < approved.at);
+		all.splice(at === -1 ? all.length : at, 0, row);
+		return all;
+	});
 
 	let unfolded = $state<Record<string, boolean>>({});
 	const TIME = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -28,7 +48,7 @@
 	const CELL = 'border-b border-evo-line-soft px-3.5 py-3 align-middle';
 </script>
 
-{#if runs.length > 0}
+{#if rows.length > 0}
 	<section class="flex flex-col gap-3" aria-labelledby="reverse-history">
 		<h2 id="reverse-history" class={H2}>History</h2>
 		<div class="overflow-x-auto border border-evo-line bg-surface">
@@ -42,7 +62,27 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each runs as run (run.id)}
+					{#each rows as row (row.kind === 'run' ? row.run.id : 'scope')}
+						{#if row.kind === 'scope'}
+							<tr class="hover:bg-evo-hover" data-history-scope>
+								<td class={CELL}>
+									<button
+										type="button"
+										class="flex cursor-pointer items-center gap-2 border-0 bg-transparent p-0 text-left font-semibold text-evo-ink"
+										aria-haspopup="dialog"
+										title="What is in and out of scope, and who approved it"
+										onclick={() => onScope?.()}
+									>
+										<svg class="flex-none" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+										<span class="font-evo-mono text-[0.8125rem]">{moment(row.at)}</span>
+									</button>
+								</td>
+								<td class={CELL}>Scope</td>
+								<td class={CELL}></td>
+								<td class={CELL}><span class={row.current ? TAG_VALID : TAG_WATCH}>{row.current ? 'Approved' : 'Changed since'}</span></td>
+							</tr>
+						{:else}
+						{@const run = row.run}
 						{@const isOpen = !!unfolded[run.id]}
 						<tr class="hover:bg-evo-hover">
 							<td class={CELL}>
@@ -88,6 +128,7 @@
 									{/if}
 								</td>
 							</tr>
+						{/if}
 						{/if}
 					{/each}
 				</tbody>

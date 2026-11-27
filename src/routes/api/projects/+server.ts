@@ -12,6 +12,8 @@ import {
 import { ownNewProject, resolveOwningWorkspace, VIEWER_CREATION_REFUSAL } from '$lib/server/new-project-ownership.server';
 import { creationRefused, refusedCreation, refusedFolder } from '$lib/server/project-creation-refusal.server';
 import { activeProjectState } from '$lib/server/active-project.server';
+import { activeProjectMarks } from '$application/portfolio/active-project';
+import { nameCreatorValidator } from '$lib/server/new-project-validators.server';
 import type { RequestHandler } from './$types';
 
 /** Audit actor from the request locals: the user email, else dev/anonymous. */
@@ -29,9 +31,9 @@ export const GET: RequestHandler = async (event) => {
 	const reach = await callerReach(event);
 	const portfolio = await services.buildPortfolio.execute(reach);
 	// The projects panel offers to drag the folders only to a writer who sees them all (rules f98a832d, d4e01c6f).
-	// Community works on one project at a time: the list marks the active one (EVO-001), null elsewhere.
-	const activeProjectId = (await activeProjectState(event.locals))?.activeProjectId ?? null;
-	return json({ portfolio, canOrderFolders: folderOrdering(reach).ok, activeProjectId });
+	// The list marks the active projects where some wait inactive (EVO-001, EVO-016), null elsewhere.
+	const activeProjectIds = activeProjectMarks(services.installEdition(), await activeProjectState(event.locals));
+	return json({ portfolio, canOrderFolders: folderOrdering(reach).ok, activeProjectIds });
 };
 
 /**
@@ -122,6 +124,8 @@ export const POST: RequestHandler = async (event) => {
 	// Community holds one project, whoever asks: the page or an AI client (EVO-001).
 	if ('refused' in creation) creationRefused(creation.refused);
 	const id = creation.created;
+	// Its creator leads its validation and validates it alone until others are named (criterion bfe225b4 of feat-42).
+	await nameCreatorValidator(services, id, event.cookies, event.request.headers.get('x-lyriks-client'));
 
 	services.audit.record({
 		action: 'project.create',

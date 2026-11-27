@@ -65,7 +65,8 @@ describe('a notification reads as one row: its project and when, what happened, 
 		noonYesterday.setDate(noonYesterday.getDate() - 1);
 		noonYesterday.setHours(12, 0, 0, 0);
 		const yesterday = { ...ready, id: 'tsk|y', at: noonYesterday.toISOString() };
-		const html = page([stopped, yesterday]);
+		// Now, not 12 minutes ago: just after midnight, 12 minutes ago is yesterday.
+		const html = page([{ ...stopped, at: new Date().toISOString() }, yesterday]);
 		expect(html.indexOf('>Today<')).toBeGreaterThan(-1);
 		expect(html.indexOf('>Today<')).toBeLessThan(html.indexOf('>Yesterday<'));
 		expect(html).toContain('Unread · 2');

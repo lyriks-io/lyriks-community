@@ -5,8 +5,6 @@ import type {
 	SectionDraftSaveOptions,
 	SessionPort
 } from '../ports';
-import type { ProjectApprovalsDraft } from '$domain/approvals';
-import { SETTLED_APPROVAL_STATUSES } from '$domain/approvals';
 import type { ProjectDataDraft } from '$domain/data';
 import { unrelatedEntities } from '$domain/data';
 import { sourceAccessIssues, uncitedElements, type ExtractedReading, type ProjectDocumentsDraft } from '$domain/documents';
@@ -154,7 +152,6 @@ function auditEntry(
 export class BuildCompletionEvidenceUseCase {
 	constructor(
 		private readonly documents: Loader<ProjectDocumentsDraft>,
-		private readonly approvals: Loader<ProjectApprovalsDraft>,
 		private readonly coherence: Loader<CoherenceView>,
 		private readonly maturity: Loader<FeatureMaturityRow[]>,
 		private readonly data: Loader<ProjectDataDraft>,
@@ -172,10 +169,9 @@ export class BuildCompletionEvidenceUseCase {
 		// it stays exact under the model fingerprint that keys its cache.
 		const lang = await readLanguage(this.language, projectId);
 		const t = TEXTS[lang];
-		const [documents, approvals, coherence, maturity, data, experience, modelFingerprint, unlinked, extracted] =
+		const [documents, coherence, maturity, data, experience, modelFingerprint, unlinked, extracted] =
 			await Promise.all([
 				this.documents.execute(projectId),
-				this.approvals.execute(projectId),
 				this.coherence.execute(projectId),
 				this.maturity.execute(projectId).catch(() => []),
 				this.data.execute(projectId).catch(() => null),
@@ -213,16 +209,11 @@ export class BuildCompletionEvidenceUseCase {
 			dataEntityNames: (data?.entities ?? []).map((entity) => entity.name),
 			unrelatedDataEntityNames: data ? unrelatedEntities(data).map((entity) => entity.name) : [],
 			...(unlinked && unlinked.length > 0 ? { unlinkedDataFields: unlinked } : {}),
+			// A feature of several actions that no journey links reads them as a bare list (criterion a0ebe123).
+			featuresWithoutJourneys: maturity
+				.filter((row) => row.actions >= 2 && !row.journeyLinked)
+				.map((row) => ({ id: row.featureId, name: row.name })),
 			...(uncited.length > 0 && extracted ? { uncitedExtracted: uncited, extractedFrom: extracted.from } : {}),
-			settledApprovalIds: approvals.items
-				.filter((item) => SETTLED_APPROVAL_STATUSES.includes(item.status))
-				.map((item) => item.id),
-			// Filed and waiting for a person. The gate counts the decision as taken
-			// and reports the missing signature as debt, instead of pushing whoever
-			// authors the scope to claim a risk was accepted.
-			pendingApprovalIds: approvals.items
-				.filter((item) => item.status === 'in_review')
-				.map((item) => item.id),
 			coherenceReady,
 			coherenceDetail: coherenceReady ? t.coherenceReady(hold) : t.coherenceNotReady(hold),
 			coherenceScore: hold.headline.score,
@@ -269,7 +260,6 @@ export class AssessProjectCompletenessUseCase {
 				featureMaturity: {},
 				behaviorEntities: [],
 				dataEntityNames: [],
-				settledApprovalIds: [],
 				coherenceReady: false,
 				coherenceDetail: t.coherenceBeforeScope,
 				experienceReady: false,
@@ -305,6 +295,10 @@ export class SaveScopeDraftUseCase {
 		const savedAt = this.clock.nowIso();
 		const draft: ProjectScopeDraft = {
 			...incoming,
+			// Only a person approves what the scope leaves out, through its own door: a
+			// save never writes nor erases the approval; a list changed since simply no
+			// longer matches it (criterion d16b352d).
+			boundary: { ...incoming.boundary, approval: existing?.boundary.approval ?? null },
 			// History is server-owned: an ordinary save may neither forge nor erase it,
 			// and unlike `audit` it is NOT invalidated when the scope content changes.
 			auditLog: existing?.auditLog ?? [],

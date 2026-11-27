@@ -175,11 +175,15 @@
 			// Validated by the person's AI under their delegation (ac-evo-llm-delegation-marks).
 			const ai = ok && filled.some((a) => has(a.trail?.validatedByAi ?? [], id));
 			const name = ai ? `${nameOf(id)}'s AI` : nameOf(id);
+			// The reader's own box comes first and is where they validate (criterion 32265cea of feat-34).
+			const me = same(id, actorId);
 			return {
 				id,
-				initials: initials(nameOf(id)),
+				initials: me ? 'YOU' : initials(nameOf(id)),
 				ok,
 				ai,
+				me,
+				name,
 				// The avatars only say who validated: only Validate validates (ac-evo-form-validators).
 				title: `${name}${ok ? ' · validated' : ' · to validate'}`
 			};
@@ -194,6 +198,7 @@
 		held,
 		run: !canValidate || filled.length === 0 || held ? null : mine ? () => void withdraw() : settled ? null : () => void validate(),
 		withdraws: mine,
+		what: 'this section',
 		stamps,
 		settled
 	});

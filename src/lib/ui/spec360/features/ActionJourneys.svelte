@@ -1,17 +1,20 @@
 <script lang="ts">
 	import { mintUuid } from '$ui/shell/mint-id';
-	import { canLink, journeyThrough, journeysOnFeature, layoutJourney, stepNumbers, type ActionJourney, type JourneyAct, type JourneyLink, type JourneyPosition } from '$domain/features';
+	import { canLink, journeyThrough, journeysOnFeature, layoutJourney, linkKindOf, shownDiagram, stepNumbers, JOURNEY_LINK_KINDS, JOURNEY_LINK_LABELS, type ActionJourney, type JourneyAct, type JourneyLink, type JourneyLinkKind, type JourneyPosition } from '$domain/features';
 	import type { FeatureActionView } from '$application/spec360/features';
 	import { Icon } from '$ui/design-system';
 	import { BTN, LINK, META, TAG } from '$ui/spec360/page/look';
 	import { trackSave } from '$ui/shell/pending-saves.svelte';
 	import { JourneySaves, type JourneySaveAnswer } from './journey-saves';
+	import ActionHoverCard from './ActionHoverCard.svelte';
 
 	/**
 	 * A feature's journeys (actions f3bbf419, 2d9a8378): one diagram, the
 	 * journeys being the paths its arrows draw between action cards; nothing is
-	 * declared or named. It reads its linked paths only, each card numbered by
-	 * its step (1 where no arrow leads in; cards at the same step share one).
+	 * declared or named. Its linked paths read first, each card numbered by its
+	 * step (1 where no arrow leads in; cards at the same step share one); the
+	 * actions no arrow touches stand apart under them, side by side in rows as
+	 * wide as the box, without a number (criterion 6bc24100).
 	 * Define journeys, offered on hover, opens its own edit mode: every action shows as a
 	 * card with a connector on its left (arrows in) and its right (arrows out),
 	 * an arrow is pulled from a connector onto another card or drawn by clicking
@@ -37,13 +40,20 @@
 	// The drawing's measures, in pixels.
 	const W = 196;
 	const H = 54;
-	const GX = 84;
+	const GX = 48;
 	const GY = 22;
 	const PAD = 18;
 	/** How far an arrow keeps from a card's side, so its connector and its head both show. */
 	const GAP = 9;
 	/** Room left around the cards so one can be dragged further out. */
 	const ROOM = 140;
+	/** The actions outside the journeys: the gaps between their cards (wider while editing, so two connectors never touch), and the line above them. */
+	const TX = 12;
+	const TX_EDIT = 40;
+	const TY = 10;
+	const LINE = 30;
+	/** How far under the journeys that line stands. */
+	const APART = 26;
 
 	// What the diagram shows: the changes made, ahead of the server; the page's own read until the first change.
 	let saved = $state<readonly ActionJourney[] | null>(null);
@@ -56,16 +66,17 @@
 	let selected = $state<JourneyLink | null>(null);
 	/** Whether the pointer is in the diagram: Edit is offered. */
 	let inside = $state(false);
+	/** The box's width, so the actions outside the journeys fill its rows. */
+	let boxWidth = $state(0);
+	/** The action whose card the pointer rests on, and where that card stood: its hover card shows (criterion 3feec278). */
+	let hover = $state<{ actionId: string; at: DOMRect } | null>(null);
 	/** The diagram's own edit mode: every card, its connectors and moves; a diagram with no arrow yet opens in it. */
 	let editing = $state(false);
 	const canEdit = $derived(canArrange && editing);
 
 	const ids = $derived(actions.map((a) => a.id));
-	// The feature's one diagram: a person's first, else a suggestion; none yet until the first arrow or move saves it.
-	const stored1 = $derived.by(() => {
-		const all = journeysOnFeature(saved ?? stored, ids).journeys;
-		return all.find((j) => j.origin === 'person') ?? all[0] ?? null;
-	});
+	// The feature's one diagram: a person's with an arrow, else a suggestion with one; none yet until the first arrow or move saves it.
+	const stored1 = $derived(shownDiagram(journeysOnFeature(saved ?? stored, ids).journeys));
 	const diagram = $derived<ActionJourney>({
 		id: stored1?.id ?? '',
 		name: stored1?.name ?? 'Journeys',
@@ -74,8 +85,8 @@
 		positions: stored1?.positions,
 		origin: stored1?.origin ?? 'person'
 	});
-	const listed = $derived(new Map(actions.map((a, i) => [a.id, i + 1])));
 	const named = $derived(new Map(actions.map((a) => [a.id, a.name])));
+	const described = $derived(new Map(actions.map((a) => [a.id, a.description])));
 	/** The action whose journey the diagram is narrowed to, while reading. */
 	const focused = $derived(!editing && picked && named.has(picked) ? picked : null);
 
@@ -130,24 +141,21 @@
 		const linkedIn = new Set(part.links.map((l) => l.to));
 		// Every action of the feature shows, read or edited, unless one is picked.
 		const shown = part.nodes;
-		const auto = new Map(layoutJourney(part).map((p) => [p.actionId, { x: PAD + p.column * (W + GX), y: PAD + p.row * (H + GY) }]));
 		const linked = (a: string) => linkedOut.has(a) || linkedIn.has(a);
+		const inJourney = part.nodes.filter(linked);
+		const apart = part.nodes.filter((a) => !linked(a));
+		const auto = new Map(layoutJourney({ nodes: inJourney, links: part.links }).map((p) => [p.actionId, { x: PAD + p.column * (W + GX), y: PAD + p.row * (H + GY) }]));
 		// Read, every card is arranged automatically; editing, a card dragged aside stays there until Done arranges all again.
 		const moved = editing ? (diagram.positions ?? {}) : {};
-		const at = new Map<string, JourneyPosition>(
-			part.nodes.filter(linked).map((a) => [a, dragging?.actionId === a ? { x: dragging.x, y: dragging.y } : (moved[a] ?? auto.get(a) ?? { x: PAD, y: PAD })])
-		);
-		// A loose card is arranged automatically: at the left, under the cards standing there (editing, where a person put it, if they did).
-		let below = Math.max(PAD - GY, ...[...at.values()].filter((p) => p.x < PAD + W).map((p) => p.y + H));
-		for (const a of part.nodes.filter((n) => !linked(n))) {
-			const placed = dragging?.actionId === a ? { x: dragging.x, y: dragging.y } : moved[a];
-			if (placed) at.set(a, placed);
-			else {
-				below += GY;
-				at.set(a, { x: PAD, y: below });
-				below += H;
-			}
-		}
+		const placed = (a: string) => (dragging?.actionId === a ? { x: dragging.x, y: dragging.y } : moved[a]);
+		const at = new Map<string, JourneyPosition>(inJourney.map((a) => [a, placed(a) ?? auto.get(a) ?? { x: PAD, y: PAD }]));
+		// The actions no arrow touches stand apart under the journeys, side by side in rows as wide as the box, under a line saying what they are.
+		const journeyBottom = Math.max(0, ...inJourney.map((a) => auto.get(a)!.y + H));
+		const lineAt = focus ? null : inJourney.length ? journeyBottom + APART : PAD;
+		const top = lineAt === null ? PAD : lineAt + LINE;
+		const tx = editing ? TX_EDIT : TX;
+		const perRow = Math.max(1, Math.floor(((boxWidth || 4 * (W + tx)) - 2 * PAD + tx) / (W + tx)));
+		apart.forEach((a, i) => at.set(a, placed(a) ?? { x: PAD + (i % perRow) * (W + tx), y: top + Math.floor(i / perRow) * (H + TY) }));
 		const arrows = part.links.flatMap((link) => {
 			const a = at.get(link.from);
 			const b = at.get(link.to);
@@ -160,7 +168,8 @@
 		const bottom = Math.max(...visible.map((p) => p.y + H), H);
 		// A card's number is its step along the arrows of the whole diagram: 1 where none leads in, shared by the cards at the same step.
 		const step = stepNumbers(diagram);
-		return { at, arrows, shown, linkedOut, linkedIn, step, width: right + PAD + (editing ? ROOM : 0), height: bottom + PAD + (editing ? ROOM / 2 : 0) };
+		const line = lineAt === null || !apart.length ? null : { y: lineAt, text: inJourney.length ? 'Not in a journey yet' : 'No journey yet: link the actions in the order a person does them.' };
+		return { at, arrows, shown, linkedOut, linkedIn, step, line, width: right + PAD + (editing ? ROOM : 0), height: bottom + PAD + (editing ? ROOM / 2 : 0) };
 	});
 
 	/** A smooth arrow from a card's right side to another's left side, wherever they stand. */
@@ -190,6 +199,7 @@
 			return;
 		}
 		selected = null;
+		leaveCard();
 		drawing = { at, side, ...pointAt(e, canvas), moved: false, held: true };
 		window.addEventListener('pointermove', follow);
 		window.addEventListener('pointerup', release, { once: true });
@@ -229,27 +239,38 @@
 		canvas = (e.currentTarget as HTMLElement).closest('[data-canvas]');
 		if (!canvas) return;
 		const p = pointAt(e, canvas);
+		leaveCard();
 		dragging = { actionId, x: from.x, y: from.y, dx: p.x - from.x, dy: p.y - from.y, moved: false };
 		window.addEventListener('pointermove', drag);
 		window.addEventListener('pointerup', drop, { once: true });
 	}
+	/** The card under the pointer other than the one dragged, which covers it. */
+	const otherCardUnder = (e: PointerEvent, dragged: string) =>
+		document.elementsFromPoint(e.clientX, e.clientY).map((el) => el.closest<HTMLElement>('[data-node]')?.dataset.node).find((id) => id && id !== dragged) ?? null;
 	function drag(e: PointerEvent) {
 		if (!dragging || !canvas) return;
 		const p = pointAt(e, canvas);
 		const x = Math.max(0, p.x - dragging.dx);
 		const y = Math.max(0, p.y - dragging.dy);
 		dragging = { ...dragging, x, y, moved: dragging.moved || Math.hypot(x - dragging.x, y - dragging.y) > 3 };
+		// A card dragged over another it may lead to lights that one up: let go, and they are linked (criterion 14c7a2da).
+		dropOn = otherCardUnder(e, dragging.actionId);
+		hovered = dropOn && canLink(diagram, dragging.actionId, dropOn) ? dropOn : null;
 	}
-	function drop() {
+	function drop(e: PointerEvent) {
 		window.removeEventListener('pointermove', drag);
 		const d = dragging;
-		if (!d || !d.moved) {
-			dragging = null;
-			return;
-		}
-		change((journeyId) => ({ kind: 'move', journeyId, actionId: d.actionId, x: d.x, y: d.y }));
+		const target = d?.moved ? otherCardUnder(e, d.actionId) : null;
 		dragging = null;
+		dropOn = null;
+		hovered = null;
+		if (!d || !d.moved) return;
+		// Dropped on another card: an arrow from the dragged one to it, which goes back where it stood; never a card hiding another.
+		if (target) change((journeyId) => ({ kind: 'link', journeyId, from: d.actionId, to: target }));
+		else change((journeyId) => ({ kind: 'move', journeyId, actionId: d.actionId, x: d.x, y: d.y }));
 	}
+	/** The card a dragged card is over, if any. */
+	let dropOn = $state<string | null>(null);
 
 	/** Edit opens the edit mode; Done arranges every card automatically, saves it and closes, so the next Edit starts from it. */
 	function toggleEdit() {
@@ -267,6 +288,21 @@
 		selected = null;
 		act({ kind: 'unlink', journeyId: diagram.id, from: link.from, to: link.to });
 	}
+	/** Gives an arrow another kind (criterion 415a3006); the menu stays on it. */
+	function retype(link: JourneyLink, linkKind: JourneyLinkKind) {
+		if (linkKindOf(link) === linkKind) return;
+		if (act({ kind: 'retype', journeyId: diagram.id, from: link.from, to: link.to, linkKind })) selected = { ...link, kind: linkKind };
+	}
+
+	/** How each kind of arrow is drawn: its colour, and a dash for what no one does by hand. */
+	const KIND_LOOK: Record<JourneyLinkKind, { color: string; dash?: string }> = {
+		then: { color: 'var(--color-ink-2)' },
+		enables: { color: 'var(--color-blue-ink)' },
+		triggers: { color: 'var(--color-violet-ink)', dash: '6 4' },
+		fails: { color: 'var(--color-red-ink)' }
+	};
+	/** The kinds the diagram's arrows use, in their order, for the legend. */
+	const kindsUsed = $derived(JOURNEY_LINK_KINDS.filter((k) => diagram.links.some((l) => linkKindOf(l) === k)));
 	function onKey(e: KeyboardEvent) {
 		if ((e.target as HTMLElement | null)?.closest('input, select, textarea, [contenteditable]')) return;
 		if (e.key === 'Escape') {
@@ -280,12 +316,36 @@
 		}
 	}
 
+	// The hover card of an action (criterion 3feec278): after a moment, at once when moving on from another
+	// card; never over a connector, nor while an arrow is drawn or a card dragged.
+	const HOVER_MS = 400;
+	const WARM_MS = 600;
+	let hoverTimer = 0;
+	let warmUntil = 0;
+	function restOn(e: PointerEvent, actionId: string) {
+		if (e.pointerType === 'touch' || drawing || dragging) return;
+		if ((e.target as HTMLElement).closest('button')) return leaveCard();
+		if (hover?.actionId === actionId) return;
+		const card = e.currentTarget as HTMLElement;
+		clearTimeout(hoverTimer);
+		hoverTimer = window.setTimeout(() => showCard(card, actionId), hover || Date.now() < warmUntil ? 0 : HOVER_MS);
+	}
+	function showCard(card: HTMLElement, actionId: string) {
+		if (drawing || dragging) return;
+		hover = { actionId, at: card.getBoundingClientRect() };
+	}
+	function leaveCard() {
+		clearTimeout(hoverTimer);
+		if (hover) warmUntil = Date.now() + WARM_MS;
+		hover = null;
+	}
+
 	const DOT = 'absolute top-1/2 z-20 size-4 -translate-y-1/2 cursor-crosshair rounded-full border-[1.5px] border-ink transition-opacity hover:scale-125 hover:bg-violet-ink';
 	/** A connector's fill: violet while an arrow is drawn from it, ink when an arrow uses it, paper when free. */
 	const fill = (drawingHere: boolean, used: boolean) => (drawingHere ? 'bg-violet-ink' : used ? 'bg-ink' : 'bg-paper');
 </script>
 
-<svelte:window onkeydown={onKey} />
+<svelte:window onkeydown={onKey} onscroll={leaveCard} />
 
 <!-- One who only reads sees the diagram once it has an arrow. -->
 {#if canArrange || diagram.links.length}
@@ -293,7 +353,7 @@
 	{#if editing || (diagram.origin === 'ai' && stored1)}
 		<div class="flex flex-wrap items-center gap-2">
 			{#if editing}
-				<p class="m-0 min-w-0 flex-1 {META}">Link the actions: pull an arrow from a card's right dot onto another (or from its left dot to point into it); a card can lead to several. Drag a card to move it. Click an arrow to remove it.</p>
+				<p class="m-0 min-w-0 flex-1 {META}">Link two actions: drag a card onto the next one, or pull an arrow from a card's right dot onto another; a card can lead to several. Click an arrow to change its kind or remove it.</p>
 			{/if}
 			{#if diagram.origin === 'ai' && stored1}
 				<span class="{TAG} border-violet text-violet-ink"><Icon name="sparkles" size={12} />Suggested by AI</span>
@@ -305,7 +365,7 @@
 		</div>
 	{/if}
 
-	<div class="relative overflow-auto border-[1.5px] {editing ? 'border-ink bg-toner/60' : 'border-line bg-toner/40'}" role="presentation" onpointerenter={() => (inside = true)} onpointerleave={() => (inside = false)}>
+	<div class="relative overflow-auto border-[1.5px] {editing ? 'border-ink bg-toner/60' : 'border-line bg-toner/40'}" role="presentation" bind:clientWidth={boxWidth} onscroll={leaveCard} onpointerenter={() => (inside = true)} onpointerleave={() => (inside = false)}>
 		{#if focused}
 			<!-- The narrowed diagram's way back to all of it; the marked card is the action's only title (action 6f38e6ed). -->
 			<button type="button" class="{LINK} absolute top-1.5 left-3 z-40 min-h-0" onclick={() => onpick?.(focused)}>Show all</button>
@@ -317,14 +377,22 @@
 			</button>
 		{/if}
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<div data-canvas class="relative select-none {focused ? 'mt-7' : ''} {drawing && !drawing.held ? 'cursor-crosshair' : ''}" style="width:{drawn.width}px;height:{drawn.height}px" role="presentation" onclick={clickCanvas}>
+		<div data-canvas class="relative select-none {focused ? 'mt-7' : editing ? 'mt-11' : ''} {drawing && !drawing.held ? 'cursor-crosshair' : ''}" style="width:{drawn.width}px;height:{drawn.height}px" role="presentation" onclick={clickCanvas}>
+			{#if drawn.line}
+				<!-- What the actions outside the journeys are, and with no journey yet, what the diagram expects. -->
+				<p class="absolute m-0 {META} {drawn.line.y === PAD ? 'pr-44' : ''}" style="left:{PAD}px;top:{drawn.line.y}px;right:{PAD}px">{drawn.line.text}</p>
+			{/if}
 			<svg class="pointer-events-none absolute inset-0 overflow-visible" width={drawn.width} height={drawn.height} aria-hidden="true">
 				<defs>
-					<marker id="arrow-{featureId}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" /></marker>
+					<marker id="arrow-{featureId}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-violet-ink)" /></marker>
+					{#each JOURNEY_LINK_KINDS as k (k)}
+						<marker id="arrow-{featureId}-{k}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill={KIND_LOOK[k].color} /></marker>
+					{/each}
 				</defs>
 				{#each drawn.arrows as arrow (arrow.link.from + '>' + arrow.link.to)}
 					{@const on = isSelected(arrow.link)}
-					<path d={arrow.d} fill="none" stroke="currentColor" stroke-width={on ? 2.5 : 1.5} class={on ? 'text-violet-ink' : 'text-ink-2'} marker-end="url(#arrow-{featureId})" />
+					{@const look = KIND_LOOK[linkKindOf(arrow.link)]}
+					<path d={arrow.d} fill="none" stroke={look.color} stroke-width={on ? 3 : 1.5} stroke-dasharray={look.dash} marker-end="url(#arrow-{featureId}-{linkKindOf(arrow.link)})" />
 					{#if canEdit}
 						<!-- A wide invisible stroke makes the arrow easy to click. -->
 						<path d={arrow.d} fill="none" stroke="transparent" stroke-width="14" class="pointer-events-auto cursor-pointer" role="button" tabindex="-1" aria-label="Arrow from {named.get(arrow.link.from)} to {named.get(arrow.link.to)}" onclick={(e) => { e.stopPropagation(); selected = arrow.link; }} />
@@ -339,9 +407,19 @@
 
 			{#each drawn.arrows as arrow (arrow.link.from + '>' + arrow.link.to)}
 				{#if canEdit && isSelected(arrow.link)}
-					<button type="button" class="absolute z-30 flex size-6 -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center border-[1.5px] border-ink bg-paper text-ink hover:bg-ink hover:text-paper" style="left:{arrow.mid.x}px;top:{arrow.mid.y}px" title="Remove this arrow (Delete)" aria-label="Remove the arrow" onclick={(e) => { e.stopPropagation(); unlink(arrow.link); }}>
-						<Icon name="x" size={14} />
-					</button>
+					<!-- The clicked arrow's menu, just under it so the cards it links stay readable: its four kinds, the current one marked, and Remove (criterion 415a3006). -->
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<div class="absolute z-30 flex -translate-x-1/2 translate-y-3 items-stretch border-[1.5px] border-ink bg-paper shadow-[3px_3px_0_0_var(--color-ink)]" style="left:{arrow.mid.x}px;top:{arrow.mid.y}px" role="menu" tabindex="-1" aria-label="Arrow from {named.get(arrow.link.from)} to {named.get(arrow.link.to)}" onclick={(e) => e.stopPropagation()}>
+						{#each JOURNEY_LINK_KINDS as k (k)}
+							{@const current = linkKindOf(selected ?? arrow.link) === k}
+							<button type="button" role="menuitemradio" aria-checked={current} class="flex cursor-pointer items-center gap-1.5 border-r border-line px-2 py-1 text-xs font-semibold whitespace-nowrap {current ? 'bg-ink text-paper' : 'text-ink hover:bg-toner'}" onclick={() => retype(arrow.link, k)}>
+								<span class="inline-block h-0 w-4 border-t-2" style="border-color:{KIND_LOOK[k].color};{KIND_LOOK[k].dash ? 'border-top-style:dashed' : ''}"></span>{JOURNEY_LINK_LABELS[k]}
+							</button>
+						{/each}
+						<button type="button" role="menuitem" class="flex cursor-pointer items-center px-1.5 text-ink hover:bg-ink hover:text-paper" title="Remove this arrow (Delete)" aria-label="Remove the arrow" onclick={() => unlink(arrow.link)}>
+							<Icon name="x" size={14} />
+						</button>
+					</div>
 				{/if}
 			{/each}
 
@@ -367,14 +445,25 @@
 					role={!editing && onpick ? 'button' : 'presentation'}
 					tabindex={!editing && onpick ? 0 : undefined}
 					aria-pressed={!editing && onpick ? open : undefined}
+					aria-describedby={hover?.actionId === actionId ? `action-card-${featureId}` : undefined}
 					onclick={() => !editing && onpick?.(actionId)}
 					onkeydown={(e) => !editing && (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onpick?.(actionId))}
 					onpointerdown={(e) => startDrag(e, actionId, p)}
 					onpointerenter={() => target && (hovered = actionId)}
-					onpointerleave={() => hovered === actionId && (hovered = null)}
+					onpointerover={(e) => restOn(e, actionId)}
+					onpointerleave={() => {
+						if (hovered === actionId) hovered = null;
+						leaveCard();
+					}}
+					onfocus={(e) => e.currentTarget.matches(':focus-visible') && showCard(e.currentTarget, actionId)}
+					onblur={leaveCard}
 				>
-					<span class="min-w-[1ch] font-evo-mono text-xs tabular-nums {open ? 'font-bold text-violet-ink' : 'text-ink-3'}" title="Step {drawn.step.get(actionId) ?? 'none'}, action {listed.get(actionId)} of the list">{drawn.step.get(actionId) ?? ''}</span>
-					<span class="line-clamp-2 min-w-0 flex-1 [overflow-wrap:anywhere]" title={named.get(actionId)}>{named.get(actionId)}</span>
+					{#if !loose}
+						<!-- A card in a journey reads its step; one outside them reads no number. -->
+						<span class="min-w-[1ch] font-evo-mono text-xs tabular-nums {open ? 'font-bold text-violet-ink' : 'text-ink-3'}">{drawn.step.get(actionId) ?? ''}</span>
+					{/if}
+					<!-- No title: the hover card says the description (criterion 3feec278). -->
+					<span class="line-clamp-2 min-w-0 flex-1 [overflow-wrap:anywhere]">{named.get(actionId)}</span>
 					{#if canEdit}
 						<!-- Its two connectors: shown when loose, else only those in use, all of them on hover or while an arrow is drawn. -->
 						<button type="button" class="{DOT} -left-[9px] {inOn ? 'opacity-100' : drawing ? 'pointer-events-none opacity-0' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'} {fill(source && drawing?.side === 'in', hasIn)}" title="Pull an arrow into this action" aria-label="Draw an arrow into {named.get(actionId)}" onpointerdown={(e) => startArrow(e, actionId, 'in')} onclick={(e) => e.stopPropagation()}></button>
@@ -384,6 +473,17 @@
 			{/each}
 		</div>
 	</div>
+	{#if kindsUsed.length && !focused}
+		<!-- What each kind of arrow means, for the kinds the diagram uses (criterion 415a3006). -->
+		<p class="m-0 flex flex-wrap items-center gap-x-4 gap-y-1 {META} text-xs">
+			{#each kindsUsed as k (k)}
+				<span class="inline-flex items-center gap-1.5"><span class="inline-block h-0 w-5 border-t-2" style="border-color:{KIND_LOOK[k].color};{KIND_LOOK[k].dash ? 'border-top-style:dashed' : ''}"></span>{JOURNEY_LINK_LABELS[k]}</span>
+			{/each}
+		</p>
+	{/if}
 	{#if refusal}<p class="m-0 text-sm text-red-ink" role="alert">{refusal}</p>{/if}
+	{#if hover && named.has(hover.actionId)}
+		<ActionHoverCard id="action-card-{featureId}" at={hover.at} description={described.get(hover.actionId) ?? ''} />
+	{/if}
 </div>
 {/if}

@@ -1,4 +1,4 @@
-import { isChangeKind, isCodeVerdict, type ReportedChangeInput, type SpecEditReport, type WrittenChange } from '$domain/retrospec';
+import { isChangeKind, isCodeVerdict, readChangeWrites, type ReportedChangeInput, type SpecEditReport } from '$domain/retrospec';
 
 /**
  * What a person's AI reports of the retrospecification it runs, read from an
@@ -18,8 +18,6 @@ export interface RetrospecReading {
 	readonly withdrawn: readonly string[];
 	/** That run read what it had to read. */
 	readonly finished: boolean;
-	/** The elements each validated change became, once written (criterion 1aaa8316). */
-	readonly written: readonly WrittenChange[];
 	/** The phase of the order of work the AI says it reads now (EVO-014, action 83ba020b). */
 	readonly phase: string | null;
 	/** The features it finished re-reading (EVO-014, action ef746636). */
@@ -47,22 +45,14 @@ function parseChange(x: unknown): ReportedChangeInput | string {
 	if (c.kind !== 'new' && !anchor.trim()) return `The change ${id} names the anchor of the element it changes or removes.`;
 	if (c.kind === 'new' && !dock.trim()) return `The new element ${id} names the anchor it docks on.`;
 	if (c.kind !== 'removed' && !proposed.trim()) return `The change ${id} says what the element would read.`;
-	return { id, kind: c.kind, anchor: anchor.trim() || null, dock: dock.trim() || null, title, proposed: proposed.trim(), code: code.trim(), where: where.trim() };
+	// Lyriks writes a validated change itself, with these writes (rules 76c2c60d, 911113ef of feat-145).
+	const writes = readChangeWrites(id, c.writes);
+	if (!writes.ok) return writes.reason;
+	return { id, kind: c.kind, anchor: anchor.trim() || null, dock: dock.trim() || null, title, proposed: proposed.trim(), code: code.trim(), where: where.trim(), writes: writes.writes };
 }
 
-function parseWritten(x: unknown): WrittenChange | string {
-	const w: Raw = x !== null && typeof x === 'object' ? (x as Raw) : {};
-	const change = short(w.change, 200)?.trim();
-	if (!change || !Array.isArray(w.elements)) return 'Each entry of written names its change and the elements it became.';
-	const elements: { anchor: string; title: string }[] = [];
-	for (const e of w.elements as unknown[]) {
-		const o: Raw = e !== null && typeof e === 'object' ? (e as Raw) : {};
-		const anchor = short(o.anchor, 400)?.trim();
-		if (!anchor) return `The elements of ${change} name their anchor.`;
-		elements.push({ anchor, title: optional(o.title, 1000)?.trim() ?? '' });
-	}
-	return { change, elements };
-}
+/** What an AI that wrote the validated changes itself used to report: Lyriks writes them now (point 214). */
+export const WRITTEN_RETIRED = 'Lyriks writes what a person validates on Mismatch itself, with the writes each change carries: there is nothing to report as written.';
 const short = (v: unknown, max: number): string | null => (typeof v === 'string' && v.length <= max ? v : null);
 
 export function parseRetrospecReading(body: unknown): { ok: true; reading: RetrospecReading } | { ok: false; reason: string } {
@@ -97,14 +87,7 @@ export function parseRetrospecReading(body: unknown): { ok: true; reading: Retro
 		if (typeof change === 'string') return { ok: false, reason: change };
 		changes.push(change);
 	}
-	const rawWritten = o.written === undefined ? [] : o.written;
-	if (!Array.isArray(rawWritten) || rawWritten.length > MAX_CHANGES) return { ok: false, reason: `written is a list of at most ${MAX_CHANGES} changes.` };
-	const written: WrittenChange[] = [];
-	for (const x of rawWritten) {
-		const entry = parseWritten(x);
-		if (typeof entry === 'string') return { ok: false, reason: entry };
-		written.push(entry);
-	}
+	if (o.written !== undefined) return { ok: false, reason: WRITTEN_RETIRED };
 	const rawWithdrawn = o.withdrawn === undefined ? [] : o.withdrawn;
 	if (!Array.isArray(rawWithdrawn) || rawWithdrawn.length > MAX_CHANGES) return { ok: false, reason: `withdrawn is a list of at most ${MAX_CHANGES} change ids.` };
 	const withdrawn: string[] = [];
@@ -124,5 +107,5 @@ export function parseRetrospecReading(body: unknown): { ok: true; reading: Retro
 		if (!id) return { ok: false, reason: 'Name the feature you re-read by its id.' };
 		read.push(id);
 	}
-	return { ok: true, reading: { commit, checks, received: o.received === true, changes, withdrawn, finished: o.finished === true, written, phase, read } };
+	return { ok: true, reading: { commit, checks, received: o.received === true, changes, withdrawn, finished: o.finished === true, phase, read } };
 }

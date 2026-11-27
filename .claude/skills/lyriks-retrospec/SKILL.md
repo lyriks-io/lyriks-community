@@ -6,7 +6,7 @@ description: "Reverse-engineer an EXISTING product into its Lyriks spec (retro-s
 # /lyriks-retrospec
 
 Turn a product that exists into its Lyriks specification: what it does for its
-users, how it looks, what information it manages, who may do what.
+users, how it looks, what data it manages, who may do what.
 
 **The one law: the code is evidence; the product is the subject.** You read
 the code to know what is true; what you WRITE describes the product a user
@@ -18,9 +18,7 @@ experiences, for a product manager, a designer or a newcomer.
 2. **Resolve the target project, never create a second one.**
    - "Create the project X": `create_wizard_project` (`source_mode: "code_to_spec"`, domain by `list_domains`) unless an empty one of that name exists.
    - A named project: `list_wizard_projects`.
-   - From a design (a clickable prototype, a mockup, a Figma file): the
-     same, with `source_mode: "from_figma"`; see *A product known from its
-     prototype or its design*.
+   - From a design (prototype, mockup, Figma file): the same, with `source_mode: "from_figma"`.
    - None named: the card whose `sourceMode` is `code_to_spec` and `featureCount` 0; several, ask; none, create one. Never change its `sourceMode`.
 3. **"Entire" means entire**: every entry point, navigation item, screen, form and table.
 4. **Read what done means first:** `assess_project_completeness` on the
@@ -51,7 +49,7 @@ Code-facing names stay English (`lyriks-behavior`).
 2. The palette (`brand.colors.palette`): primary, secondary, tertiary, each `base`, `hover`, `active` only where the stylesheet states that colour; text and surfaces in `brand.colors.semantic`; the stylesheet in `brand.sourceIds`. `check_design` holds a design file against it.
 3. Every screen in `screens[]`, each journey step linked to its screen.
 
-**When you cannot see, say so**, and ask for a screenshot or the theme file.
+**When you cannot see, say so**: ask for a screenshot or the theme file.
 
 ## Data model: behavior-complete, product-named
 
@@ -255,14 +253,14 @@ the code's history, never from two AI readings.
 
 Handoff: project/instance, frozen commits, decisions, confirmed writes, remaining
 work and partial proofs, never credentials. Attribute model/effort only when
-known, without quality comparisons. Resume missing work from receipts; count ids
+known, never comparing quality. Resume missing work from receipts; count ids
 and actual results. Distinguish expired auth, 403, 503, unknown write result and
 verification budget; none proves insufficient RAM.
 
 1. Read what the project holds (`get_project`, its plan by default); `report_retrospec_reading` with no argument gives the starting commit and the hand edits Code drift lists.
-2. With a commit, check it exists (`git cat-file -e <sha>^{commit}`); if not, tell the person and stop.
+2. With a commit, check it exists (`git cat-file -e <sha>^{commit}`); if not, say so on their pages (`stopped`) and stop.
 3. Freeze the new commit and read only the delta: `git diff --name-only <from>..<new>` (without a commit, the files that differ from their attached version), changed or new documents, the code of each hand edit, the ledger's new or lost lines.
-4. A run that holds its changes writes nothing: do as its prompt says (`changes`, `finished`, later `written`). Any other run writes what is new or changed, citing as on a first run. Leave untouched elements as they are (a rewritten element goes back to validation). Whatever is gone, or contradicts a validated value, becomes a finding for a person.
+4. A held run never writes: put each difference in `changes` with its `writes`, then `finished`; Lyriks writes what people validate. Other runs write what is new or changed, cited as on a first run. Leave untouched elements alone (a rewritten one goes back to validation). What is gone or contradicts a validated value becomes a finding for a person.
 5. For each hand edit, `report_retrospec_reading` `checks`: its `anchor`, `says: "same"` or `"other"`, with `code` and `where`. Change neither the edit nor the code.
 6. Sync the touched features' index, report the commit you read, run the final check.
 
@@ -272,10 +270,10 @@ rewording, complete, correct, cite the new sources.
 
 ## Low-intervention protocol
 
-- Ask ONLY what the next line gives to a person.
+- Ask ONLY what the next line gives to a person, on their pages, never in the chat alone: `update_evolution_session` `ask`, or `stopped` for why you stop.
 - **Your work, or a person's decision.** Only the `scope.mode`, approvals
-  (terms, sections), the `finish_project` go and facts the product cannot
-  show belong to a person. The scope's capabilities, every feature's
+  (terms, out of scope), the `finish_project` go and facts the product cannot
+  show belong to a person. Scope capabilities, every feature's
   behaviour (never left at 0% unless shells or a target stage were asked), section
   assessments, data links and the audit are yours: never report them as "a
   decision" or "to do on request".
@@ -290,7 +288,7 @@ rewording, complete, correct, cite the new sources.
 1. `documents`: register sources now; attach code per feature at step 4 (`attach_source` needs a `feature_id`).
 2. `scope`: the inventory from the UI walk, with its sources; `scope.mode` with the user.
 3. `users`: distinct access checks, API client and identity provider, each with its `behaviorValues` (lyriks-build step 9).
-4. `features`: the capability tree, then `lyriks-behavior` at full depth per leaf, adopting as you go (*Adopting the codebase*).
+4. `features`: the capability tree, then `lyriks-behavior` at full depth per leaf with action journeys, adopting as you go (*Adopting the codebase*).
 5. `data`: the reconciliation above, then the infrastructure map when its code is within reach.
 6. `experience`: journeys from the real navigation, the screen inventory, the design system's sources (`lyriks-design`).
 7. `rules`, `glossary`, the remaining contexts per `lyriks-build`.

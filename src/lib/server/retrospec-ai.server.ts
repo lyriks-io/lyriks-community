@@ -2,7 +2,8 @@ import { json } from '@sveltejs/kit';
 import type { AppServices } from '$composition/container.server';
 import { loadRetrospecDocument } from '$application/retrospec/retrospec-store';
 import { isDraftLeafId } from '$domain/evolution';
-import { currentRun, writesHeld } from '$domain/retrospec';
+import { currentRun, specState, writesHeld } from '$domain/retrospec';
+import { VALIDATED_SPEC_REFUSAL } from '$application/spec360/validated-edits';
 import type { Handle } from '@sveltejs/kit';
 import { PROJECT_ACTIVITY_ID } from '$lib/shared/ai-activity';
 import { callerKind } from './caller.server';
@@ -127,8 +128,8 @@ async function peekBody(request: Request, limit = PEEK_LIMIT_BYTES): Promise<{ p
 	}
 }
 
-/** Sentence the AI reads when the run under way holds what it finds (criterion 50b00229). */
-export const WRITES_HELD = 'This Reverse-Specification writes nothing until a person validates its changes on Mismatch and clicks Write the validated changes: report each difference with report_retrospec_reading (changes).';
+/** Sentence the AI reads when the run under way holds what it finds (rule 35bf88ae): before the writing and during it alike. */
+export const WRITES_HELD = 'This Reverse-Specification writes nothing until it is validated: report each difference with report_retrospec_reading (changes), with the writes it takes. Lyriks writes what a person validates on Mismatch.';
 
 /** What writes the specification itself: the sources an AI registers and the implementation index are not it. */
 export function writesTheSpecification(url: URL): boolean {
@@ -137,9 +138,32 @@ export function writesTheSpecification(url: URL): boolean {
 	return path.startsWith('/api/draft/') && !path.startsWith('/api/draft/documents');
 }
 
-async function runHoldsWrites(services: AppServices, projectId: string): Promise<boolean> {
+/**
+ * What a validated specification refuses an AI client, as its page refuses the
+ * same change in place (rule aa96a75b, 1e614a44, 331b7c1f): the parts that say
+ * what the product does, and the behaviour. The rules and their register, the
+ * scope, the operations target, the sources, the approvals and the baselines
+ * stay writable; a change of the rest goes through an evolution.
+ */
+const FROZEN_ONCE_VALIDATED = /^\/api\/draft\/(foundation(\/(identity|definition))?|users(\/[a-z-]+)?|features|experience|data(\/links)?|architecture|glossary)$/;
+
+export function frozenOnceValidated(url: URL): boolean {
+	const path = url.pathname;
+	return path === '/api/behavior/apply' || path === '/api/behavior/project' || FROZEN_ONCE_VALIDATED.test(path);
+}
+
+/**
+ * Why the AI client's write into the specification does not go through, or
+ * null when it does: a later run holds its changes until a person validates
+ * them (criterion 50b00229), or the specification is validated and the write
+ * changes what the product does (criterion 3b0446d2). The writing of the
+ * validated changes lifts nothing: Lyriks writes them itself (point 214).
+ */
+async function aiWriteRefusal(services: AppServices, projectId: string, url: URL): Promise<string | null> {
 	const read = await loadRetrospecDocument(services.sectionDocuments, projectId).catch(() => null);
-	return !!read && writesHeld(currentRun(read.doc));
+	if (!read) return null;
+	if (writesHeld(currentRun(read.doc))) return WRITES_HELD;
+	return frozenOnceValidated(url) && specState(read.doc) === 'validated' ? VALIDATED_SPEC_REFUSAL : null;
 }
 
 /** The live session's wait for the next click: the AI is there, it does not act (criterion 122ab5c8). */
@@ -157,7 +181,8 @@ export async function followAiProjectCalls(input: Parameters<Handle>[0], handle:
 	// A write into the specification is read whole, however long: its project decides whether it may go through.
 	const body = write ? await peekBody(event.request, held ? Infinity : PEEK_LIMIT_BYTES) : { projectId: null, act: null, featureId: null };
 	const projectId = projectInUrl(event.url) ?? body.projectId;
-	if (held && projectId && !(body.featureId && isDraftLeafId(body.featureId)) && (await runHoldsWrites(event.locals.services, projectId))) return json({ message: WRITES_HELD }, { status: 409 });
+	const refusal = held && projectId && !(body.featureId && isDraftLeafId(body.featureId)) ? await aiWriteRefusal(event.locals.services, projectId, event.url) : null;
+	if (refusal) return json({ message: refusal }, { status: 409 });
 	const response = await handle(input);
 	// Its act counts for its session whatever the answer, read once the request knows whose AI it is (criterion 122ab5c8).
 	if (projectId && !isWait(event.url, body.act)) noteAiWork(projectId, event.locals?.session?.email ?? 'local-operator');

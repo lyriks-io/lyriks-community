@@ -19,7 +19,7 @@
 	<div class="w-full max-w-sm text-center">
 		<Logo size={44} class="mx-auto mb-3" />
 		{#if inactiveProjectId}
-			<InactiveProjectNotice projectId={inactiveProjectId} message={page.error?.message ?? ''} detail={page.error?.detail} />
+			<InactiveProjectNotice projectId={inactiveProjectId} message={page.error?.message ?? ''} detail={page.error?.detail} granted={page.error?.activeProjectsGranted} />
 		{:else}
 			<p class="font-evo-mono text-xs tracking-[0.08em] text-ink-3 uppercase">{page.status}</p>
 			<h1 class="mt-1.5 text-[1.375rem] font-bold tracking-[-0.02em] text-ink">{title}</h1>

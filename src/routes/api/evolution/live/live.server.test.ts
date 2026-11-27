@@ -5,6 +5,7 @@ import { LoadResidueDraftUseCase, SaveResidueDraftUseCase } from '$application/s
 import { createEmptyEvolutionDraft, openProjectSessionOf, type ProjectEvolutionDraft } from '$domain/evolution';
 import { presenceOf, PROJECT_SESSION_KEY } from '$lib/server/evolution-live.server';
 import { GET, POST } from './+server';
+import { emptyAiConversations } from '$domain/ai-conversations';
 import { requestEvent, servicesWith } from '$lib/server/request-event.fixture';
 
 /**
@@ -42,6 +43,8 @@ function installation(projectId: string, opts: { decide?: (action: AccessAction)
 		saveEvolutionDraft: new SaveResidueDraftUseCase(repo, clock),
 		// A wait looks at the Reverse-Specification's standing: this project holds none.
 		sectionDocuments: { currentRevision: async () => revision, load: async () => null },
+		// The session reading says what waits on the reader in Ask my AI: nothing here.
+		aiConversations: { load: async () => emptyAiConversations() },
 		draftLock: { current: async () => 0, commit: async () => 1, rollback: async () => {} }
 	});
 	const call = async (body: Record<string, unknown>, as: 'person' | 'ai' = 'person') => {
@@ -65,6 +68,27 @@ function installation(projectId: string, opts: { decide?: (action: AccessAction)
 	};
 	return { call, read, stored: () => stored ?? createEmptyEvolutionDraft(projectId), revision: () => revision };
 }
+
+describe('the person\'s waker, through its door (feat-ai-session)', () => {
+	it('listens for its person only when signed in as their AI, never from a page [unspa:1f2ed844:77cdb263:3165dc92]', async () => {
+		const p = installation('p-waker-door');
+		const refused = await p.call({ act: 'wake_wait', waitSeconds: 1 });
+		expect(refused).toMatchObject({ status: 403, body: { message: "Only the waking command of the person's AI listens for wakes." } });
+		expect(await p.call({ act: 'wake_wait', waitSeconds: 1 }, 'ai')).toMatchObject({ status: 200, body: { ok: true, kind: 'nothing' } });
+		// The pages read the waker that was just heard, and the AI that opens a session reads it too.
+		expect((await p.read()).waker).toEqual({ status: 'listening', wake: 'none', handedAt: null });
+		expect((await p.call({ act: 'start' }, 'ai')).body.waker).toEqual({ status: 'listening' });
+	});
+
+	it('answers a wake for a question asked with no AI in session [unspa:1f2ed844:77cdb263:71250735] [unspa:1f2ed844:ccca0911:73365e47]', async () => {
+		const p = installation('p-waker-wake');
+		expect((await p.call({ act: 'start' }, 'ai')).body.waker).toEqual({ status: 'none' });
+		await p.call({ act: 'end' });
+		expect((await p.call({ act: 'click', kind: 'reread', page: 'spec', anchor: 'feature:f1', title: 'Checkout' })).status).toBe(200);
+		expect(await p.call({ act: 'wake_wait', waitSeconds: 1 }, 'ai')).toMatchObject({ status: 200, body: { ok: true, kind: 'wake', clicks: 1 } });
+		expect((await p.read()).waker).toMatchObject({ status: 'listening', wake: 'handed' });
+	});
+});
 
 describe('the session of the whole project, through its door', () => {
 	it('is opened by the AI client only, never by the page', async () => {

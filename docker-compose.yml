@@ -4,23 +4,35 @@
 #   docker compose up -d
 #   open http://localhost:3000      # the first visitor claims the install
 #
-# Six containers: PostgreSQL, the platform (also the realtime relay and a
-# one-shot volume init), the MCP gateway and the behaviour dashboard. Only the
-# platform is published, on the loopback interface; the gateway (/mcp), the
-# dashboard (/behavior) and the relay (/yjs) are reached through it, behind
-# its login. Images come from registry.lyriks.io/community, pinned to this
+# Five containers: PostgreSQL, the platform (also the realtime relay and a
+# one-shot volume init) and the MCP gateway. Only the platform is published,
+# on the loopback interface; the gateway (/mcp) and the relay (/yjs) are
+# reached through it, behind its login. The behaviour engine's own editor is
+# not part of the running stack and the app does not serve it: open it on
+# demand, in the foreground, from a terminal on this host (Ctrl-C stops it):
+#
+#   docker compose --profile editor run --rm --no-deps --service-ports dashboard
+#
+# It has no login of its own, so it listens on this host's loopback only
+# (http://127.0.0.1:3003/, LYRIKS_UNSPA_DASHBOARD_PORT). From a workstation,
+# tunnel to it: `ssh -N -L 3003:127.0.0.1:3003 <user>@<host>`, then open
+# http://localhost:3003/. Deleting a state is refused there: delete states in
+# Lyriks, which checks every reference to them first.
+#
+# Images come from registry.lyriks.io/community, pinned to this
 # tree's version: the images this repository's publish-image workflow builds,
 # promoted there under the same tag at each release, and pullable without an
 # account. `LYRIKS_TAG=stable` follows the appliance channel instead, and
 # images you built yourself work with any registry and tag you named them with.
 #
-# Update: `docker compose pull && docker compose up -d`. Back up the
+# Update: `docker compose --profile editor pull && docker compose up -d` (the
+# profile also pulls the editor's image, which `up` never starts). Back up the
 # `postgres-data` and `unspa-data` volumes yourself; the appliance kit
 # (https://get.lyriks.io) does that, plus rollback and update checks, for you.
 
 name: lyriks-community
 
-x-image: &platform-image ${LYRIKS_REGISTRY:-registry.lyriks.io/community}/lyriks-platform-community:${LYRIKS_TAG:-v0.9.51}
+x-image: &platform-image ${LYRIKS_REGISTRY:-registry.lyriks.io/community}/lyriks-platform-community:${LYRIKS_TAG:-v0.9.52}
 
 services:
   postgres:
@@ -39,7 +51,7 @@ services:
       retries: 12
       start_period: 10s
 
-  # The behaviour store is shared by the platform and the dashboard, both
+  # The behaviour store is shared by the platform and the editor, both
   # running as uid 1000; the volume is handed to them once.
   unspa-init:
     image: *platform-image
@@ -64,13 +76,12 @@ services:
       LYRIKS_BACK_URL: ""
       LYRIKS_JWT_SECRET: ${LYRIKS_JWT_SECRET:?set LYRIKS_JWT_SECRET in .env (openssl rand -hex 32)}
       LYRIKS_AUTH_REQUIRED: "1"
-      LYRIKS_VERSION: ${LYRIKS_TAG:-v0.9.51}
+      LYRIKS_VERSION: ${LYRIKS_TAG:-v0.9.52}
       LYRIKS_UPDATE_CHECK: "0"
       LYRIKS_REGISTRY: ${LYRIKS_REGISTRY:-registry.lyriks.io/community}
       LYRIKS_UPDATE_IMAGE: lyriks-platform-community
       LYRIKS_TRUSTED_ORIGINS: ${LYRIKS_PUBLIC_ORIGIN:-http://localhost:3000}
       LYRIKS_MCP_URL: http://mcp:3055
-      LYRIKS_UNSPA_URL: http://dashboard:3000
       LYRIKS_YJS_INTERNAL_URL: http://yjs:3002
       LYRIKS_BACK_DEV_PLAN: free
       LYRIKS_BUS: memory
@@ -96,7 +107,7 @@ services:
       PORT: "3002"
 
   mcp:
-    image: ${LYRIKS_REGISTRY:-registry.lyriks.io/community}/lyriks-mcp-community:${LYRIKS_TAG:-v0.9.51}
+    image: ${LYRIKS_REGISTRY:-registry.lyriks.io/community}/lyriks-mcp-community:${LYRIKS_TAG:-v0.9.52}
     restart: unless-stopped
     user: "1000:1000"
     environment:
@@ -108,14 +119,27 @@ services:
       # OAuth endpoints under it.
       PUBLIC_BASE_URL: ${LYRIKS_PUBLIC_ORIGIN:-http://localhost:3000}
 
+  # The behaviour engine's own editor, on demand only (see the header): its
+  # own profile, `editor`, is one `up` never activates. It edits the SAME
+  # behaviour store as the platform, served at the root of its own port.
   dashboard:
-    image: ${LYRIKS_REGISTRY:-registry.lyriks.io/community}/lyriks-behavior-community:${LYRIKS_TAG:-v0.9.51}
-    restart: unless-stopped
+    image: ${LYRIKS_REGISTRY:-registry.lyriks.io/community}/lyriks-behavior-community:${LYRIKS_TAG:-v0.9.52}
+    profiles: ["editor"]
+    # A foreground, on-demand process: never brought back by Docker on its own.
+    restart: "no"
     user: "1000:1000"
     environment:
-      PUBLIC_UNSPA_BASE_PATH: /behavior
       PUBLIC_UNSPA_HOST_PRODUCT: Lyriks
+      # The platform writes feature files named by id; an editor writing them
+      # by slug would leave a twin of every feature it saves.
+      UNSPA_FILE_NAMING: id
+      # Hands state deletions to the platform, which checks every reference
+      # first. Reached on localhost the editor carries no Lyriks session, so
+      # the platform refuses them: deleting a state is done in Lyriks.
       UNSPA_HOST_URL: http://platform:3000
+    ports:
+      # Loopback only, whatever LYRIKS_BIND says: the editor has no login.
+      - "127.0.0.1:${LYRIKS_UNSPA_DASHBOARD_PORT:-3003}:3000"
     volumes:
       - unspa-data:/app/data/unspa
     depends_on:

@@ -1,7 +1,5 @@
-import { parseFeaturesDraft } from '$application/specification/parse-features-draft';
 import { saveSectionDraft } from '$lib/server/section-save.server';
-import { assertSectionDraftValid } from '$lib/server/section-authoring-validation.server';
-import { assertLeafIdsUnclaimed } from '$lib/server/features-leaf-id-guard.server';
+import { FEATURES_WRITE } from '$lib/server/section-write-specs.server';
 import type { RequestHandler } from './$types';
 
 /**
@@ -11,15 +9,4 @@ import type { RequestHandler } from './$types';
  * the source of truth, no separate sync step. We still best-effort mirror to
  * Lyriks-back's wizard_envelope.features key.
  */
-export const PUT: RequestHandler = (event) =>
-	saveSectionDraft(event, {
-		section: 'features',
-		validate: async (body, services, projectId) => {
-			assertSectionDraftValid('features', body);
-			// A leaf id is claimed HERE, so this is where a clash has to be refused.
-			await assertLeafIdsUnclaimed(parseFeaturesDraft(body, projectId), services, projectId);
-		},
-		parse: parseFeaturesDraft,
-		persist: async (draft, services, projectId) =>
-			services.saveFeaturesDraft.execute(draft, await services.loadSpecLanguage.generated(projectId))
-	});
+export const PUT: RequestHandler = (event) => saveSectionDraft(event, FEATURES_WRITE);

@@ -8,8 +8,8 @@ import { isIsoInstant } from '$domain/shared/iso-instant';
 import { isDraftLeafId } from '$domain/evolution';
 import { applyBatchToDraft } from '$lib/server/draft-behavior-batch.server';
 import { requireEvolutionAccess } from '$lib/server/community-locks.server';
-import { saveRetrospecActs } from '$application/retrospec/retrospec-store';
 import { retrospecActor } from '$lib/server/retrospec-status.server';
+import { behaviorWritten } from '$lib/server/behavior-written.server';
 import { prepareDisableOps } from '$lib/server/behavior-disable.server';
 import type { RequestHandler } from './$types';
 
@@ -145,27 +145,9 @@ export const POST: RequestHandler = async (event) => {
 		);
 	}
 
-	// A rejected batch is a real, expected outcome (validation) — return it 200 with
+	// A rejected batch is a real, expected outcome (validation): it answers 200 with
 	// ok:false so the caller reads the errors, rather than an opaque HTTP error.
-	// Surfaces, actions and scenarios are what the formal graph is made of, and
-	// this is the only path that authors them. Mirror to the back like a section
-	// save does (durable outbox, fire-and-forget), or the engine never sees depth.
-	if (!dryRun && batch?.ok) void services.scheduleBackSync(projectId).catch(() => {});
-	// New states may be the ones that hold data fields: Lyriks links the certain
-	// ones and regenerates the data rules, in the background like a data save.
-	if (!dryRun && batch?.ok) {
-		void services.syncDataRules.execute(projectId).catch((err) => console.warn('[data rules] sync failed:', err));
-		// The Rules tab then reads the feature's rule verdicts at once: the engine
-		// keeps the proof by content, so proving it now is proving it once.
-		void services.proveFeatureRules.warm(projectId, featureId).catch((err) => console.warn('[rule proofs] warm failed:', err));
-		// The behaviour engine checks what was just written now, not at the next read (ac-leaf-ac-score-engine-reaches-all).
-		services.behaviorAdvisories.touch?.(projectId);
-		// The feature now does something: a retrospecification under way counts
-		// it in its progress (recorded once, the first time).
-		void retrospecActor(services, projectId, event.cookies)
-			.then((actor) => saveRetrospecActs(services.sectionDocuments, projectId, [{ op: 'behavior_authored', featureId }], { actor, now: new Date().toISOString() }, null))
-			.catch((err) => console.warn('[retrospec] behaviour not recorded:', err));
-	}
+	if (!dryRun && batch?.ok) behaviorWritten(services, projectId, featureId, retrospecActor(services, projectId, event.cookies));
 
 	return json({
 		available,

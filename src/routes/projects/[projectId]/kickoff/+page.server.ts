@@ -1,23 +1,12 @@
-import { mcpEndpointFor, mcpRegistrationCommands } from '$domain/foundation';
+import { redirect } from '@sveltejs/kit';
+import { legacyPageTarget } from '$ui/spec360/legacy-addresses';
 import type { PageServerLoad } from './$types';
 
 /**
- * The kickoff of every project: the one sentence the user pastes into their AI
- * agent, which then authors the spec through the MCP. Lyriks does not read a
- * repository, a backlog or a wiki itself; the agent does, through the MCP
- * servers connected to it. The sentence is assembled on the page from the
- * project's origin (its Foundation identity) and, from scratch, the sources the
- * user ticks. Access is gated by the project layout. The page also says how to
- * connect an agent that has no Lyriks MCP yet.
+ * An old address kept so bookmarks and stored links still open something
+ * (criterion 84162c34). Kickoff is retired: the line to hand one's AI is given
+ * by Reverse (rule 3dfded38).
  */
-export const load: PageServerLoad = async ({ params, url, locals }) => {
-	const draft = await locals.services.loadFoundationDraft.loadIdentity(params.projectId);
-	const mcpUrl = mcpEndpointFor(url.origin);
-	return {
-		projectId: params.projectId,
-		productName: draft.productName,
-		sourceMode: draft.sourceMode ?? null,
-		mcpUrl,
-		commands: mcpRegistrationCommands(mcpUrl)
-	};
+export const load: PageServerLoad = ({ params, url }) => {
+	redirect(308, legacyPageTarget(params.projectId, 'kickoff', url.searchParams));
 };

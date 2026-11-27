@@ -2,16 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Baseline } from './draft';
 import { specVersionOf } from './spec-version';
 
-const baseline = (id: string, createdAt: string): Baseline => ({
-	id,
-	name: id,
-	note: '',
-	createdAt,
-	readiness: 0,
-	coherence: 0,
-	featureCount: 0,
-	content: ''
-});
+const baseline = (id: string, createdAt: string): Baseline => ({ id, name: id, createdAt });
 
 describe('specVersionOf', () => {
 	it('has no version while the specification is a draft', () => {

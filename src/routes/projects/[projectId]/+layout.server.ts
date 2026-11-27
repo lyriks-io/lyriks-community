@@ -1,5 +1,4 @@
 import { timedPart } from '$lib/server/slow-requests.server';
-import { canUseSharedEditor } from '$lib/server/shared-editor-access.server';
 import { industryLabelOf } from '$domain/foundation';
 import { toProductCoherence } from '$domain/coherence/incoherence';
 import { leafFeatures } from '$domain/features';
@@ -124,7 +123,6 @@ export const load: LayoutServerLoad = async (event) => {
 		projectId: params.projectId,
 		canWrite,
 		administers,
-		canUseSharedEditor: canUseSharedEditor(event),
 		team,
 		featureNames,
 		glossaryTerms,
@@ -133,8 +131,6 @@ export const load: LayoutServerLoad = async (event) => {
 		industryLabel,
 		maturityBreakdown,
 		tier: services.currentTier(),
-		// Both platform and back address the shared kernel with this immutable id.
-		dashboardProjectId: params.projectId,
 		documentsDraft,
 		documentsRevision
 		// No `session` here: the root layout already publishes the caller's, and a

@@ -1,14 +1,12 @@
 import { redirect } from '@sveltejs/kit';
+import { legacyPageTarget } from '$ui/spec360/legacy-addresses';
 import type { PageServerLoad } from './$types';
 
 /**
- * Approvals has been merged into the Traceability capability as its "Approvals"
- * tab (matching the prototype's information architecture). This route is kept
- * only so old deep-links and a "Fix now" link of What Lyriks noticed targets still resolve — it
- * redirects to the merged page with the approvals tab pre-selected. The approvals
- * draft + /api/.../approvals endpoints are unchanged; it is now rendered inside
- * Traceability.
+ * An old address kept so bookmarks and stored links still open something
+ * (criterion 84162c34). Approvals are retired: where the specification stops
+ * reads on the Overview, the Scope drawer open (rule b995ffb1).
  */
-export const load: PageServerLoad = async ({ params }) => {
-	redirect(308, `/projects/${params.projectId}/traceability?tab=approvals`);
+export const load: PageServerLoad = ({ params, url }) => {
+	redirect(308, legacyPageTarget(params.projectId, 'approvals', url.searchParams));
 };

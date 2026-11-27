@@ -183,6 +183,7 @@ export class SpecValidation {
 			look,
 			held: this.#source().teamAvailable === false ? 'The project team is unavailable. Try again when it is available.' : null,
 			title: saving ? 'Saving your validation' : mine ? 'You validated this element · click to withdraw' : 'Validate this element',
+			what,
 			run: !canReview || saving ? null : mine ? () => void this.withdraw(anchor) : awaits === 'me' ? () => void this.validate(anchor) : null,
 			saving,
 			withdraws: mine,

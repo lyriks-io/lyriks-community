@@ -9,6 +9,8 @@ import {
 	isLicenseEntitlements,
 	isLicenseEnforced,
 	isLicenseValid,
+	keyProjects,
+	keyProjectsLabel,
 	licenseBoundEmail,
 	licenseDigest,
 	openedEdition,
@@ -164,6 +166,26 @@ describe('evaluateLicense', () => {
 			expect(view.status).toBe('active');
 			expect(view.entitlements?.edition).toBe(edition);
 		}
+	});
+});
+
+// EVO-016, criteria 033088d7 and 12d8557a.
+describe('the number of active projects a key grants', () => {
+	it('reads 1 for a Community key, the number an Enterprise key states, Unlimited for one that states none [criterion:ac-leaf-033088d7-bea3-4aed-bf06-409e6bef334d]', () => {
+		expect(keyProjects(ent({ edition: 'community', projects: 4 }))).toBe(1);
+		expect(keyProjectsLabel(ent({ edition: 'community' }))).toBe('1');
+		expect(keyProjects(ent({ projects: 3 }))).toBe(3);
+		expect(keyProjectsLabel(ent({ projects: 3 }))).toBe('3');
+		expect(keyProjects(ent())).toBeNull();
+		expect(keyProjectsLabel(ent())).toBe('Unlimited');
+	});
+
+	it('activates a key signed before keys carried a number, and refuses a number that is not a whole number of at least 1 [criterion:ac-leaf-12d8557a-9d72-478a-a6c5-21b1357927c0]', () => {
+		expect(isLicenseEntitlements(ent())).toBe(true);
+		expect(isLicenseEntitlements(ent({ projects: 5 }))).toBe(true);
+		expect(isLicenseEntitlements(ent({ projects: 0 }))).toBe(false);
+		expect(isLicenseEntitlements(ent({ projects: 2.5 }))).toBe(false);
+		expect(isLicenseEntitlements({ ...ent(), projects: '5' })).toBe(false);
 	});
 });
 

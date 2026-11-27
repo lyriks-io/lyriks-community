@@ -1,17 +1,12 @@
-import { isSourceModeCode } from '$domain/foundation';
 import { RETROSPEC_SECTION } from '$domain/retrospec';
-import { fail, redirect } from '@sveltejs/kit';
+import { fail } from '@sveltejs/kit';
 import { dev } from '$app/environment';
-import { env } from '$env/dynamic/private';
 import { callerAllowedDomains, callerReach } from '$lib/server/domain-scope.server';
-import { callerRoleInProjectWorkspace, pickActiveWorkspace, pinnedWorkspace, projectWorkspaceId } from '$lib/server/caller-workspace.server';
-import { foldersIn, writesIn } from '$application/portfolio/project-visibility';
+import { callerRoleInProjectWorkspace, projectWorkspaceId } from '$lib/server/caller-workspace.server';
 import { folderChange, folderCreation, folderForProject } from '$application/portfolio/folder-policy';
-import type { ProjectPlacement } from '$application/portfolio/create-project';
-import { seedOwnerCollaborator } from '$lib/server/seed-owner-collaborator.server';
 import { requireProjectAccess } from '$lib/server/project-access.server';
-import { ownNewProject, VIEWER_CREATION_REFUSAL } from '$lib/server/new-project-ownership.server';
-import { refusedCreation, refusedFolder } from '$lib/server/project-creation-refusal.server';
+import { ownNewProject } from '$lib/server/new-project-ownership.server';
+import { refusedCreation } from '$lib/server/project-creation-refusal.server';
 import { readHome } from '$lib/server/home.server';
 import { ASK_YOUR_ADMINISTRATOR, foundWorkspace, mayFoundWorkspace } from '$lib/server/workspace-founding.server';
 import { projectSyncKey, sectionSyncKey } from '$lib/shared/section-sync';
@@ -34,7 +29,6 @@ export const load: PageServerLoad = async (event) => {
 	for (const id of home.projectIds) {
 		event.depends(projectSyncKey(id));
 		event.depends(sectionSyncKey(id, RETROSPEC_SECTION));
-		event.depends(sectionSyncKey(id, 'baselines'));
 		event.depends(sectionSyncKey(id, 'evolution'));
 	}
 	return { ...home, mayFoundWorkspace: mayFoundWorkspace(event) };
@@ -133,103 +127,6 @@ export const actions: Actions = {
 		const res = await event.locals.services.removeDomain.execute(id);
 		if (!res.removed) return fail(400, { scope: 'domain', message: res.reason });
 		return { removed: 'domain' };
-	},
-
-	createProject: async (event) => {
-		const { request, locals, cookies } = event;
-		const data = await request.formData();
-		const name = String(data.get('name') ?? '').trim();
-		if (!name) return fail(400, { scope: 'project', message: 'Give the product a name.' });
-		// The starting point chosen in the modal: from scratch (greenfield, the
-		// default) or from an existing codebase (code_to_spec). The latter ends on
-		// the kickoff page, which hands the user the prompt for their coding agent.
-		const sourceMode = String(data.get('sourceMode') ?? '') || 'greenfield';
-		if (!isSourceModeCode(sourceMode)) {
-			return fail(400, { scope: 'project', message: 'Unknown starting point for the project.' });
-		}
-		const services = locals.services;
-
-		// Auth-on: a project is owned by a team. Enterprise installs provision teams
-		// centrally (SSO/admin), so a user with none gets a clear, actionable message
-		// rather than a silently-created workspace. Small/pilot installs can opt into
-		// self-provisioning with LYRIKS_AUTO_WORKSPACE=1 (mirrors LYRIKS_ALLOW_SIGNUP).
-		let placement: ProjectPlacement | null = null;
-		if (locals.authRequired && services.identity.multiUser) {
-			const teams = await services.workspaces.listForCaller();
-			// The workspace the switcher shows owns the project, as the team server will register it;
-			// a viewer there is told why before anything is written (rule 9c7b8a91).
-			const owning = pickActiveWorkspace(teams, pinnedWorkspace(event));
-			if (owning && !writesIn(owning.role)) return fail(403, { scope: 'project', message: VIEWER_CREATION_REFUSAL });
-			if (owning) placement = { workspaceId: owning.id, folders: foldersIn(await callerReach(event), owning.id) };
-			if (teams.length === 0) {
-				if (env.LYRIKS_AUTO_WORKSPACE !== '1') {
-					return fail(409, {
-						scope: 'project',
-						message:
-							'You are not a member of any workspace yet. Ask your administrator to invite you to one.'
-					});
-				}
-				// The bootstrap keeps one failure message, the team server's refusal included.
-				const founding = await foundWorkspace(services, `${name} workspace`);
-				const created = founding && 'created' in founding ? founding.created : null;
-				if (!created) {
-					services.audit.record({ action: 'project.create', actor: actorOf(locals), outcome: 'failure', detail: 'workspace provisioning failed' });
-					return fail(502, { scope: 'project', message: 'Could not provision your workspace. Please try again.' });
-				}
-				// Make it the active team (this request resolves it via data[0] since it
-				// is now the only one; the cookie pins it for subsequent requests).
-				cookies.set('lyriks_active_ws', created.id, {
-					path: '/',
-					httpOnly: true,
-					sameSite: 'lax',
-					secure: !dev,
-					maxAge: 60 * 60 * 24 * 365
-				});
-				// The caller founded it: every folder there is theirs.
-				placement = { workspaceId: created.id, folders: null };
-			}
-		}
-
-		const filed = await refusedFolder(() => refusedCreation(() =>
-			services.createProject.execute({
-				name,
-				description: String(data.get('description') ?? ''),
-				domainId: String(data.get('domainId') ?? '') || null,
-				sourceMode,
-				placement
-			})
-		));
-		// The shared creation's folder checks (rules a8664b7b, ed4ab638), before anything is written.
-		if ('folderRefused' in filed) return fail(403, { scope: 'project', message: filed.folderRefused });
-		const creation = filed.created;
-		// Community holds one project: the offer of the plan that opens several (EVO-001).
-		if ('refused' in creation) {
-			return fail(403, { scope: 'project', message: creation.refused.reason, detail: creation.refused.detail, plan: creation.refused.plan });
-		}
-		const id = creation.created;
-
-		// Auth-on: a project must be owned on the back from creation, otherwise the
-		// fail-closed access guard would lock the creator out of their own project.
-		// Create + own it synchronously (as the calling user) and roll back rather
-		// than leave an inaccessible orphan if the back can't register it.
-		if (locals.authRequired && services.identity.multiUser) {
-			await services.pushEnvelopeToBack.execute(id);
-			const link = await services.backLinks.find(id);
-			if (!link) {
-				await services.deleteProject.execute(id);
-				services.audit.record({ action: 'project.create', actor: actorOf(locals), target: id, outcome: 'failure', detail: 'back registration failed' });
-				return fail(502, {
-					scope: 'project',
-					message: 'Could not register the project on the server. Please try again.'
-				});
-			}
-			// Own the project's team: the creator is its first (owner) collaborator, so
-			// per-project scope keeps them able to see and open it (see seedOwnerCollaborator).
-			await seedOwnerCollaborator(services, id, locals.session?.email);
-		}
-
-		services.audit.record({ action: 'project.create', actor: actorOf(locals), target: id, outcome: 'success' });
-		redirect(303, `/projects/${id}/kickoff`);
 	},
 
 	updateProject: async (event) => {

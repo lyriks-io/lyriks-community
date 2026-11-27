@@ -27,13 +27,6 @@ vi.mock('$lib/server/mcp-proxy.server', () => ({
 	mcpTarget: () => '',
 	proxyToMcp: vi.fn()
 }));
-vi.mock('$lib/server/unspa-proxy.server', () => ({
-	editorForbidden: () => null,
-	isUnspaPath: () => false,
-	proxyToUnspa: vi.fn(),
-	unspaTarget: () => ''
-}));
-vi.mock('$lib/server/shared-editor-access.server', () => ({ canUseSharedEditor: () => false }));
 vi.mock('$env/dynamic/private', () => ({ env: {} }));
 vi.mock('$env/dynamic/public', () => ({ env: {} }));
 

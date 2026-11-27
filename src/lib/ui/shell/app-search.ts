@@ -36,8 +36,7 @@ export function pageEntries(projectId: string | null): SearchEntry[] {
 		spec('Architecture', '/tech/architecture'),
 		spec('Operations', '/tech/operations'),
 		spec('Requirements', '/tech/requirements'),
-		spec('Glossary', '/glossary'),
-		{ t: 'Generate specs', k: 'Page', href: `${base}/generate` }
+		spec('Glossary', '/glossary')
 	];
 }
 

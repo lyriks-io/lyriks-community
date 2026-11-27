@@ -40,7 +40,6 @@ import { ARCH_LAYERS, CONSTRAINT_CATEGORIES } from '$domain/architecture';
 import { DATA_MODES, DEVICES, OPERATION_KINDS } from '$domain/experience';
 import { GLOSSARY_LOCALES, GLOSSARY_STATUSES } from '$domain/glossary';
 import { FLAG_DEFAULTS, MIGRATION_STRATEGIES } from '$domain/foundation';
-import { APPROVAL_AREAS, APPROVAL_STATUSES } from '$domain/approvals';
 import { DOCUMENT_KINDS } from '$domain/documents';
 import {
 	CAPABILITY_DISPOSITIONS,
@@ -157,8 +156,6 @@ async function loadSection(
 			return s.loadCoherenceDraft.execute(projectId);
 		case 'glossary':
 			return s.loadGlossaryDraft.execute(projectId);
-		case 'approvals':
-			return s.loadApprovalsDraft.execute(projectId);
 		case 'baselines':
 			return s.loadBaselinesDraft.execute(projectId);
 		case 'documents':
@@ -264,13 +261,6 @@ const ENUMS: Partial<Record<Section, Record<string, string[]>>> = {
 		'terms.locale': codes(GLOSSARY_LOCALES),
 		'terms.status': codes(GLOSSARY_STATUSES)
 	},
-	approvals: {
-		'items.status': codes(APPROVAL_STATUSES),
-		// The catalog aligned with the nav's Specify group — `area` also accepts
-		// any custom string (unknown values fall back to "Whole specification"
-		// only when empty/non-string).
-		'items.area (catalog — any custom string accepted)': [...APPROVAL_AREAS]
-	},
 	documents: {
 		'sources.kind': codes(DOCUMENT_KINDS)
 	}
@@ -287,9 +277,9 @@ const SAMPLES: Partial<Record<Section, Record<string, unknown>>> = {
 			featureIds: ['feat-send'],
 			disposition: 'included',
 			rationale: '',
-			approvalId: null
+			group: ''
 		},
-		'capabilities (approved deferral)': {
+		'capabilities (left out, with its reason)': {
 			id: 'scope-voice',
 			name: 'Voice input',
 			description: 'Compose a message by speaking.',
@@ -297,14 +287,19 @@ const SAMPLES: Partial<Record<Section, Record<string, unknown>>> = {
 			featureIds: [],
 			disposition: 'deferred',
 			rationale: 'Scheduled for the next release.',
-			approvalId: 'approval-voice-deferral'
+			group: 'Hands-free use'
+		},
+		boundary: {
+			covers: 'The messaging app on the web and mobile: conversations, members and notifications.',
+			decision: 'The product owner asked to specify the app alone, without the admin console.',
+			decidedAt: '2026-11-12',
+			groups: [{ name: 'Hands-free use', summary: 'speaking a message, reading one aloud' }]
 		},
 		sectionAssessments: {
 			section: 'users',
 			applicability: 'required',
 			status: 'ready',
-			rationale: 'Personas and permissions cover every included capability.',
-			approvalId: null
+			rationale: 'Personas and permissions cover every included capability.'
 		}
 	},
 	users: {
@@ -663,27 +658,11 @@ const SAMPLES: Partial<Record<Section, Record<string, unknown>>> = {
 			}
 		}
 	},
-	approvals: {
-		items: {
-			id: 'appr-experience',
-			title: 'Sign off the Experience spec',
-			area: 'Experience',
-			reviewer: 'Aline',
-			status: 'in_review',
-			deadline: '2026-08-01',
-			note: 'Doubles as the review comment / accepted-risk rationale.'
-		}
-	},
 	baselines: {
-		'baselines (name/note are the ONLY writable fields — the rest is an immutable captured snapshot)': {
+		'baselines (recorded by Lyriks, read-only)': {
 			id: 'baseline-v1',
-			name: 'Pre-pilot baseline',
-			note: 'Scope agreed with the customer.',
-			createdAt: '2026-07-01T10:00:00.000Z',
-			readiness: 87,
-			coherence: 92,
-			featureCount: 24,
-			content: '# Requirements document (Markdown)…'
+			name: 'Specification 360° of the product',
+			createdAt: '2026-07-01T10:00:00.000Z'
 		}
 	},
 	documents: {
@@ -700,7 +679,7 @@ const SAMPLES: Partial<Record<Section, Record<string, unknown>>> = {
 /** How to author each section, which write tool to use, and id conventions. */
 const AUTHORING: Record<Section, string> = {
 	scope:
-		'set_section FIRST and keep it current. Choose mode full_product|selected_scope|prototype, then inventory every externally expected capability. Every capability must cite Documents & Sources through sourceIds; included capabilities must map to leaf featureIds. excluded/deferred rows require a rationale and an approvalId (and are forbidden in full_product mode): an approval still `in_review` is enough to FILE the decision, the gate then reports the missing signature as debt instead of blocking, and you never write `accepted_risk` yourself, since that asserts a human accepted a risk. Review every pre-populated sectionAssessments row whose applicability is `required`: mark it ready only after checking the section; not_applicable requires a rationale + an approval (in review is enough) and is forbidden in full_product mode. Rows seeded `derived` (Project health, Baselines, Evolution: a dossier is driven by apply_evolution_batch, never assessed here) are computed or captured — leave them alone, the gate does not ask you for them. completionStatus, completedAt, audit and auditLog are server-owned — call assess_project_completeness, then audit_project_scope, then finish_project instead of writing them. Humans never fill this ledger in: it is the reasoning YOU must commit to before authoring, and it has no page in the app — do not point a user at one.',
+		'set_section FIRST and keep it current. Choose mode full_product|selected_scope|prototype, then inventory every externally expected capability. Every capability must cite Documents & Sources through sourceIds; included capabilities must map to leaf featureIds. excluded/deferred rows require a rationale, the reason a person reads (and are forbidden in full_product mode); no approval is asked, and an approvalId sent is dropped. Give each left-out capability a `group` and write `boundary`: `covers` (what the specification covers, one sentence in the words of the product), `decision` (the decision the boundary rests on: who asked for it and why), `decidedAt` (its ISO date) and `groups[]` ({name, summary}: one line saying what each group of left-out capabilities holds). The Scope drawer shows them under Out of scope, the largest group first, so name groups a person recognises (5 or so, never one per capability). Review every pre-populated sectionAssessments row whose applicability is `required`: mark it ready only after checking the section; not_applicable requires a rationale and is forbidden in full_product mode. Rows seeded `derived` (Project health, Baselines, Evolution: a dossier is driven by apply_evolution_batch, never assessed here) are computed or captured — leave them alone, the gate does not ask you for them. completionStatus, completedAt, audit and auditLog are server-owned — call assess_project_completeness, then audit_project_scope, then finish_project instead of writing them. Humans never fill this ledger in: it is the reasoning YOU must commit to before authoring. Only the boundary is shown: while the list of what is out of scope waits for a person to approve it, a discreet link on the Overview (<n> out of scope, To approve) opens the Scope drawer; once approved it reads in the History of the Reverse page. The rest has no page. boundary.approval is server-owned: a person approves the list of what is left out there, and a save never writes it; never ask to approve it yourself (refused with 403). Changing a capability left out, its disposition or its reason makes the approval Changed since, and the completion report warns until a person approves it again; tell the person when you change that list.',
 	foundation:
 		`set_section. The foundation section feeds Specification 360° › Overview, the FIRST page a customer reads, and Tech and data › Requirements and Health. ${FOUNDATION_ALTITUDE_RULE} ` +
 		'Author its three nested records together — identity, definition, operations — using the exact emptyDraft shape; every nested record carries the same projectId and the server pins it to the requested project. ' +
@@ -733,7 +712,7 @@ const AUTHORING: Record<Section, string> = {
 		'Every coreId/parentFamilyId/featureId must resolve inside the SAME payload: an unknown reference is rejected with the collection to author first. ' +
 		'\n· Per-leaf detail (the drawer behind a leaf): leafMeta, keyed by leaf feature id: objective, problem, expectedEffect, value (the "why" a reader asks for), code (your own reference), acceptanceCriteria[] {id, text} = the testable statements this leaf must satisfy, dependsOn[] = other leaf ids, sourceIds[] = Documents & Sources citations, stage 1-5 (a MANUAL maturity stage override: 1 Idea, 2 Outlined, 3 Specified, 4 Simulated, 5 Complete; omit it and the stage derives from the engine maturity score, which is the honest default). Every field is optional and an empty string is a deliberate "cleared", never a missing value. ' +
 		'\n  A leaf criterion is NOT a second list: saving this section carries it into the behavior model under a reserved `ac-leaf-` id, beside the criteria you author with apply_behavior_batch, and everything that counts criteria counts that one list. Write prose here; write status, relations and evidence through the model. ' +
-		'\n· Knowledge › a feature\'s page › Actions › Journeys: actionJourneys { <featureId>: [{ id, name, nodes: string[], links: [{ from, to }], positions?: { <actionId>: { x, y } }, origin }] }, the one diagram of a feature\'s actions (send a single entry per feature; the page shows the first, its journeys being the paths its arrows draw): nodes are the action ids the journey holds (each once), links the arrows from one action to the next (one action may lead to several), positions where a person dragged a card (leave them out: a card without one stands where the arrows place it, left to right). A journey never loops: an arrow between two different actions of the journey, drawn once, never leading back to where it started (one that does is dropped). A person decides them: a write through this section never replaces, changes or removes a journey whose origin is "person" (it stays as stored), and every other journey you send is stored as a suggestion (origin "ai") replacing the suggestions before it, which a person keeps, changes or dismisses on the page. Suggest journeys only from what the feature\'s actions really chain (what one makes possible for the next); never claim origin "person". ',
+		'\n· Knowledge › a feature\'s page › Actions › Journeys: actionJourneys { <featureId>: [{ id, name, nodes: string[], links: [{ from, to, kind? }], positions?: { <actionId>: { x, y } }, origin }] }, the one diagram of a feature\'s actions (send a single entry per feature; the page shows the first, its journeys being the paths its arrows draw): nodes are the action ids the journey holds (each once), links the arrows from one action to the next (one action may lead to several), each with its kind: "then" (the person goes on to it; the default, left out), "enables" (the action puts the product in the state the next one needs), "triggers" (it sets the next one off with no one acting: an event, the system, a schedule) or "fails" (it leads there when it is refused or fails), positions where a person dragged a card (leave them out: a card without one stands where the arrows place it, left to right). A journey never loops: an arrow between two different actions of the journey, drawn once, never leading back to where it started (one that does is dropped). A person decides them: a write through this section never replaces, changes or removes a journey whose origin is "person" (it stays as stored), and every other journey you send is stored as a suggestion (origin "ai") replacing the suggestions before it, which a person keeps, changes or dismisses on the page. Write it WITHOUT BEING ASKED, in the same pass as you write or change a feature\'s actions (a Reverse-Specification included), for every feature of two actions or more: the most probable ways a person or the system goes from one action to the next, from what the actions really chain (what one makes possible for the next); an action that leads nowhere stays without an arrow. The page shows a person\'s diagram that has an arrow first, else your suggestion. Never claim origin "person". ',
 	experience:
 		'The client-visible product, described and never drawn: what a persona goes through, on which screen, doing what with which data, and the design system a coding agent reads with get_design_system to build the UI (no page hands out a design.md file). ' +
 		'THE PLAN: journeys[] {id, coreId (a features core), name, description, order, actorRoleIds[] = users.roles[] ids} = one end-to-end path a persona takes; steps[] {id, journeyId, name, order, linkedScreenId} = its ordered stops, each on a screen of the inventory. ' +
@@ -767,10 +746,8 @@ const AUTHORING: Record<Section, string> = {
 		'set_section. terms[] — one governed concept each: term = the WORD the product and its users say, spelled as a human writes it ("Invoice status"); a code identifier (invoiceStatus, USER_ROLE, getInvoice()) is rejected — that spelling belongs to the Data model, and the word people wrongly use belongs in synonymsAvoid[]. ' +
 		'definition = one sentence a newcomer understands; synonymsAllowed[] = the words that mean the same and may be used; synonymsAvoid[] = the ones the team must stop using (they are matched against the whole project corpus and reported); example = the term in a real product sentence; locale fr|en; status draft|approved; sourceIds[] = the Documents & Sources rows that define it. ' +
 		'Health score, suggestions, and view state are derived or local — never send them.',
-	approvals:
-		'set_section. items[] — a lightweight approval worklist, one row per thing to sign off (title, area, reviewer, status draft|in_review|approved|changes_requested|accepted_risk, deadline free-form string, note = review comment / accepted-risk rationale). `area` is free text; the codes listed under enums name the parts of the specification. Not shown in the interface: the completion audit reads these rows when a scope item is deferred or a section declared not applicable. Rows keep their ids (send id back on update); unknown statuses fall back to draft. Only a person signs off: a write from an AI client that moves a row to approved or accepted_risk (or adds one so) is refused with 403, so file it in_review. decidedBy and decidedAt (who moved the status, and when) are stamped by the server from the session: never send them.',
 	baselines:
-		'DERIVED — agentAuthorable:false. A baseline is an immutable point-in-time snapshot (scores, feature count, and the full Markdown requirements document in `content`) captured server-side via POST /api/projects/<projectId>/baselines/capture — never author snapshot fields. set_section (PUT) is only for renaming (name), annotating (note), or deleting (omit the row): every other field is kept as captured (the answer\'s note says so), a row nobody captured is refused, and the baseline a validation of the specification stands on cannot be deleted.',
+		'DERIVED, agentAuthorable:false. Lyriks records a baseline (its id, its name and its moment, nothing else) at each milestone of the specification: its definitive validation, a code change kept, an evolution closed, a Reverse-Specification published. The version of the specification (v1.0 at the validation, one minor step per later baseline) is counted from them. Read them with get_section; set_section and patch_section are refused with 405, and nothing captures one on demand.',
 	documents:
 		'set_section. sources[] — THE project evidence register, and the single source of truth for evidence: no other section keeps its own list of links. Each row: title, kind (see enums, default link), url (a reachable web or uploaded-file address), note (citation/excerpt). Optional decision:{status:proposed|accepted|superseded}; keep technical details and rationale in note. Optional evidence:{kind:unit|integration|e2e|visual|load|manual|prototype,result:passed|failed|blocked|not_run,buildId,artifact,command,observedAt,provenance,criterionIds:string[]}. These are REPORTED results, not independently verified evidence or model coverage. Never mark a real-runtime test passed on the basis of a prototype check. Every other section cites these rows by stable id through a `sourceIds: string[]` field — foundation.definition.<slice>.sourceIds, users.roles[].sourceIds, rules.issues[]/scenarios[].sourceIds, glossary.terms[].sourceIds, architecture.sourceIds (+ techChoices[].referenceDocId), features leafMeta.sourceIds. So: register a source HERE first, then cite its id from wherever the claim is made. Ids are the citation contract — keep them unchanged across writes, and never delete a row that is still cited (the app flags the dangling citation rather than hiding it). REACHABLE, OR IT IS NOT A SOURCE: a row is evidence only if a reader other than you can consult it, through one of two doors. Door 1, url = a web address anyone can open (the Notion page, the Jira issue, the Confluence page, the Figma file, the GitHub file or commit, the official docs; the tool response of the MCP you read it through carries it) or an uploaded file. Door 2, no address (a PDF handed over, an interview, a chat, a file on your disk): leave url EMPTY and carry in note everything the spec relies on, verbatim, with where it came from. Never type a file:// path, a local path or a plain reference into url: it opens for nobody, so the write answers with a coherenceIssues line per such row and assess_project_completeness repeats it as a source-unreachable warning that fails the Source traceability check (a row with neither url nor note is source-empty). A code file you read goes through attach_source (readable back through list_sources) and its row here carries the repository web address of the file, or the repo-relative path in the note. Fix every reported row in the same pass.',
 	evolution:

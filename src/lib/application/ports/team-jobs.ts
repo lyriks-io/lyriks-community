@@ -9,6 +9,8 @@ export interface PersonJobs {
 	readonly jobIds: readonly string[];
 	/** The same jobs by name, as the workspace's list spells them. */
 	readonly names: readonly string[];
+	/** What each of these jobs validates, as the workspace chose it (else its defaults). */
+	readonly jobTopics?: Readonly<Record<string, readonly string[]>>;
 }
 
 export interface TeamJobsPort {

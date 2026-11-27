@@ -16,8 +16,8 @@ import { readSpecValidationBoard } from './spec-validation.server';
  * the code the validation is read against, the team told it is validated.
  */
 
-async function captureBaseline(services: AppServices, projectId: string, name: string, note: string, origin: string | null): Promise<string | null> {
-	const captured = await services.captureBaseline.execute(projectId, name, note, { expectedRevision: null, origin });
+async function captureBaseline(services: AppServices, projectId: string, name: string, origin: string | null): Promise<string | null> {
+	const captured = await services.captureBaseline.execute(projectId, name, { expectedRevision: null, origin });
 	if (!captured) error(409, 'The baselines changed at the same time. Try again.');
 	publishSectionChange({ projectId, section: 'baselines', origin });
 	return captured.draft.baselines[0]?.id ?? null;
@@ -143,13 +143,28 @@ export async function applySpecValidationActs(
 				}
 				break;
 			}
+			case 'set_validator': {
+				// Only someone who can open the project validates it (rule ad6519a1 of feat-135); unticking takes anyone off.
+				const to = team.find((member) => samePersonRef(member.person, { id: act.to, name: '' }))?.person
+					?? projected.validators?.people.find((person) => samePersonRef(person, { id: act.to, name: '' }));
+				if (!to || (act.validates && !team.some((member) => samePersonRef(member.person, to)))) error(400, 'Choose a person who can access this project.');
+				out.push({ op: 'set_validator', to, validates: act.validates });
+				break;
+			}
+			case 'set_lead': {
+				// The lead changes at any time, to anyone who can open the project; they are then waited on everywhere.
+				const to = team.find((member) => samePersonRef(member.person, { id: act.to, name: '' }))?.person;
+				if (!to) error(400, 'Choose a person who can access this project.');
+				out.push({ op: 'set_lead', to });
+				break;
+			}
 			case 'finalize': {
 				if (board.summary.state === 'validated') error(400, 'The specification is already validated.');
 				if (!board.complete) error(400, 'Validate every element before validating the specification definitively.');
 				const notify = team.map((m) => m.person).filter((p) => !samePersonRef(p, actor));
 				const code = codeSnapshot(await readCodeFacts(services, projectId));
 				// Capture only after every local act passes; publication rechecks concurrent reviews on each save retry.
-				captures.push({ index: out.length, capture: () => captureBaseline(services, projectId, `Specification 360° of ${product}`, `Validated by ${actor.name}: the reference every evolution is simulated against.`, origin) });
+				captures.push({ index: out.length, capture: () => captureBaseline(services, projectId, `Specification 360° of ${product}`, origin) });
 				// What each element reads now: a complementary run carries its validations while it reads the same (criterion 0c87480c).
 				const fingerprints = Object.fromEntries(elements.flatMap((e) => (e.fingerprint ? [[e.id, e.fingerprint] as const] : [])));
 				out.push({ op: 'publish', baselineId: null, notify, code, fingerprints });
@@ -161,8 +176,8 @@ export async function applySpecValidationActs(
 				if (!change) error(400, 'This change is no longer in the code. Reload the page.');
 				if (act.op === 'keep_drift') {
 					captures.push({ index: out.length, capture: () => (keptBaseline ??= keeps > 1
-						? captureBaseline(services, projectId, `Code changes kept · ${change.featureName}`, `${keeps} changes made in the code kept in the Specification 360° by ${actor.name}.`, origin)
-						: captureBaseline(services, projectId, `Code change kept · ${change.elementLabel}`, `${change.what} Kept in the Specification 360° by ${actor.name}.`, origin)) });
+						? captureBaseline(services, projectId, `Code changes kept · ${change.featureName}`, origin)
+						: captureBaseline(services, projectId, `Code change kept · ${change.elementLabel}`, origin)) });
 					out.push({ op: 'keep_drift', key: change.key, code: change.code, baselineId: null, title: change.elementLabel });
 				} else {
 					out.push({ op: 'send_back_drift', key: change.key, code: change.code, title: change.elementLabel });

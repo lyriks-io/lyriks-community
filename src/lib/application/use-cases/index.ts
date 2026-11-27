@@ -174,7 +174,6 @@ export {
 	SaveCoherenceDraftUseCase,
 	type SaveCoherenceDraftResult
 } from '../analysis/save-coherence-draft';
-export { GenerateSpecsUseCase, type GenerateSpecsResult } from '../specification/generate-specs';
 export { LoadTeamUseCase } from '../collaboration/load-team';
 export {
 	AddCollaboratorUseCase,
@@ -197,6 +196,7 @@ export {
 	FinishProjectUseCase,
 	SaveScopeDraftUseCase
 } from '../analysis/project-completion';
+export { ApproveScopeLeftOutUseCase } from '../analysis/approve-scope-left-out';
 export { CaptureBaselineUseCase } from '../specification/capture-baseline';
 export {
 	LoadReuseLibraryUseCase,

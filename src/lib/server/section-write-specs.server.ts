@@ -3,9 +3,12 @@ import { assertSummaryFits } from './product-summary.server';
 import { sourceAccessIssues } from '$domain/documents';
 import { declaredStatePaths, roleValuesOutsideBehavior } from '$domain/users';
 import type { DraftableSection } from '$domain/evolution';
+import type { RetrospecWriteSection } from '$domain/retrospec';
 import { parseArchitectureDraft } from '$application/specification/parse-architecture-draft';
+import { parseDataDraft } from '$application/specification/parse-data-draft';
 import { parseDocumentsDraft } from '$application/specification/parse-documents-draft';
 import { parseExperienceDraft } from '$application/specification/parse-experience-draft';
+import { parseFeaturesDraft } from '$application/specification/parse-features-draft';
 import { parseFoundationDraft } from '$application/specification/parse-foundation-draft';
 import { parseGlossaryWrite, type GlossaryWrite } from '$application/specification/parse-glossary-draft';
 import { parseRulesDraft } from '$application/specification/parse-rules-draft';
@@ -14,6 +17,7 @@ import { parseUsersWrite, type UsersWrite } from '$application/specification/par
 import { capabilityRegistry, reviewCapabilityReferences, withCarriedGrants } from '$application/specification/capability-registry';
 import { roleUses } from '$application/spec360/role-uses';
 import { assertSectionDraftValid } from '$lib/server/section-authoring-validation.server';
+import { assertLeafIdsUnclaimed } from '$lib/server/features-leaf-id-guard.server';
 import type { SectionSaveSpec } from '$lib/server/section-save.server';
 import type { AppServices } from '$composition/container.server';
 
@@ -135,6 +139,28 @@ async function persistUsers(draft: UsersWrite['draft'], services: AppServices, p
 }
 
 /** Experience: journeys and the screens inventory, projected into the canonical local kernel folder. */
+/**
+ * Features: the tree of core features and features. A leaf id is claimed by this
+ * save, so a clash with another project is refused here.
+ */
+export const FEATURES_WRITE = {
+	section: 'features',
+	validate: async (body, services, projectId) => {
+		assertSectionDraftValid('features', body);
+		await assertLeafIdsUnclaimed(parseFeaturesDraft(body, projectId), services, projectId);
+	},
+	parse: parseFeaturesDraft,
+	persist: async (draft, services, projectId) => services.saveFeaturesDraft.execute(draft, await services.loadSpecLanguage.generated(projectId))
+} satisfies SectionSaveSpec<ReturnType<typeof parseFeaturesDraft>, object>;
+
+/** Data: machines, databases, tables, fields and interfaces. */
+export const DATA_WRITE = {
+	section: 'data',
+	validate: (body) => assertSectionDraftValid('data', body),
+	parse: parseDataDraft,
+	persist: (draft, services) => services.saveDataDraft.execute(draft)
+} satisfies SectionSaveSpec<ReturnType<typeof parseDataDraft>, object>;
+
 export const EXPERIENCE_WRITE = {
 	section: 'experience',
 	parse: parseExperienceDraft,
@@ -203,6 +229,31 @@ export const SECTION_WRITES: Readonly<Record<DraftableSection, AnyWrite>> = {
 	glossary: GLOSSARY_WRITE,
 	architecture: ARCHITECTURE_WRITE
 };
+
+/**
+ * The sections a Reverse-Specification's validated change writes, by their wire id
+ * (feat-120 action 27c680a3): the pages' own, plus the features, the rules and the data.
+ */
+export const RETROSPEC_SECTION_WRITES: Readonly<Record<RetrospecWriteSection, AnyWrite>> = {
+	...SECTION_WRITES,
+	features: FEATURES_WRITE,
+	rules: RULES_WRITE,
+	data: DATA_WRITE
+};
+
+/** A section a validated change writes, as `GET /api/sections` reads it: the document its edits are laid on. */
+export async function loadRetrospecWriteSection(services: AppServices, section: RetrospecWriteSection, projectId: string): Promise<unknown> {
+	switch (section) {
+		case 'features':
+			return services.loadFeaturesDraft.execute(projectId);
+		case 'rules':
+			return services.loadRulesDraft.execute(projectId);
+		case 'data':
+			return services.loadDataDraft.execute(projectId);
+		default:
+			return loadDraftableSection(services, section, projectId);
+	}
+}
 
 /** The part as its page reads it (`GET /api/sections`), the document its edits are laid on. */
 export async function loadDraftableSection(services: AppServices, section: DraftableSection, projectId: string): Promise<unknown> {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyRetrospecAct, type ActContext, type RetrospecAct } from './acts';
 import { parseRetrospecDocument, type RetrospecDocument, type RetrospecRun } from './document';
-import { heldDelta, reportCards, reportCounts, revertBrief, reworkRejectedPrompt, writeValidatedPrompt, writesHeld, type ReportedChange } from './run-report';
+import { heldDelta, reportCards, reportCounts, revertBrief, reworkRejectedPrompt, writesHeld, writingProgress, type ReportedChange } from './run-report';
 import { specState } from './spec-validation';
 import { analysisOf } from './status';
 
@@ -26,7 +26,7 @@ const run = (id: string, over: Partial<RetrospecRun> = {}): RetrospecRun => ({
 	verdicts: {},
 	...over
 });
-const change = (id: string, over: Partial<ReportedChange> = {}): ReportedChange => ({ id, kind: 'changed', anchor: 'action:f:a', dock: null, title: 'Sign in', proposed: 'Sign in with a key', code: 'if (key)', where: 'src/a.ts:1', decision: null, ...over });
+const change = (id: string, over: Partial<ReportedChange> = {}): ReportedChange => ({ id, kind: 'changed', anchor: 'action:f:a', dock: null, title: 'Sign in', proposed: 'Sign in with a key', code: 'if (key)', where: 'src/a.ts:1', writes: [{ featureId: 'f', operations: [{ kind: 'update_action' }] }], decision: null, ...over });
 const published = run('run-1', { publishedAt: '2026-11-01T10:00:00.000Z', publishedBy: ann });
 const held = (over: Partial<RetrospecRun> = {}) => run('run-2', { holds: true, complementary: { fromRunId: 'run-1', fromCommit: null, scope: 'delta' }, report: { c1: change('c1') }, ...over });
 const docOf = (...runs: RetrospecRun[]): RetrospecDocument => ({ version: 1, runs, comments: {} });
@@ -43,7 +43,7 @@ const refusal = (doc: RetrospecDocument, act: RetrospecAct) => {
 const last = (doc: RetrospecDocument) => doc.runs.at(-1) as RetrospecRun;
 const decided = (verdict: 'validated' | 'reverted' | 'rejected', note?: string) => ({ verdict, by: ann, at: 'x', ...(note ? { note } : {}) });
 
-describe('a rejected change goes back to the AI with what must change [criterion:eb132bbd]', () => {
+describe('a rejected change goes back to the AI with what must change', () => {
 	const rejected = docOf(published, held({ report: { c1: change('c1', { decision: decided('rejected', 'Say 30 days') }) } }));
 	const reworded = { ...change('c1'), proposed: 'Expires after 30 days' };
 
@@ -54,7 +54,7 @@ describe('a rejected change goes back to the AI with what must change [criterion
 		expect(last(acted(doc, { op: 'decide_change', id: 'c1', verdict: 'rejected', note: ' Say 30 days ' })).report?.c1.decision).toEqual({ verdict: 'rejected', by: ann, at: ctx.now, note: 'Say 30 days' });
 	});
 
-	it('reads to decide again once reported in other words, beside what was asked', () => {
+	it('reads to decide again once reported in other words, beside what was asked [criterion:795a0461]', () => {
 		const after = last(acted(rejected, { op: 'report_changes', changes: [reworded] })).report?.c1;
 		expect(after?.decision).toBeNull();
 		expect(after?.rework).toEqual({ note: 'Say 30 days', by: ann, at: 'x' });
@@ -85,11 +85,14 @@ describe('a rejected change goes back to the AI with what must change [criterion
 		expect(last(stillRejected).report?.c1.decision?.note).toBe('Say 30 days');
 	});
 
-	it('names what the AI reads and what it may do in the rework prompt', () => {
+	it('names what the AI reads and what it may do in the rework prompt [criterion:826f73ae]', () => {
 		const prompt = reworkRejectedPrompt(2, product);
-		expect(prompt).toContain('rework the 2 changes a person rejected on Mismatch for Kutt (Lyriks project kutt-1)');
+		expect(prompt).toContain('With the Lyriks MCP, rework the 2 changes a person rejected on Mismatch for Kutt (Lyriks project kutt-1)');
 		expect(prompt).toContain('Write nothing in the specification.');
-		expect(prompt).toContain('withdrawn');
+		expect(prompt).toContain('report_retrospec_reading with project_id alone to read the report: each rejected change carries in asked what must change');
+		expect(prompt).toContain('report each one again with report_retrospec_reading (changes), under the same id and worded as the person asked');
+		expect(prompt).toContain('withdrawn: [its id]');
+		expect(prompt).toContain('Touch no other change of the report.');
 	});
 });
 
@@ -108,8 +111,9 @@ describe('a later run writes nothing in the specification before a person valida
 		expect(specState(docOf(held()))).toBe('draft');
 	});
 
-	it('stops holding once a person sent what was validated', () => {
-		expect(writesHeld(held({ writingOpenedAt: 'x' }))).toBe(false);
+	it('keeps holding the AI while Lyriks writes what was validated, until the run is validated [criterion:c3f9ddbb]', () => {
+		expect(writesHeld(held({ writingOpenedAt: 'x' }))).toBe(true);
+		expect(writesHeld(held({ writingOpenedAt: 'x', publishedAt: 'y' }))).toBe(false);
 		expect(writesHeld(run('old', { complementary: { fromRunId: null, fromCommit: null, scope: 'delta' } }))).toBe(false);
 	});
 
@@ -136,15 +140,15 @@ describe('a later run writes nothing in the specification before a person valida
 	});
 
 	it('counts what it found as what another run changed, nothing of it written yet', () => {
-		const delta = heldDelta(held({ report: { a: change('a', { kind: 'new', anchor: null, dock: 'feature:f', title: 'Refund' }), b: change('b'), c: change('c', { kind: 'removed', anchor: 'rule:f:r', title: 'Old rule' }) } }), Array.from({ length: 12 }, (_, i) => ({ id: `x${i}`, title: '', owner: 'product' as const })));
+		const delta = heldDelta(held({ report: { a: change('a', { kind: 'new', anchor: null, dock: 'feature:f', title: 'Refund' }), b: change('b'), c: change('c', { kind: 'removed', anchor: 'rule:f:r', title: 'Old rule' }) } }), Array.from({ length: 12 }, (_, i) => ({ id: `x${i}`, title: '' })));
 		expect([delta.added.length, delta.changed.length, delta.removed.length, delta.total]).toEqual([1, 1, 1, 12]);
 		expect(delta.added[0]).toMatchObject({ kind: 'Feature', title: 'Refund' });
 	});
 
 	it('docks what it found where it sits in the specification [criterion:03192a6e]', () => {
 		const elements = [
-			{ id: 'action:f:a', title: 'Sign in', owner: 'product' as const, place: 'Access › Accounts' },
-			{ id: 'rule:f:r', title: 'A rule', owner: 'product' as const, place: 'Access › Accounts', under: 'action:f:a' }
+			{ id: 'action:f:a', title: 'Sign in', place: 'Access › Accounts' },
+			{ id: 'rule:f:r', title: 'A rule', place: 'Access › Accounts', under: 'action:f:a' }
 		];
 		const delta = heldDelta(held({ report: { b: change('b', { anchor: 'rule:f:r', title: 'As reported' }) } }), elements);
 		expect(delta.changed[0]).toMatchObject({ title: 'As reported', place: 'Access › Accounts', under: { id: 'action:f:a', title: 'Sign in' } });
@@ -222,8 +226,9 @@ describe('each change of a later run is decided on Mismatch, docked on the speci
 	});
 });
 
-describe('what a person validated on Mismatch is written once, by their AI [criterion:1aaa8316]', () => {
+describe('what a person validated on Mismatch is written once, by Lyriks itself [criterion:1aaa8316]', () => {
 	const validated = { c1: change('c1', { decision: decided('validated') }) };
+	const twoWrites = { c1: change('c1', { decision: decided('validated'), writes: [{ featureId: 'f', operations: [{ kind: 'update_action' }] }, { section: 'glossary', edits: [{ op: 'set', path: 'terms', value: [] }] }] }) };
 
 	it('opens the writing only with nothing left to decide and something validated', () => {
 		expect(refusal(docOf(published, held()), { op: 'open_writing' })).toContain('Decide every change');
@@ -231,23 +236,38 @@ describe('what a person validated on Mismatch is written once, by their AI [crit
 		expect(last(acted(docOf(published, held({ report: validated })), { op: 'open_writing' })).writingOpenedAt).toBe(ctx.now);
 	});
 
-	it('reads what a validated change became as validated by who validated it', () => {
-		const doc = docOf(published, held({ report: validated, writingOpenedAt: 'w' }));
-		const verdict = last(acted(doc, { op: 'record_written', written: [{ change: 'c1', elements: [{ anchor: 'action:f:a', title: 'Sign in' }] }] })).verdicts['action:f:a'];
-		expect(verdict).toMatchObject({ title: 'Sign in', validatedBy: [{ person: ann, at: 'x' }], flag: null });
+	it('records each write as it lands, and reads the change validated by who validated it once all are [criterion:114be880]', () => {
+		const doc = docOf(published, held({ report: twoWrites, writingOpenedAt: 'w' }));
+		const half = acted(doc, { op: 'record_writes', change: 'c1', done: 1, elements: [] });
+		expect(writingProgress(last(half))).toMatchObject({ written: 0, next: { done: 1 } });
+		expect(last(half).verdicts['action:f:a']).toBeUndefined();
+		const whole = last(acted(half, { op: 'record_writes', change: 'c1', done: 2, elements: ['action:f:a'] }));
+		expect(writingProgress(whole)).toMatchObject({ written: 1, next: null });
+		expect(whole.verdicts['action:f:a']).toMatchObject({ title: 'Sign in', validatedBy: [{ person: ann, at: 'x' }], flag: null });
 	});
 
 	it('refuses what was not sent, and a change nobody validated', () => {
-		const written = [{ change: 'c1', elements: [] }];
-		expect(refusal(docOf(published, held({ report: validated })), { op: 'record_written', written })).toContain('Nothing was sent');
-		expect(refusal(docOf(published, held({ report: { c1: change('c1', { decision: decided('rejected') }) }, writingOpenedAt: 'w' })), { op: 'record_written', written })).toContain('not validated');
+		const write = { op: 'record_writes' as const, change: 'c1', done: 1, elements: [] };
+		expect(refusal(docOf(published, held({ report: validated })), write)).toContain('Nothing was sent');
+		expect(refusal(docOf(published, held({ report: { c1: change('c1', { decision: decided('rejected') }) }, writingOpenedAt: 'w' })), write)).toContain('not validated');
 	});
 
-	it('names how many changes the prompt writes, and what stays out', () => {
-		const prompt = writeValidatedPrompt(3, product);
-		expect(prompt).toContain('the 3 changes a person validated');
-		expect(prompt).toContain('a change reverted stays out');
-		expect(prompt).toContain('written: [{ change: its id');
-		expect(writeValidatedPrompt(1, product)).toContain('the change a person validated');
+	it('keeps where the writing stopped until a person starts it again [criterion:5aec3583]', () => {
+		const doc = docOf(published, held({ report: validated, writingOpenedAt: 'w' }));
+		const stopped = acted(doc, { op: 'record_write_stop', change: 'c1', reason: 'the engine did not answer.' });
+		expect(writingProgress(last(stopped)).stop).toMatchObject({ change: 'c1', reason: 'the engine did not answer.' });
+		expect(last(acted(stopped, { op: 'write_remaining' })).writeStop).toBeNull();
+		const done = acted(doc, { op: 'record_writes', change: 'c1', done: 1, elements: [] });
+		expect(refusal(done, { op: 'write_remaining' })).toBe('Every validated change is written.');
+		expect(refusal(docOf(published, held({ report: validated })), { op: 'write_remaining' })).toBe('Nothing was sent to be written yet.');
+	});
+
+	it('leaves out only the change the writing stopped at, and the writing goes on with the others [criterion:5aec3583]', () => {
+		const two = { ...validated, c2: change('c2', { decision: decided('validated') }) };
+		const stopped = acted(docOf(published, held({ report: two, writingOpenedAt: 'w' })), { op: 'record_write_stop', change: 'c1', reason: 'gone' });
+		expect(refusal(stopped, { op: 'leave_out_change', id: 'c2' })).toBe('The writing did not stop at this change.');
+		const left = last(acted(stopped, { op: 'leave_out_change', id: 'c1' }));
+		expect(Object.keys(left.report ?? {})).toEqual(['c2']);
+		expect(writingProgress(left)).toMatchObject({ stop: null, next: { change: { id: 'c2' } } });
 	});
 });

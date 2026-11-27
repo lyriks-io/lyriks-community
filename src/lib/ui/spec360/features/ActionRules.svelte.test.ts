@@ -23,7 +23,7 @@ const rule = (id: string, category?: string, extra: Partial<ActionRule> = {}): A
 const action = (rules: ActionRule[], refusalLead: string | null = null): FeatureActionView => ({ id: 'refund', name: 'Refund a payment', description: '', who: [], rulesCount: `${rules.length} rules`, refusalLead, rules });
 
 function read(value: FeatureActionView) {
-	validation = new SpecValidation(() => ({ projectId: 'p', me, canWrite: false, doc: emptyRetrospecDocument(), team: [{ person: me, jobIds: ['product'] }], baselines: [], elements: value.rules.map((r) => ({ id: anchorOf('rule', featureId, r.id), title: r.text, owner: 'product' })) }));
+	validation = new SpecValidation(() => ({ projectId: 'p', me, canWrite: false, doc: emptyRetrospecDocument(), team: [{ person: me, jobIds: ['product'] }], baselines: [], elements: value.rules.map((r) => ({ id: anchorOf('rule', featureId, r.id), title: r.text })) }));
 	return render(ActionRules, { props: { action: value, featureId } }).body.replace(/<!--.*?-->/g, '');
 }
 const textOf = (html: string) => html.replace(/<[^>]*>/g, '').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();

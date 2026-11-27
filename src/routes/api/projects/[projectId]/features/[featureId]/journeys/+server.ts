@@ -1,6 +1,6 @@
 import { error, json } from '@sveltejs/kit';
 import { requireBehaviorFeatureAccess } from '$lib/server/behavior-feature-access.server';
-import type { JourneyAct } from '$domain/features';
+import { JOURNEY_LINK_KINDS, type JourneyAct, type JourneyLinkKind } from '$domain/features';
 import type { RequestHandler } from './$types';
 
 /**
@@ -11,7 +11,8 @@ import type { RequestHandler } from './$types';
  *
  * An act is one of: { kind: 'declare', id, name, nodes? } · { kind: 'rename', journeyId, name } ·
  * { kind: 'remove', journeyId } · { kind: 'keep', journeyId } ·
- * { kind: 'add' | 'take-out', journeyId, actionId } · { kind: 'link' | 'unlink', journeyId, from, to } ·
+ * { kind: 'add' | 'take-out', journeyId, actionId } · { kind: 'link', journeyId, from, to, linkKind? } ·
+ * { kind: 'unlink', journeyId, from, to } · { kind: 'retype', journeyId, from, to, linkKind } ·
  * { kind: 'move', journeyId, actionId, x, y } · { kind: 'tidy', journeyId }.
  *
  * Arranging changes nothing an action does, but it changes how every reader
@@ -24,6 +25,8 @@ export const GET: RequestHandler = async (event) => {
 };
 
 const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null);
+/** What an arrow says: then, enables, triggers or fails (criterion 415a3006). */
+const linkKindOf = (v: unknown): JourneyLinkKind | null => ((JOURNEY_LINK_KINDS as readonly unknown[]).includes(v) ? (v as JourneyLinkKind) : null);
 
 function actOf(body: unknown): JourneyAct | null {
 	const raw = body && typeof body === 'object' ? (body as Record<string, unknown>).act : null;
@@ -33,6 +36,7 @@ function actOf(body: unknown): JourneyAct | null {
 	const actionId = str(a.actionId);
 	const from = str(a.from);
 	const to = str(a.to);
+	const linkKind = linkKindOf(a.linkKind);
 	switch (a.kind) {
 		case 'declare':
 			return str(a.id) ? { kind: 'declare', id: a.id as string, name, ...(Array.isArray(a.nodes) ? { nodes: a.nodes.filter((n): n is string => typeof n === 'string') } : {}) } : null;
@@ -45,8 +49,11 @@ function actOf(body: unknown): JourneyAct | null {
 		case 'take-out':
 			return journeyId && actionId ? { kind: a.kind, journeyId, actionId } : null;
 		case 'link':
+			return journeyId && from && to ? { kind: 'link', journeyId, from, to, ...(linkKind ? { linkKind } : {}) } : null;
 		case 'unlink':
-			return journeyId && from && to ? { kind: a.kind, journeyId, from, to } : null;
+			return journeyId && from && to ? { kind: 'unlink', journeyId, from, to } : null;
+		case 'retype':
+			return journeyId && from && to && linkKind ? { kind: 'retype', journeyId, from, to, linkKind } : null;
 		case 'move':
 			return journeyId && actionId && typeof a.x === 'number' && typeof a.y === 'number' ? { kind: 'move', journeyId, actionId, x: a.x, y: a.y } : null;
 		case 'tidy':
@@ -60,7 +67,7 @@ export const POST: RequestHandler = async (event) => {
 	const { projectId, featureId } = event.params;
 	await requireBehaviorFeatureAccess(event, projectId, featureId, 'write');
 	const act = actOf(await event.request.json().catch(() => null));
-	if (!act) error(400, 'Send { act } with a kind of declare, rename, remove, keep, add, take-out, link, unlink, move or tidy.');
+	if (!act) error(400, 'Send { act } with a kind of declare, rename, remove, keep, add, take-out, link, unlink, retype, move or tidy.');
 	const result = await event.locals.services.arrangeActionJourneys.execute(projectId, featureId, act);
 	if (!result.ok) return json({ refusal: result.refusal }, { status: result.missing ? 404 : 422 });
 	return json({ journeys: result.journeys });

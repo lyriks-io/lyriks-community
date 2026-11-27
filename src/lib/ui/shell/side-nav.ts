@@ -3,7 +3,7 @@
  * 8e942b12): which entry the page on screen lights, and which tab of
  * Knowledge it underlines. Pure, so the lighting is tested without a browser.
  */
-export type SideEntry = 'retro' | 'knowledge' | 'evolutions' | 'drift' | 'noticed';
+export type SideEntry = 'retro' | 'knowledge' | 'evolutions' | 'drift' | 'noticed' | 'settings';
 
 /** The chapters of Knowledge, each a tab across the top of its pages; the keys navChecks gives them. */
 export type KnowledgeTab = 'overview' | 'features' | 'users' | 'experience' | 'tech' | 'glossary';
@@ -24,7 +24,7 @@ const KNOWLEDGE_TABS: Readonly<Record<string, KnowledgeTab>> = {
 	glossary: 'glossary'
 };
 
-const PROJECT_PAGES: Readonly<Record<string, SideEntry>> = { retrospec: 'retro', evolution: 'evolutions', drift: 'drift' };
+const PROJECT_PAGES: Readonly<Record<string, SideEntry>> = { retrospec: 'retro', evolution: 'evolutions', drift: 'drift', settings: 'settings' };
 
 const NOWHERE: SidePlace = { entry: null, tab: null, item: null };
 

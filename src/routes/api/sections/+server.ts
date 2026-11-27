@@ -82,8 +82,6 @@ async function loadSection(
 		}
 		case 'glossary':
 			return s.loadGlossaryDraft.execute(projectId);
-		case 'approvals':
-			return s.loadApprovalsDraft.execute(projectId);
 		case 'baselines':
 			return s.loadBaselinesDraft.execute(projectId);
 		case 'documents':

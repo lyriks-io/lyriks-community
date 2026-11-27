@@ -75,11 +75,22 @@ export interface RunReportView {
 export interface HeldReportView {
 	readonly cards: readonly ReportCard[];
 	readonly counts: ReportCounts;
-	/** A person sent what was validated to their AI: the decisions no longer change. */
+	/** A person had Lyriks write what was validated: the decisions no longer change. */
 	readonly writing: boolean;
-	readonly writePrompt: string;
+	/** Where Lyriks' writing of the validated changes stands, once it opened (feat-120); null before. */
+	readonly written: WritingView | null;
 	/** Has the person's AI rework what they rejected (criterion eb132bbd). */
 	readonly reworkPrompt: string;
+}
+
+/** Where Lyriks' writing of the validated changes stands (criteria a646b474, 5aec3583). */
+export interface WritingView {
+	readonly total: number;
+	readonly written: number;
+	/** Lyriks is writing at this moment. */
+	readonly underWay: boolean;
+	/** The change the last writing stopped at and why, until it starts again. */
+	readonly stop: { readonly change: string; readonly title: string; readonly reason: string } | null;
 }
 
 /** The next analysis Mismatch offers while no run is under way (criterion d44eb4e4, EVO-014). */

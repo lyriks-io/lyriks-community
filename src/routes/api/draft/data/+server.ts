@@ -1,8 +1,7 @@
 import { json, error } from '@sveltejs/kit';
-import { parseDataDraft } from '$application/specification/parse-data-draft';
 import { requireProjectAccess } from '$lib/server/project-access.server';
-import { assertSectionDraftValid } from '$lib/server/section-authoring-validation.server';
 import { saveSectionDraft } from '$lib/server/section-save.server';
+import { DATA_WRITE } from '$lib/server/section-write-specs.server';
 import type { RequestHandler } from './$types';
 
 /**
@@ -25,11 +24,4 @@ export const GET: RequestHandler = async (event) => {
  * mirror is recomputed on load, never trusted from the client), then
  * best-effort mirrors the whole wizard envelope to Lyriks-back.
  */
-export const PUT: RequestHandler = (event) =>
-	saveSectionDraft(event, {
-		section: 'data',
-		validate: (body) => assertSectionDraftValid('data', body),
-		parse: parseDataDraft,
-		// The kernel data adapter writes into the canonical local project folder.
-		persist: (draft, services) => services.saveDataDraft.execute(draft)
-	});
+export const PUT: RequestHandler = (event) => saveSectionDraft(event, DATA_WRITE);

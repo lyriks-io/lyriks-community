@@ -93,11 +93,11 @@
 				title: mine ? `You validated option ${letter} · click to withdraw` : `Validated by ${name} · click to withdraw`,
 				run: canEdit ? onTakeBack : null,
 				withdraws: true,
-				stamps: [{ id: risk.by, initials: initials(name), title: `${name} · validated`, ok: true }],
+				stamps: [{ id: risk.by, initials: mine ? 'YOU' : initials(name), title: `${name} · validated`, ok: true, me: mine, name }],
 				settled: true
 			};
 		}
-		return { look: 'grey', title: `Validate option ${letter}`, run: canEdit ? () => onAcceptRisk(letter) : null, stamps: [], settled: false };
+		return { look: 'grey', title: `Validate option ${letter}`, run: canEdit ? () => onAcceptRisk(letter) : null, what: `option ${letter}`, stamps: [], settled: false };
 	}
 	const sheetLink = 'self-start text-left text-[0.8125rem] font-semibold text-blue-ink hover:underline';
 </script>

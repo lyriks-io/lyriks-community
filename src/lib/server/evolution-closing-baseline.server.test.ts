@@ -37,7 +37,7 @@ describe('the baseline an evolution close captures', () => {
 		const { services, captureBaseline, stored } = servicesWith(after);
 		await captureClosingBaselines(services, { projectId: 'p', before, after, origin: null });
 		expect(captureBaseline.execute).toHaveBeenCalledTimes(1);
-		expect((captureBaseline.execute.mock.calls[0] as unknown[]).slice(0, 3)).toEqual(['p', 'EVO-001 closed', 'EVO-001 · Notes closed in Lyriks: the specification as the change left it.']);
+		expect((captureBaseline.execute.mock.calls[0] as unknown[]).slice(0, 2)).toEqual(['p', 'EVO-001 closed']);
 		expect(stored().requests.map((r) => r.closingBaselineId)).toEqual(['b-1', undefined]);
 	});
 

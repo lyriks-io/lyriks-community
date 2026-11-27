@@ -4,7 +4,7 @@ import type { SpecElement } from '$domain/retrospec';
 import { SpecElementsReader, specElementsKey } from './spec-elements.server';
 
 const services = {} as AppServices;
-const elements = (id: string): SpecElement[] => [{ id, title: id, owner: 'tech' }];
+const elements = (id: string): SpecElement[] => [{ id, title: id }];
 function deferred() {
 	let resolve!: (value: SpecElement[]) => void;
 	const promise = new Promise<SpecElement[]>((done) => { resolve = done; });

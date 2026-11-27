@@ -1,14 +1,12 @@
-import { parseBaselinesDraft } from '$application/specification/parse-baselines-draft';
-import { saveBaselineEdits } from '$lib/server/baselines-save.server';
-import { saveSectionDraft } from '$lib/server/section-save.server';
+import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
-/** Baselines autosave target: names, notes and deletions of captured baselines (capture is a POST). */
-export const PUT: RequestHandler = (event) =>
-	saveSectionDraft(event, {
-		section: 'baselines',
-		parse: parseBaselinesDraft,
-		persist: (draft, services, projectId, save) => saveBaselineEdits(services, projectId, draft, save),
-		atomic: true,
-		mirror: false
-	});
+/** Said to whoever tries to write the baselines: Lyriks records them, nobody writes them (criterion 20f33346). */
+const BASELINES_NOT_WRITTEN =
+	'The baselines are recorded by Lyriks at each validation, code change kept, evolution closed and Reverse-Specification published; they are never written.';
+
+/**
+ * The write door of the baselines section, kept so that set_section and
+ * patch_section on it answer why instead of a bare 404.
+ */
+export const PUT: RequestHandler = async () => error(405, BASELINES_NOT_WRITTEN);

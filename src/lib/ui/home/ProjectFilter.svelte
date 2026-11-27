@@ -21,6 +21,28 @@
 	let root = $state<HTMLElement>();
 	let button = $state<HTMLButtonElement>();
 
+	// The room the menu takes under its button: what the window has left below it, less a margin, and never fewer
+	// than a few rows. A list longer than that scrolls inside the menu, so its last project is always in reach.
+	const EDGE_PX = 12;
+	const FEWEST_PX = 160;
+	let room = $state<number>();
+
+	function measure() {
+		if (button) room = Math.max(FEWEST_PX, Math.round(window.innerHeight - button.getBoundingClientRect().bottom - EDGE_PX));
+	}
+
+	// Measured again while it is open: the window resized, or the page scrolled under it (the app's scroller, captured).
+	$effect(() => {
+		if (!open) return;
+		measure();
+		window.addEventListener('resize', measure);
+		document.addEventListener('scroll', measure, { capture: true, passive: true });
+		return () => {
+			window.removeEventListener('resize', measure);
+			document.removeEventListener('scroll', measure, { capture: true });
+		};
+	});
+
 	const label = $derived(
 		picked.size === 0 ? 'All projects' : picked.size === 1 ? (projects.find((p) => picked.has(p.projectId))?.name ?? '1 project') : `${picked.size} projects`
 	);
@@ -68,7 +90,7 @@
 		<span aria-hidden="true">▾</span>
 	</button>
 	{#if open}
-		<div class="pf-m" role="menu" aria-label="Filter by project" tabindex="-1" {onkeydown}>
+		<div class="pf-m" role="menu" aria-label="Filter by project" tabindex="-1" style:--pf-room={room === undefined ? undefined : `${room}px`} {onkeydown}>
 			<button type="button" class="pf-o" role="menuitemcheckbox" aria-checked={picked.size === 0} onclick={onall}>
 				<i class="pf-x" class:on={picked.size === 0}></i><span class="nm">All projects</span>
 			</button>
@@ -111,9 +133,12 @@
 		left: 0;
 		z-index: 46;
 		min-width: 260px;
-		max-height: min(420px, 70vh);
+		max-height: min(420px, var(--pf-room, 70vh));
 		padding: 4px 0;
 		overflow-y: auto;
+		/* The wheel scrolls the list alone: reaching its end, or a list too short to scroll, never carries the page
+		   (and the open menu with it) away. */
+		overscroll-behavior: contain;
 		border: 1.5px solid var(--color-ink);
 		background: var(--hm-paper);
 		box-shadow: 5px 5px 0 var(--color-ink);

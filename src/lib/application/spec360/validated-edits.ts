@@ -7,8 +7,11 @@
  */
 const STAYS_OPEN_WHEN_VALIDATED: ReadonlySet<string> = new Set(['keep_finding', 'reopen_finding', 'confirm_fix', 'reopen_fix', 'set_operations_target', 'cancel_hand_edit']);
 
+/** What a change refused on a validated specification answers, on the page and to an AI client alike. */
+export const VALIDATED_SPEC_REFUSAL = 'The specification is validated: change it through an evolution.';
+
 /** Why this change is refused on this specification, or null when it is taken. */
 export function validatedSpecRefusal(validated: boolean, op: string): string | null {
 	if (!validated || STAYS_OPEN_WHEN_VALIDATED.has(op)) return null;
-	return 'The specification is validated: change it through an evolution.';
+	return VALIDATED_SPEC_REFUSAL;
 }

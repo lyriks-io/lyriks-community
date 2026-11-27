@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { sortByName } from '$domain/shared';
 	import GlossaryText from '$ui/glossary/GlossaryText.svelte';
 	import { anchorDomId, anchorOf } from '$domain/discussions';
@@ -16,6 +17,8 @@
 	import FigureTile from '$ui/spec360/overview/FigureTile.svelte';
 	import NoticedSummary from '$ui/spec360/overview/NoticedSummary.svelte';
 	import ProblemTarget from '$ui/spec360/overview/ProblemTarget.svelte';
+	import ScopeDrawer from '$ui/spec360/overview/ScopeDrawer.svelte';
+	import ScopeLink from '$ui/spec360/overview/ScopeLink.svelte';
 	import UserList from '$ui/spec360/overview/UserList.svelte';
 	import StagedText from '$ui/spec360/StagedText.svelte';
 	import { useEditMode } from '$ui/spec360/edit-mode.svelte';
@@ -62,6 +65,15 @@
 	// and its controls wait for the page's Edit mode (criterion 41514698).
 	const editable = $derived(validation.draft && data.canWrite && mode.active);
 	const editingProduct = $derived(edits.editing === 'product');
+	// The Scope drawer opens from a discreet link, and from an old address that led to Approvals
+	// (rule b995ffb1 lands on #kb-scope) (criterion 3b04797c).
+	// Once, on landing: a later refresh of the page's data never opens it again.
+	let scopeOpen = $state(false);
+	// The link reads only while what is out of scope waits for a person's approval (criteria 3b04797c, 9424a65d).
+	const scopeWaiting = $derived(!!data.scope?.approval && data.scope.approval.state !== 'current');
+	onMount(() => {
+		if (data.scope && window.location.hash === '#kb-scope') scopeOpen = true;
+	});
 
 	// What the page shows: what it read, with the edits, adds and deletes on their way laid over it.
 	const productRead = $derived({ text: g.brief, classification: g.classification });
@@ -211,7 +223,7 @@
 
 		{#if cores.length > 0 || editable}
 			<!-- Its number of areas opens the Features page, where every feature reads inside its area (criterion 416e4885). -->
-			{#snippet whatIntro()}<a href="{base}/features" class="font-semibold text-blue-ink underline decoration-[1.5px] underline-offset-[3px] hover:decoration-[3px]">{plural(cores.length, 'area')}</a>, {plural(features, 'feature')}.{/snippet}
+			{#snippet whatIntro()}<a href="{base}/features" class="font-semibold text-blue-ink underline decoration-[1.5px] underline-offset-[3px] hover:decoration-[3px]">{plural(cores.length, 'area')}</a>, {plural(features, 'feature')}.{#if data.scope && scopeWaiting}{' '}<ScopeLink view={data.scope} onOpen={() => (scopeOpen = true)} />{/if}{/snippet}
 			<SectionBox id="kb-what" title="What it does" intro={whatIntro}>
 				{#snippet actions()}
 					<SectionValidateAll anchors={coreAnchors} what="core features" sectionId="kb-what" always />
@@ -220,6 +232,11 @@
 				<CoreList {cores} {editable} hrefOf={coreHref} />
 				{@render frameFoot(FRAME.what, 'What it does')}
 			</SectionBox>
+		{/if}
+
+		{#if data.scope && scopeWaiting && !(cores.length > 0 || editable)}
+			<!-- No What it does to end on: the link reads alone in its place (criterion 3b04797c). -->
+			<p class="m-0 text-[0.875rem] leading-normal text-ink-2"><ScopeLink view={data.scope} onOpen={() => (scopeOpen = true)} /></p>
 		{/if}
 
 		<div class="grid items-start gap-6 max-[1100px]:grid-cols-1 {users.length > 0 ? 'grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]' : 'grid-cols-1'}">
@@ -244,4 +261,8 @@
 			</SectionBox>
 		</div>
 	</div>
+	{#if data.scope}
+		<!-- Where the specification stops and its approval, read-only but for Approve (criteria 3b04797c, d16b352d). -->
+		<ScopeDrawer open={scopeOpen} onClose={() => (scopeOpen = false)} view={data.scope} projectId={data.projectId} canApprove={data.canWrite} />
+	{/if}
 </div>

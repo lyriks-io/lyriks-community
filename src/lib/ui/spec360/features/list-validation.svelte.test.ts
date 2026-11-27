@@ -26,7 +26,7 @@ const bob = { id: 'bob@example.test', name: 'Bob Li' };
 const cleo = { id: 'cleo@example.test', name: 'Cleo Roy' };
 const core = { id: 'billing', name: 'Billing', description: 'Collect payments.', features: [{ id: 'refunds', name: 'Refunds', description: 'Return a payment.', actionCount: 1 }] };
 const anchors = [anchorOf('core', core.id), anchorOf('feature', 'refunds'), anchorOf('action', 'refunds', 'refund')];
-const elements: SpecElement[] = anchors.map((id, i) => ({ id, title: ['Billing', 'Refunds', 'Refund a payment'][i], owner: 'product' }));
+const elements: SpecElement[] = anchors.map((id, i) => ({ id, title: ['Billing', 'Refunds', 'Refund a payment'][i] }));
 const mode = { active: false, available: true };
 const cited = { count: 0 };
 const routePage = vi.hoisted(() => ({ url: new URL('http://localhost/projects/p/spec/features/refunds'), state: {} }));
@@ -54,7 +54,7 @@ const approve = (doc: RetrospecDocument, itemId: string, actor = ana) => apply(d
 function reset(overrides: Partial<ValidationSource> = {}) {
 	source = {
 		projectId: 'p', me: bob, canWrite: true, doc: approve(emptyRetrospecDocument(), 'outside'), elements,
-		team: [{ person: ana, jobIds: ['product'] }, { person: bob, jobIds: ['product'] }, { person: cleo, jobIds: [] }], baselines: [], ...overrides
+		team: [{ person: ana, jobIds: ['product'] }, { person: bob, jobIds: ['business', 'qa'] }, { person: cleo, jobIds: [] }], baselines: [], ...overrides
 	};
 	validation = new SpecValidation(() => source);
 }

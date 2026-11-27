@@ -124,11 +124,15 @@
 	{#if validates}<RejectAct {anchor} {title} small />{/if}
 {/snippet}
 
+{#snippet add()}
+	<!-- The + after the people asks a colleague to validate the element (criterion 3b1c77a6). -->
+	{#if validates}<ReviewerPicker {anchor} {title} small />{/if}
+{/snippet}
+
 {#snippet between()}
 	<HandEditMark {anchor} />
 	<!-- Changed since its people validated it: the validated version beside the proposed one (criterion e6029af6). -->
 	<RevalidationMark {anchor} />
-	{#if validates}<ReviewerPicker {anchor} {title} small />{/if}
 	{#if remove && writable}
 		<!-- Shown while its own block is pointed at (reveal-with-block). -->
 		<span class="inline-flex" {@attach revealWithBlock(anchorDomId(anchor))}>
@@ -180,10 +184,10 @@
 	<!-- Being edited, the block shows only its editor until Cancel or Save (criterion 42cb9176). -->
 {:else if inGrid}
 	<!-- In a small card the controls wrap rather than run past its edge: Validate and who validated go under the pencil and the comments when the card is narrow. -->
-	<span class="card-controls"><BlockControls icons {edit} {comments} {sources} {validate} {between} {reject} end /></span>
+	<span class="card-controls"><BlockControls icons {edit} {comments} {sources} {validate} {between} {reject} {add} end /></span>
 {:else}
 	<!-- At the end of its row, in the bottom right corner of its card (criterion aba60be7); closing a head's text, small (criterion a4ef7658). -->
-	<BlockControls icons {edit} {comments} {sources} {validate} {between} {reject} end={!trailing} small={trailing} />
+	<BlockControls icons {edit} {comments} {sources} {validate} {between} {reject} {add} end={!trailing} small={trailing} />
 {/if}
 
 <style>

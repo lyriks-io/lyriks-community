@@ -12,7 +12,7 @@ import type { Section } from './sections';
  */
 export const UI_LOCATION: Record<Section, string> = {
 	scope:
-		'Not shown in the interface: the scope ledger is agent-authored and feeds the completion audit (and through it the Project health). Drive it through this API and the completion tools; never tell a user to open a page for it.',
+		'Specification 360° › Overview: while it waits for approval, a discreet link after What it does (N out of scope) opens the Scope drawer (once approved: Reverse › History), where the specification stops: `boundary` (what it covers, the decision it rests on) and the capabilities left out by `group`, with their reasons, then the approval a person gives there (`boundary.approval`, server-owned). The rest of the ledger (inclusions, section assessments, the audit) is not shown: it feeds the completion audit and, through it, the Project health. The ledger is agent-authored: drive it through this API and the completion tools.',
 	foundation:
 		'Specification 360° › Overview shows and edits the product summary (`identity`: name, summary, classification) and the problem and target (`definition.businessObjective`). ' +
 		'Specification 360° › Tech and data › Requirements shows, read-only (change it with patch_section): where it must run (`definition.technical.compatibilities`) · languages and locales (`definition.market.languages` + `operations.i18n`) · ' +
@@ -36,9 +36,8 @@ export const UI_LOCATION: Record<Section, string> = {
 	architecture: 'Specification 360° › Tech and data › Architecture (the stack, editable there) and Tech and data › Requirements (the technical constraints `constraints[]`, editable there)',
 	coherence: 'Specification 360° › Overview: the Project health gauge (ONE score) and What Lyriks noticed (every point it is computed from). Derived, read-only.',
 	glossary: 'Specification 360° › Glossary (terms editable there)',
-	approvals:
-		'Not shown in the interface: the approvals the completion audit asks for when a scope item is deferred or a section declared not applicable (a rationale plus an approval files the decision). Written by the agent for that gate only; never tell a user to open a page for it.',
-	baselines: 'Not listed in the interface: the versions of the validated Specification 360°, read by its validation. Derived, read-only.',
+	baselines:
+		'Not shown in the interface: Lyriks records a baseline (an id, a name, a moment) at each milestone of the specification, and the version line of the Knowledge band, Mismatch and the closing report of an evolution read the version counted from them. Never written.',
 	documents: 'Specification 360° › Tech and data › Sources (the project evidence register, read-only there), and the sources icon under each cited block',
 	evolution:
 		'Evolutions › Requests: the board, and one page per request ' +

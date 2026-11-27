@@ -1,6 +1,6 @@
 import { withActionHistory } from './action-history';
 import { recordRevalidation, type RevalidationInput } from './revalidations';
-import { openChanges, reportCounts, reportedAgain, type ChangeVerdict, type ReportedChange, type ReportedChangeInput } from './run-report';
+import { openChanges, reportCounts, reportedAgain, writingProgress, type ChangeVerdict, type ReportedChange, type ReportedChangeInput } from './run-report';
 import { sectionRevision } from './progress';
 import { parseDocsLocation, type DocsLocation } from './docs-location';
 import {
@@ -115,6 +115,10 @@ export type RetrospecAct =
 	| { readonly op: 'remind'; readonly itemId: string; readonly title: string; readonly to: PersonRef }
 	/** Add or cancel one additional question reviewer without replacing its defaults. */
 	| { readonly op: 'request_validation' | 'cancel_validation_request'; readonly itemId: string; readonly title: string; readonly to: PersonRef }
+	/** Choose who leads the validation, at any time: kept across runs (criterion of feat-135). */
+	| { readonly op: 'set_lead'; readonly to: PersonRef }
+	/** Tick or untick a person as a validator of the project; the lead always validates (action 3938d0f4 of feat-135). */
+	| { readonly op: 'set_validator'; readonly to: PersonRef; readonly validates: boolean }
 	/**
 	 * The person edited an element: they are its last author, and the others must
 	 * look at it again. On a validated specification `change` says what it read
@@ -160,18 +164,21 @@ export type RetrospecAct =
 	 * change", so a change reported again meanwhile is never validated unseen.
 	 */
 	| { readonly op: 'validate_changes'; readonly ids: readonly string[] }
-	/** A person sends what was validated to their AI (criterion 1aaa8316). */
+	/** A person has Lyriks write what was validated (action f581f99c): the decisions freeze. */
 	| { readonly op: 'open_writing' }
-	/** The AI says which elements each validated change became: they read validated by who validated it. */
-	| { readonly op: 'record_written'; readonly written: readonly WrittenChange[] }
+	/** A person starts the writing again where it stopped (action 216c1538). */
+	| { readonly op: 'write_remaining' }
+	/**
+	 * Lyriks wrote `done` writes of a validated change (action 27c680a3); once all
+	 * of them are, the elements it became read validated by who validated it.
+	 */
+	| { readonly op: 'record_writes'; readonly change: string; readonly done: number; readonly elements: readonly string[] }
+	/** A write the specification refused stopped the writing at this change (rule a91a8dac). */
+	| { readonly op: 'record_write_stop'; readonly change: string; readonly reason: string }
+	/** A person takes off the report the change the writing stopped at, so the writing goes on with the others (action d113882a). */
+	| { readonly op: 'leave_out_change'; readonly id: string }
 	/** The AI wrote the behaviour of a feature (recorded once, the first time). */
 	| { readonly op: 'behavior_authored'; readonly featureId: string };
-
-/** The elements of the specification a validated change became. */
-export interface WrittenChange {
-	readonly change: string;
-	readonly elements: readonly { readonly anchor: string; readonly title: string }[];
-}
 
 export interface ActContext {
 	readonly actor: PersonRef;
@@ -482,17 +489,37 @@ function actOn(doc: RetrospecDocument, act: RetrospecAct, ctx: ActContext): ActO
 			if (counts.pending > 0) return refuse('Decide every change of the report first.');
 			if (counts.validated === 0) return refuse('No change was validated: there is nothing to write.');
 			if (counts.rejected > 0) return refuse('A change is rejected: your AI reworks it first, or take the rejection back.');
-			return { ok: true, doc: withRun(doc, { ...run, writingOpenedAt: run.writingOpenedAt ?? ctx.now }) };
+			return { ok: true, doc: withRun(doc, { ...run, writingOpenedAt: run.writingOpenedAt ?? ctx.now, writeStop: null }) };
 		}
-		case 'record_written': {
+		case 'write_remaining': {
+			if (!run?.holds || run.publishedAt || !run.writingOpenedAt) return refuse('Nothing was sent to be written yet.');
+			if (!writingProgress(run).next) return refuse('Every validated change is written.');
+			return { ok: true, doc: withRun(doc, { ...run, writeStop: null }) };
+		}
+		case 'record_writes': {
 			if (!run?.writingOpenedAt) return refuse('Nothing was sent to be written yet.');
+			const change = run.report?.[act.change];
+			const decision = change?.decision;
+			if (!change || decision?.verdict !== 'validated') return refuse(`The change ${act.change} was not validated: it is not written.`);
+			const written = { ...run.written, [change.id]: Math.max(run.written?.[change.id] ?? 0, act.done) };
+			const whole = written[change.id] >= Math.max(1, change.writes.length);
 			const verdicts = { ...run.verdicts };
-			for (const { change: id, elements } of act.written) {
-				const decision = run.report?.[id]?.decision;
-				if (decision?.verdict !== 'validated') return refuse(`The change ${id} was not validated: it is not written.`);
-				for (const { anchor, title } of elements) verdicts[anchor] = { title, tab: 'spec360', validatedBy: [{ person: decision.by, at: decision.at }], flag: null };
-			}
-			return { ok: true, doc: withRun(doc, { ...run, verdicts }) };
+			if (whole) for (const anchor of act.elements) verdicts[anchor] = { title: change.title, tab: 'spec360', validatedBy: [{ person: decision.by, at: decision.at }], flag: null };
+			const writeStop = run.writeStop?.change === change.id ? null : (run.writeStop ?? null);
+			return { ok: true, doc: withRun(doc, { ...run, written, verdicts, writeStop }) };
+		}
+		case 'leave_out_change': {
+			if (!run?.writingOpenedAt) return refuse('Nothing was sent to be written yet.');
+			if (run.writeStop?.change !== act.id || !run.report?.[act.id]) return refuse('The writing did not stop at this change.');
+			// What of it was written stays and is corrected in Knowledge; the next run reports the difference again.
+			const { [act.id]: _left, ...report } = run.report;
+			const { [act.id]: _done, ...written } = run.written ?? {};
+			return { ok: true, doc: withRun(doc, { ...run, report, written, writeStop: null }) };
+		}
+		case 'record_write_stop': {
+			if (!run?.writingOpenedAt) return refuse('Nothing was sent to be written yet.');
+			if (!run.report?.[act.change]) return refuse('This change is not on the report.');
+			return { ok: true, doc: withRun(doc, { ...run, writeStop: { change: act.change, reason: act.reason, at: ctx.now } }) };
 		}
 		case 'behavior_authored': {
 			const featureId = act.featureId.trim();
@@ -689,6 +716,22 @@ function actOn(doc: RetrospecDocument, act: RetrospecAct, ctx: ActContext): ActO
 			if (target.publishedAt) return refuse('The specification is already validated.');
 			const reminders = [...(target.reminders ?? []), { itemId: act.itemId, title: act.title, by: ctx.actor, to: act.to, at: ctx.now }];
 			return { ok: true, doc: withRun(doc, { ...target, reminders }) };
+		}
+		case 'set_lead': {
+			if (!act.to.id.trim()) return refuse('Choose who leads the validation.');
+			if (doc.lead && same(doc.lead.to, act.to)) return { ok: true, doc };
+			return { ok: true, doc: { ...doc, lead: { to: act.to, by: ctx.actor, at: ctx.now } } };
+		}
+		case 'set_validator': {
+			if (!act.to.id.trim()) return refuse('Choose who validates.');
+			// Every element waits on the lead: unticking them would say otherwise (rule 79c2b49c of feat-135).
+			const lead = doc.lead?.to ?? currentRun(doc)?.startedBy ?? null;
+			if (!act.validates && lead && same(lead, act.to)) return refuse('The lead always validates: make someone else lead first.');
+			const current = doc.validators?.people ?? [];
+			const others = current.filter((p) => !same(p, act.to));
+			const people = act.validates ? [...others, act.to] : others;
+			if (doc.validators && people.length === current.length && people.every((p) => current.some((c) => same(c, p)))) return { ok: true, doc };
+			return { ok: true, doc: { ...doc, validators: { people, by: ctx.actor, at: ctx.now } } };
 		}
 		case 'request_validation':
 		case 'cancel_validation_request': {

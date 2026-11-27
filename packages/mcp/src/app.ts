@@ -16,6 +16,7 @@ import { createMcpServer }               from './server.js'
 import { issueSkillsTicket, skillsScopeGuard } from './skills-ticket.js'
 import { issueSessionTicket, sessionScopeGuard } from './session-ticket.js'
 import { indexScopeGuard, issueIndexTicket } from './index-ticket.js'
+import { issueWakeTicket, wakeScopeGuard } from './wake-ticket.js'
 import { registerOAuthRoutes }           from './oauth.js'
 import { withKeepAlive }                 from './keep-alive.js'
 import type { HonoVariables }            from './types.js'
@@ -36,8 +37,10 @@ export function createApp(): Hono<{ Variables: HonoVariables }> {
   app.get('/mcp', authenticate, (c) => c.text('Method Not Allowed', 405))
 
   // The installer's sign-in reads playbooks only (criterion 3f42911b).
-  app.post('/mcp', authenticate, skillsScopeGuard, sessionScopeGuard, indexScopeGuard, async (c) => {
+  app.post('/mcp', authenticate, skillsScopeGuard, sessionScopeGuard, indexScopeGuard, wakeScopeGuard, async (c) => {
     const scope = c.get('token_scope') ?? null
+    // A command's own sign-in is offered no ticket of another command.
+    const commandScope = scope === 'skills' || scope === 'session-wait' || scope === 'index-sync' || scope === 'ai-wake'
     // Community (no overlay, or one that is not configured): every tool answers
     // from the platform.
     const ee  = enterprise?.configured() ? enterprise.bind(c.get('user_token')) : null
@@ -54,15 +57,21 @@ export function createApp(): Hono<{ Variables: HonoVariables }> {
       },
       // The live session's waiting command signs in by itself (criterion 26c95cc1).
       sessionTicket: (sessionId) => {
-        if (scope === 'skills' || scope === 'session-wait' || scope === 'index-sync') return null
+        if (commandScope) return null
         if (process.env.MCP_AUTH_REQUIRED !== '1') return { token: null }
         return issueSessionTicket(c.get('user_token'), c.get('user_id'), sessionId)
       },
       // The sync command signs in by itself, for one project (feat-100, criterion 2452b3d7).
       indexTicket: (projectId) => {
-        if (scope === 'skills' || scope === 'session-wait' || scope === 'index-sync') return null
+        if (commandScope) return null
         if (process.env.MCP_AUTH_REQUIRED !== '1') return { token: null }
         return issueIndexTicket(c.get('user_token'), c.get('user_id'), projectId)
+      },
+      // The person's waker signs in by itself, for one project (criterion ab716003).
+      wakeTicket: (projectId) => {
+        if (commandScope) return null
+        if (process.env.MCP_AUTH_REQUIRED !== '1') return { token: null }
+        return issueWakeTicket(c.get('user_token'), c.get('user_id'), projectId)
       },
     }, editionScope)
 

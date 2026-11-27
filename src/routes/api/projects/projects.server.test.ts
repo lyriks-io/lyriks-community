@@ -16,7 +16,7 @@ const held = (id: string): ProjectSummary => ({ id, name: id, description: '', i
 function installation(edition: string, projects: ProjectSummary[]) {
 	const saved: unknown[] = [];
 	const drafts = { save: async (d: unknown) => void saved.push(d) } as unknown as FoundationIdentityRepositoryPort;
-	const scope = new CheckProjectCreationUseCase(() => edition, { list: async () => projects });
+	const scope = new CheckProjectCreationUseCase(() => edition, () => (edition === 'community' ? 1 : null), { list: async () => projects });
 	const createProject = new CreateProjectUseCase(drafts, clock, portfolio, undefined, () => 'abc123', undefined, scope);
 	const services = { createProject, audit: { record: () => {} } };
 	const event = (name: string): Event =>

@@ -925,42 +925,6 @@ button:not(:disabled):is(:hover, :focus-visible) > .validate-thumb {
 	}
 }
 
-/* A validation the reader can take back (BlockControls): once armed (withdraw-arm.ts: pointed at a moment, or a
-   first touch), its Validated slides away for Withdraw, on a soft red, and only then does a click take it back; it
-   slides back at once as it disarms. Both words share one place, so the pill keeps its width. */
-.withdraw-swap {
-	display: inline-grid;
-}
-.withdraw-swap > * {
-	grid-area: 1 / 1;
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 4px;
-	transition:
-		opacity 160ms ease,
-		translate 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.withdraw-hover {
-	opacity: 0;
-	translate: 0 80%;
-}
-button.withdrawable[data-armed] {
-	background-color: var(--color-evo-red-soft);
-	color: var(--color-evo-red);
-	transition:
-		background-color 0.2s ease,
-		color 0.2s ease;
-}
-button[data-armed] > .withdraw-swap > .withdraw-rest {
-	opacity: 0;
-	translate: 0 -80%;
-}
-button[data-armed] > .withdraw-swap > .withdraw-hover {
-	opacity: 1;
-	translate: 0 0;
-}
-
 /* A block's Delete shows only while its own block is pointed at (reveal-with-block.ts), keeping its room so nothing
    moves; reached by the keyboard or holding its list open, it shows too. A touch screen points at nothing: it stays. */
 @media (hover: hover) {

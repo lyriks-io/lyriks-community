@@ -70,6 +70,12 @@ export interface FloatOptions {
 	readonly prefer?: 'below' | 'above';
 	/** At least as wide as its button (a dropdown under its field), or exactly as wide (`fill`, a list under its text area). */
 	readonly matchWidth?: boolean | 'fill';
+	/**
+	 * Where it scrolls when the window caps its height: the whole panel (the
+	 * default), or a part of it (`inside`): a panel with a head and a foot that
+	 * stay put lets its own list scroll, so one scrollbar shows, never two.
+	 */
+	readonly scroll?: 'panel' | 'inside';
 }
 
 /**
@@ -93,7 +99,7 @@ export function floatInView(node: HTMLElement, options: FloatOptions) {
 	const ownCap = getComputedStyle(node).maxWidth;
 	const windowCap = `calc(100vw - ${2 * EDGE}px)`;
 	node.style.maxWidth = ownCap && ownCap !== 'none' ? `min(${ownCap}, ${windowCap})` : windowCap;
-	node.style.overflowY = 'auto';
+	node.style.overflowY = options.scroll === 'inside' ? 'hidden' : 'auto';
 	node.dataset.floating = '';
 
 	const place = () => {

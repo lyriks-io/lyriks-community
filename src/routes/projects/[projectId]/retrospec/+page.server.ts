@@ -4,6 +4,7 @@ import { mcpEndpointFor } from '$domain/foundation';
 import { RETROSPEC_SECTION, RETROSPEC_SECTIONS, specElementHref } from '$domain/retrospec';
 import { IMPLEMENTATION_COVERAGE_SECTION, PROJECT_HEALTH_SECTION, RETROSPEC_DETECTED_SECTION, sectionSyncKey } from '$lib/shared/section-sync';
 import { loadRetrospecPage } from '$lib/server/retrospec-page.server';
+import { loadStartWay } from '$lib/server/project-start.server';
 import { callerCanWrite } from '$lib/server/writer-gate.server';
 import { retrospecLiveKey } from '$ui/retrospec/live-key';
 import type { PageServerLoad } from './$types';
@@ -30,6 +31,11 @@ export const load: PageServerLoad = async (event) => {
 	depends(sectionSyncKey(params.projectId, 'evolution'));
 	depends(retrospecLiveKey(params.projectId));
 	const services = event.locals.services;
-	const [page, canWrite] = await Promise.all([loadRetrospecPage(services, params.projectId, cookies), callerCanWrite(event, params.projectId)]);
-	return { ...page, canWrite, mcpUrl: mcpEndpointFor(url.origin) };
+	const [page, canWrite, startWay] = await Promise.all([
+		loadRetrospecPage(services, params.projectId, cookies),
+		callerCanWrite(event, params.projectId),
+		loadStartWay(services, params.projectId).catch(() => null)
+	]);
+	// A product started from scratch says so before any run (criterion 9b3dbb64 of feat-147).
+	return { ...page, canWrite, mcpUrl: mcpEndpointFor(url.origin), fromScratch: startWay === 'scratch' };
 };

@@ -280,4 +280,12 @@ describe('a product never rebuilt reads no Reverse-Specification [criterion:4d51
 	it('knows no run at all as never rebuilt', () => {
 		expect(everRebuilt(emptyRetrospecDocument(), null)).toBe(false);
 	});
+
+	it('reads no review nor publication on a product from scratch whose people validated in Knowledge [criterion:9b3dbb64]', () => {
+		const reviewed = implicit(doc([{ op: 'start', mode: 'repo', baseline: {} }, { op: 'start_review', total: 3 }]));
+		expect(reviewed.runs.at(-1)?.reviewStartedAt).toBeTruthy();
+		expect(retrospecStatus(facts({ doc: reviewed, revisions: { documents: 1, scope: 1, features: 4 }, hasSpec: true }))).toMatchObject({ status: 'start', pct: 0 });
+		// The same review on a product rebuilt from its code reads as a run in validation.
+		expect(retrospecStatus(facts({ doc: reviewed, rebuiltFrom: 'repo', revisions: { documents: 1, scope: 1 } })).status).toBe('review');
+	});
 });

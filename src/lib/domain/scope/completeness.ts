@@ -5,6 +5,8 @@ import {
 	type ProjectScopeDraft
 } from './draft';
 import { NBSP, quoteName, type SpecLanguage } from '$domain/language';
+import { fingerprint } from './fingerprint';
+import { leftOutCapabilities, scopeApprovalState } from './approval';
 
 export type CompletionIssueSeverity = 'blocking' | 'warning';
 
@@ -71,6 +73,10 @@ export interface CompletionEvidence {
 	 *  value, a choice) that no behaviour state carries. Optional; absent reads
 	 *  as "none" (no behaviour yet, or the engine did not answer). */
 	unlinkedDataFields?: ReadonlyArray<{ table: string; count: number }>;
+	/** The features holding at least two actions in force whose journeys diagram
+	 *  links none of them, kept or suggested (criterion a0ebe123). Optional;
+	 *  absent reads as "none". */
+	featuresWithoutJourneys?: ReadonlyArray<{ id: string; name: string }>;
 	/** Registered sources a reader other than their author cannot consult: an
 	 *  address nobody else can open (a file:// path, a plain reference), or a row
 	 *  with neither a link nor a note. Each carries the sentence to report.
@@ -87,14 +93,6 @@ export interface CompletionEvidence {
 	uncitedExtracted?: ReadonlyArray<{ kind: ExtractedKind; name: string }>;
 	/** What those elements were read from, so the gate names it. Absent reads as the code. */
 	extractedFrom?: ExtractedFrom;
-	settledApprovalIds: readonly string[];
-	/**
-	 * Approvals deposited and under review (`in_review`). A decision that has
-	 * been filed and is waiting for a human is not an omission: the gate counts
-	 * it as taken and reports the wait as debt. Optional so older evidence
-	 * readers keep compiling; absent reads as "none".
-	 */
-	pendingApprovalIds?: readonly string[];
 	coherenceReady: boolean;
 	coherenceDetail: string;
 	/**
@@ -235,20 +233,25 @@ const TEXTS = {
 		fullProductOmission: (c: string, disposition: string) =>
 			`"${c}" cannot be ${disposition} in full-product mode. ` +
 			`Either bring it into scope as "included", or switch the scope to "selected_scope", ` +
-			`which allows it once it carries a rationale and an approval (in review is enough to file the decision).`,
-		omissionUnapproved: (c: string, disposition: string) =>
-			`"${c}" needs a rationale and an approval before it can be ${disposition}.`,
-		omissionPending: (c: string, disposition: string) =>
-			`"${c}" is ${disposition} on an approval still in review: the decision is filed, nobody has signed it yet.`,
+			`which allows it once it carries its reason.`,
+		omissionUnexplained: (c: string, disposition: string) =>
+			`"${c}" is ${disposition === 'deferred' ? 'left for later' : 'left out'} with no reason. Say why, or bring it back into the spec.`,
+		leftOutUnapproved: (count: number, changedSinceBy: string | null) => {
+			const [capabilities, wait, them] = count === 1 ? ['capability', 'waits', 'it'] : ['capabilities', 'wait', 'them'];
+			const pending = changedSinceBy
+				? `changed since ${changedSinceBy} approved ${them}, and ${wait} for a person to approve ${them} again`
+				: `${wait} for a person to approve ${them}`;
+			return `${count} ${capabilities} out of scope ${pending}: the out of scope link on the Overview.`;
+		},
 		sectionNotReady: (section: string) => `${section} has not been assessed as ready.`,
 		sectionFullProduct: (section: string) => `${section} cannot be marked not applicable in full-product mode.`,
-		sectionUnapproved: (section: string) => `${section} needs a rationale and an approval to be not applicable.`,
-		sectionPending: (section: string) =>
-			`${section} is not applicable on an approval still in review: the decision is filed, nobody has signed it yet.`,
+		sectionUnexplained: (section: string) => `${section} is marked not applicable with no reason. Say why, or describe it.`,
 		entityUnmodeled: (name: string, features: readonly string[]) =>
 			`The behavior model declares "${name}"${features.length > 0 ? ` (used by ${features.join(', ')})` : ''} but the data model has no such entity. Model it, or record why it is excluded.`,
 		fieldsUnlinked: (count: number, tables: readonly string[]) =>
 			`${count} data field(s) whose rules the solver could check are linked to no behaviour state${tables.length > 0 ? ` (most in ${tables.join(', ')})` : ''}, so nothing checks them against the features. Link each to the state that holds its value: get_data_links lists them with their candidate states, link_data_fields links many at once.`,
+		journeysMissing: (count: number, features: ReadonlyArray<{ id: string; name: string }>) =>
+			`${count} feature(s) hold several actions and no journey links them (${features.map((f) => `"${f.name}" (${f.id})`).join(', ')}${count > features.length ? ` and ${count - features.length} more` : ''}), so their page reads the actions as a bare list. Suggest each one's most probable journeys without waiting to be asked: one patch_section on features that sets actionJourneys.<featureId> to one diagram holding every action and the arrows from one action to the next (describe_section features gives the shape).`,
 		entityUnrelated: (name: string) =>
 			`The data model holds "${name}" but it relates to nothing and nothing relates to it. Model its relation to what owns it or what it references, or record in its description why it stands alone.`,
 		extractedUncited: (kind: ExtractedKind, count: number, names: readonly string[], from: ExtractedFrom = 'code') =>
@@ -300,23 +303,28 @@ const TEXTS = {
 		fullProductOmission: (c: string, disposition: string) =>
 			`La capacité ${quoteName('fr', c)} ne peut pas être ${FRENCH_DISPOSITIONS[disposition] ?? disposition} en mode produit complet. ` +
 			`Faites-la entrer dans le périmètre comme ${quoteName('fr', 'included')}, ou passez le périmètre en ${quoteName('fr', 'selected_scope')}, ` +
-			`qui le permet dès qu'elle porte une justification et une approbation (une approbation en revue suffit pour déposer la décision).`,
-		omissionUnapproved: (c: string, disposition: string) =>
-			`La capacité ${quoteName('fr', c)} a besoin d'une justification et d'une approbation avant de pouvoir être ${FRENCH_DISPOSITIONS[disposition] ?? disposition}.`,
-		omissionPending: (c: string, disposition: string) =>
-			`La capacité ${quoteName('fr', c)} est ${FRENCH_DISPOSITIONS[disposition] ?? disposition} sur une approbation encore en revue${NBSP}: la décision est déposée, personne ne l'a encore signée.`,
+			`qui le permet dès qu'elle porte sa raison.`,
+		omissionUnexplained: (c: string, disposition: string) =>
+			`La capacité ${quoteName('fr', c)} est ${disposition === 'deferred' ? 'remise à plus tard' : 'laissée de côté'} sans raison. Dites pourquoi, ou remettez-la dans la spec.`,
+		leftOutUnapproved: (count: number, changedSinceBy: string | null) => {
+			const many = count > 1;
+			const pending = changedSinceBy
+				? `${many ? 'ont' : 'a'} changé depuis que ${changedSinceBy} ${many ? 'les a approuvées' : "l'a approuvée"}, et ${many ? 'attendent' : 'attend'} une nouvelle approbation`
+				: `${many ? 'attendent' : 'attend'} l'approbation d'une personne`;
+			return `${count} capacité${many ? 's' : ''} hors périmètre ${pending} : le lien out of scope de l'Overview.`;
+		},
 		sectionNotReady: (section: string) =>
 			`La section ${quoteName('fr', section)} n'a pas été jugée prête.`,
 		sectionFullProduct: (section: string) =>
 			`La section ${quoteName('fr', section)} ne peut pas être marquée non applicable en mode produit complet.`,
-		sectionUnapproved: (section: string) =>
-			`La section ${quoteName('fr', section)} a besoin d'une justification et d'une approbation pour être non applicable.`,
-		sectionPending: (section: string) =>
-			`La section ${quoteName('fr', section)} est non applicable sur une approbation encore en revue${NBSP}: la décision est déposée, personne ne l'a encore signée.`,
+		sectionUnexplained: (section: string) =>
+			`La section ${quoteName('fr', section)} est marquée non applicable sans raison. Dites pourquoi, ou décrivez-la.`,
 		entityUnmodeled: (name: string, features: readonly string[]) =>
 			`Le modèle de comportement déclare ${quoteName('fr', name)}${features.length > 0 ? ` (utilisé par ${features.map((f) => quoteName('fr', f)).join(', ')})` : ''}, mais le modèle de données n'a aucune entité de ce nom. Modélisez-la, ou notez pourquoi elle est exclue.`,
 		fieldsUnlinked: (count: number, tables: readonly string[]) =>
 			`${count} champ(s) du modèle de données dont le solveur pourrait vérifier les règles ne sont liés à aucun état du comportement${tables.length > 0 ? ` (surtout dans ${tables.map((t) => quoteName('fr', t)).join(', ')})` : ''}, donc rien ne les vérifie face aux features. Liez chacun à l'état qui porte sa valeur${NBSP}: get_data_links les liste avec leurs états candidats, link_data_fields en lie plusieurs à la fois.`,
+		journeysMissing: (count: number, features: ReadonlyArray<{ id: string; name: string }>) =>
+			`${count} feature(s) ont plusieurs actions qu'aucun parcours ne relie (${features.map((f) => `${quoteName('fr', f.name)} (${f.id})`).join(', ')}${count > features.length ? ` et ${count - features.length} autre${count - features.length > 1 ? 's' : ''}` : ''}), donc leur page lit les actions comme une simple liste. Proposez sans attendre qu'on le demande les parcours les plus probables de chacune${NBSP}: un patch_section sur features qui pose actionJourneys.<featureId> à un diagramme contenant toutes les actions et les flèches de l'une à la suivante (describe_section features donne la forme).`,
 		entityUnrelated: (name: string) =>
 			`Le modèle de données contient ${quoteName('fr', name)}, mais cette entité n'est liée à rien et rien n'est lié à elle. Modélisez sa relation avec ce qui la possède ou ce qu'elle référence, ou notez dans sa description pourquoi elle est isolée.`,
 		extractedUncited: (kind: ExtractedKind, count: number, names: readonly string[], from: ExtractedFrom = 'code') =>
@@ -365,25 +373,13 @@ function entityKey(name: string): string {
 }
 
 /**
- * Where a deferral stands: signed off, filed and waiting for a person, or not
- * decided at all.
- *
- * An agent authoring a scope files the decision and cannot sign it: writing
- * `accepted_risk` itself would assert that a human accepted a risk, which is
- * false. So a rationale plus an approval under review is a decision TAKEN, and
- * the gate reports the missing signature as debt instead of blocking on it.
- * Only a deferral with no rationale or no approval at all is an omission.
+ * An omission is a decision once it says why (criterion 3c66f8a9). No approval
+ * is asked: what the scope leaves out is read on the Overview, where a person
+ * judges the reason, so an approval filed by an AI and never signed only added
+ * a debt nobody could read.
  */
-type ApprovalState = 'settled' | 'pending' | 'none';
-
-function approvalState(
-	item: { approvalId: string | null; rationale: string },
-	settledIds: ReadonlySet<string>,
-	pendingIds: ReadonlySet<string>
-): ApprovalState {
-	if (item.approvalId === null || item.rationale.trim().length === 0) return 'none';
-	if (settledIds.has(item.approvalId)) return 'settled';
-	return pendingIds.has(item.approvalId) ? 'pending' : 'none';
+function explained(item: { rationale: string }): boolean {
+	return item.rationale.trim().length > 0;
 }
 
 /**
@@ -399,8 +395,6 @@ export function assessProjectCompletion(
 	const t = TEXTS[lang];
 	const issues: CompletionIssue[] = [];
 	const sources = new Set(evidence.sourceIds);
-	const approvals = new Set(evidence.settledApprovalIds);
-	const pendingApprovals = new Set(evidence.pendingApprovalIds ?? []);
 	const maturity = evidence.featureMaturity;
 	const capabilities = draft.capabilities;
 
@@ -500,25 +494,29 @@ export function assessProjectCompletion(
 					message: t.fullProductOmission(name, capability.disposition),
 					path
 				});
-			} else {
-				const state = approvalState(capability, approvals, pendingApprovals);
-				if (state === 'none') {
-					issues.push({
-						code: 'capability-omission-unapproved',
-						severity: 'blocking',
-						message: t.omissionUnapproved(name, capability.disposition),
-						path
-					});
-				} else if (state === 'pending') {
-					issues.push({
-						code: 'capability-omission-approval-pending',
-						severity: 'warning',
-						message: t.omissionPending(name, capability.disposition),
-						path
-					});
-				}
+			} else if (!explained(capability)) {
+				issues.push({
+					code: 'capability-omission-unexplained',
+					severity: 'blocking',
+					message: t.omissionUnexplained(name, capability.disposition),
+					path
+				});
 			}
 		}
+	}
+
+	// What an AI left out waits for a person's yes on the whole list, given on
+	// the Overview (criterion 8fa35e1f). A warning: the AI finishes its work and
+	// the person approves when they read it.
+	const leftOut = leftOutCapabilities(draft).length;
+	const approvalState = scopeApprovalState(draft);
+	if (leftOut > 0 && approvalState !== 'current') {
+		issues.push({
+			code: 'scope-left-out-unapproved',
+			severity: 'warning',
+			message: t.leftOutUnapproved(leftOut, approvalState === 'changed' ? draft.boundary.approval?.by ?? null : null),
+			path: 'boundary.approval'
+		});
 	}
 
 	for (const assessment of draft.sectionAssessments) {
@@ -538,7 +536,6 @@ export function assessProjectCompletion(
 			});
 		}
 		if (assessment.applicability === 'not_applicable') {
-			const state = approvalState(assessment, approvals, pendingApprovals);
 			if (draft.mode === 'full_product') {
 				issues.push({
 					code: 'full-product-section-omission',
@@ -546,18 +543,11 @@ export function assessProjectCompletion(
 					message: t.sectionFullProduct(sectionLabel),
 					path
 				});
-			} else if (state === 'none') {
+			} else if (!explained(assessment)) {
 				issues.push({
-					code: 'section-omission-unapproved',
+					code: 'section-omission-unexplained',
 					severity: 'blocking',
-					message: t.sectionUnapproved(sectionLabel),
-					path
-				});
-			} else if (state === 'pending') {
-				issues.push({
-					code: 'section-omission-approval-pending',
-					severity: 'warning',
-					message: t.sectionPending(sectionLabel),
+					message: t.sectionUnexplained(sectionLabel),
 					path
 				});
 			}
@@ -625,6 +615,18 @@ export function assessProjectCompletion(
 			severity: 'warning',
 			message: t.fieldsUnlinked(unlinkedCount, unlinked.slice(0, 3).map((row) => row.table)),
 			path: 'data.fields'
+		});
+	}
+	// A feature of several actions that no journey links reads them as a bare
+	// list on its page: the AI that wrote them suggests their journeys. Warning,
+	// like the ones above: seen on every report, never a deadlock (criterion a0ebe123).
+	const unjourneyed = evidence.featuresWithoutJourneys ?? [];
+	if (unjourneyed.length > 0) {
+		issues.push({
+			code: 'feature-journeys-missing',
+			severity: 'warning',
+			message: t.journeysMissing(unjourneyed.length, unjourneyed.slice(0, 5)),
+			path: 'features.actionJourneys'
 		});
 	}
 	// A source nobody but its author can open is a citation that cannot be
@@ -722,7 +724,7 @@ export function assessProjectCompletion(
 						'scope-empty',
 						'capability-name-missing',
 						'capability-unresolved',
-						'capability-omission-unapproved',
+						'capability-omission-unexplained',
 						'full-product-omission'
 					].includes(issue.code)
 				),
@@ -817,26 +819,7 @@ export function assessProjectCompletion(
 	};
 }
 
-function stableValue(value: unknown): string {
-	if (value === null || typeof value !== 'object') return JSON.stringify(value);
-	if (Array.isArray(value)) return `[${value.map(stableValue).join(',')}]`;
-	const object = value as Record<string, unknown>;
-	return `{${Object.keys(object)
-		.sort()
-		.map((key) => `${JSON.stringify(key)}:${stableValue(object[key])}`)
-		.join(',')}}`;
-}
-
-/** Small deterministic, non-cryptographic fingerprint for stale-audit detection. */
-export function fingerprint(value: unknown): string {
-	const input = stableValue(value);
-	let hash = 0x811c9dc5;
-	for (let i = 0; i < input.length; i += 1) {
-		hash ^= input.charCodeAt(i);
-		hash = Math.imul(hash, 0x01000193);
-	}
-	return `fnv1a-${(hash >>> 0).toString(16).padStart(8, '0')}`;
-}
+export { fingerprint };
 
 export function scopeContentFingerprint(
 	draft: ProjectScopeDraft,

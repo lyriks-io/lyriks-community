@@ -8,7 +8,7 @@ const lead = { id: 'lead@company.test', name: 'Product Lead' };
 const tech = { id: 'tech@company.test', name: 'Tech Lead' };
 const colleague = { id: 'colleague@company.test', name: 'Colleague' };
 const team = [{ person: lead, jobIds: ['product'] }, { person: tech, jobIds: ['tech'] }, { person: colleague, jobIds: [] }];
-const elements: SpecElement[] = [{ id: 'stack:a', title: 'Stack', owner: 'tech' }, { id: 'requirement:a', title: 'Requirements', owner: 'tech' }, { id: 'problem', title: 'Problem', owner: 'product' }];
+const elements: SpecElement[] = [{ id: 'stack:a', title: 'Stack' }, { id: 'requirements:runtime', title: 'Requirements' }, { id: 'problem', title: 'Problem' }];
 const at = '2026-11-13T00:00:00.000Z';
 function act(doc: RetrospecDocument, acts: RetrospecAct[], actor = lead, reviewOnly = false) {
 	const result = applyRetrospecActs(doc, acts, { actor, now: at, reviewOnly });
@@ -22,7 +22,7 @@ describe('question validation requests', () => {
 	it('requires the tech person on every technical topic and adds a colleague only on one question [criterion:e3296696] [unspa:2e49df91:a2418cea:f082d9fb]', () => {
 		const doc = act(emptyRetrospecDocument(), [request()]);
 		expect(board(doc).standings['stack:a'].required).toEqual([lead, tech, colleague]);
-		expect(board(doc).standings['requirement:a'].required).toEqual([lead, tech]);
+		expect(board(doc).standings['requirements:runtime'].required).toEqual([lead, tech]);
 		expect(board(doc).standings.problem.required).toEqual([lead]);
 	});
 

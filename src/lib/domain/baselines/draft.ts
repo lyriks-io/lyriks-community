@@ -1,41 +1,20 @@
 /**
- * A named specification baseline: an immutable snapshot of the spec at a point
- * in time. Captures the headline scores + counts for quick comparison, and the
- * human-readable requirements document (Markdown) so the baseline is a durable,
- * exportable record. Capture happens server-side (it reads the whole envelope);
- * name/note are editable, the snapshot fields are not.
+ * A baseline of the specification: the moment Lyriks recorded one of its
+ * milestones (the definitive validation, a code change kept, an evolution
+ * closed, a Reverse-Specification published), under the milestone's name.
+ * The version of the specification is counted from them (see spec-version);
+ * nothing else is kept, and no page shows them (criterion 1eb35bd3).
  */
 export interface Baseline {
 	readonly id: string;
-	name: string;
-	note: string;
+	readonly name: string;
 	readonly createdAt: string;
-	readonly readiness: number;
-	readonly coherence: number;
-	readonly featureCount: number;
-	readonly content: string;
 }
 
 export interface ProjectBaselinesDraft {
 	projectId: string;
 	baselines: Baseline[];
 	lastSavedAt: string | null;
-}
-
-/**
- * A baseline as the team server's copy of the project holds it: everything but
- * its requirements document (criterion 9a845c19). The document stays in Lyriks,
- * where Export reads it; nothing the copy serves needs it, and fifteen of them
- * (700 KB each on a project of 110 features) took the copy past what the team
- * server accepts.
- */
-export type BaselineMarker = Omit<Baseline, 'content'>;
-
-/** The baselines of a project without their requirements documents. */
-export function baselinesWithoutDocuments(
-	draft: ProjectBaselinesDraft
-): Omit<ProjectBaselinesDraft, 'baselines'> & { baselines: BaselineMarker[] } {
-	return { ...draft, baselines: (draft.baselines ?? []).map(({ content: _document, ...marker }) => marker) };
 }
 
 export function createEmptyBaselinesDraft(projectId: string): ProjectBaselinesDraft {

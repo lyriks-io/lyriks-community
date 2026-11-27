@@ -9,14 +9,15 @@ interface Grant {
    * "skills": the playbook installer's sign-in, which reads playbooks only (skills-ticket.ts).
    * "session-wait": the waiting command of a live session, which only waits in it (session-ticket.ts).
    * "index-sync": the sync command of one project's index, which only reads where index keys belong and sends that index (index-ticket.ts).
+   * "ai-wake": the person's waker on one project, which only waits for their wakes there (wake-ticket.ts).
    */
   scope?: TokenScope
   /** The one live session a "session-wait" grant may wait in. */
   sessionId?: string
-  /** The one project an "index-sync" grant may read keys of and send the index of. */
+  /** The one project an "index-sync" grant may read keys of and send the index of, or an "ai-wake" grant waits for wakes on. */
   projectId?: string
 }
-export type TokenScope = 'skills' | 'session-wait' | 'index-sync'
+export type TokenScope = 'skills' | 'session-wait' | 'index-sync' | 'ai-wake'
 const grants = new Map<string, Grant>()
 const MAX_GRANTS = 1000
 export const ACCESS_TOKEN_TTL_SECONDS = 3600
@@ -97,8 +98,8 @@ function pruneRevokedTickets(): void {
   while (revokedTickets.size >= MAX_REVOKED_TICKETS) revokedTickets.delete(revokedTickets.keys().next().value!)
 }
 
-/** What a ticket is bound to: the live session it waits in, or the project whose index it sends. */
-type TicketBinding = { scope: 'session-wait'; sessionId: string } | { scope: 'index-sync'; projectId: string }
+/** What a ticket is bound to: the live session it waits in, the project whose index it sends, or the project its waker listens on. */
+type TicketBinding = { scope: 'session-wait'; sessionId: string } | { scope: 'index-sync' | 'ai-wake'; projectId: string }
 
 /** A ticket for one command, for `ttlSeconds`, backed by `session` and bound as `binding` says. */
 export function issueTicket(session: string, subject: string, clientId: string, binding: TicketBinding, ttlSeconds: number): string {
@@ -130,6 +131,7 @@ function openTicket(token: string): Grant | null {
     // A ticket always carries one narrow scope and what it is bound to; anything else opens nothing.
     if (claims.k === 'session-wait' && nonEmpty(claims.i)) return { ...grant, scope: 'session-wait', sessionId: claims.i }
     if (claims.k === 'index-sync' && nonEmpty(claims.p)) return { ...grant, scope: 'index-sync', projectId: claims.p }
+    if (claims.k === 'ai-wake' && nonEmpty(claims.p)) return { ...grant, scope: 'ai-wake', projectId: claims.p }
     return null
   } catch {
     return null

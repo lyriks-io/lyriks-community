@@ -40,6 +40,12 @@ describe('GET /api/auth/session (the MCP gateway session check)', () => {
 		expect(await status('jwt')).toBe(403);
 	});
 
+	it('ends the sign-in (401), never refuses a role (403), when the role source refuses the session [rule:adfc7ef2]', async () => {
+		services.identity.verify.mockResolvedValue({ id: 'u1' });
+		services.roleGate.verdict.mockResolvedValue('signed-out');
+		expect(await status('jwt')).toBe(401);
+	});
+
 	it('answers 503, never 401, when the account service cannot answer', async () => {
 		services.identity.verify.mockResolvedValue('unreachable');
 		expect(await status('jwt')).toBe(503);

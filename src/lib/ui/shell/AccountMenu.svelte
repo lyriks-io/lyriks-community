@@ -7,7 +7,6 @@
 	import { OptimisticActs } from '$ui/evolution/optimistic-acts.svelte';
 	import { refusalOf } from './save-queue';
 	import { planOf, showsPlan } from '$domain/tier';
-	import { navCapabilitiesFor, sectionsOf } from './capabilities';
 	import PlansDialog from './PlansDialog.svelte';
 	import { dismissable } from './dismissable';
 	import { memberInitials, memberNameFromEmail } from './member-identity';
@@ -44,11 +43,6 @@
 	const planShown = $derived(showsPlan((page.data as { edition?: string | null }).edition));
 	const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 	const subtitle = $derived([email, active ? capital(active.role) : null].filter(Boolean).join(' · ') || 'Local session');
-
-	// The project's own settings, at the foot of the old left navigation before: shown to whoever administers the project.
-	const projectId = $derived(page.params.projectId ?? null);
-	const administers = $derived(!!(page.data as { administers?: boolean }).administers);
-	const projectSettings = $derived(projectId ? navCapabilitiesFor(administers).filter((c) => c.foot && c.route) : []);
 
 	async function save(id: string): Promise<boolean> {
 		const team = workspaces.find((w) => w.id === id)?.name ?? 'this team';
@@ -97,14 +91,6 @@
 				<span class="fmsep"></span>
 			{/if}
 			<a href="/settings" role="menuitem" onclick={close}><SideIcon name="settings" /><span class="mt">Settings</span></a>
-			{#if projectId}
-				{#each projectSettings as cap (cap.id)}
-					<a href={cap.route?.(projectId)} role="menuitem" onclick={close}><SideIcon name="settings" /><span class="mt">Project {cap.title.toLowerCase()}</span></a>
-					{#each sectionsOf(cap.id) as section (section.id)}
-						<a href={section.route?.(projectId)} role="menuitem" class="sub" onclick={close}><span class="mt">{section.title}</span></a>
-					{/each}
-				{/each}
-			{/if}
 			{#if planShown}
 				<button type="button" role="menuitem" onclick={() => { close(); plansOpen = true; }}>
 					<SideIcon name="plan" /><span class="mt">Plan</span><span class="tag">{currentPlan.name}</span>

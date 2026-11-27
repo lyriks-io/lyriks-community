@@ -18,6 +18,8 @@ import {
 	settleProjectSession,
 	withdrawClickOnProject
 } from '$lib/server/ai-session.server';
+import { needsYouOf, tellPerson } from '$lib/server/ai-conversations.server';
+import { awaitWake, wakerReading } from '$lib/server/ai-waker.server';
 import {
 	aiMayAct,
 	findRequestByRef,
@@ -53,6 +55,13 @@ import type { RequestHandler } from './$types';
  *        act ask (AI) { sessionId, to, question, waitSeconds? }
  *                                   asks another AI of the person, held until its answer
  *                                   or peerAnswerSeconds, like a wait
+ *        act tell (AI) { sessionId, about question | stopped, text, href?, title? }
+ *                                   asks the person on their pages, or says why it stopped:
+ *                                   a conversation of their Ask my AI opens with it (action cf381e92)
+ *        act wake_wait (the person's waker) { waitSeconds? }
+ *                                   held until a click of the person waits and none of their AIs
+ *                                   is in session, then answers kind wake; kind nothing when the
+ *                                   turn ran out (actions 77cdb263, ccca0911)
  *        act click (person) { kind reread | run | resume, page, anchor, title, ... } (a question goes through Ask my AI;
  *        run and resume hand a Reverse-Specification launched or paused on Mismatch to the AI, EVO-014)
  *        act withdraw (person) { clickId }
@@ -76,6 +85,9 @@ import type { RequestHandler } from './$types';
 const KEEP_ALIVE_MS = 15_000;
 const SAY_MAX = 200;
 const NO_PROJECT_SESSION = 'No session is open on this project: open one with start_evolution_session given the project alone.';
+/** What the waker's held call answers in place of a session id. */
+const WAKER_SESSION_ID = 'waker';
+const WAKER_ONLY = "Only the waking command of the person's AI listens for wakes.";
 
 type Body = Record<string, unknown>;
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -101,6 +113,13 @@ function sessionOf(request: EvolutionRequest, actor: Actor, sessionId: string) {
 /** The clicks a page sends outside a request: a re-reading of the code, a run handed from Mismatch (EVO-014). */
 const CLICKED_FROM_A_PAGE: ReadonlySet<string> = new Set(['reread', 'run', 'resume']);
 
+/** The page the AI's question or stop bears on, when it names one of this application: never an address elsewhere. */
+function tellContext(body: Body): { readonly title: string; readonly href: string } | null {
+	const href = str(body.href);
+	if (!href.startsWith('/') || href.startsWith('//')) return null;
+	return { title: str(body.title).slice(0, 200), href: href.slice(0, 500) };
+}
+
 /** Between the person's cancellation and its next call, the AI says nothing more on the page (ac-evo-live-cancel). */
 function notCancelled(request: EvolutionRequest, actor: Actor): void {
 	const mayAct = aiMayAct(request, actor.id);
@@ -117,7 +136,14 @@ export const GET: RequestHandler = async (event) => {
 	// A session its AI left never reads in session: it ends here when it is over (ac-ai-session-end).
 	await settleProjectSession(services, projectId, actor.id);
 	const draft = await services.loadEvolutionDraft.execute(projectId);
-	if (!ref) return json(projectSessionReading(draft, projectId, actor.id));
+	// What waits on the reader in Ask my AI rides with the session reading, so the foot of the navigation says it (criterion 31488628).
+	// Whether the reader's waker listens and where their last wake stands rides along too (criterion 7cfc6440).
+	if (!ref)
+		return json({
+			...projectSessionReading(draft, projectId, actor.id),
+			needsYou: await needsYouOf(services, projectId, actor.id),
+			waker: wakerReading(draft, projectId, actor.id, Date.parse(services.clock.nowIso()))
+		});
 	// The session of the whole project stays on Community; a request's session is an Evolution operation.
 	requireEvolutionAccess(services);
 	const request = await requestOf(services, projectId, ref);
@@ -217,7 +243,9 @@ async function projectAct(
 				others: opened.others.map((o) => ({ id: o.id, name: o.name, startedAt: o.startedAt })),
 				...(startsOn ? { href: startsOn.href, startsOn: startsOn.id } : {}),
 				covers: 'every page of the project: the Specification 360°, the Reverse-Specification, the Evolution board and every request',
-				limits: LIVE_SESSION
+				limits: LIVE_SESSION,
+				// Whether the person's waker listens, so the AI offers one only when none does (criterion ab716003).
+				waker: { status: wakerReading(draft, projectId, actor.id, Date.parse(services.clock.nowIso())).status }
 			});
 		}
 		case 'end': {
@@ -269,6 +297,27 @@ async function projectAct(
 				awaitPeerAnswer(services, { projectId, personId: actor.id, questionId: question.id, to: question.toSessionId ?? '', waitSeconds }, hooks)
 			);
 		}
+		case 'tell': {
+			// The person answers on their pages only an AI that can hear the answer (rules b0fb4174, d81f19db).
+			aiOnly(actor);
+			const session = mine();
+			const about = body.about === 'question' || body.about === 'stopped' ? body.about : null;
+			if (!about) error(400, 'about is question (one question you wait on) or stopped (why you stop).');
+			const text = str(body.text).trim();
+			if (!text) error(400, 'text is required: the question, or why you stop, in a sentence or two.');
+			const told = await tellPerson(services, projectId, actor.id, { text, about, context: tellContext(body) }, event.request.headers.get('x-lyriks-client'));
+			if (!told.ok) return json({ ok: false, reason: told.reason }, { status: told.status });
+			const said = `${about === 'question' ? 'Asks you' : 'Stopped'}: ${text}`;
+			sayDoing(services, { projectId, requestId: PROJECT_SESSION_KEY, personId: actor.id, sessionId: session.id }, said.slice(0, SAY_MAX));
+			return json({ ok: true, conversationId: told.conversationId, href: `/projects/${encodeURIComponent(projectId)}/ask?c=${encodeURIComponent(told.conversationId)}` });
+		}
+		case 'wake_wait': {
+			// A wake starts a program on the person's machine: only their waker, signed in as their AI, listens (rule 616c5fc3).
+			if (actor.kind !== 'ai_client') error(403, WAKER_ONLY);
+			const asked = Number(body.waitSeconds);
+			const waitSeconds = Number.isFinite(asked) && asked > 0 ? asked : LIVE_SESSION.platformWaitSeconds;
+			return holdOpen(event, WAKER_SESSION_ID, (hooks) => awaitWake(services, { projectId, personId: actor.id, waitSeconds }, hooks));
+		}
 		case 'click': {
 			if (actor.kind !== 'person') error(403, 'Only the person clicks on the page.');
 			// A question to the AI is a message of Ask my AI, sent through its own page (criterion f7249f99).
@@ -304,7 +353,7 @@ async function projectAct(
 			return json({ ok: true });
 		}
 		default:
-			error(400, 'act must be start, await, say, end, sessions, ask, click or withdraw');
+			error(400, 'act must be start, await, say, tell, end, sessions, ask, click, withdraw or wake_wait');
 	}
 }
 
@@ -324,8 +373,8 @@ export const POST: RequestHandler = async (event) => {
 	const base = { projectId, requestId: request.id, personId: actor.id };
 	// One session per person and project: a session opened on a request is the project's, started there.
 	if (act === 'start') return projectAct(event, projectId, act, body, { id: request.id, href: requestPagePath(projectId, request.id) });
-	// Reading the other AIs and asking one of them are acts of the session of the project, wherever its AI is.
-	if (act === 'sessions' || act === 'ask') return projectAct(event, projectId, act, body);
+	// Reading the other AIs, asking one of them and speaking to the person are acts of the session of the project, wherever its AI is.
+	if (act === 'sessions' || act === 'ask' || act === 'tell') return projectAct(event, projectId, act, body);
 	if (act === 'await' || act === 'say' || act === 'end') {
 		const draft = await services.loadEvolutionDraft.execute(projectId);
 		const named = str(body.sessionId) || undefined;

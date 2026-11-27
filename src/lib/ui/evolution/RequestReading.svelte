@@ -79,6 +79,7 @@
 	import SolutionTab, { SOLUTION_SECTIONS, type ProseQuestion } from './SolutionTab.svelte';
 	import SpecificationTab from './SpecificationTab.svelte';
 	import EditorialNote from './EditorialNote.svelte';
+	import { settleStep } from './step-settled';
 	import { noteReadKey, proseNote, specificationNote, type EditorialNote as StepNote } from './editorial-note';
 	import { markPlace, placeOnPage, scrollToBlock } from './evo-scroll';
 	import type { ActionReading } from '$lib/server/evolution-spec-actions.server';
@@ -671,6 +672,13 @@
 	/** A tab of prose a person validated: it opens as it reads and offers no prefill of the whole step (ac-evo-live-prefill-step). */
 	const tabValidated = (tab: RequestTab) =>
 		tab === 'briefing' ? settledStep('need') : tab === 'solutioning' ? (['solution', 'functional_spec', 'technical_spec'] as const).every(settledStep) : false;
+	/**
+	 * A tab whose step stands validated (criterion f97d4509): the Briefing and the Solution once every person validated
+	 * their steps, the Specification once its version is frozen. Its blocks then show who stands behind them and nothing
+	 * to click, and its Note from Lyriks goes.
+	 */
+	const tabSettled = (tab: RequestTab): boolean => (tab === 'specification' ? !!dossier.frozen : tabValidated(tab));
+	settleStep(() => tabSettled(openTab));
 	const openOwedNeed = $derived(openOwed && !tabValidated('briefing'));
 	const openOwedSolution = $derived(openOwed && !tabValidated('solutioning'));
 	/** The section opened to edit, one at a time on the page; opening one brings it just under the header. */
@@ -1138,8 +1146,11 @@
 {/snippet}
 
 {#snippet stepNote(step: RequestTab, note: StepNote)}
-	<!-- What the person's AI or Lyriks produced or suggested on the step, first under the step bar (ac-evo-form-step-note). -->
-	<EditorialNote {note} readKey={noteReadKey(dossier.id, step, note)} onGo={(target) => scrollToBlock(target)} />
+	<!-- What the person's AI or Lyriks produced or suggested on the step, first under the step bar (ac-evo-form-step-note),
+	     until the step stands validated: there is nothing left to do on it (criterion f97d4509). -->
+	{#if !tabSettled(step)}
+		<EditorialNote {note} readKey={noteReadKey(dossier.id, step, note)} onGo={(target) => scrollToBlock(target)} />
+	{/if}
 {/snippet}
 
 {#snippet solutioningBody()}

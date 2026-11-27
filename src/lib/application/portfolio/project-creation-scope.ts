@@ -1,22 +1,23 @@
-import { isCommunity, projectCreation, type ScopeCheck } from '$domain/licensing';
+import { projectCreation, type ScopeCheck } from '$domain/licensing';
 import type { ProjectCatalogPort } from '$application/ports';
 
 /**
- * Whether this installation may hold one more project (EVO-001): every way a
- * project is born (the page, an AI client, an import, a copy) asks it, through
- * the two use-cases that create one.
+ * Whether this installation may hold one more project (EVO-001; EVO-016, up to
+ * the number its key grants): every way a project is born (the page, an AI
+ * client, an import, a copy) asks it, through the two use-cases that create one.
  */
 export class CheckProjectCreationUseCase {
 	constructor(
 		private readonly edition: () => string | undefined,
+		private readonly projectsGranted: () => number | null,
 		private readonly catalog: Pick<ProjectCatalogPort, 'list'>
 	) {}
 
 	async execute(): Promise<ScopeCheck> {
-		const edition = this.edition();
-		// Only Community counts; every other edition creates without a read.
-		if (!isCommunity(edition)) return { ok: true };
-		return projectCreation(edition, (await this.catalog.list()).length);
+		const granted = this.projectsGranted();
+		// A key that grants every project creates without a read.
+		if (granted === null) return { ok: true };
+		return projectCreation(this.edition(), (await this.catalog.list()).length, granted);
 	}
 }
 

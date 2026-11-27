@@ -6,7 +6,7 @@ import { LyriksClient } from '../lyriks-client.js'
 describe('section consistency', () => {
   it('advertises only the platform public sections, including Baselines and Experience', () => {
     expect([...SECTIONS].sort()).toEqual(['scope', 'foundation', 'users', 'features', 'experience',
-      'rules', 'data', 'architecture', 'coherence', 'glossary', 'approvals', 'baselines', 'documents'].sort())
+      'rules', 'data', 'architecture', 'coherence', 'glossary', 'baselines', 'documents'].sort())
   })
   it('reports missing paths and retains null, false, zero and valid array indices', async () => {
     const draft = { items: [{ value: 0 }], empty: null, flag: false }

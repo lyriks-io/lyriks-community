@@ -28,7 +28,6 @@ const WRITE_PATHS = {
   architecture:   '/api/draft/architecture',
   coherence:      '/api/draft/coherence',
   glossary:       '/api/draft/glossary',
-  approvals:      '/api/draft/approvals',
   baselines:      '/api/draft/baselines',
   // The project evidence register. Every other section cites it by stable id
   // (`sourceIds`), so an author that cannot write here cannot source anything.

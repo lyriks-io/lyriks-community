@@ -11,7 +11,7 @@ const { applySpecValidationActs } = await import('./spec-validation-acts.server'
 
 const lead = { id: 'lead@company.test', name: 'Lead' };
 const reviewer = { id: 'reviewer@company.test', name: 'Reviewer' };
-const elements = [{ id: 'stack:a', title: 'Stack', owner: 'tech' as const }];
+const elements = [{ id: 'stack:a', title: 'Stack' }];
 const team = [{ person: lead, jobIds: ['product'] }, { person: reviewer, jobIds: [] }];
 
 /** The Reverse-Specification document as the section store keeps it, revision by revision. */

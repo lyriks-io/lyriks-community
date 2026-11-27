@@ -4,7 +4,7 @@ import { projectScopeAccess, type ActiveProjectState } from '$application/portfo
 /** One reading of the active project per request, however many gates ask. */
 const resolved = new WeakMap<App.Locals, Promise<ActiveProjectState | null>>();
 
-/** The installation's active project for this request: null on every edition but Community. */
+/** The installation's active projects for this request: null where the key grants every project. */
 export function activeProjectState(locals: App.Locals): Promise<ActiveProjectState | null> {
 	let state = resolved.get(locals);
 	if (!state) {
@@ -15,15 +15,16 @@ export function activeProjectState(locals: App.Locals): Promise<ActiveProjectSta
 }
 
 /**
- * Community works on one project at a time (EVO-001): an inactive project is
- * neither read nor written, whatever reaches it (a page, Knowledge, Reverse,
- * Changes, Mismatch, an AI client). The 403 carries the project so the error
- * page offers to make it the active one. No-op on every other edition.
+ * An installation works on as many projects as its key grants, one on
+ * Community (EVO-001, EVO-016): an inactive project is neither read nor
+ * written, whatever reaches it (a page, Knowledge, Reverse, Changes, Mismatch,
+ * an AI client). The 403 carries the project so the error page offers to make
+ * it active. No-op where the key grants every project.
  */
 export async function requireActiveProject(event: Pick<RequestEvent, 'locals'>, projectId: string): Promise<void> {
 	const state = await activeProjectState(event.locals);
 	const check = projectScopeAccess(event.locals.services.installEdition(), state, projectId);
-	if (!check.ok) error(403, { message: check.reason, detail: check.detail, inactiveProjectId: projectId });
+	if (!check.ok) error(403, { message: check.reason, detail: check.detail, inactiveProjectId: projectId, activeProjectsGranted: state?.granted });
 }
 
 /**
@@ -40,7 +41,7 @@ export async function inactiveProjectResponse(
 	const state = await activeProjectState(event.locals);
 	const check = projectScopeAccess(event.locals.services.installEdition(), state, projectId);
 	if (check.ok) return null;
-	return new Response(JSON.stringify({ message: check.reason, detail: check.detail, inactiveProjectId: projectId }), {
+	return new Response(JSON.stringify({ message: check.reason, detail: check.detail, inactiveProjectId: projectId, activeProjectsGranted: state?.granted }), {
 		status: 403,
 		headers: { 'content-type': 'application/json' }
 	});

@@ -125,6 +125,7 @@ function communityInstallation(extra: FakeServices = {}) {
 		},
 		ask: (body: Record<string, unknown>) => answered(() => askAct(event(`/projects/${PROJECT}/ask`, { method: 'POST', body, params: { projectId: PROJECT } }) as never)),
 		conversations: async () => (await (await readConversations(event(`/projects/${PROJECT}/ask`, { params: { projectId: PROJECT } }) as never)).json()).conversations,
+		needsYou: async () => (await (await readSession(event(`/api/evolution/live?projectId=${PROJECT}`) as never)).json()).needsYou,
 		batch: (operations: unknown[]) => answered(() => evolutionBatch(event('/api/evolution', { method: 'POST', body: { projectId: PROJECT, operations }, ai: true }) as never))
 	};
 }
@@ -171,5 +172,51 @@ describe('Ask my AI on a Community installation (EVO-008)', () => {
 		expect(await ce.batch([{ op: 'open_request', title: 'Plan the week' }])).toEqual({ status: 403, body: refusal });
 		expect(await ce.batch([{ op: 'answer_click', clickId: 'c1', text: 'x' }, { op: 'post_on_field', requestId: 'r1', fieldPath: '00-need.situation', body: 'Why?' }])).toEqual({ status: 403, body: refusal });
 		expect(await ce.live({ act: 'start', requestId: 'r1' })).toEqual({ status: 403, body: refusal });
+	});
+});
+
+describe('the AI asks the person on their pages, or tells them why it stops', () => {
+	it('opens a conversation of Ask my AI the person answers there, and the answer reaches the AI [criterion:b940571a] [criterion:31488628]', async () => {
+		const ce = communityInstallation();
+		const sessionId = (await ce.live({ act: 'start' })).body.session.id as string;
+
+		const told = await ce.live({ act: 'tell', sessionId, about: 'question', text: 'Which billing flow runs in production?', href: `/projects/${PROJECT}/reverse`, title: 'Reverse' });
+		expect(told).toMatchObject({ status: 200, body: { ok: true } });
+		expect(told.body.href).toBe(`/projects/${PROJECT}/ask?c=${told.body.conversationId}`);
+
+		// It waits on the person: first under Needs you, and Ask my AI says so on every page.
+		expect(await ce.needsYou()).toMatchObject({ count: 1, latest: { conversationId: told.body.conversationId, about: 'question', text: 'Which billing flow runs in production?' } });
+		const [conversation] = await ce.conversations();
+		expect(conversation).toMatchObject({ openedBy: 'ai', turn: 'asked_back', needsYou: true, context: { title: 'Reverse', href: `/projects/${PROJECT}/reverse` } });
+
+		// The person answers on the page; the AI reads its own question with the answer.
+		expect(await ce.ask({ act: 'write', conversationId: conversation.id, text: 'The new one, since March.' })).toMatchObject({ status: 200 });
+		expect((await ce.needsYou()).count).toBe(0);
+		const taken = await ce.live({ act: 'await', sessionId, waitSeconds: 1 });
+		expect(taken).toMatchObject({ status: 200, body: { kind: 'click', click: { kind: 'chat' } } });
+		expect(JSON.stringify(taken.body.click)).toContain('Which billing flow runs in production?');
+		expect(JSON.stringify(taken.body.click)).toContain('The new one, since March.');
+	});
+
+	it('keeps why the AI stopped under Needs you until the person opened it [criterion:31488628]', async () => {
+		const ce = communityInstallation();
+		const sessionId = (await ce.live({ act: 'start' })).body.session.id as string;
+		const told = await ce.live({ act: 'tell', sessionId, about: 'stopped', text: 'I stop here: my usage limit is reached.' });
+		expect(told.status).toBe(200);
+		expect((await ce.needsYou()).latest).toMatchObject({ about: 'stopped' });
+		expect(await ce.ask({ act: 'seen', conversationId: told.body.conversationId })).toMatchObject({ status: 200 });
+		expect(await ce.needsYou()).toEqual({ count: 0, latest: null });
+		const [conversation] = await ce.conversations();
+		expect(conversation.messages[0]).toMatchObject({ role: 'ai', stopped: true });
+	});
+
+	it('refuses without an open session, from a page, and with no words [criterion:b940571a]', async () => {
+		const ce = communityInstallation();
+		expect((await ce.live({ act: 'tell', about: 'question', text: 'Which flow?' })).status).toBe(409);
+		const sessionId = (await ce.live({ act: 'start' })).body.session.id as string;
+		expect((await ce.live({ act: 'tell', sessionId, about: 'question', text: 'Which flow?' }, false)).status).toBe(403);
+		expect((await ce.live({ act: 'tell', sessionId, about: 'question', text: '  ' })).status).toBe(400);
+		expect((await ce.live({ act: 'tell', sessionId, about: 'later', text: 'Which flow?' })).status).toBe(400);
+		expect(await ce.conversations()).toEqual([]);
 	});
 });

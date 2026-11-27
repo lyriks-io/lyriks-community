@@ -1,8 +1,9 @@
 // Lyriks helper (installed by `sync_skills` under .lyriks/tools/). Reports what
 // git says of the checkout to the Evolution request built on its branch
 // (`report_code_state`, feat-evo-code-branch), for sync-index.mjs: repository,
-// branch, start commit, head, last commit of code, uncommitted code, proofs of
-// the whole index taken on another commit, commits since the start. A branch no
+// branch, start commit, head, last commit of code, uncommitted code, the proofs
+// of the request's own features taken on another commit (criterion 4a83650a),
+// commits since the start. A branch no
 // open request is built on is not a refusal: the answer says so as a note
 // (`noRequest`), and nothing is sent at all when the board shows no open
 // request; a refusal for a request that exists stays a refusal. Never throws.
@@ -35,6 +36,44 @@ function deploymentBranchOf(board) {
 /** True only when the whole board is read and no request on it is open (a card that names no status may be). */
 function noOpenRequest(board) {
 	return Boolean(board?.whole) && !board.cards.some((card) => card?.status === undefined || card?.status === 'open');
+}
+
+/** A list the gateway may have capped into `{ items, total, returned }`: whole, or null when it was cut. */
+function wholeList(list) {
+	if (Array.isArray(list)) return list;
+	if (list && Array.isArray(list.items) && list.returned === list.total) return list.items;
+	return null;
+}
+
+/** The open card of the request built on this branch, among cards a board or a batch answer shows; null when none is. */
+function cardOfBranch(cards, branch) {
+	return (
+		(cards ?? []).find(
+			(card) => (card?.status === undefined || card.status === 'open') && (card?.code?.branch === branch || card?.code?.expectedBranch === branch)
+		) ?? null
+	);
+}
+
+/**
+ * Every index key of the given features (a draft answers the keys of the
+ * feature it makes, the criteria it adds among them); null when one cannot be
+ * read, and every proof of the index then counts, as before.
+ */
+async function keysOf(leafIds, featureKeys) {
+	const ids = (leafIds ?? []).filter((id) => typeof id === 'string' && id);
+	if (!featureKeys || ids.length === 0) return null;
+	const keys = new Set();
+	for (const id of ids) {
+		let found;
+		try {
+			found = await featureKeys(id);
+		} catch {
+			return null;
+		}
+		if (!found) return null;
+		for (const key of found) keys.add(key);
+	}
+	return keys;
 }
 
 const NO_REQUEST = 'no open Evolution request: code state not attached';
@@ -73,10 +112,11 @@ function verdictOf(answer) {
 /**
  * Reports the checkout's git state to the request built on this branch, and
  * what the platform answered; outside a git repository, that none holds the
- * change (noGit). Never throws, so
+ * change (noGit). `featureKeys(featureId)` reads a feature's index keys, so only
+ * the proofs of the request's own features are counted. Never throws, so
  * a refusal or a gateway without the operation leaves the sync standing.
  */
-export async function reportCodeState(session, projectId, dir, slice, { baseBranch = null } = {}) {
+export async function reportCodeState(session, projectId, dir, slice, { baseBranch = null, featureKeys = null } = {}) {
 	if (!gitState(dir)) return { reported: false, noGit: true, answer: NO_GIT };
 	const board = await boardOf(session, projectId);
 	const deploymentBranch = baseBranch || deploymentBranchOf(board);
@@ -85,7 +125,7 @@ export async function reportCodeState(session, projectId, dir, slice, { baseBran
 	if (deploymentBranch && git.branch === deploymentBranch) {
 		return { reported: false, branch: git.branch, answer: `not reported: ${git.branch} is the deployment branch, and code is never written on it` };
 	}
-	const op = {
+	const base = {
 		op: 'report_code_state',
 		repository: repositoryOf(git.top),
 		history: branchHistory(git.top, git.baseCommit),
@@ -93,20 +133,37 @@ export async function reportCodeState(session, projectId, dir, slice, { baseBran
 		baseCommit: git.baseCommit,
 		head: git.head,
 		codeHead: git.codeHead,
-		clean: git.clean === true,
-		...proofsAgainst(slice, git.codeHead)
+		clean: git.clean === true
 	};
-	const { op: _name, history, ...rest } = op; // the commits travel to Lyriks, the summary only counts them
-	const facts = { ...rest, commitCount: history?.count ?? null };
-	if (noOpenRequest(board)) return { reported: false, noRequest: true, ...facts, answer: NO_REQUEST };
+	// Only the proofs of the request's own features count (criterion 4a83650a): its card names them.
+	let keys = featureKeys ? await keysOf(wholeList(cardOfBranch(board?.cards, git.branch)?.leafIds), featureKeys) : null;
+	let counted = proofsAgainst(slice, git.codeHead, { keys });
+	const opWith = ({ proofsLeftOut: _left, ...proofs }) => ({ ...base, ...proofs });
+	const factsOf = (op) => {
+		const { op: _name, history, ...rest } = op; // the commits travel to Lyriks, the summary only counts them
+		// What was left out of the count stays in the summary the AI reads: Lyriks only weighs what a run here could take again.
+		return { ...rest, commitCount: history?.count ?? null, proofsScope: keys ? 'request' : 'index', proofsLeftOut: counted.proofsLeftOut };
+	};
+	if (noOpenRequest(board)) return { reported: false, noRequest: true, ...factsOf(opWith(counted)), answer: NO_REQUEST };
 	// No branch is named yet: the sign-in of this command only reports, so it says what git reads for the AI to suggest (action db883b80).
-	if (board && !deploymentBranch) return { reported: false, ...facts, answer: branchToSuggest(defaultBranchOf(git.top)) };
+	if (board && !deploymentBranch) return { reported: false, ...factsOf(opWith(counted)), answer: branchToSuggest(defaultBranchOf(git.top)) };
+	const send = (op) => callToolJson(session, 'apply_evolution_batch', { project_id: projectId, operations: [op] });
 	try {
-		const answer = await callToolJson(session, 'apply_evolution_batch', { project_id: projectId, operations: [op] });
-		const { ok, said } = verdictOf(answer);
-		if (!ok && attachedToNoRequest(answer)) return { reported: false, noRequest: true, ...facts, answer: `${NO_REQUEST} (none is built on ${git.branch})` };
-		return { reported: ok, ...facts, answer: ok ? `accepted${said ? `: ${said}` : ''}` : `refused: ${said || 'no reason given'}` };
+		let answer = await send(opWith(counted));
+		let { ok, said } = verdictOf(answer);
+		if (!ok && attachedToNoRequest(answer)) return { reported: false, noRequest: true, ...factsOf(opWith(counted)), answer: `${NO_REQUEST} (none is built on ${git.branch})` };
+		// A board the gateway capped shows no card whole: the request the platform resolved names its features in
+		// its answer, and the count is sent again on them alone.
+		if (ok && !keys && featureKeys) {
+			keys = await keysOf(wholeList(cardOfBranch(answer?.requests, git.branch)?.leafIds), featureKeys);
+			if (keys) {
+				counted = proofsAgainst(slice, git.codeHead, { keys });
+				answer = await send(opWith(counted));
+				({ ok, said } = verdictOf(answer));
+			}
+		}
+		return { reported: ok, ...factsOf(opWith(counted)), answer: ok ? `accepted${said ? `: ${said}` : ''}` : `refused: ${said || 'no reason given'}` };
 	} catch (error) {
-		return { reported: false, ...facts, answer: `refused: ${error instanceof Error ? error.message : String(error)}` };
+		return { reported: false, ...factsOf(opWith(counted)), answer: `refused: ${error instanceof Error ? error.message : String(error)}` };
 	}
 }

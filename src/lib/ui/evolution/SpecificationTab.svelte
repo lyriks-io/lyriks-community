@@ -9,6 +9,7 @@
 	import type { ActionReading } from '$lib/server/evolution-spec-actions.server';
 	import { initials } from '$ui/team/team-style';
 	import BlockControls, { type Stamp, type ValidateLook } from './BlockControls.svelte';
+	import RejectCross from './RejectCross.svelte';
 	import FieldThread from './FieldThread.svelte';
 	import { useLiveSession } from './live-session.svelte';
 	import SectionCard from './SectionCard.svelte';
@@ -153,11 +154,14 @@
 			const name = nameOf(id);
 			// Validated by the person's AI under their delegation (ac-evo-llm-delegation-marks).
 			const ai = ok && has(byAi, id);
+			const me = has([actorId], id);
 			return {
 				id,
-				initials: initials(name),
+				initials: me ? 'YOU' : initials(name),
 				ok,
 				ai,
+				me,
+				name,
 				title: `${ai ? `${name}'s AI` : name}${ok ? ' · validated' : ' · to validate'}`
 			};
 		});
@@ -534,12 +538,14 @@
 			>
 				{#snippet between()}
 					{#if canValidate}
-						<button
-							type="button"
-							class="quiet h-8 rounded-lg px-2.5 {rejected ? 'text-evo-ink' : 'text-red-ink'}"
-							title={rejected ? 'Restore this element' : 'Not wanted: remove it from the specification'}
-							onclick={() => void toggleReject(leaf, spec.action, spec.fingerprint)}>{rejected ? 'Restore' : 'Reject'}</button
-						>
+						<!-- The cross refuses, filled once refused, and restores (criterion 7c214ba8). -->
+						<RejectCross
+							name={spec.action.label}
+							{rejected}
+							title="Not wanted: remove it from the specification"
+							restoreTitle="Restore this element"
+							onclick={() => void toggleReject(leaf, spec.action, spec.fingerprint)}
+						/>
 					{/if}
 				{/snippet}
 			</BlockControls>
@@ -622,7 +628,7 @@
 						{#snippet between()}
 							<!-- Once frozen, only a drafted feature is taken out (version N+1 in correction): what a frozen version touches stays (criterion e67a372d). -->
 							{#if canEdit && (!dossier.frozen || leaf.draftId)}
-								<button type="button" class="quiet h-8 rounded-lg px-2.5 text-red-ink" title="Not wanted: take it out of the request" onclick={() => void onDropSubject(leaf)}>Reject</button>
+								<RejectCross name={leaf.name} title="Not wanted: take it out of the request" onclick={() => void onDropSubject(leaf)} />
 							{/if}
 						{/snippet}
 					</BlockControls>
@@ -640,8 +646,8 @@
 						</div>
 						{#if !mine}
 							<div class="flex flex-wrap items-center justify-between gap-2.5 rounded-evo-btn border-l-[6px] border-orange bg-orange-tint px-3.5 py-2.5 text-sm text-orange-ink">
-								<span>Validate the feature first, then each action with its rules.</span>
-								{#if canValidate && filledOf(leaf).length > 0}<button type="button" class="pressable h-8 border-[1.5px] border-ink bg-evo-violet px-3.5 text-xs font-bold tracking-[0.07em] text-paper uppercase" onclick={() => void toggleFeature(leaf)}>Validate the feature</button>{/if}
+								<!-- The feature is validated in the reader's own box on its row, never by a button here (criterion a1ff3708). -->
+								<span>Validate the feature first in your box, then each action with its rules.</span>
 							</div>
 						{/if}
 						{#each fields.filter((f) => f.filled) as field (field.path)}
@@ -900,6 +906,19 @@
 	{/if}
 </div>
 
+{#snippet changeCross(entry: AnyChange)}
+	<!-- Refused with the cross, restored from the filled cross (criterion 7c214ba8). -->
+	{#if canValidate && !changeMine(entry) && entry.trail?.validation !== 'validated'}
+		<RejectCross
+			name={entry.summary}
+			rejected={changeRejected(entry)}
+			title="Not wanted: remove it from the specification"
+			restoreTitle="Restore this change"
+			onclick={() => void (changeRejected(entry) ? toggleChange(entry) : rejectChange(entry))}
+		/>
+	{/if}
+{/snippet}
+
 {#snippet changeCard(entry: AnyChange, i: number, reading: Parameters<typeof ruleCard>[0] | SectionDraftReading | undefined, asCard: (() => ReturnType<typeof ruleCard> | SectionDraftReading) | null)}
 	{@const mine = changeMine(entry)}
 	{@const settled = entry.trail?.validation === 'validated'}
@@ -916,12 +935,9 @@
 				stamps: stampsOf([entry.trail?.validatedBy ?? []], entry.trail?.expected ?? [], entry.trail?.validatedByAi ?? []),
 				settled
 			}}
-		/>
-		{#if canValidate && !mine && !settled}
-			<button type="button" class="quiet self-end text-red-ink" onclick={() => void (changeRejected(entry) ? toggleChange(entry) : rejectChange(entry))}>
-				{changeRejected(entry) ? 'Restore this change' : 'Reject this change'}
-			</button>
-		{/if}
+		>
+			{#snippet between()}{@render changeCross(entry)}{/snippet}
+		</SectionChangeCard>
 	{:else}
 		<div class="rounded-xl bg-evo-sunken px-4 py-3.5 text-sm text-evo-muted"><GlossaryText text={entry.summary} /></div>
 	{/if}
@@ -953,12 +969,9 @@
 							stamps: stampsOf([entry.trail?.validatedBy ?? []], entry.trail?.expected ?? [], entry.trail?.validatedByAi ?? []),
 							settled
 						}}
-					/>
-					{#if canValidate && !mine && !settled}
-						<button type="button" class="quiet self-end text-red-ink" onclick={() => void (changeRejected(entry) ? toggleChange(entry) : rejectChange(entry))}>
-							{changeRejected(entry) ? 'Restore this change' : 'Reject this change'}
-						</button>
-					{/if}
+					>
+						{#snippet between()}{@render changeCross(entry)}{/snippet}
+					</SectionChangeCard>
 				{:else}
 					<div class="rounded-xl bg-evo-sunken px-4 py-3.5 text-sm text-evo-muted">{entry.pageName} · <GlossaryText text={entry.summary} /></div>
 				{/if}

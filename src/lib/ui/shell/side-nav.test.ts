@@ -23,6 +23,7 @@ describe('the project navigation lights the page on screen [criterion:b2f17eef]'
 	it('lights nothing outside a project or on a page it has no entry for', () => {
 		expect(sidePlace('/').entry).toBeNull();
 		expect(sidePlace('/settings').entry).toBeNull();
+		expect(sidePlace('/projects/p1/settings').entry).toBe('settings');
 		expect(sidePlace('/projects/kutt').entry).toBeNull();
 		expect(sidePlace('/projects/kutt/foundation').entry).toBeNull();
 	});

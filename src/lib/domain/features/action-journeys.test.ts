@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyJourneyAct, journeysOnFeature, keepPersonJourneys, layoutJourney, canLink, journeyThrough, parseActionJourneys, stepNumbers, type ActionJourney, type JourneyAct } from './action-journeys';
+import { applyJourneyAct, hasJourney, journeysOnFeature, keepPersonJourneys, layoutJourney, canLink, journeyThrough, parseActionJourneys, shownDiagram, stepNumbers, type ActionJourney, type JourneyAct } from './action-journeys';
 
 const ACTIONS = new Set(['a', 'b', 'c', 'd']);
 const journey = (nodes: string[], links: [string, string][] = [], origin: ActionJourney['origin'] = 'person', id = 'j1'): ActionJourney => ({
@@ -167,5 +167,60 @@ describe('journeysOnFeature', () => {
 		const view = journeysOnFeature([journey(['a', 'gone'], [['a', 'gone']])], ['a', 'b']);
 		expect(view.journeys[0]).toMatchObject({ nodes: ['a'], links: [] });
 		expect(view.unplaced).toEqual(['b']);
+	});
+});
+
+describe('shownDiagram', () => {
+	it('reads a person\'s diagram with an arrow before any suggestion', () => {
+		const mine = journey(['a', 'b'], [['a', 'b']], 'person', 'mine');
+		const ai = journey(['a', 'b', 'c'], [['a', 'c']], 'ai', 'ai');
+		expect(shownDiagram([ai, mine])?.id).toBe('mine');
+	});
+	it('reads a suggestion with arrows before a person\'s diagram without any', () => {
+		const empty = journey(['a', 'b'], [], 'person', 'empty');
+		const ai = journey(['a', 'b'], [['a', 'b']], 'ai', 'ai');
+		expect(shownDiagram([empty, ai])?.id).toBe('ai');
+	});
+	it('falls back on a person\'s diagram without arrows, and on nothing', () => {
+		expect(shownDiagram([journey(['a'], [], 'ai', 'ai'), journey(['a'], [], 'person', 'empty')])?.id).toBe('empty');
+		expect(shownDiagram([])).toBeNull();
+	});
+});
+
+describe('hasJourney', () => {
+	it('says whether an arrow links two of the feature\'s actions, kept or suggested', () => {
+		expect(hasJourney([journey(['a', 'b'], [['a', 'b']], 'ai')], ['a', 'b'])).toBe(true);
+		expect(hasJourney([journey(['a', 'b'], [], 'person')], ['a', 'b'])).toBe(false);
+		expect(hasJourney([], ['a', 'b'])).toBe(false);
+	});
+	it('ignores an arrow to an action the feature lost', () => {
+		expect(hasJourney([journey(['a', 'gone'], [['a', 'gone']])], ['a', 'b'])).toBe(false);
+	});
+});
+
+describe('the kind of an arrow (criterion 415a3006)', () => {
+	it('draws a new arrow as Then unless told otherwise, and stores Then as no kind', () => {
+		const plain = after(journey(['a', 'b']), { kind: 'link', journeyId: 'j1', from: 'a', to: 'b' });
+		expect(plain.links).toEqual([{ from: 'a', to: 'b' }]);
+		const failing = after(journey(['a', 'b']), { kind: 'link', journeyId: 'j1', from: 'a', to: 'b', linkKind: 'fails' });
+		expect(failing.links).toEqual([{ from: 'a', to: 'b', kind: 'fails' }]);
+	});
+	it('changes the kind of an arrow already drawn, and back to Then', () => {
+		const typed = after(journey(['a', 'b', 'c'], [['a', 'b'], ['b', 'c']]), { kind: 'retype', journeyId: 'j1', from: 'b', to: 'c', linkKind: 'triggers' });
+		expect(typed.links).toEqual([{ from: 'a', to: 'b' }, { from: 'b', to: 'c', kind: 'triggers' }]);
+		const back = after(typed, { kind: 'retype', journeyId: 'j1', from: 'b', to: 'c', linkKind: 'then' });
+		expect(back.links).toEqual([{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }]);
+	});
+	it('refuses to retype an arrow that is not drawn, or to an unknown kind', () => {
+		expect(refusal(journey(['a', 'b']), { kind: 'retype', journeyId: 'j1', from: 'a', to: 'b', linkKind: 'enables' })).toMatch(/not on the diagram/);
+		expect(refusal(journey(['a', 'b'], [['a', 'b']]), { kind: 'retype', journeyId: 'j1', from: 'a', to: 'b', linkKind: 'maybe' as never })).toMatch(/Then, Makes possible/);
+	});
+	it('keeps the kind an AI or a person stored, and drops one it does not know', () => {
+		const read = parseActionJourneys({ f: [{ id: 'j', nodes: ['a', 'b', 'c'], links: [{ from: 'a', to: 'b', kind: 'enables' }, { from: 'b', to: 'c', kind: 'whatever' }] }] }, new Set(['f']));
+		expect(read.f[0].links).toEqual([{ from: 'a', to: 'b', kind: 'enables' }, { from: 'b', to: 'c' }]);
+	});
+	it('makes a suggestion a person retypes theirs', () => {
+		const out = applyJourneyAct([journey(['a', 'b'], [['a', 'b']], 'ai')], { kind: 'retype', journeyId: 'j1', from: 'a', to: 'b', linkKind: 'enables' }, ACTIONS);
+		expect(out.ok && out.journeys[0].origin).toBe('person');
 	});
 });

@@ -10,9 +10,11 @@ declare global {
 			/** What opens the refused capability, under the message (EVO-001). */
 			detail?: string;
 			/** The plan that opens what was refused: the refusal is an offer, which a page shows with View plans (EVO-006). */
-			plan?: UpgradePlan;
-			/** A project Community holds inactive: the error page offers to make it the active one. */
+			plan?: UpgradePlan | null;
+			/** A project held inactive (Community, or a key that grants fewer projects): the error page offers to make it active. */
 			inactiveProjectId?: string;
+			/** How many active projects the key grants, beside an inactive project (EVO-016). */
+			activeProjectsGranted?: number;
 		}
 		interface Locals {
 			/** The application's services for this request, handed over at the edge (hooks.server.ts). */

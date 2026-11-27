@@ -1,9 +1,11 @@
 /**
- * Outbound port for the project a Community installation works on (EVO-001,
- * Installation.activeProjectId): one id for the whole installation, null until
- * one is chosen. Only Community reads it; every other edition opens every project.
+ * Outbound port for the projects an installation works on (EVO-001,
+ * Installation.activeProjectId; EVO-016, N of them): the ids chosen for the
+ * whole installation, most recently made active first, empty until one is
+ * chosen. Only an installation whose key grants a number of projects reads it;
+ * every other one opens every project.
  */
 export interface ActiveProjectStorePort {
-	load(): Promise<string | null>;
-	save(projectId: string): Promise<void>;
+	load(): Promise<string[]>;
+	save(projectIds: readonly string[]): Promise<void>;
 }

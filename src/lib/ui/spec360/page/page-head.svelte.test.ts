@@ -30,7 +30,7 @@ vi.mock('$ui/rules/rule-verdicts.svelte', () => ({ getRuleVerdicts: () => null }
 
 const ana = { id: 'ana@example.test', name: 'Ana Diaz' };
 const bob = { id: 'bob@example.test', name: 'Bob Li' };
-const elements: SpecElement[] = ['product', 'feature:refunds', 'core:billing'].map((id) => ({ id, title: id, owner: 'product' }));
+const elements: SpecElement[] = ['product', 'feature:refunds', 'core:billing'].map((id) => ({ id, title: id }));
 const mode = { active: false, available: true };
 const knowledge = { above: true };
 // The real view of the page's sources, read from an index the test fills.

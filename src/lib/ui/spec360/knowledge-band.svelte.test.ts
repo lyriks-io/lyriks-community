@@ -34,11 +34,11 @@ const bob = { id: 'bob@example.test', name: 'Bob Li' };
 const cleo = { id: 'cleo@example.test', name: 'Cleo Roy' };
 // Two profiles on Users, a core feature and its feature on Features, the product on the Overview.
 const elements: SpecElement[] = [
-	{ id: 'product', title: 'Product summary', owner: 'product' },
-	{ id: 'role:customer', title: 'Customer', owner: 'product' },
-	{ id: 'role:clerk', title: 'Clerk', owner: 'product' },
-	{ id: 'core:billing', title: 'Billing', owner: 'product' },
-	{ id: 'feature:refunds', title: 'Refunds', owner: 'product' }
+	{ id: 'product', title: 'Product summary' },
+	{ id: 'role:customer', title: 'Customer' },
+	{ id: 'role:clerk', title: 'Clerk' },
+	{ id: 'core:billing', title: 'Billing' },
+	{ id: 'feature:refunds', title: 'Refunds' }
 ];
 const mode = { active: false, available: true, set: (on: boolean) => void (mode.active = on) };
 const edits = {
@@ -319,5 +319,11 @@ describe('Validate the whole section of a frame is the check of the four acts, w
 		expect(section()).not.toContain('data-validate-all');
 		expect(section()).toContain('aria-hidden="true"');
 		expect(section(true)).toBe('');
+	});
+});
+
+describe('the band carries no Versions button [criterion:1eb35bd3]', () => {
+	it('closes the version line with the version alone', () => {
+		expect(bar('/projects/p/spec')).not.toContain('aria-label="Versions"');
 	});
 });

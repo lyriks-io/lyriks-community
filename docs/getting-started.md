@@ -169,9 +169,12 @@ configuration is unchanged, you can instead set `LYRIKS_TAG` in `.env` to the
 published release tag. Then run:
 
 ```bash
-docker compose pull
+docker compose --profile editor pull
 docker compose up -d
 ```
+
+The `editor` profile also pulls the image of the behaviour editor, which
+`up` never starts (see below).
 
 Pulling without changing the selected version does not select a new release.
 See [Releases](releases.md) for the available image channels and versioning.
@@ -183,6 +186,31 @@ The appliance kit automates these maintenance tasks from its directory:
 ./lyriks update     # backup first, then install the next release
 ./lyriks rollback   # return to the previous release's images
 ```
+
+### The behaviour editor
+
+The behaviour engine's own editor is not served by Lyriks and does not run
+with the stack. Open it on demand, in the foreground, from the directory that
+holds the Compose file:
+
+```bash
+docker compose --profile editor run --rm --no-deps --service-ports dashboard
+```
+
+It edits the same behaviour store as Lyriks and has no login of its own, so it
+listens on the host's loopback only, at <http://127.0.0.1:3003/>
+(`LYRIKS_UNSPA_DASHBOARD_PORT` in `.env` changes the port). From your
+workstation, open an SSH tunnel to the host, then browse to
+<http://localhost:3003/>:
+
+```bash
+ssh -N -L 3003:127.0.0.1:3003 <user>@<host>
+```
+
+Deleting a state is refused there: delete states in Lyriks, which checks every
+reference to them first. Ctrl-C stops the editor and removes its container.
+With the appliance kit, `./lyriks editor` does the same and prints the tunnel
+to use.
 
 ## Alternative setup: from source
 

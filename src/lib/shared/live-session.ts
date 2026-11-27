@@ -4,6 +4,9 @@
  * (ac-evo-live-state, ac-evo-live-one-agent). Nothing here is saved: the
  * session and the clicks are on the request; this says what happens now.
  */
+/** The presence key of the person's waker on a project, apart from every session's (feat-ai-session, "Keep my waker listening"). */
+export const WAKER_KEY = '~waker';
+
 export type LivePresenceStatus = 'listening' | 'thinking' | 'writing' | 'cancelled' | 'gone' | 'ended';
 
 export interface LiveSessionSignal {
@@ -26,6 +29,12 @@ export interface LiveSessionSignal {
 	 * beat of the wait, so a signal no longer refreshed stops counting.
 	 */
 	readonly callHeld?: boolean;
+	/**
+	 * On the signal of the person's waker only (requestId WAKER_KEY): when it was
+	 * last handed a wake, kept until the next one, so every node reads the AI
+	 * waking, woken, or not woken (feat-ai-session, "Wake my AI").
+	 */
+	readonly wakeHandedAt?: string | null;
 	readonly at: string;
 }
 

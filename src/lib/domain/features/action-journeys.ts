@@ -12,10 +12,38 @@
 
 export type JourneyOrigin = 'person' | 'ai';
 
-/** An arrow: the journey goes from one action to the next. */
+/**
+ * What an arrow says (criterion 415a3006): the person goes on to the next
+ * action (then), the action puts the product in the state the next one needs
+ * (enables), it sets the next one off with no one acting (triggers), or it
+ * leads there when it is refused or fails (fails).
+ */
+export const JOURNEY_LINK_KINDS = ['then', 'enables', 'triggers', 'fails'] as const;
+export type JourneyLinkKind = (typeof JOURNEY_LINK_KINDS)[number];
+
+/** How each kind reads on the page. */
+export const JOURNEY_LINK_LABELS: Readonly<Record<JourneyLinkKind, string>> = {
+	then: 'Then',
+	enables: 'Makes possible',
+	triggers: 'Triggers',
+	fails: 'On failure'
+};
+
+/** An arrow: the journey goes from one action to the next. Without a kind, it reads Then. */
 export interface JourneyLink {
 	from: string;
 	to: string;
+	kind?: JourneyLinkKind;
+}
+
+/** The kind an arrow reads as: Then when it carries none. */
+export const linkKindOf = (link: Pick<JourneyLink, 'kind'>): JourneyLinkKind => link.kind ?? 'then';
+
+const kindFrom = (v: unknown): JourneyLinkKind | null => (JOURNEY_LINK_KINDS as readonly unknown[]).includes(v) ? (v as JourneyLinkKind) : null;
+
+/** An arrow as stored: Then is the kind it reads without one, so it is never written. */
+function arrow(from: string, to: string, kind: JourneyLinkKind | null | undefined): JourneyLink {
+	return kind && kind !== 'then' ? { from, to, kind } : { from, to };
 }
 
 export interface ActionJourney {
@@ -46,7 +74,8 @@ export type JourneyAct =
 	| { readonly kind: 'keep'; readonly journeyId: string }
 	| { readonly kind: 'add'; readonly journeyId: string; readonly actionId: string }
 	| { readonly kind: 'take-out'; readonly journeyId: string; readonly actionId: string }
-	| { readonly kind: 'link'; readonly journeyId: string; readonly from: string; readonly to: string }
+	| { readonly kind: 'link'; readonly journeyId: string; readonly from: string; readonly to: string; readonly linkKind?: JourneyLinkKind }
+	| { readonly kind: 'retype'; readonly journeyId: string; readonly from: string; readonly to: string; readonly linkKind: JourneyLinkKind }
 	| { readonly kind: 'unlink'; readonly journeyId: string; readonly from: string; readonly to: string }
 	| { readonly kind: 'move'; readonly journeyId: string; readonly actionId: string; readonly x: number; readonly y: number }
 	| { readonly kind: 'tidy'; readonly journeyId: string };
@@ -90,7 +119,7 @@ function soundLinks(nodes: ReadonlySet<string>, raw: readonly JourneyLink[]): Jo
 		if (!nodes.has(l.from) || !nodes.has(l.to) || l.from === l.to) continue;
 		if (out.some((k) => k.from === l.from && k.to === l.to)) continue;
 		if (leadsTo(out, l.to, l.from)) continue;
-		out.push({ from: l.from, to: l.to });
+		out.push(arrow(l.from, l.to, l.kind));
 	}
 	return out;
 }
@@ -113,7 +142,11 @@ function parseJourney(raw: unknown, seen: Set<string>): ActionJourney | null {
 	const legacy = !Array.isArray(src.nodes) && Array.isArray(src.steps) ? fromSteps(src.steps) : null;
 	const rawNodes = legacy?.nodes ?? (Array.isArray(src.nodes) ? src.nodes.map(text) : []);
 	const nodes = [...new Set(rawNodes.filter(Boolean))];
-	const rawLinks = legacy?.links ?? (Array.isArray(src.links) ? src.links : []).flatMap((l) => (l && typeof l === 'object' ? [{ from: text((l as Record<string, unknown>).from), to: text((l as Record<string, unknown>).to) }] : []));
+	const rawLinks = legacy?.links ?? (Array.isArray(src.links) ? src.links : []).flatMap((l) => {
+		if (!l || typeof l !== 'object') return [];
+		const r = l as Record<string, unknown>;
+		return [arrow(text(r.from), text(r.to), kindFrom(r.kind))];
+	});
 	const positions: Record<string, JourneyPosition> = {};
 	if (src.positions && typeof src.positions === 'object' && !Array.isArray(src.positions))
 		for (const [a, p] of Object.entries(src.positions as Record<string, unknown>)) {
@@ -195,7 +228,12 @@ function changed(j: ActionJourney, act: Exclude<JourneyAct, { kind: 'declare' | 
 			if (j.links.some((l) => l.from === act.from && l.to === act.to)) return j;
 			if (leadsTo(j.links, act.to, act.from)) return 'This arrow would loop back: a journey reads left to right.';
 			const nodes = [...j.nodes, ...[act.from, act.to].filter((a, i, all) => !j.nodes.includes(a) && all.indexOf(a) === i)];
-			return { ...j, nodes, links: [...j.links, { from: act.from, to: act.to }] };
+			return { ...j, nodes, links: [...j.links, arrow(act.from, act.to, act.linkKind)] };
+		}
+		case 'retype': {
+			if (!kindFrom(act.linkKind)) return 'An arrow reads Then, Makes possible, Triggers or On failure.';
+			if (!j.links.some((l) => l.from === act.from && l.to === act.to)) return 'This arrow is not on the diagram any more.';
+			return { ...j, links: j.links.map((l) => (l.from === act.from && l.to === act.to ? arrow(l.from, l.to, act.linkKind) : l)) };
 		}
 	}
 }
@@ -307,4 +345,21 @@ export function journeysOnFeature(journeys: readonly ActionJourney[], actionIds:
 	});
 	const inSome = new Set(shown.flatMap((j) => j.nodes));
 	return { journeys: shown, unplaced: actionIds.filter((a) => !inSome.has(a)) };
+}
+
+/**
+ * The one diagram a feature's page shows (action f3bbf419): the first a person
+ * kept that has an arrow, else the first an AI suggested that has one, else a
+ * person's still without arrows; null when the feature has none yet. A
+ * person's diagram without arrows decides nothing, so a suggestion that links
+ * the actions reads before it.
+ */
+export function shownDiagram(journeys: readonly ActionJourney[]): ActionJourney | null {
+	const linked = (j: ActionJourney) => j.links.length > 0;
+	return journeys.find((j) => j.origin === 'person' && linked(j)) ?? journeys.find(linked) ?? journeys.find((j) => j.origin === 'person') ?? journeys[0] ?? null;
+}
+
+/** Whether a feature's diagram links any two of these actions, kept or suggested (criterion a0ebe123). */
+export function hasJourney(journeys: readonly ActionJourney[], actionIds: readonly string[]): boolean {
+	return (shownDiagram(journeysOnFeature(journeys, actionIds).journeys)?.links.length ?? 0) > 0;
 }

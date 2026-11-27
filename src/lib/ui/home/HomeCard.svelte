@@ -13,8 +13,8 @@
 	 * larger, with no mark. Its project in bold capitals, what happened in bold
 	 * capitals, its level in its tag, then what it found opened by when and
 	 * where it happened, its picture without its title, then its action and Got
-	 * it or Later; a CRITICAL card wears a heavy ink frame, a card already read
-	 * fades where it is (criterion 7c08bd42).
+	 * it or Later, on a white sheet; a CRITICAL card wears a heavy ink frame, a
+	 * card already read fades where it is (criterion 7c08bd42).
 	 */
 	interface Props {
 		card: FeedCard;
@@ -73,11 +73,11 @@
 	/* The design's feed card (.fc): a sheet on Home's toner, a hard ink shadow while it is unread. */
 	.fc {
 		display: grid;
-		gap: 18px;
-		margin-bottom: 26px;
-		padding: 22px 26px;
+		gap: 16px;
+		margin-bottom: 24px;
+		padding: 20px 24px;
 		border: 1px solid var(--hm-line);
-		background: var(--hm-card);
+		background: var(--color-paper);
 		box-shadow: 5px 5px 0 var(--color-ink);
 		color: var(--color-ink);
 		transition: box-shadow 0.2s;
@@ -122,8 +122,8 @@
 		white-space: nowrap;
 	}
 	.fc-t {
-		margin-top: 6px;
-		font-size: 1.375rem;
+		margin-top: 5px;
+		font-size: 1.1875rem;
 		font-weight: 700;
 		line-height: 1.15;
 		letter-spacing: -0.01em;
@@ -225,7 +225,10 @@
 
 	/* Read: the card fades where it is, never taken away (criterion 7c08bd42). */
 	.fc.read :is(.fc-t, .fc-x, .fc-x b, .ctx) {
-		color: var(--color-ink-3);
+		color: var(--color-ink-2);
+	}
+	.fc.read .fc-t {
+		font-weight: 600;
 	}
 	/* Grey once read, the same shape and the same moves: only its colours change (criterion 45137624). */
 	.fc.read .bev {
@@ -233,7 +236,7 @@
 		background: var(--hm-line);
 	}
 	.fc.read :global(.np) {
-		opacity: 0.6;
+		opacity: 0.85;
 	}
 
 	@media (max-width: 760px) {

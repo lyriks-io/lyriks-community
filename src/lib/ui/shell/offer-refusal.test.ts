@@ -18,8 +18,8 @@ const drafts = { save: async () => {} } as unknown as FoundationIdentityReposito
  * installation holding TodoMatic: the real route and the real creation behind
  * it, its refusal sent the way SvelteKit sends one to a fetch (JSON).
  */
-async function addSecondProject(): Promise<Response> {
-	const scope = new CheckProjectCreationUseCase(() => 'community', { list: async () => [{ id: 'todomatic', name: 'TodoMatic', description: '', industry: '', lastSavedAt: null }] });
+async function addSecondProject(edition = 'community', granted = 1): Promise<Response> {
+	const scope = new CheckProjectCreationUseCase(() => edition, () => granted, { list: async () => [{ id: 'todomatic', name: 'TodoMatic', description: '', industry: '', lastSavedAt: null }] });
 	const services = { createProject: new CreateProjectUseCase(drafts, clock, portfolio, undefined, () => 'abc123', undefined, scope), audit: { record: () => {} } };
 	const event = {
 		locals: { services, authRequired: false, session: null },
@@ -88,3 +88,16 @@ describe('a refusal is read at the edge', () => {
 		expect(offerToast('Offer.', true)).toMatchObject({ level: 'info', message: 'Offer.', action: { label: 'View plans' } });
 	});
 });
+
+// EVO-016: an Enterprise key that grants N projects refuses the N+1st with its sentence, as a toast, without a plan to buy.
+describe('adding a project beyond the number an Enterprise key grants [criterion:ac-leaf-ff8aad5f-23ae-48f8-b999-9ad426ac53b4]', () => {
+	it('is refused by the server and shown as a toast saying the licence holds N active projects', async () => {
+		const res = await addSecondProject('enterprise', 1);
+		expect(res.status).toBe(403);
+		expect(await createdOrRefused(res, true)).toEqual({
+			level: 'error',
+			message: "This installation's licence holds 1 active project. Ask for a key with more projects to keep building."
+		});
+	});
+});
+

@@ -77,7 +77,7 @@ function deltaStart(mode: RetrospecMode, fromCommit: string | null): string {
 /** The Scope line of the board: what this run reads, from the moment it runs to its summary. */
 export function scopeLine(mode: RetrospecMode, reach: RunReach, held = false): string {
 	const line = readScope(mode, reach);
-	return held ? `${line} Nothing is written before you validate it on Mismatch and click Write the validated changes: your AI then writes it.` : line;
+	return held ? `${line} Nothing is written before you validate it on Mismatch and click Write the validated changes: Lyriks then writes it.` : line;
 }
 
 function readScope(mode: RetrospecMode, reach: RunReach): string {
@@ -92,7 +92,7 @@ function readScope(mode: RetrospecMode, reach: RunReach): string {
 /** What the celebration says Lyriks did, with the share of it the code holds when the index was synced. */
 export function celebrationLine(productName: string, mode: RetrospecMode, reach: RunReach, code: number | null, held = false): string {
 	const what = readObject(productName, mode, reach);
-	if (held) return `Lyriks has read ${what}. Nothing is written yet: validate what it found on Mismatch, then Write the validated changes has your AI write it.`;
+	if (held) return `Lyriks has read ${what}. Nothing is written yet: validate what it found on Mismatch, then Write the validated changes has Lyriks write it.`;
 	const found = code !== null ? `: ${code} % of it is found in the code` : '';
 	return reach.kind === 'first' ? `Lyriks has read ${what} and rebuilt its specification${found}.` : `Lyriks has read ${what} and brought its specification up to date${found}.`;
 }

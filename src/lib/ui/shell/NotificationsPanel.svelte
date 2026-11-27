@@ -62,7 +62,7 @@
 			<button type="button" class="nr" class:un={isUnread} onclick={() => go(n)}>
 				<SectionMark section={place.section} faded={!isUnread} />
 				<span class="tx">
-					<span class="c"><b>{place.project}</b><span>{timeAgo(n.at)}</span></span>
+					<span class="c"><span class="p">{#if isUnread}<i class="dot" aria-hidden="true"></i>{/if}<b>{place.project}</b></span><span>{timeAgo(n.at)}</span></span>
 					{#if isUnread}<span class="sr-only">Unread:</span>{/if}
 					<strong>{n.title}</strong>
 					{#if n.line}<span class="l">{n.line}</span>{/if}
@@ -138,10 +138,9 @@
 			gap: 12px;
 			box-sizing: border-box;
 			width: 100%;
-			padding: 12px 18px 12px 15px;
+			padding: 12px 18px;
 			border: 0;
 			border-top: 1px solid var(--color-line);
-			border-left: 3px solid transparent;
 			background: transparent;
 			color: var(--color-ink);
 			font-family: inherit;
@@ -154,10 +153,18 @@
 		.lk-pal .nr:hover {
 			background: var(--color-toner-1);
 		}
-		/* Unread: a warm tone and a blue edge; read: neither, and its texts in grey (criterion 88ed514a). */
-		.lk-pal .nr.un {
-			border-left-color: var(--color-blue);
-			background: var(--color-toner-1);
+		/* Unread: a blue mark before its project; read: none, and its texts in grey (criterion 88ed514a). */
+		.lk-pal .nr .c .p {
+			display: flex;
+			align-items: center;
+			min-width: 0;
+		}
+		.lk-pal .nr .dot {
+			flex: none;
+			width: 7px;
+			height: 7px;
+			margin-right: 6px;
+			background: var(--color-blue);
 		}
 		.lk-pal .nr .tx {
 			display: block;
@@ -182,6 +189,7 @@
 			display: block;
 			margin: 3px 0;
 			font-size: 0.875rem;
+			font-weight: 600;
 			line-height: 1.3;
 		}
 		.lk-pal .nr .l {
@@ -194,7 +202,7 @@
 			color: var(--color-ink-3);
 		}
 		.lk-pal .nr:not(.un) strong {
-			font-weight: 600;
+			font-weight: 500;
 		}
 		.lk-pal .e {
 			margin: 8px 18px;

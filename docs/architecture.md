@@ -47,10 +47,15 @@ construct outside the discovery points.
 ## The process entry
 
 `server.mjs` wraps the SvelteKit handler and adds what a Node server cannot do
-from a request handler: WebSocket upgrades. `/behavior/sync` reaches the
-behaviour dashboard's co-editing socket and `/yjs` reaches the realtime
-relay, both only with a valid platform session. HTTP requests to `/mcp` and
-`/behavior` are proxied from `hooks.server.ts` behind the same session.
+from a request handler: WebSocket upgrades. `/yjs` reaches the realtime relay,
+only with a valid platform session. HTTP requests to `/mcp` are proxied from
+`hooks.server.ts` behind the same session.
+
+The behaviour engine's own editor (the `dashboard` service, image
+`lyriks-behavior-community`) is not part of the application: it has no route
+here and does not run with the stack. It is opened on demand on the host, on
+loopback only, and edits the same behaviour store (see
+[Configuration](configuration.md#behaviour-editor-on-demand)).
 
 ## The MCP gateway
 
@@ -78,6 +83,6 @@ build.
 
 Every number on a page has one definition, in [scores.md](scores.md). The
 coherence analysis is deterministic and runs on the drafts plus the behaviour
-model; the Control Center shows its gaps with a place to fix each one, and a
+model; the Health page lists its gaps, each with where to fix it, and a
 declared issue (written by a person or an agent) is a decision to settle, not
 a detection.

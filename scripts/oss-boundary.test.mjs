@@ -82,3 +82,30 @@ test('the overlay, when this tree carries one, lives outside src/', (t) => {
 	assert.equal(statSync(join(root, 'ee/lib')).isDirectory(), true);
 	assert.equal(statSync(join(root, 'ee/routes')).isDirectory(), true);
 });
+
+test('nothing private reaches the exported sources: the export refuses what this finds', (t) => {
+	// The export stops on a person's name, a customer or a private host anywhere in the public tree (its
+	// FORBIDDEN list). Found only at release time, it held 2026.11-76 back on test fixtures written weeks
+	// before; read here, a pull request fails on it instead. The list itself never leaves this tree.
+	const script = join(root, 'scripts/export-oss.sh');
+	if (!existsSync(script)) return t.skip('no export script in this tree');
+	const listed = /^FORBIDDEN='(.*)'$/m.exec(readFileSync(script, 'utf8'));
+	assert.ok(listed, 'scripts/export-oss.sh defines FORBIDDEN on one line');
+	const forbidden = new RegExp(listed[1], 'i');
+	const overlay = [join(SRC, 'lib/ee'), join(SRC, 'routes/(ee)')];
+	const files = (dir) =>
+		readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+			const path = join(dir, entry.name);
+			if (overlay.includes(path)) return [];
+			return entry.isDirectory() ? files(path) : [path];
+		});
+	const hits = [];
+	for (const file of [...files(SRC), ...files(join(root, 'scripts/oss'))]) {
+		const text = readFileSync(file);
+		if (text.includes(0)) continue;
+		text.toString('utf8').split('\n').forEach((line, i) => {
+			if (forbidden.test(line)) hits.push(`${relative(root, file)}:${i + 1} ${line.trim().slice(0, 100)}`);
+		});
+	}
+	assert.deepEqual(hits, [], `private material the export would refuse:\n${hits.join('\n')}`);
+});

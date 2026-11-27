@@ -4,6 +4,7 @@ import { loadRetrospecDocument, saveRetrospecActs } from '$application/retrospec
 import { currentRun, specEditLines, specEditStatus, waitsForItsPrompt, type RetrospecAct, type RetrospecDocument } from '$domain/retrospec';
 import { requireProjectAccess } from '$lib/server/project-access.server';
 import { retrospecActor } from '$lib/server/retrospec-status.server';
+import { reportedChangesRefusal } from '$lib/server/retrospec-writing.server';
 import type { RequestHandler } from './$types';
 
 /**
@@ -17,8 +18,10 @@ import type { RequestHandler } from './$types';
  *        → records them on the run under way and answers the same reading.
  *          `received` moves on the run that waits for its prompt (criterion
  *          a6f870af) and records nothing when none does: the AI goes on.
- *          `changes`, `finished` and `written` are what a run that holds its
- *          changes reports (criteria 50b00229, 1aaa8316); `withdrawn` takes off
+ *          `changes` and `finished` are what a run that holds its changes
+ *          reports (criteria 50b00229, 1aaa8316): each change carries the
+ *          `writes` Lyriks makes once a person validates it, dry-run here
+ *          against the specification as it stands (rule 911113ef); `withdrawn` takes off
  *          the report a change a person rejected as not being one (criterion eb132bbd).
  *          `phase` and `read` say the phase the AI reads now and the features it
  *          finished re-reading (EVO-014, actions 83ba020b and ef746636): what a
@@ -38,7 +41,7 @@ function readingOf(doc: RetrospecDocument) {
 					writingOpen: !!run.writingOpenedAt,
 					phase: run.phaseReported ?? null,
 					featuresRead: run.featuresRead?.length ?? 0,
-					report: Object.values(run.report ?? {}).map((c) => ({ id: c.id, kind: c.kind, anchor: c.anchor, dock: c.dock, title: c.title, proposed: c.proposed, code: c.code, where: c.where, decision: c.decision?.verdict ?? null, asked: c.decision?.note ?? null }))
+					report: Object.values(run.report ?? {}).map((c) => ({ id: c.id, kind: c.kind, anchor: c.anchor, dock: c.dock, title: c.title, proposed: c.proposed, code: c.code, where: c.where, writes: c.writes, decision: c.decision?.verdict ?? null, asked: c.decision?.note ?? null, written: (run.written?.[c.id] ?? 0) >= Math.max(1, c.writes.length) }))
 				}
 			: null,
 		handEdits: specEditLines(doc.specEdits).map((e) => ({
@@ -68,8 +71,13 @@ export const POST: RequestHandler = async (event) => {
 	if (!(await services.projectExists(projectId))) error(404, 'Project not found');
 	const parsed = parseRetrospecReading(await event.request.json().catch(() => null));
 	if (!parsed.ok) error(400, parsed.reason);
-	const { commit, checks, received, changes, withdrawn, finished, written, phase, read } = parsed.reading;
+	const { commit, checks, received, changes, withdrawn, finished, phase, read } = parsed.reading;
 	const { doc: before } = await loadRetrospecDocument(services.sectionDocuments, projectId);
+	// What a person will validate is what Lyriks will write: it must apply when it is reported.
+	if (changes.length > 0 && currentRun(before)?.holds) {
+		const refusal = await reportedChangesRefusal(services, projectId, changes);
+		if (refusal) error(400, refusal);
+	}
 	const acts: RetrospecAct[] = [
 		...(received && waitsForItsPrompt(before) ? [{ op: 'launch' as const }] : []),
 		...(phase ? [{ op: 'report_phase' as const, phase }] : []),
@@ -78,7 +86,6 @@ export const POST: RequestHandler = async (event) => {
 		...(checks.length > 0 ? [{ op: 'check_spec_edits' as const, reports: checks }] : []),
 		...(changes.length > 0 ? [{ op: 'report_changes' as const, changes }] : []),
 		...(withdrawn.length > 0 ? [{ op: 'withdraw_changes' as const, ids: withdrawn }] : []),
-		...(written.length > 0 ? [{ op: 'record_written' as const, written }] : []),
 		...(finished ? [{ op: 'end_reading' as const }] : [])
 	];
 	if (acts.length === 0) return json({ ok: true, recorded: [], ...readingOf(before) });

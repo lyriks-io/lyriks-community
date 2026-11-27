@@ -109,4 +109,6 @@ can revoke a grant by posting a form-encoded `token` (access or refresh) to
 
 Changing the Community password or signing out revokes existing operator sessions
 and their MCP access. Already-open sockets are rechecked within 30 seconds.
-Keep dashboard and relay ports private; use the platform's same-origin proxy.
+Keep the relay port private; use the platform's same-origin proxy. The
+behaviour editor, opened on demand, has no login of its own: it stays on the
+host's loopback and is reached through an SSH tunnel, never published.

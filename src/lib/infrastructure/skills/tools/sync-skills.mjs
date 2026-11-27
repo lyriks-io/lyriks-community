@@ -25,7 +25,7 @@ const CLIENTS = ['claude', 'codex', 'gemini', 'copilot', 'generic'];
 const SKILLS_DIR = { claude: '.claude/skills' };
 const PORTABLE_SKILLS_DIR = '.agents/skills';
 /** The binding files a client reports beside the scripts, so unchanged ones come back without content. */
-const HOOK_PATHS = ['.claude/hooks/lyriks-bound-prompt.mjs', '.claude/hooks/lyriks-allow-tools.mjs'];
+const HOOK_PATHS = ['.claude/hooks/lyriks-bound-prompt.mjs', '.claude/hooks/lyriks-allow-tools.mjs', '.claude/hooks/lyriks-stop.mjs'];
 const TOOLS_DIR = '.lyriks/tools';
 const INSTRUCTION_FILES = ['CLAUDE.md', 'AGENTS.md', 'GEMINI.md', '.github/copilot-instructions.md'];
 const BINDING_BLOCK = /<!-- lyriks-binding -->([\s\S]*?)<!-- \/lyriks-binding -->/;

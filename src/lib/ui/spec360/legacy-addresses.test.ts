@@ -43,6 +43,16 @@ describe('an old address of a project page (criterion 84162c34)', () => {
 		expect(to('glossary', 'term=t-1')).toBe('/projects/p-1/spec/glossary?term=t-1');
 	});
 
+	it('opens what the retired Traceability, Generate specs and Kickoff held where it lives now (rules b995ffb1, 20f14192, 8bc8522a, 32a16816, 3dfded38)', () => {
+		expect(to('approvals', '')).toBe('/projects/p-1/spec#kb-scope');
+		expect(to('baselines', '')).toBe('/projects/p-1/spec');
+		expect(to('traceability', 'tab=approvals')).toBe('/projects/p-1/spec#kb-scope');
+		expect(to('traceability', 'tab=baselines')).toBe('/projects/p-1/spec');
+		expect(to('traceability', '')).toBe('/projects/p-1/spec/features');
+		expect(to('generate', '')).toBe('/projects/p-1/spec/noticed');
+		expect(to('kickoff', '')).toBe('/projects/p-1/retrospec');
+	});
+
 	it('names the feature an old Features address pointed at', () => {
 		expect(legacyFeatureId(new URLSearchParams('leaf=l-1'))).toBe('l-1');
 		expect(legacyFeatureId(new URLSearchParams('feature=f-1&leaf=l-1'))).toBe('f-1');

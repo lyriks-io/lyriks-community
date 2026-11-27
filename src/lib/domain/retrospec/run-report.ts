@@ -1,3 +1,4 @@
+import { parseChangeWrites, type ChangeWrite } from './change-writes';
 import type { PersonRef, RetrospecRun } from './document';
 import { deltaElement, deltaRow, type DeltaElement, type RunDelta } from './run-delta';
 import type { SpecElement } from './spec-validation';
@@ -6,10 +7,10 @@ import type { SpecElement } from './spec-validation';
  * What a later run found and holds until a person decides (criteria 42311513,
  * 1aaa8316 of feat-fb747-traceability, 50b00229 of feat-ai-session): its AI
  * reports each difference instead of writing it, a person validates, reverts or
- * rejects it on Mismatch, and only what was validated is then written, by that
- * person's AI. A rejection is not an end: it says what must change, and the AI
- * reports the change again (criterion eb132bbd). Pure: what the specification
- * reads today arrives read.
+ * rejects it on Mismatch, and only what was validated is then written, by
+ * Lyriks itself, with the writes the AI prepared (point 214). A rejection is not
+ * an end: it says what must change, and the AI reports the change again
+ * (criterion eb132bbd). Pure: what the specification reads today arrives read.
  */
 
 export const CHANGE_KINDS = ['new', 'changed', 'removed'] as const;
@@ -50,6 +51,8 @@ export interface ReportedChangeInput {
 	/** What the code reads, '' when the run read no code for it. */
 	readonly code: string;
 	readonly where: string;
+	/** What Lyriks writes once a person validates it, in order (feat-145 parameter writes). */
+	readonly writes: readonly ChangeWrite[];
 }
 
 export interface ReportedChange extends ReportedChangeInput {
@@ -59,9 +62,45 @@ export interface ReportedChange extends ReportedChangeInput {
 
 export type RunReport = Readonly<Record<string, ReportedChange>>;
 
-/** The AI of this run may not write in the specification yet. */
+/**
+ * The AI of this run may not write in the specification: not before the writing,
+ * nor during it, since Lyriks writes what a person validated (rule 35bf88ae).
+ */
 export function writesHeld(run: RetrospecRun | null | undefined): boolean {
-	return !!run?.holds && !run.publishedAt && !run.writingOpenedAt;
+	return !!run?.holds && !run.publishedAt;
+}
+
+/** Where the writing of the validated changes stands. */
+export interface WritingProgress {
+	/** The validated changes, in the order of the report. */
+	readonly validated: readonly ReportedChange[];
+	/** How many of them Lyriks wrote whole. */
+	readonly written: number;
+	/** The first one not written whole yet, and how many of its writes are written. */
+	readonly next: { readonly change: ReportedChange; readonly done: number } | null;
+	/** Where the last writing stopped and why, until it starts again. */
+	readonly stop: WriteStop | null;
+}
+
+/** The change a writing stopped at, and the sentence that stopped it. */
+export interface WriteStop {
+	readonly change: string;
+	readonly reason: string;
+	readonly at: string;
+}
+
+/** A change is written whole once every write it carries is. */
+export const changeWritten = (run: Pick<RetrospecRun, 'written'>, change: ReportedChange): boolean => (run.written?.[change.id] ?? 0) >= Math.max(1, change.writes.length);
+
+export function writingProgress(run: RetrospecRun): WritingProgress {
+	const validated = Object.values(run.report ?? {}).filter((c) => c.decision?.verdict === 'validated');
+	const left = validated.filter((c) => !changeWritten(run, c));
+	return {
+		validated,
+		written: validated.length - left.length,
+		next: left[0] ? { change: left[0], done: run.written?.[left[0].id] ?? 0 } : null,
+		stop: run.writeStop ?? null
+	};
 }
 
 export interface ReportCounts {
@@ -85,7 +124,8 @@ export function reportCounts(report: RunReport | undefined): ReportCounts {
 
 /** A report read again with the same words keeps its decision; other words are another thing to decide. */
 export const sameChange = (a: ReportedChangeInput, b: ReportedChangeInput): boolean =>
-	a.kind === b.kind && a.anchor === b.anchor && a.dock === b.dock && a.title === b.title && a.proposed === b.proposed && a.code === b.code && a.where === b.where;
+	a.kind === b.kind && a.anchor === b.anchor && a.dock === b.dock && a.title === b.title && a.proposed === b.proposed && a.code === b.code && a.where === b.where &&
+	JSON.stringify(a.writes) === JSON.stringify(b.writes);
 
 /** A change as it reads once reported: the same words keep their decision, a rework keeps what was asked (criterion eb132bbd). */
 export function reportedAgain(before: ReportedChange | undefined, change: ReportedChangeInput): ReportedChange {
@@ -183,16 +223,6 @@ export function reportCards(report: RunReport, readOf: (anchor: string) => Eleme
 		});
 }
 
-/** The prompt that has the person's AI write what was validated (criterion 1aaa8316). */
-export function writeValidatedPrompt(validated: number, product: { readonly name: string; readonly id: string }): string {
-	return [
-		`With the Lyriks MCP, write into the specification of ${product.name} (Lyriks project ${product.id}) the ${validated === 1 ? 'change' : `${validated} changes`} a person validated on Mismatch, following the lyriks-retrospec skill and its section "Complementary run".`,
-		'Call report_retrospec_reading with project_id alone to read the report, and write through the section tools each change whose decision is validated and nothing else: no other element moves, and a change reverted stays out.',
-		'For each one, call report_retrospec_reading with written: [{ change: its id, elements: [{ anchor, title }] }], naming the elements of the specification it became.',
-		'End with the final check: assess_project_completeness, then audit_project_scope, then finish_project once it reports no blocker.'
-	].join(' ');
-}
-
 /** The prompt that has the person's AI rework what they rejected (criterion eb132bbd). */
 export function reworkRejectedPrompt(rejected: number, product: { readonly name: string; readonly id: string }): string {
 	return [
@@ -227,7 +257,7 @@ export function parseReport(raw: unknown): Record<string, ReportedChange> {
 	for (const [id, value] of Object.entries(obj(raw))) {
 		const o = obj(value);
 		if (!isChangeKind(o.kind)) continue;
-		out[id] = { id, kind: o.kind, anchor: str(o.anchor) || null, dock: str(o.dock) || null, title: str(o.title), proposed: str(o.proposed), code: str(o.code), where: str(o.where), decision: decisionOf(o.decision), ...reworkOf(o.rework) };
+		out[id] = { id, kind: o.kind, anchor: str(o.anchor) || null, dock: str(o.dock) || null, title: str(o.title), proposed: str(o.proposed), code: str(o.code), where: str(o.where), writes: parseChangeWrites(o.writes), decision: decisionOf(o.decision), ...reworkOf(o.rework) };
 	}
 	return out;
 }

@@ -1,7 +1,8 @@
 import { getContext, setContext } from 'svelte';
 import { pushToast } from '$ui/design-system';
 import type { ProjectClick, ProjectClickInput } from '$domain/evolution';
-import { LIVE_SESSION_EVENT, type LiveSessionSignal } from '$lib/shared/live-session';
+import { LIVE_SESSION_EVENT, WAKER_KEY, type LiveSessionSignal } from '$lib/shared/live-session';
+import { AI_CONVERSATIONS_SECTION, EVOLUTION_SECTION } from '$lib/shared/section-sync';
 import { SECTION_CHANGE_EVENT } from '$ui/shell/live-sync.client';
 import { copyPrompt } from '$ui/evolution/copy-prompt';
 import { projectSessionPrompt } from '$ui/evolution/session-prompt';
@@ -41,6 +42,22 @@ interface Reading {
 	/** Every open session of the reader, newest first; absent from a server older than several AIs. */
 	readonly sessions?: readonly SessionRow[];
 	readonly clicks: readonly ProjectClick[];
+	/** What waits on the reader in Ask my AI; absent from a server older than the AI's own questions. */
+	readonly needsYou?: NeedsYouReading;
+	/** The reader's waker and their last wake (criterion 7cfc6440); absent from a server older than the waker. */
+	readonly waker?: WakerOnPage;
+}
+
+/** The reader's waker as the server reads it: whether it listens, and where their last wake stands. */
+export interface WakerOnPage {
+	readonly status: 'none' | 'listening' | 'gone';
+	readonly wake: 'none' | 'handed' | 'opened' | 'not_woken';
+}
+
+/** The conversations that wait on the reader: their AI's questions and stops not read yet, the latest first (criterion 31488628). */
+export interface NeedsYouReading {
+	readonly count: number;
+	readonly latest: { readonly conversationId: string; readonly text: string; readonly about: 'question' | 'stopped'; readonly at: string } | null;
 }
 
 /** One line of Ask my AI's box: an AI of the reader in session, its name, since when and what it does now (criterion 39e1abc1). */
@@ -59,6 +76,8 @@ const ACTIVITY: Partial<Record<ProjectAiStatus, number>> = { thinking: 3, writin
 /** The presence key of the session of the whole project, beside the requests' own. */
 const PROJECT_KEY = '';
 const NO_SESSION = 'No session with your AI yet: a click copies the prompt that opens one.';
+const WAKES = 'No session with your AI yet: a click wakes it.';
+const WAKING = 'Waking your AI';
 const COPIED = 'Prompt copied: paste it in a new conversation with your AI agent, then stay on the page.';
 const WAITING: Record<ProjectClick['kind'], string> = {
 	chat: 'message in Ask my AI',
@@ -78,6 +97,8 @@ export class ProjectAiSession {
 	#endedIds = $state<string[]>([]);
 	/** Clicks sent from this page and not read back yet, so they read waiting at once. */
 	#sent = $state<ProjectClick[]>([]);
+	/** The last wake the waker's signal carried on this page's stream. */
+	#wakeHandedAt: string | null = null;
 
 	constructor(
 		/** The project on screen, read each time (ac-ai-session-project). */
@@ -158,6 +179,12 @@ export class ProjectAiSession {
 		return this.leading ? this.leading.saying : (this.now?.saying ?? null);
 	}
 
+	/** What waits on the reader in Ask my AI, whether or not a session is open: an AI that stopped is often gone. */
+	get needsYou(): NeedsYouReading | null {
+		const waiting = this.reading?.needsYou;
+		return waiting && waiting.count > 0 ? waiting : null;
+	}
+
 	/** The latest click of the reader on a place, sent from here or read back. */
 	clickOn(kind: ProjectClick['kind'], anchor: string): ProjectClick | null {
 		const all = [...(this.reading?.clicks ?? []), ...this.#sent].filter((c) => c.kind === kind && c.anchor === anchor);
@@ -169,9 +196,25 @@ export class ProjectAiSession {
 		return (this.reading?.clicks ?? []).find((c) => c.kind === 'ask_block' && c.messageId === messageId) ?? null;
 	}
 
+	/** No AI of the reader in session and their waker listens: a click starts their AI, no prompt to paste (action ccca0911). */
+	get wakes(): boolean {
+		return !this.isOpen && this.reading?.waker?.status === 'listening';
+	}
+
+	/** Their AI was woken and has not opened its session yet: Ask my AI reads Waking (criterion 7cfc6440). */
+	get waking(): boolean {
+		return !this.isOpen && this.reading?.waker?.wake === 'handed';
+	}
+
+	/** No session opened within wakeOpenSeconds of the wake: the page offers the prompt again ("The wake runs out"). */
+	get notWoken(): boolean {
+		return !this.isOpen && this.reading?.waker?.wake === 'not_woken';
+	}
+
 	/** Why an AI button reads greyed: no session of the reader's own (ac-ai-session-ask-block). */
 	get refusal(): string | null {
-		return this.isOpen ? null : NO_SESSION;
+		if (this.isOpen) return null;
+		return this.wakes ? WAKES : NO_SESSION;
 	}
 
 	/** The prompt that opens a session, copied by a click made without one (ac-ai-session-project). */
@@ -230,11 +273,14 @@ export class ProjectAiSession {
 		const unsent: ProjectClick = { ...input, id: `unsent:${Date.now()}`, personId: '', at: new Date().toISOString(), state: 'waiting' };
 		this.#sent = [...this.#sent, unsent];
 		const open = this.isOpen;
+		const wakes = this.wakes;
 		const answer = await this.#post({ act: 'click', ...input });
 		this.#sent = this.#sent.filter((c) => c !== unsent);
 		if (!answer) return false;
 		await this.refresh();
-		if (!open) await copyPrompt(this.prompt(WAITING[input.kind]), COPIED);
+		// A waker listening starts the reader's AI on this click; otherwise the prompt opens a session.
+		if (wakes) pushToast({ level: 'info', message: WAKING });
+		else if (!open) await copyPrompt(this.prompt(WAITING[input.kind]), COPIED);
 		return true;
 	}
 
@@ -266,6 +312,12 @@ export class ProjectAiSession {
 		this.#sent = [];
 		const onSignal = (event: Event) => {
 			const { detail } = event as CustomEvent<LiveSessionSignal>;
+			// The reader's waker was handed a wake, or came or went: read it again (criterion 7cfc6440).
+			if (detail.requestId === WAKER_KEY) {
+				if (detail.wakeHandedAt !== this.#wakeHandedAt) void this.refresh();
+				this.#wakeHandedAt = detail.wakeHandedAt ?? null;
+				return;
+			}
 			if (detail.requestId !== PROJECT_KEY) return;
 			const before = this.#presences[detail.sessionId];
 			// Each AI of the reader speaks for its own session (EVO-015); a new one or a new status reads the list again.
@@ -275,7 +327,9 @@ export class ProjectAiSession {
 			if (changed) void this.refresh();
 		};
 		const onSection = (event: Event) => {
-			if ((event as CustomEvent<string>).detail === 'evolution') void this.refresh();
+			// The AI's own question or stop lands in the reader's conversations (criterion 31488628).
+			const section = (event as CustomEvent<string>).detail;
+			if (section === EVOLUTION_SECTION || section === AI_CONVERSATIONS_SECTION) void this.refresh();
 		};
 		window.addEventListener(LIVE_SESSION_EVENT, onSignal);
 		window.addEventListener(SECTION_CHANGE_EVENT, onSection);

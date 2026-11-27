@@ -50,7 +50,9 @@ async function readValidationTeamFromServer(services: AppServices, projectId: st
 			return { available: true, team: people.map((person) => ({
 				person: { id: person.email.trim().toLowerCase(), name: shortName(person.name.trim() || person.email) || person.email },
 				jobIds: person.jobIds,
-				jobNames: person.names
+				jobNames: person.names,
+				...(person.jobTopics ? { jobTopics: person.jobTopics } : {}),
+				...(person.role ? { role: person.role } : {})
 			})) };
 		}
 		const [members, jobs] = await Promise.all([
@@ -62,7 +64,8 @@ async function readValidationTeamFromServer(services: AppServices, projectId: st
 			.filter((m) => m.email?.trim() && m.role !== 'mcp')
 			.map((m) => {
 				const id = m.email.trim().toLowerCase();
-				return { person: { id, name: shortName(m.name?.trim() || id) || id }, jobIds: jobs.get(id)?.jobIds ?? [], jobNames: jobs.get(id)?.names ?? [] };
+				const held = jobs.get(id);
+				return { person: { id, name: shortName(m.name?.trim() || id) || id }, jobIds: held?.jobIds ?? [], jobNames: held?.names ?? [], ...(held?.jobTopics ? { jobTopics: held.jobTopics } : {}), ...(m.role ? { role: m.role } : {}) };
 			}) };
 	} catch {
 		return { team: [], available: false };

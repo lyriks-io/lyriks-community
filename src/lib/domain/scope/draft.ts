@@ -45,8 +45,43 @@ export interface ScopeCapability {
 	sourceIds: string[];
 	featureIds: string[];
 	disposition: CapabilityDisposition;
+	/** Why it is left out (excluded or deferred): the one thing the completion gate asks of an omission. */
 	rationale: string;
-	approvalId: string | null;
+	/** The group it reads under on the Overview when it is left out; empty reads under Other. */
+	group: string;
+}
+
+/** One group of left-out capabilities as the Overview names it: what the group holds, in one line. */
+export interface ScopeGroupSummary {
+	name: string;
+	summary: string;
+}
+
+/**
+ * A person's yes to what the specification leaves out (criterion d16b352d):
+ * who said it and when, read from the session and the server's clock, and the
+ * fingerprint of the list they approved, so a later change to it shows.
+ */
+export interface ScopeApproval {
+	by: string;
+	at: string;
+	leftOut: string;
+}
+
+/**
+ * Where the specification stops, in the words a person reads on the Overview
+ * (criterion 3b04797c): what it covers, the decision the boundary rests on and
+ * its date, and a line for each group of what it leaves out. Agent-authored,
+ * like the rest of the ledger (criterion 3a1f96bc), except its approval, which
+ * only a person gives and no scope save writes (criterion d16b352d).
+ */
+export interface ScopeBoundary {
+	covers: string;
+	decision: string;
+	/** The date of the decision, as the author wrote it (an ISO date); null when unknown. */
+	decidedAt: string | null;
+	groups: ScopeGroupSummary[];
+	approval: ScopeApproval | null;
 }
 
 export interface ScopeSectionAssessment {
@@ -54,7 +89,6 @@ export interface ScopeSectionAssessment {
 	applicability: SectionApplicability;
 	status: SectionAssessmentStatus;
 	rationale: string;
-	approvalId: string | null;
 }
 
 export interface ScopeAudit {
@@ -98,8 +132,7 @@ const SECTION_LABELS: Readonly<Record<string, string>> = {
 	architecture: 'Tech & Data · Architecture',
 	coherence: 'Project health',
 	glossary: 'Glossary',
-	approvals: 'Traceability · Approvals',
-	baselines: 'Traceability · Baselines',
+	baselines: 'Baselines (recorded by Lyriks)',
 	documents: 'Documents & Sources'
 };
 
@@ -116,6 +149,7 @@ export function scopeSectionLabel(section: string): string {
 export interface ProjectScopeDraft {
 	projectId: string;
 	mode: ScopeMode;
+	boundary: ScopeBoundary;
 	capabilities: ScopeCapability[];
 	sectionAssessments: ScopeSectionAssessment[];
 	audit: ScopeAudit | null;
@@ -130,6 +164,7 @@ export function createEmptyScopeDraft(projectId: string): ProjectScopeDraft {
 	return {
 		projectId,
 		mode: 'unclassified',
+		boundary: createEmptyScopeBoundary(),
 		capabilities: [],
 		sectionAssessments: [],
 		audit: null,
@@ -138,6 +173,10 @@ export function createEmptyScopeDraft(projectId: string): ProjectScopeDraft {
 		completedAt: null,
 		lastSavedAt: null
 	};
+}
+
+export function createEmptyScopeBoundary(): ScopeBoundary {
+	return { covers: '', decision: '', decidedAt: null, groups: [], approval: null };
 }
 
 export function isScopeMode(value: unknown): value is ScopeMode {
@@ -185,7 +224,7 @@ export function createScopeCapability(
 		featureIds: [],
 		disposition: 'unresolved',
 		rationale: '',
-		approvalId: null,
+		group: '',
 		...overrides
 	};
 }
